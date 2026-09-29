@@ -6,9 +6,388 @@
   "sway": "materials named 'leaves*' or 'cloth_*' are wind-driven; per-vertex weight in attribute _SWAY (three.js: geometry.attributes._sway), 0 = rigid, 1 = free",
   "emissive": "materials named 'emissive_*' glow (emissiveFactor / emissiveTexture) -> bloom layer",
   "alpha": "leaves / cloth_banner use alphaMode MASK (alphaTest 0.5), double sided",
-  "light": "optional [x, y, z] (glTF axes, model space) where the engine should place a flame/light"
+  "light": "optional [x, y, z] (glTF axes, model space) where the engine should place a flame/light; lightColor = suggested light colour",
+  "marker": "optional [x, y, z] anchor for a floating quest marker (clear space above the prop)",
+  "lod1": "id of a lower-detail version (<id>_lod1.glb, same materials/textures, ~1/2 the leaf-card fill = leafArea); LOD entries carry lodOf",
+  "map": "world-2 kits: map id the prop belongs to; kind = tree|rock|decor|building|setpiece|light|wall|pillar|walkway|edge (trees with a map prefix are still kind 'tree': use it instead of the id prefix for Lambert/occluder choices)",
+  "kits": "optional texture-sharing packs: kit_<name>.glb holds every model of the family as a root node named by its id; each texture is stored once. The per-id .glb files stay complete and self-contained."
+ },
+ "kits": {
+  "trees": {
+   "file": "kit_trees.glb",
+   "ids": [
+    "tree_autumn_a",
+    "tree_autumn_a_lod1",
+    "tree_autumn_b",
+    "tree_autumn_b_lod1",
+    "tree_dead_a",
+    "tree_dead_a_lod1",
+    "tree_dead_b",
+    "tree_dead_b_lod1",
+    "tree_green_a",
+    "tree_green_a_lod1",
+    "tree_green_b",
+    "tree_green_b_lod1",
+    "tree_green_c",
+    "tree_green_c_lod1",
+    "tree_oak_dark",
+    "tree_oak_dark_lod1",
+    "tree_pine_a",
+    "tree_pine_a_lod1",
+    "tree_pine_b",
+    "tree_pine_b_lod1"
+   ],
+   "bytes": 752280,
+   "bytesSeparate": 1163780
+  },
+  "town": {
+   "file": "kit_town.glb",
+   "ids": [
+    "signpost",
+    "town_barrel",
+    "town_bounty_board",
+    "town_crates",
+    "town_fence",
+    "town_house_big",
+    "town_house_small",
+    "town_lamp_post",
+    "town_market_stall",
+    "town_well",
+    "waystone"
+   ],
+   "bytes": 779484,
+   "bytesSeparate": 1087076
+  },
+  "field": {
+   "file": "kit_field.glb",
+   "ids": [
+    "rock_field_a",
+    "rock_field_b",
+    "rock_field_c",
+    "rock_field_d",
+    "ruin_column_fallen",
+    "ruin_wall_a",
+    "ruin_wall_b",
+    "ruin_wall_c"
+   ],
+   "bytes": 417004,
+   "bytesSeparate": 526488
+  },
+  "dungeon": {
+   "file": "kit_dungeon.glb",
+   "ids": [
+    "dng_banner",
+    "dng_bones",
+    "dng_brazier",
+    "dng_chain",
+    "dng_grave_a",
+    "dng_grave_b",
+    "dng_pillar",
+    "dng_rubble_a",
+    "dng_rubble_b",
+    "dng_wall",
+    "throne_basalt_rock",
+    "throne_obsidian_pillar"
+   ],
+   "bytes": 394712,
+   "bytesSeparate": 490344
+  },
+  "rimeshore": {
+   "file": "kit_rimeshore.glb",
+   "ids": [
+    "rimeshore_drying_rack",
+    "rimeshore_fishing_hut",
+    "rimeshore_ice_crystal",
+    "rimeshore_ice_floe",
+    "rimeshore_ice_rock_a",
+    "rimeshore_ice_rock_b",
+    "rimeshore_ice_rock_c",
+    "rimeshore_longship",
+    "rimeshore_longship_prow",
+    "rimeshore_pine_a",
+    "rimeshore_pine_a_lod1",
+    "rimeshore_pine_b",
+    "rimeshore_pine_b_lod1",
+    "rimeshore_snowdrift_a",
+    "rimeshore_snowdrift_b"
+   ],
+   "bytes": 769148,
+   "bytesSeparate": 1243616
+  },
+  "mirewell": {
+   "file": "kit_mirewell.glb",
+   "ids": [
+    "mirewell_boardwalk",
+    "mirewell_boardwalk_corner",
+    "mirewell_bog_tree_a",
+    "mirewell_bog_tree_a_lod1",
+    "mirewell_bog_tree_b",
+    "mirewell_bog_tree_b_lod1",
+    "mirewell_bog_tree_c",
+    "mirewell_bog_tree_c_lod1",
+    "mirewell_hag_hut",
+    "mirewell_lantern_post",
+    "mirewell_lily_pads",
+    "mirewell_mossy_log",
+    "mirewell_mushrooms",
+    "mirewell_reeds_a",
+    "mirewell_reeds_b"
+   ],
+   "bytes": 516312,
+   "bytesSeparate": 895764
+  },
+  "nidavellir": {
+   "file": "kit_nidavellir.glb",
+   "ids": [
+    "nidavellir_crystal_a",
+    "nidavellir_crystal_b",
+    "nidavellir_forge",
+    "nidavellir_lava_edge",
+    "nidavellir_mine_cart",
+    "nidavellir_ore_pile",
+    "nidavellir_rail",
+    "nidavellir_rail_curve",
+    "nidavellir_statue_broken",
+    "nidavellir_support_beams",
+    "nidavellir_wall"
+   ],
+   "bytes": 648648,
+   "bytesSeparate": 860516
+  },
+  "bifrost": {
+   "file": "kit_bifrost.glb",
+   "ids": [
+    "bifrost_bridge",
+    "bifrost_bridge_curve",
+    "bifrost_cloud",
+    "bifrost_column",
+    "bifrost_column_broken",
+    "bifrost_gold_rubble",
+    "bifrost_island_edge",
+    "bifrost_rune_brazier",
+    "bifrost_valkyrie_statue"
+   ],
+   "bytes": 483600,
+   "bytesSeparate": 630136
+  }
  },
  "models": [
+  {
+   "id": "bifrost_bridge",
+   "file": "bifrost_bridge.glb",
+   "map": "bifrost",
+   "kind": "walkway",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.64,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Rainbow-crystal bridge segment 2x2 tiles, runs along glTF Z (chains at z=+-1); walk surface y=0.04, rainbow lanes glow (emissive_bifrost, base+emissive map), crystal keel and shards hang below (to y~-1.6), crystal rail posts with gold feet.",
+   "tris": 632,
+   "bytes": 75292,
+   "materials": [
+    "emissive_bifrost",
+    "gold"
+   ],
+   "light": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "lightColor": "#c8b0ff",
+   "walkable": true,
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_bridge_curve",
+   "file": "bifrost_bridge_curve.glb",
+   "map": "bifrost",
+   "kind": "walkway",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.62,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Rainbow bridge 90-degree turn (quarter disc, radius 2 around the +X/+Z corner): joins the +Z edge (x -1..1) to the +X edge (z -1..1) of a 2x2 footprint; railing on the outer arc.",
+   "tris": 548,
+   "bytes": 67164,
+   "materials": [
+    "emissive_bifrost",
+    "gold"
+   ],
+   "light": [
+    0.0,
+    0.3,
+    0.0
+   ],
+   "lightColor": "#c8b0ff",
+   "walkable": true,
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_cloud",
+   "file": "bifrost_cloud.glb",
+   "map": "bifrost",
+   "kind": "decor",
+   "footprint": [
+    3,
+    2
+   ],
+   "height": 1.15,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Soft cloud puff for the void below the bridges (place at y<0). Painted spherical normals + lavender underside; faint emissive so it stays soft in shadow. No shadow.",
+   "tris": 640,
+   "bytes": 17392,
+   "materials": [
+    "cloud"
+   ],
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_column",
+   "file": "bifrost_column.glb",
+   "map": "bifrost",
+   "kind": "pillar",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 3.64,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Golden-hall column: fluted marble shaft, gold base/rings/capital, marble plinth + abacus.",
+   "tris": 600,
+   "bytes": 49916,
+   "materials": [
+    "marble",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_column_broken",
+   "file": "bifrost_column_broken.glb",
+   "map": "bifrost",
+   "kind": "pillar",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 1.82,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Broken golden-hall column: snapped fluted shaft on its plinth, two fallen drums, toppled gold capital, chips.",
+   "tris": 994,
+   "bytes": 68972,
+   "materials": [
+    "marble",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_gold_rubble",
+   "file": "bifrost_gold_rubble.glb",
+   "map": "bifrost",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.56,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Gold-hall rubble: broken marble blocks, a fluted drum, gold trim fragments, a rainbow crystal shard.",
+   "tris": 666,
+   "bytes": 94332,
+   "materials": [
+    "marble",
+    "gold",
+    "emissive_bifrost"
+   ],
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_island_edge",
+   "file": "bifrost_island_edge.glb",
+   "map": "bifrost",
+   "kind": "edge",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.25,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Floating-island edge, 2 tiles along X: turf top flush with the ground (y=0), cliff hangs into the void to y=-3 on the +Z (camera) side, grass lip + hanging vines (leaves), crystal shards underneath. Place on the map rim; rotate for other rims.",
+   "tris": 343,
+   "bytes": 76692,
+   "materials": [
+    "turf",
+    "stone_sky",
+    "leaves",
+    "emissive_bifrost"
+   ],
+   "leafArea": 5.19,
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_rune_brazier",
+   "file": "bifrost_rune_brazier.glb",
+   "map": "bifrost",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.21,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Golden rune brazier: marble base, gold stem and bowl, glowing rune plates and fire bed (emissive_rune_gold). Flame/light point above the bowl.",
+   "tris": 573,
+   "bytes": 50216,
+   "materials": [
+    "marble",
+    "gold",
+    "emissive_rune_gold"
+   ],
+   "light": [
+    0.0,
+    1.3,
+    0.0
+   ],
+   "lightColor": "#ffc850",
+   "kit": "bifrost"
+  },
+  {
+   "id": "bifrost_valkyrie_statue",
+   "file": "bifrost_valkyrie_statue.glb",
+   "map": "bifrost",
+   "kind": "setpiece",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.2,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Asgard valkyrie statue: marble maiden with winged gold helm, raised spear (gold tip), round shield, great feathered wings; gold-banded plinth. Faces +Z.",
+   "tris": 1657,
+   "bytes": 130160,
+   "materials": [
+    "marble",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "bifrost"
+  },
   {
    "id": "dng_banner",
    "file": "dng_banner.glb",
@@ -21,13 +400,14 @@
    "sway": true,
    "notes": "Tattered keep banner (cloth_banner, alpha MASK) on a pole; _SWAY grows toward the cloth's bottom edge.",
    "tris": 184,
-   "bytes": 47292,
+   "bytes": 40740,
    "materials": [
     "stone_keep",
     "timber",
     "iron",
     "cloth_banner"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_bones",
@@ -41,11 +421,12 @@
    "sway": false,
    "notes": "Bone pile: skull, long bones, ribs.",
    "tris": 926,
-   "bytes": 42968,
+   "bytes": 36852,
    "materials": [
     "bone",
     "shadow"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_brazier",
@@ -59,7 +440,7 @@
    "sway": false,
    "notes": "Iron bowl brazier on a tripod; emissive_coals. Flame sprite point at y=1.05.",
    "tris": 377,
-   "bytes": 47292,
+   "bytes": 36168,
    "materials": [
     "iron",
     "emissive_coals"
@@ -68,7 +449,8 @@
     0,
     1.05,
     0
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_chain",
@@ -82,11 +464,12 @@
    "sway": true,
    "notes": "Hanging chain with manacle from a wall plate (plate at the tile's +Z-back edge: glTF z=-0.42). _SWAY grows downward (engine may swing it).",
    "tris": 998,
-   "bytes": 47064,
+   "bytes": 42952,
    "materials": [
     "iron"
    ],
-   "wallMount": true
+   "wallMount": true,
+   "kit": "dungeon"
   },
   {
    "id": "dng_grave_a",
@@ -100,11 +483,12 @@
    "sway": false,
    "notes": "Arched headstone with raised cross over a dirt mound.",
    "tris": 164,
-   "bytes": 28244,
+   "bytes": 24308,
    "materials": [
     "stone_keep",
     "dirt"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_grave_b",
@@ -118,11 +502,12 @@
    "sway": false,
    "notes": "Leaning ringed cross on a plinth, broken fragment, mound.",
    "tris": 292,
-   "bytes": 41640,
+   "bytes": 35344,
    "materials": [
     "stone_keep",
     "dirt"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_pillar",
@@ -136,11 +521,12 @@
    "sway": false,
    "notes": "Keep pillar: stepped base, octagonal shaft with bands, square capital. 3.2 high like the current pillars (throne map may tint it).",
    "tris": 314,
-   "bytes": 45876,
+   "bytes": 38660,
    "materials": [
     "stone_keep",
     "iron"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_rubble_a",
@@ -154,10 +540,11 @@
    "sway": false,
    "notes": "Dungeon rubble heap (keep stone).",
    "tris": 420,
-   "bytes": 49280,
+   "bytes": 41580,
    "materials": [
     "stone_keep"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_rubble_b",
@@ -171,10 +558,11 @@
    "sway": false,
    "notes": "Fallen keep blocks, a few chips.",
    "tris": 314,
-   "bytes": 39800,
+   "bytes": 33708,
    "materials": [
     "stone_keep"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "dng_wall",
@@ -188,10 +576,1023 @@
    "sway": false,
    "notes": "Tileable keep wall block, exactly 1x1 tile, 2.5 high; carved blocks on all 4 sides (courses line up across neighbours).  Replaces the flat ghwall boxes.",
    "tris": 656,
-   "bytes": 75384,
+   "bytes": 63192,
    "materials": [
     "stone_keep"
-   ]
+   ],
+   "kit": "dungeon"
+  },
+  {
+   "id": "mirewell_boardwalk",
+   "file": "mirewell_boardwalk.glb",
+   "map": "mirewell",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.55,
+   "castShadow": true,
+   "sway": false,
+   "notes": "1-tile rotting boardwalk, straight: runs along glTF Z (chains at z=+-0.5), deck top y=0.34, posts sink into the water/mud.",
+   "tris": 300,
+   "bytes": 34108,
+   "materials": [
+    "planks_rot"
+   ],
+   "walkable": true,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_boardwalk_corner",
+   "file": "mirewell_boardwalk_corner.glb",
+   "map": "mirewell",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.57,
+   "castShadow": true,
+   "sway": false,
+   "notes": "1-tile rotting boardwalk corner: joins the +Z (camera) side and the +X side; deck top y=0.34.",
+   "tris": 456,
+   "bytes": 46152,
+   "materials": [
+    "planks_rot"
+   ],
+   "walkable": true,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_a",
+   "file": "mirewell_bog_tree_a.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.1,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Mangrove bog tree on six stilt roots, flat murky canopy, hanging moss (leaves_moss sways).",
+   "tris": 587,
+   "bytes": 84220,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 77.3,
+   "lod1": "mirewell_bog_tree_a_lod1",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_a_lod1",
+   "file": "mirewell_bog_tree_a_lod1.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.31,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Mangrove bog tree on six stilt roots, flat murky canopy, hanging moss (leaves_moss sways). LOD1.",
+   "tris": 350,
+   "bytes": 70888,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 37.51,
+   "lodOf": "mirewell_bog_tree_a",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_b",
+   "file": "mirewell_bog_tree_b.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.16,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Squat leaning bog tree, heavy with moss.",
+   "tris": 467,
+   "bytes": 76028,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 52.32,
+   "lod1": "mirewell_bog_tree_b_lod1",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_b_lod1",
+   "file": "mirewell_bog_tree_b_lod1.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.3,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Squat leaning bog tree, heavy with moss. LOD1.",
+   "tris": 274,
+   "bytes": 65848,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 27.82,
+   "lodOf": "mirewell_bog_tree_b",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_c",
+   "file": "mirewell_bog_tree_c.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.71,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Half-dead snag: sparse crown, bare branches draped with long moss.",
+   "tris": 375,
+   "bytes": 67480,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 12.79,
+   "lod1": "mirewell_bog_tree_c_lod1",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_bog_tree_c_lod1",
+   "file": "mirewell_bog_tree_c_lod1.glb",
+   "map": "mirewell",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.69,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Half-dead snag: sparse crown, bare branches draped with long moss. LOD1.",
+   "tris": 272,
+   "bytes": 63028,
+   "materials": [
+    "bark_bog",
+    "leaves",
+    "leaves_moss"
+   ],
+   "leafArea": 8.31,
+   "lodOf": "mirewell_bog_tree_c",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_hag_hut",
+   "file": "mirewell_hag_hut.glb",
+   "map": "mirewell",
+   "kind": "setpiece",
+   "footprint": [
+    4,
+    4
+   ],
+   "height": 4.7,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Set piece: the marsh hag's hut on crooked stilts. Crooked plank walls, sagging mossy roof with hanging moss, round green-glowing window + cauldron (emissive_bog), bone charms, ladder to the water at the front (+Z). Platform top y=1.35.",
+   "tris": 2021,
+   "bytes": 178756,
+   "materials": [
+    "bark_bog",
+    "planks_rot",
+    "moss",
+    "iron",
+    "leaves_moss",
+    "emissive_bog",
+    "bone",
+    "mud",
+    "leaves_reeds"
+   ],
+   "light": [
+    0.95,
+    1.9,
+    1.15
+   ],
+   "lightColor": "#7aff5a",
+   "blocking": true,
+   "leafArea": 10.76,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_lantern_post",
+   "file": "mirewell_lantern_post.glb",
+   "map": "mirewell",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.14,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Crooked bog lantern post: caged green wisp-light (emissive_bog), skull charm.",
+   "tris": 444,
+   "bytes": 44700,
+   "materials": [
+    "mud",
+    "bark_bog",
+    "iron",
+    "emissive_bog",
+    "bone",
+    "painted"
+   ],
+   "light": [
+    0.56,
+    1.7,
+    0.0
+   ],
+   "lightColor": "#7aff5a",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_lily_pads",
+   "file": "mirewell_lily_pads.glb",
+   "map": "mirewell",
+   "kind": "decor",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.1,
+   "castShadow": false,
+   "sway": true,
+   "notes": "Floating lily pads (leaves_lily, gentle sway) with one pink water lily; pads at y~0.02 on the water plane. No shadow.",
+   "tris": 314,
+   "bytes": 19820,
+   "materials": [
+    "leaves_lily",
+    "painted"
+   ],
+   "leafArea": 0.85,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_mossy_log",
+   "file": "mirewell_mossy_log.glb",
+   "map": "mirewell",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.69,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Fallen hollow log, moss blanket on top, ferns (leaves), little red toadstools.",
+   "tris": 320,
+   "bytes": 56508,
+   "materials": [
+    "bark_bog",
+    "moss",
+    "painted",
+    "leaves"
+   ],
+   "leafArea": 1.49,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_mushrooms",
+   "file": "mirewell_mushrooms.glb",
+   "map": "mirewell",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.76,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Bioluminescent mushroom cluster: caps + gills glow teal (emissive_shroom, emissive map = spots).",
+   "tris": 1040,
+   "bytes": 54188,
+   "materials": [
+    "mud",
+    "painted",
+    "emissive_shroom"
+   ],
+   "light": [
+    0.0,
+    0.45,
+    0.0
+   ],
+   "lightColor": "#4af0d0",
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_reeds_a",
+   "file": "mirewell_reeds_a.glb",
+   "map": "mirewell",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.42,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Reed clump with cattails (leaves_reeds, alpha MASK, sways from the base up).",
+   "tris": 90,
+   "bytes": 17108,
+   "materials": [
+    "mud",
+    "leaves_reeds"
+   ],
+   "leafArea": 5.11,
+   "kit": "mirewell"
+  },
+  {
+   "id": "mirewell_reeds_b",
+   "file": "mirewell_reeds_b.glb",
+   "map": "mirewell",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.79,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Low sedge tuft (leaves_reeds).",
+   "tris": 88,
+   "bytes": 16932,
+   "materials": [
+    "mud",
+    "leaves_reeds"
+   ],
+   "leafArea": 2.06,
+   "kit": "mirewell"
+  },
+  {
+   "id": "nidavellir_crystal_a",
+   "file": "nidavellir_crystal_a.glb",
+   "map": "nidavellir",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.75,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Large amethyst cluster erupting from a rock (emissive_amethyst gradient, brightest at the tips).",
+   "tris": 284,
+   "bytes": 35848,
+   "materials": [
+    "stone_dwarf",
+    "emissive_amethyst"
+   ],
+   "light": [
+    0.0,
+    1.1,
+    0.0
+   ],
+   "lightColor": "#b070ff",
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_crystal_b",
+   "file": "nidavellir_crystal_b.glb",
+   "map": "nidavellir",
+   "kind": "light",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.79,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Crystal vein: a line of amethyst shards cracking through the floor.",
+   "tris": 546,
+   "bytes": 52656,
+   "materials": [
+    "stone_dwarf",
+    "emissive_amethyst"
+   ],
+   "light": [
+    0.0,
+    0.5,
+    0.0
+   ],
+   "lightColor": "#b070ff",
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_forge",
+   "file": "nidavellir_forge.glb",
+   "map": "nidavellir",
+   "kind": "light",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dwarven forge: stone hearth with glowing coal bed (emissive_coals), hood + chimney, leather bellows, anvil on a stump with a glowing ingot, quench trough, coal heap.",
+   "tris": 1205,
+   "bytes": 130104,
+   "materials": [
+    "stone_dwarf",
+    "emissive_coals",
+    "gold",
+    "leather",
+    "iron",
+    "timber",
+    "planks",
+    "water",
+    "painted"
+   ],
+   "light": [
+    -0.3,
+    1.05,
+    -0.3
+   ],
+   "lightColor": "#ff8a30",
+   "blocking": true,
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_lava_edge",
+   "file": "nidavellir_lava_edge.glb",
+   "map": "nidavellir",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Lava channel edge, 1 tile: carved kerb (top y=0.3) on the +Z (camera) half, glowing lava surface (emissive_lava, y=0.03) with crust rocks on the -Z half. Tile along X; rotate 180 deg for the opposite bank (two facing pieces = a 2-wide channel of lava).",
+   "tris": 500,
+   "bytes": 87632,
+   "materials": [
+    "stone_dwarf",
+    "gold",
+    "emissive_lava",
+    "painted"
+   ],
+   "light": [
+    0.0,
+    0.35,
+    -0.25
+   ],
+   "lightColor": "#ff7a2a",
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_mine_cart",
+   "file": "nidavellir_mine_cart.glb",
+   "map": "nidavellir",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.99,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Ore-laden mine cart; wheels on the 0.6 gauge of nidavellir_rail (runs along glTF Z).",
+   "tris": 876,
+   "bytes": 99304,
+   "materials": [
+    "planks",
+    "iron",
+    "ore",
+    "emissive_amethyst",
+    "timber"
+   ],
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_ore_pile",
+   "file": "nidavellir_ore_pile.glb",
+   "map": "nidavellir",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.07,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Heap of ore (gold/copper/amethyst flecks), gold nuggets, a pickaxe stuck in it.",
+   "tris": 834,
+   "bytes": 81036,
+   "materials": [
+    "ore",
+    "gold",
+    "timber",
+    "iron"
+   ],
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_rail",
+   "file": "nidavellir_rail.glb",
+   "map": "nidavellir",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.14,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Straight mine-rail segment along glTF Z (ends at z=+-0.5), gauge 0.6, rail top y=0.14.",
+   "tris": 496,
+   "bytes": 55616,
+   "materials": [
+    "timber",
+    "iron",
+    "stone_dwarf"
+   ],
+   "walkable": true,
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_rail_curve",
+   "file": "nidavellir_rail_curve.glb",
+   "map": "nidavellir",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.14,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Curved mine-rail quarter turn (radius 0.5 tile): joins the +Z edge centre to the +X edge centre.",
+   "tris": 624,
+   "bytes": 59308,
+   "materials": [
+    "timber",
+    "iron",
+    "stone_dwarf"
+   ],
+   "walkable": true,
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_statue_broken",
+   "file": "nidavellir_statue_broken.glb",
+   "map": "nidavellir",
+   "kind": "setpiece",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 2.07,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Collapsed dwarf statue: legs + mail skirt on a gold-banded plinth, torso snapped; the winged-helm head with braided beard lies in front, broken hammer.",
+   "tris": 1502,
+   "bytes": 90532,
+   "materials": [
+    "stone_dwarf",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_support_beams",
+   "file": "nidavellir_support_beams.glb",
+   "map": "nidavellir",
+   "kind": "light",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 2.63,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Timber mine support frame spanning a 2-tile passage (posts at x=+-0.92), plank lagging, hanging lantern (emissive_lamp).",
+   "tris": 461,
+   "bytes": 75336,
+   "materials": [
+    "stone_dwarf",
+    "timber",
+    "iron",
+    "planks",
+    "emissive_lamp"
+   ],
+   "light": [
+    0.35,
+    1.9,
+    0.0
+   ],
+   "lightColor": "#ffc870",
+   "kit": "nidavellir"
+  },
+  {
+   "id": "nidavellir_wall",
+   "file": "nidavellir_wall.glb",
+   "map": "nidavellir",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tileable dwarven hall wall, exactly 1x1 tile, 2.5 high: plinth, ashlar courses, a carved frieze with gold-inlaid runes on all four faces, stepped cornice.",
+   "tris": 964,
+   "bytes": 93144,
+   "materials": [
+    "stone_dwarf",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "nidavellir"
+  },
+  {
+   "id": "rimeshore_drying_rack",
+   "file": "rimeshore_drying_rack.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 1.65,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Fish drying rack: two A-frames, three poles of hanging split fish.",
+   "tris": 897,
+   "bytes": 72552,
+   "materials": [
+    "planks_drift",
+    "timber",
+    "fish",
+    "snow"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_fishing_hut",
+   "file": "rimeshore_fishing_hut.glb",
+   "map": "rimeshore",
+   "kind": "building",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.21,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Driftwood fishing hut with snow-laden gable roof (gable faces +Z), door + glowing window (emissive_lamp), firewood lean-to, oars, barrel, drifts.",
+   "tris": 2988,
+   "bytes": 216084,
+   "materials": [
+    "stone_coast",
+    "planks_drift",
+    "timber",
+    "snow",
+    "iron",
+    "emissive_lamp"
+   ],
+   "light": [
+    0.6,
+    0.9,
+    1.1
+   ],
+   "lightColor": "#ffc870",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_ice_crystal",
+   "file": "rimeshore_ice_crystal.glb",
+   "map": "rimeshore",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.36,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Cluster of glowing ice crystals (emissive_crystal_ice: gradient map = base + emissive, brightest at the tips) on a snowy rock.",
+   "tris": 308,
+   "bytes": 53324,
+   "materials": [
+    "snow",
+    "stone_coast",
+    "emissive_crystal_ice"
+   ],
+   "light": [
+    0.0,
+    0.9,
+    0.0
+   ],
+   "lightColor": "#6ac8ff",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_ice_floe",
+   "file": "rimeshore_ice_floe.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.08,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Flat ice floe for water edges: top at y=0.05 (sits on the water plane at y=0), snow patches, drifting chunks. No shadow.",
+   "tris": 308,
+   "bytes": 58056,
+   "materials": [
+    "ice",
+    "snow"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_ice_rock_a",
+   "file": "rimeshore_ice_rock_a.glb",
+   "map": "rimeshore",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.61,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dark coastal boulder with a snow cap and two ice shards.",
+   "tris": 195,
+   "bytes": 55576,
+   "materials": [
+    "snow",
+    "stone_coast",
+    "ice"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_ice_rock_b",
+   "file": "rimeshore_ice_rock_b.glb",
+   "map": "rimeshore",
+   "kind": "rock",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.48,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Low slab of black rock with a snow blanket (Rimeshore shore line).",
+   "tris": 341,
+   "bytes": 60640,
+   "materials": [
+    "snow",
+    "stone_coast",
+    "ice"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_ice_rock_c",
+   "file": "rimeshore_ice_rock_c.glb",
+   "map": "rimeshore",
+   "kind": "rock",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 1.09,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Glacial ice boulder (ice, glossy) with snow on top.",
+   "tris": 316,
+   "bytes": 49596,
+   "materials": [
+    "snow",
+    "ice"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_longship",
+   "file": "rimeshore_longship.glb",
+   "map": "rimeshore",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    8
+   ],
+   "height": 2.34,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Set piece: wrecked longship beached on black sand, 3x8 tiles along glTF Z (stern post curls toward +Z / the camera; broken bow at -Z). Heeled to +X, hole in the -X planking, torn striped sail (cloth_sail, alpha MASK, sways) draped over the -X side, shields on the +X gunwale. Rotate 90 deg to lay it along X.",
+   "tris": 4879,
+   "bytes": 233332,
+   "materials": [
+    "planks_drift",
+    "timber",
+    "cloth_sail",
+    "painted",
+    "iron",
+    "sand_black",
+    "snow"
+   ],
+   "blocking": true,
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_longship_prow",
+   "file": "rimeshore_longship_prow.glb",
+   "map": "rimeshore",
+   "kind": "setpiece",
+   "footprint": [
+    1,
+    2
+   ],
+   "height": 4.11,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Broken-off dragon prow standing in the sand, head facing +Z (camera), strake stubs trailing to -Z.",
+   "tris": 1093,
+   "bytes": 111076,
+   "materials": [
+    "timber",
+    "painted",
+    "planks_drift",
+    "sand_black",
+    "snow"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_pine_a",
+   "file": "rimeshore_pine_a.glb",
+   "map": "rimeshore",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.91,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Snow-laden fir, 5 tiers (Rimeshore).",
+   "tris": 481,
+   "bytes": 67148,
+   "materials": [
+    "bark",
+    "snow",
+    "leaves"
+   ],
+   "leafArea": 38.74,
+   "lod1": "rimeshore_pine_a_lod1",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_pine_a_lod1",
+   "file": "rimeshore_pine_a_lod1.glb",
+   "map": "rimeshore",
+   "kind": "tree",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.91,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Snow-laden fir, 5 tiers (Rimeshore). LOD1.",
+   "tris": 291,
+   "bytes": 59112,
+   "materials": [
+    "bark",
+    "snow",
+    "leaves"
+   ],
+   "leafArea": 22.03,
+   "lodOf": "rimeshore_pine_a",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_pine_b",
+   "file": "rimeshore_pine_b.glb",
+   "map": "rimeshore",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.84,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Small snowy fir (Rimeshore).",
+   "tris": 423,
+   "bytes": 64636,
+   "materials": [
+    "bark",
+    "snow",
+    "leaves"
+   ],
+   "leafArea": 19.79,
+   "lod1": "rimeshore_pine_b_lod1",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_pine_b_lod1",
+   "file": "rimeshore_pine_b_lod1.glb",
+   "map": "rimeshore",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.84,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Small snowy fir (Rimeshore). LOD1.",
+   "tris": 263,
+   "bytes": 57984,
+   "materials": [
+    "bark",
+    "snow",
+    "leaves"
+   ],
+   "leafArea": 12.41,
+   "lodOf": "rimeshore_pine_b",
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_snowdrift_a",
+   "file": "rimeshore_snowdrift_a.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.36,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Wind-carved snowdrift with a crest (no shadow; low).",
+   "tris": 640,
+   "bytes": 33608,
+   "materials": [
+    "snow"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_snowdrift_b",
+   "file": "rimeshore_snowdrift_b.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.45,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Large snowdrift with a black rock poking through (no shadow).",
+   "tris": 798,
+   "bytes": 50892,
+   "materials": [
+    "snow",
+    "stone_coast"
+   ],
+   "kit": "rimeshore"
   },
   {
    "id": "rock_field_a",
@@ -205,10 +1606,11 @@
    "sway": false,
    "notes": "Mossy field boulder.",
    "tris": 122,
-   "bytes": 21252,
+   "bytes": 18508,
    "materials": [
     "stone"
-   ]
+   ],
+   "kit": "field"
   },
   {
    "id": "rock_field_b",
@@ -222,10 +1624,11 @@
    "sway": false,
    "notes": "Flat mossy slab.",
    "tris": 134,
-   "bytes": 21984,
+   "bytes": 19116,
    "materials": [
     "stone"
-   ]
+   ],
+   "kit": "field"
   },
   {
    "id": "rock_field_c",
@@ -239,10 +1642,11 @@
    "sway": false,
    "notes": "Standing stone with a pebble.",
    "tris": 176,
-   "bytes": 24352,
+   "bytes": 21100,
    "materials": [
     "stone"
-   ]
+   ],
+   "kit": "field"
   },
   {
    "id": "rock_field_d",
@@ -256,10 +1660,11 @@
    "sway": false,
    "notes": "Rock cluster (one boulder, two stones).",
    "tris": 216,
-   "bytes": 27544,
+   "bytes": 23752,
    "materials": [
     "stone"
-   ]
+   ],
+   "kit": "field"
   },
   {
    "id": "ruin_column_fallen",
@@ -273,11 +1678,13 @@
    "sway": true,
    "notes": "Fallen fluted column: base + stump, broken shaft, capital. Ivy/grass cards use material 'leaves'.",
    "tris": 402,
-   "bytes": 55160,
+   "bytes": 49056,
    "materials": [
     "stone_ruin",
     "leaves"
-   ]
+   ],
+   "leafArea": 2.86,
+   "kit": "field"
   },
   {
    "id": "ruin_wall_a",
@@ -291,11 +1698,13 @@
    "sway": true,
    "notes": "Broken wall, tall end stepping down (field ruins). Ivy/grass cards use material 'leaves'.",
    "tris": 1240,
-   "bytes": 153520,
+   "bytes": 130540,
    "materials": [
     "stone_ruin",
     "leaves"
-   ]
+   ],
+   "leafArea": 4.19,
+   "kit": "field"
   },
   {
    "id": "ruin_wall_b",
@@ -304,16 +1713,18 @@
     2,
     2
    ],
-   "height": 1.75,
+   "height": 1.76,
    "castShadow": true,
    "sway": true,
    "notes": "Ruined wall corner (L shape). Ivy/grass cards use material 'leaves'.",
    "tris": 1230,
-   "bytes": 153196,
+   "bytes": 130264,
    "materials": [
     "stone_ruin",
     "leaves"
-   ]
+   ],
+   "leafArea": 4.86,
+   "kit": "field"
   },
   {
    "id": "ruin_wall_c",
@@ -327,11 +1738,42 @@
    "sway": true,
    "notes": "Ruined archway, half the arch collapsed. Ivy/grass cards use material 'leaves'.",
    "tris": 1284,
-   "bytes": 157748,
+   "bytes": 134152,
    "materials": [
     "stone_ruin",
     "leaves"
-   ]
+   ],
+   "leafArea": 5.47,
+   "kit": "field"
+  },
+  {
+   "id": "signpost",
+   "file": "signpost.glb",
+   "map": "any",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.12,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Wooden signpost with three arrow boards on a stone cairn; flat cap keeps the top clear for a quest marker (marker anchor).",
+   "tris": 534,
+   "bytes": 71940,
+   "materials": [
+    "stone",
+    "timber",
+    "iron",
+    "planks",
+    "painted"
+   ],
+   "marker": [
+    0.0,
+    2.45,
+    0.0
+   ],
+   "kit": "town"
   },
   {
    "id": "throne_basalt_rock",
@@ -345,10 +1787,11 @@
    "sway": false,
    "notes": "Cracked hexagonal basalt cluster with glowing cracks (emissive_basalt).",
    "tris": 128,
-   "bytes": 52576,
+   "bytes": 36804,
    "materials": [
     "emissive_basalt"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "throne_obsidian_pillar",
@@ -362,11 +1805,12 @@
    "sway": false,
    "notes": "Obsidian crystal pillar with ember veins (emissive_obsidian).",
    "tris": 136,
-   "bytes": 86976,
+   "bytes": 60036,
    "materials": [
     "basalt",
     "emissive_obsidian"
-   ]
+   ],
+   "kit": "dungeon"
   },
   {
    "id": "town_barrel",
@@ -380,11 +1824,42 @@
    "sway": false,
    "notes": "Oak barrel with iron hoops.",
    "tris": 236,
-   "bytes": 32056,
+   "bytes": 25656,
    "materials": [
     "planks",
     "iron"
-   ]
+   ],
+   "kit": "town"
+  },
+  {
+   "id": "town_bounty_board",
+   "file": "town_bounty_board.glb",
+   "map": "any",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 2.76,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Bounty board: roofed timber notice board with pinned papers (wanted poster, notes, map scrap). Quest marker anchor above the roof ridge.",
+   "tris": 844,
+   "bytes": 126800,
+   "materials": [
+    "stone",
+    "timber",
+    "planks",
+    "roof",
+    "paper",
+    "painted"
+   ],
+   "marker": [
+    0.0,
+    3.0,
+    0.0
+   ],
+   "kit": "town"
   },
   {
    "id": "town_crates",
@@ -398,12 +1873,13 @@
    "sway": false,
    "notes": "Stack of three crates and a sack.",
    "tris": 620,
-   "bytes": 93496,
+   "bytes": 76872,
    "materials": [
     "planks",
     "timber",
     "planks_painted"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_fence",
@@ -417,10 +1893,11 @@
    "sway": false,
    "notes": "Fence segment, 1 tile along X; posts at x=+-0.5 so segments chain.",
    "tris": 48,
-   "bytes": 20060,
+   "bytes": 15660,
    "materials": [
     "planks"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_house_big",
@@ -434,7 +1911,7 @@
    "sway": false,
    "notes": "Two-storey timber-framed house, jettied upper floor, red tiled gable roof (ridge along X), chimney. Door side faces glTF +Z (toward the default camera).",
    "tris": 4128,
-   "bytes": 371336,
+   "bytes": 307244,
    "materials": [
     "stone",
     "plaster",
@@ -445,7 +1922,8 @@
     "planks_painted",
     "painted",
     "roof"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_house_small",
@@ -459,7 +1937,7 @@
    "sway": false,
    "notes": "One-storey timber-framed cottage, red tiled roof.",
    "tris": 1562,
-   "bytes": 201708,
+   "bytes": 165620,
    "materials": [
     "stone",
     "plaster",
@@ -470,7 +1948,8 @@
     "planks_painted",
     "painted",
     "roof"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_lamp_post",
@@ -484,7 +1963,7 @@
    "sway": false,
    "notes": "Iron lamp post, hanging lantern with emissive_lamp glass (light source at x=0.46, y=1.9 in glTF coords).",
    "tris": 358,
-   "bytes": 45468,
+   "bytes": 38468,
    "materials": [
     "stone",
     "iron",
@@ -494,7 +1973,8 @@
     0.46,
     1.9,
     0.0
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_market_stall",
@@ -508,14 +1988,15 @@
    "sway": true,
    "notes": "Market stall with striped awning (cloth_awning sways lightly via _SWAY), baskets of produce.",
    "tris": 1090,
-   "bytes": 104396,
+   "bytes": 85232,
    "materials": [
     "timber",
     "planks",
     "cloth_awning",
     "painted",
     "iron"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "town_well",
@@ -529,7 +2010,7 @@
    "sway": false,
    "notes": "Stone well with windlass, bucket and tiled roof.",
    "tris": 366,
-   "bytes": 102332,
+   "bytes": 82724,
    "materials": [
     "stone",
     "water",
@@ -538,7 +2019,8 @@
     "planks_painted",
     "planks",
     "roof"
-   ]
+   ],
+   "kit": "town"
   },
   {
    "id": "tree_autumn_a",
@@ -552,11 +2034,35 @@
    "sway": true,
    "notes": "Autumn broadleaf, orange/red (fields).",
    "tris": 648,
-   "bytes": 83192,
+   "bytes": 72804,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 148.11,
+   "lod1": "tree_autumn_a_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_autumn_a_lod1",
+   "file": "tree_autumn_a_lod1.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.87,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Autumn broadleaf, orange/red (fields). LOD1.",
+   "tris": 362,
+   "bytes": 54412,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 63.82,
+   "lodOf": "tree_autumn_a",
+   "kit": "trees"
   },
   {
    "id": "tree_autumn_b",
@@ -570,11 +2076,35 @@
    "sway": true,
    "notes": "Slender autumn tree (fields).",
    "tris": 614,
-   "bytes": 79996,
+   "bytes": 69880,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 100.95,
+   "lod1": "tree_autumn_b_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_autumn_b_lod1",
+   "file": "tree_autumn_b_lod1.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.29,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Slender autumn tree (fields). LOD1.",
+   "tris": 360,
+   "bytes": 54244,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 49.65,
+   "lodOf": "tree_autumn_b",
+   "kit": "trees"
   },
   {
    "id": "tree_dead_a",
@@ -588,11 +2118,33 @@
    "sway": false,
    "notes": "Dead ash tree, grey charred bark, ember tips (emissive_ember).",
    "tris": 1357,
-   "bytes": 87624,
+   "bytes": 73380,
    "materials": [
     "bark_ash",
     "emissive_ember"
-   ]
+   ],
+   "lod1": "tree_dead_a_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_dead_a_lod1",
+   "file": "tree_dead_a_lod1.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.59,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dead ash tree, grey charred bark, ember tips (emissive_ember). LOD1.",
+   "tris": 1174,
+   "bytes": 67644,
+   "materials": [
+    "bark_ash",
+    "emissive_ember"
+   ],
+   "lodOf": "tree_dead_a",
+   "kit": "trees"
   },
   {
    "id": "tree_dead_b",
@@ -606,11 +2158,33 @@
    "sway": false,
    "notes": "Small dead ash snag, ember tips.",
    "tris": 515,
-   "bytes": 45684,
+   "bytes": 38148,
    "materials": [
     "bark_ash",
     "emissive_ember"
-   ]
+   ],
+   "lod1": "tree_dead_b_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_dead_b_lod1",
+   "file": "tree_dead_b_lod1.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 2.23,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Small dead ash snag, ember tips. LOD1.",
+   "tris": 416,
+   "bytes": 35076,
+   "materials": [
+    "bark_ash",
+    "emissive_ember"
+   ],
+   "lodOf": "tree_dead_b",
+   "kit": "trees"
   },
   {
    "id": "tree_green_a",
@@ -624,11 +2198,35 @@
    "sway": true,
    "notes": "Round full broadleaf (town/fields).",
    "tris": 780,
-   "bytes": 93208,
+   "bytes": 81712,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 238.19,
+   "lod1": "tree_green_a_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_green_a_lod1",
+   "file": "tree_green_a_lod1.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.48,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Round full broadleaf (town/fields). LOD1.",
+   "tris": 428,
+   "bytes": 58152,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 112.43,
+   "lodOf": "tree_green_a",
+   "kit": "trees"
   },
   {
    "id": "tree_green_b",
@@ -642,11 +2240,35 @@
    "sway": true,
    "notes": "Tall oval broadleaf (town/fields).",
    "tris": 654,
-   "bytes": 81936,
+   "bytes": 71500,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 150.78,
+   "lod1": "tree_green_b_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_green_b_lod1",
+   "file": "tree_green_b_lod1.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.49,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Tall oval broadleaf (town/fields). LOD1.",
+   "tris": 364,
+   "bytes": 52760,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 69.49,
+   "lodOf": "tree_green_b",
+   "kit": "trees"
   },
   {
    "id": "tree_green_c",
@@ -660,11 +2282,35 @@
    "sway": true,
    "notes": "Low spreading broadleaf (town/fields).",
    "tris": 714,
-   "bytes": 87004,
+   "bytes": 76032,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 123.6,
+   "lod1": "tree_green_c_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_green_c_lod1",
+   "file": "tree_green_c_lod1.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.21,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Low spreading broadleaf (town/fields). LOD1.",
+   "tris": 408,
+   "bytes": 56436,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 61.0,
+   "lodOf": "tree_green_c",
+   "kit": "trees"
   },
   {
    "id": "tree_oak_dark",
@@ -678,11 +2324,35 @@
    "sway": true,
    "notes": "Dark gnarled oak (Withered Wood).",
    "tris": 808,
-   "bytes": 93604,
+   "bytes": 82320,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 313.89,
+   "lod1": "tree_oak_dark_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_oak_dark_lod1",
+   "file": "tree_oak_dark_lod1.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 5.13,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Dark gnarled oak (Withered Wood). LOD1.",
+   "tris": 446,
+   "bytes": 57904,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 155.47,
+   "lodOf": "tree_oak_dark",
+   "kit": "trees"
   },
   {
    "id": "tree_pine_a",
@@ -696,11 +2366,35 @@
    "sway": true,
    "notes": "Dark fir, 5 tiers (Withered Wood).",
    "tris": 401,
-   "bytes": 52224,
+   "bytes": 45164,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 43.09,
+   "lod1": "tree_pine_a_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_pine_a_lod1",
+   "file": "tree_pine_a_lod1.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 5.26,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Dark fir, 5 tiers (Withered Wood). LOD1.",
+   "tris": 211,
+   "bytes": 37128,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 25.32,
+   "lodOf": "tree_pine_a",
+   "kit": "trees"
   },
   {
    "id": "tree_pine_b",
@@ -714,11 +2408,35 @@
    "sway": true,
    "notes": "Smaller dark fir (Withered Wood).",
    "tris": 351,
-   "bytes": 49808,
+   "bytes": 42940,
    "materials": [
     "bark",
     "leaves"
-   ]
+   ],
+   "leafArea": 25.18,
+   "lod1": "tree_pine_b_lod1",
+   "kit": "trees"
+  },
+  {
+   "id": "tree_pine_b_lod1",
+   "file": "tree_pine_b_lod1.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.46,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Smaller dark fir (Withered Wood). LOD1.",
+   "tris": 187,
+   "bytes": 36144,
+   "materials": [
+    "bark",
+    "leaves"
+   ],
+   "leafArea": 16.39,
+   "lodOf": "tree_pine_b",
+   "kit": "trees"
   },
   {
    "id": "waystone",
@@ -732,7 +2450,7 @@
    "sway": false,
    "notes": "Runed obelisk on a round stone plinth.  emissive_rune = glyphs, channel ring and bar (bloom); flame sprite point at y=3.2.",
    "tris": 1018,
-   "bytes": 107736,
+   "bytes": 90860,
    "materials": [
     "stone",
     "emissive_rune",
@@ -742,7 +2460,8 @@
     0,
     3.2,
     0
-   ]
+   ],
+   "kit": "town"
   }
  ]
 }

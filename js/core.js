@@ -46,7 +46,7 @@ let uidc = 1;
 function genMap(id) {
   if (mapCache[id]) return mapCache[id];
   const d = MAPDEFS[id], w = d.w, h = d.h, rng = mulberry32(d.seed);
-  const m = { id, d, w, h, t: new Uint8Array(w * h), deco: new Uint8Array(w * h), var: new Uint8Array(w * h), warps: [], npcs: [], objs: [], lights: [], braziers: [], entry: null, bossPos: null, gcol: [] };
+  const m = { id, d, w, h, t: new Uint8Array(w * h), deco: new Uint8Array(w * h), surf: new Uint8Array(w * h), var: new Uint8Array(w * h), warps: [], npcs: [], objs: [], lights: [], braziers: [], decor: [], entry: null, bossPos: null, gcol: [] };
   const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < w && y < h) m.t[y * w + x] = v; };
   const clearC = (cx, cy, r) => { for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r + 0.5 && x > 0 && y > 0 && x < w - 1 && y < h - 1) m.t[y * w + x] = 0; };
   const clearR = (x0, y0, x1, y1) => { for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) if (x > 0 && y > 0 && x < w - 1 && y < h - 1) m.t[y * w + x] = 0; };
@@ -67,9 +67,10 @@ function genMap(id) {
     }
   } else if (d.gen === 'dungeon') m.t.fill(T.WALL);
   else if (d.gen === 'arena') m.t.fill(T.LAVA);
+  else if (d.gen === 'sky') m.t.fill(T.VOID);
   // 2. The map's own layout: entry, waystone, warps, rooms, props
   if (d.layout) d.layout(m, { set, clearC, clearR, carve, rng, T, w, h, d });
-  if (d.gen === 'field' && m.way) set(Math.floor(m.way.x), Math.floor(m.way.y), T.WAY);
+  if (m.way) set(Math.floor(m.way.x), Math.floor(m.way.y), T.WAY);
   // 3. NPCs and bounty boards declared in data
   for (const k in NPCS) { const n = NPCS[k]; if (n.map === id) m.npcs.push({ id: k, name: n.name, title: n.title, x: n.x, y: n.y, dir: n.dir || 1, look: n.look }); }
   if (m.way) m.objs.push({ kind: 'way', x: m.way.x, y: m.way.y, name: 'Waystone' });
@@ -79,28 +80,52 @@ function genMap(id) {
   // Connectivity: seal pockets the player can never reach.
   const seen = new Uint8Array(w * h), q = [m.entry.y * w + m.entry.x]; seen[q[0]] = 1;
   while (q.length) { const c = q.pop(), cx = c % w, cy = (c / w) | 0; for (let k = 0; k < 4; k++) { const nx = cx + DX[k], ny = cy + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const ni = ny * w + nx; if (!seen[ni] && m.t[ni] === 0) { seen[ni] = 1; q.push(ni); } } }
-  const filler = d.gen === 'dungeon' ? T.WALL : d.gen === 'arena' ? T.LAVA : T.TREE;
+  const filler = d.gen === 'dungeon' ? T.WALL : d.gen === 'arena' ? T.LAVA : d.gen === 'sky' ? T.VOID : T.TREE;
   for (let i = 0; i < w * h; i++) if (m.t[i] === 0 && !seen[i]) m.t[i] = filler;
   m.reach = seen;
+  // Scatter decor that must stand on open ground loses its place when its tile was sealed.
+  m.decor = m.decor.filter(e => e.on !== 'open' || m.t[clamp(Math.floor(e.y), 0, h - 1) * w + clamp(Math.floor(e.x), 0, w - 1)] === 0);
   // Only walls that touch open ground get drawn; the rest stay black.
   m.vis = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (m.t[y * w + x] !== T.WALL) continue; for (let k = 0; k < 8; k++) { const nx = x + DX[k], ny = y + DY[k]; if (nx >= 0 && ny >= 0 && nx < w && ny < h && m.t[ny * w + nx] !== T.WALL) { m.vis[y * w + x] = 1; break; } } }
 
-  // Terrain heights at tile corners (gentle hills in the wild, a raised platform over lava in the arena)
+  // Terrain heights at tile corners: gentle hills in the wild, a raised platform over lava in the arena,
+  // the ground dipping under water and lava, and a deep drop under the Bifrost's open sky (T.VOID).
   const W1 = w + 1; m.hgt = new Float32Array(W1 * (h + 1));
+  const tAt = (x, y) => m.t[clamp(y, 0, h - 1) * w + clamp(x, 0, w - 1)];
   const lavaAt = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? true : m.t[y * w + x] === T.LAVA;
+  const sinks = t => t === T.WATER || t === T.VOID || t === T.LAVA;
+  // Field maps flatten toward their shores: distance in tiles to the nearest water (capped).
+  let dW = null;
+  if (d.gen === 'field' && m.t.some(t => t === T.WATER)) {
+    dW = new Float32Array(w * h).fill(9); const q = [];
+    for (let i = 0; i < w * h; i++) if (m.t[i] === T.WATER) { dW[i] = 0; q.push(i); }
+    for (let qi = 0; qi < q.length; qi++) { const i = q[qi], x = i % w, y = (i / w) | 0; if (dW[i] >= 8) continue; for (let k = 0; k < 8; k++) { const nx = x + DX[k], ny = y + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const j = ny * w + nx; if (dW[j] > dW[i] + 1) { dW[j] = dW[i] + 1; q.push(j); } } }
+  }
   for (let vz = 0; vz <= h; vz++) for (let vx = 0; vx <= w; vx++) {
     let hv = 0;
     if (d.gen === 'field') hv = (vnoise(vx / 9, vz / 9, d.seed + 11) - 0.5) * 1.8 + (vnoise(vx / 3.5, vz / 3.5, d.seed + 12) - 0.5) * 0.35;
     else if (d.gen === 'town') hv = (vnoise(vx / 6, vz / 6, d.seed) - 0.5) * 0.18;
-    else if (d.gen === 'arena') { const c = lavaAt(vx - 1, vz - 1) + lavaAt(vx, vz - 1) + lavaAt(vx - 1, vz) + lavaAt(vx, vz); hv = c === 4 ? -1.0 : c > 0 ? -0.15 : 0.15; }
+    else if (d.gen === 'sky') hv = (vnoise(vx / 5, vz / 5, d.seed + 11) - 0.5) * 0.3;
+    if (d.gen === 'arena') { const c = lavaAt(vx - 1, vz - 1) + lavaAt(vx, vz - 1) + lavaAt(vx - 1, vz) + lavaAt(vx, vz); hv = c === 4 ? -1.0 : c > 0 ? -0.15 : 0.15; }
+    else {
+      const q4 = [tAt(vx - 1, vz - 1), tAt(vx, vz - 1), tAt(vx - 1, vz), tAt(vx, vz)];
+      const nV = q4.filter(t => t === T.VOID).length, nW = q4.filter(t => t === T.WATER).length, nL = q4.filter(t => t === T.LAVA).length;
+      if (nV === 4) hv = -4.2 - vnoise(vx / 4, vz / 4, d.seed + 13) * 1.6;
+      else if (nW === 4) hv = -1.15 - vnoise(vx / 4, vz / 4, d.seed + 13) * 0.2;
+      else if (nL === 4) hv = d.gen === 'dungeon' ? -0.05 : -1.0;   // dungeon lava channels are flush kerb tiles (nidavellir_lava_edge)
+      else if (q4.some(sinks)) hv = Math.min(hv, 0) * 0.3 - 0.06;
+      else if (dW) { let dm = 9; for (const [tx, ty] of [[vx - 1, vz - 1], [vx, vz - 1], [vx - 1, vz], [vx, vz]]) dm = Math.min(dm, dW[clamp(ty, 0, h - 1) * w + clamp(tx, 0, w - 1)]); hv *= clamp((dm - 0.5) / 5, 0, 1); }
+    }
     m.hgt[vz * W1 + vx] = hv;
   }
   // Minimap bitmap
+  const MINI_T = { [T.LAVA]: [210, 80, 30], [T.WAY]: [255, 150, 60], [T.TREE]: [40, 80, 40], [T.WATER]: [30, 54, 88], [T.ICE]: [168, 206, 232], [T.VOID]: [22, 20, 36], [T.CRYSTAL]: [170, 110, 222], [T.PROP]: [116, 94, 72], [T.GRAVE]: [96, 92, 104] };
+  const MINI_S = { 5: [214, 200, 170], 6: [214, 200, 170], [SURF.ICE]: [204, 230, 248], [SURF.MUD]: [96, 84, 54], [SURF.BRIDGE]: [176, 140, 92], [SURF.RAIL]: [132, 120, 108], [SURF.SAND]: [88, 84, 92], [SURF.GOLD]: [232, 192, 84] };
   const mc = document.createElement('canvas'); mc.width = w; mc.height = h; const g = mc.getContext('2d'); const img = g.createImageData(w, h);
   for (let i = 0; i < w * h; i++) {
-    const t = m.t[i]; const L = d.look, base = L.g2; let c = t === 0 ? [base[0] + 40, base[1] + 40, base[2] + 40].map(v => Math.min(255, v)) : t === T.LAVA ? [210, 80, 30] : t === T.WAY ? [255, 150, 60] : t === T.TREE ? [40, 80, 40] : [60, 58, 64];
-    if (t === 0 && (m.deco[i] === 5 || m.deco[i] === 6)) c = [214, 200, 170];
+    const t = m.t[i]; const L = d.look, base = L.g2; let c = t === 0 ? [base[0] + 40, base[1] + 40, base[2] + 40].map(v => Math.min(255, v)) : MINI_T[t] || [60, 58, 64];
+    if (t === 0 && MINI_S[m.surf[i] || m.deco[i]]) c = MINI_S[m.surf[i] || m.deco[i]];
     img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
   }
   g.putImageData(img, 0, 0); m.mini = mc;
@@ -109,6 +134,8 @@ function genMap(id) {
 }
 function tileAt(x, y) { x = Math.floor(x); y = Math.floor(y); if (!map || x < 0 || y < 0 || x >= map.w || y >= map.h) return T.WALL; return map.t[y * map.w + x]; }
 const blocked = (x, y) => tileAt(x, y) !== 0;
+// Movement multiplier of the walkable surface under an entity (SURF_SPEED in js/data/maps.js: mud, ice, snow).
+function surfMul(e) { if (!map) return 1; const x = Math.floor(e.x), y = Math.floor(e.y); if (x < 0 || y < 0 || x >= map.w || y >= map.h) return 1; return SURF_SPEED[map.surf[y * map.w + x]] || 1; }
 function nearestOpen(x, y, maxR = 6) {
   x = Math.floor(x); y = Math.floor(y);
   for (let r = 0; r <= maxR; r++) {
@@ -175,7 +202,7 @@ function newPlayer(name, hair, gender, hairStyle) {
     hp: 1, sp: 1, zeny: 150, inv: [], equip: { weapon: null, shield: null, head: null, body: null, boots: null, acc: null },
     hot: [{ k: 'skill', id: 'first_aid' }, null, null, null, null, null, { k: 'item', id: 'fly_wing' }, { k: 'item', id: 'butterfly_wing' }, { k: 'item', id: 'red_potion' }],
     map: 'emberhold', x: 18.5, y: 22.5, lastWay: { map: 'emberhold', x: 18.5, y: 20.5 }, kindled: { emberhold: true },
-    flags: { shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {} }, lostZeny: null, uid: 1, playTime: 0, quests: questNewState(),
+    flags: { shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {}, seen: { emberhold: true } }, lostZeny: null, uid: 1, playTime: 0, quests: questNewState(),
   };
 }
 function resetRuntime() {
@@ -596,7 +623,10 @@ function jobChange(cls) {
   const gifts = [].concat(C.starter || [], C.gifts || []), got = [];
   for (const id of gifts) {
     const it = makeItem(id); if (!addItem(it)) { dropItem(it, P); continue; } got.push(ITEMS[id].name);
-    if (canEquip(it) === null) equip(it);
+    // Equip the gift unless you already hold something better that the new class can still use.
+    const t = ITEMS[id], cur = P.equip[t.slot], ct = cur && ITEMS[cur.id];
+    const power = (tt, r) => tt.slot === 'weapon' ? tt.atk + (tt.matk || 0) + (r || 0) * refineAtk(tt) : (tt.def || 0) + (tt.mdef || 0) + (r || 0);
+    if (canEquip(it) === null && (!cur || !jobOk(ct, cls) || power(t, 0) >= power(ct, cur.refine))) equip(it);
   }
   calcStats(); P.hp = S.maxhp; P.sp = S.maxsp;
   pillar(P, '#f0d070', true); burst(P.x, P.y, 40, '#ffe8a0', 40, 3); banner(C.name, C.tier >= 2 ? 'A second path' : 'A path chosen', 'band gold'); Sfx.victory();
@@ -621,9 +651,12 @@ function bossDefeated(m) {
   const u = (usable.length ? pick(usable) : pick(any)); if (u) dropItem(makeItem(u.id), m);
   dropItem(rollEquip(m.d.lvl + 4), m); dropItem(makeItem('ygg_ember'), m);
   if (m.d.shard) { const sh = makeItem(m.d.shard); addItem(sh, true); f.shards[m.d.shard] = true; log(`You take the ${ITEMS[m.d.shard].name}.`, 'unique'); }
-  f.lore[m.type] = true;
-  if (m.type === 'ashen_king') { f.kingSlain = true; banner('MVP', 'The Ashen King is dead · The Heart of Yggdrasil stirs', 'mvp'); log('Behind the throne, something that was dead begins, very faintly, to glow.', 'boss'); }
-  else banner('MVP', 'Shardbearer felled · ' + ITEMS[m.d.shard].name, 'mvp');
+  f.lore[m.type] = true; if (m.d.lore) f.lore[m.d.lore] = true;
+  zones = zones.filter(z => !z.hostile);
+  if (m.type === 'ashen_king') { f.kingSlain = true; banner('MVP', 'The Ashen King is dead · The Heart of Yggdrasil stirs', 'mvp'); log('Behind the throne, something that was dead begins, very faintly, to glow.', 'boss'); log('Past the Heart, the broken Bifrost flickers awake.', 'boss'); }
+  else if (m.d.shard) banner('MVP', 'Shardbearer felled · ' + ITEMS[m.d.shard].name, 'mvp');
+  else banner('MVP', `${m.d.name} felled`, 'mvp');
+  if (m.d.outro) log(m.d.outro, 'boss');
   Sfx.victory(); UI.dirty = true; saveGame();
 }
 function doAbility(m, a) {
@@ -633,10 +666,53 @@ function doAbility(m, a) {
     case 'nova': say('!!'); telegraph(m.x, m.y, a.r, a.delay, () => { if (!m.dead) { ring(m.x, m.y, a.r, m.d.glow || '#ff8a3a'); burst(m.x, m.y, 10, m.d.glow || '#ff8a3a', 40, 5); Sfx.slam(); } }, m, a); break;
     case 'rain': for (let i = 0; i < a.n; i++) { const x = P.x + (i ? rand(-2.6, 2.6) : 0), y = P.y + (i ? rand(-2.6, 2.6) : 0); telegraph(x, y, a.r, a.delay + i * 0.12, () => { burst(x, y, 30, m.d.glow || '#ff7a2a', 14, 3); fxs.push({ k: 'meteor', x, y, t: 0, dur: 0.35, col: m.d.glow || '#ff7a2a' }); Sfx.fire(); }, m, a); } break;
     case 'leap': { const t = nearestOpen(P.x, P.y, 2); if (!t) break; const tx = t.x + 0.5, ty = t.y + 0.5; say('!'); m.leap = { sx: m.x, sy: m.y, tx, ty, t: 0, dur: a.delay }; telegraph(tx, ty, a.r, a.delay, () => { ring(tx, ty, a.r, '#bfe0ff'); burst(tx, ty, 6, '#cfe0ff', 20, 3); Sfx.slam(); }, m, a); break; }
-    case 'summon': { const n = mobs.filter(s => s.summoned && !s.dead).length; if (n >= a.max) break; say('Rise!'); for (let i = 0; i < a.n; i++) { const s = nearestOpen(m.x + rand(-3, 3), m.y + rand(-3, 3), 3); if (s) { const c = makeMob(a.mob, s.x + 0.5, s.y + 0.5, { summoned: true }); c.state = 'chase'; mobs.push(c); burst(c.x, c.y, 10, '#6a5a5a', 12, 2); } } break; }
+    case 'summon': { const n = mobs.filter(s => s.summoned && !s.dead).length; if (n >= a.max) break; say(a.shout || 'Rise!'); for (let i = 0; i < a.n; i++) { const s = nearestOpen(m.x + rand(-3, 3), m.y + rand(-3, 3), 3); if (s) { const c = makeMob(a.mob, s.x + 0.5, s.y + 0.5, { summoned: true }); c.state = 'chase'; mobs.push(c); burst(c.x, c.y, 10, '#6a5a5a', 12, 2); } } break; }
+    // Round 3 kinds. Cones and lines are built from overlapping circle telegraphs sharing one group (one hit per
+    // cast); each telegraph also carries `shape` so a renderer can draw the exact cone / lines instead.
+    case 'breath': { // a cone toward the player (dragon fire, dark flame): step out of it sideways
+      say(a.shout || '!!'); face(m, P); m.atkCD = Math.max(m.atkCD, a.delay + 0.3);
+      const ang = Math.atan2(P.y - m.y, P.x - m.x), half = a.arc || 0.45, len = a.len || 6, rays = a.rays || 3, col = a.col || m.d.glow || '#ff7a2a';
+      const grp = { hit: false, snd: false, shape: { kind: 'cone', x: m.x, y: m.y, ang, half, len } };
+      for (let i = 0; i < rays; i++) {
+        const aa = ang + (rays > 1 ? -half + 2 * half * i / (rays - 1) : 0);
+        for (let s = 1.4; s <= len + 0.01; s += 1.25) {
+          const x = m.x + Math.cos(aa) * s, y = m.y + Math.sin(aa) * s; if (tileAt(x, y) === T.WALL) break;
+          telegraph(x, y, 0.55 + s * half * 0.62, a.delay + s * 0.05, () => { burst(x, y, 20, col, 8, 2.6); fxs.push({ k: 'meteor', x, y, t: 0, dur: 0.3, col }); if (!grp.snd) { grp.snd = true; Sfx.fire(); } }, m, a, grp);
+        }
+      }
+      break;
+    }
+    case 'wave': { // lines rolling outward from the boss (the tide, chain lashes): side-step between them
+      say(a.shout || '!'); face(m, P);
+      const ang = Math.atan2(P.y - m.y, P.x - m.x), n = a.n || 1, spread = a.spread || 0.4, len = a.len || 9, r = a.r || 0.95, spd = a.speed || 7, col = a.col || m.d.glow || '#9fd8ff';
+      const grp = { hit: false, snd: false, shape: { kind: 'lines', x: m.x, y: m.y, ang, n, spread, len, w: r * 2 } };
+      for (let k = 0; k < n; k++) {
+        const aa = ang + (n > 1 ? (k - (n - 1) / 2) * spread : 0);
+        for (let s = 1.2; s <= len; s += 1.1) {
+          const x = m.x + Math.cos(aa) * s, y = m.y + Math.sin(aa) * s; if (tileAt(x, y) === T.WALL) break;
+          telegraph(x, y, r, a.delay + s / spd, () => { ring(x, y, r, col); burst(x, y, 6, col, 6, 2); if (!grp.snd) { grp.snd = true; Sfx.slam(); } }, m, a, grp);
+        }
+      }
+      break;
+    }
+    case 'curse': { // hex circles on and around the player; each leaves a zone that burns and slows while you stand in it
+      say(a.shout || 'Hex!');
+      const col = a.col || '#a066e0';
+      for (let i = 0; i < (a.n || 2); i++) {
+        const x = P.x + (i ? rand(-3, 3) : 0), y = P.y + (i ? rand(-3, 3) : 0); if (i && blocked(x, y)) continue;
+        telegraph(x, y, a.r, a.delay + i * 0.25, () => { if (m.dead) return; ring(x, y, a.r, col); burst(x, y, 10, col, 14, 2); Sfx.cast(); hexZone(m, a, x, y, col); }, m, a, { hit: false, shape: { kind: 'circle' } });
+      }
+      break;
+    }
   }
 }
-function telegraph(x, y, r, dur, boom, m, a) { teles.push({ x, y, r, t: 0, dur, boom, m, a }); }
+// A lingering hostile ground zone (curse): ticks while the player stands in it. Drawn by drawSkillOverlay (js/ui.js).
+function hexZone(m, a, x, y, col) {
+  zoneAdd({ hostile: true, x, y, r: a.r, dur: a.dur || 6, every: 0.5, first: 0.5, col, rune: a.rune || 'ᚺ', src: m,
+    tick(z) { if (P.dead || m.dead || Math.hypot(P.x - z.x, P.y - z.y) > z.r) return; mobStrike(m, a.tick || 0.3, { sure: true, magic: true }); hexed(a.slow || 30); } });
+}
+function hexed(pct) { if (P.buffs.hexed) { P.buffs.hexed.t = Math.max(P.buffs.hexed.t, 2); return; } addBuff('hexed', 'Hexed', 'hex', 2, { move: -pct }); log('A hex clings to you. You move slower.', 'warn'); }
+function telegraph(x, y, r, dur, boom, m, a, grp) { const t = { x, y, r, t: 0, dur, boom, m, a }; if (grp) { t.grp = grp; t.shape = grp.shape; } teles.push(t); return t; }
 
 /* =========================================================
    Effects
@@ -816,7 +892,7 @@ function updatePlayer(dt) {
       const tp = pd.target || pd.pos; const r = skillRange(sk, pd.lv);
       if (!tp || sk.tgt === 'dir' || dist(P, tp) <= r + 0.3) { P.pending = null; beginCast(pd); return; }
       P.repath = (P.repath || 0) - dt; if (!P.path || P.repath <= 0) { P.repath = 0.35; goNear(P, tp.x, tp.y); if (!P.path) P.pending = null; }
-      followPath(P, dt, S.move); return;
+      followPath(P, dt, S.move * surfMul(P)); return;
     }
   }
 
@@ -834,7 +910,7 @@ function updatePlayer(dt) {
         P.atkCD = Math.min(P.atkCD, 0.15);
         P.repath = (P.repath || 0) - dt;
         if (!P.path || P.repath <= 0) { P.repath = 0.3; goNear(P, t.x, t.y); if (!P.path) P.target = null; }
-        followPath(P, dt, S.move);
+        followPath(P, dt, S.move * surfMul(P));
       }
       return;
     }
@@ -856,7 +932,7 @@ function updatePlayer(dt) {
   if (mouse.hold && mouse.down) { mouse.holdT -= dt; if (mouse.holdT <= 0) { mouse.holdT = 0.2; const w = s2w(mouse.x, mouse.y); moveTo(w[0], w[1]); } }
 
   const was = P.moving;
-  followPath(P, dt, S.move);
+  followPath(P, dt, S.move * surfMul(P));
   if (was && !P.moving) P.walk = 0;
   postMove();
 }
@@ -866,14 +942,25 @@ function postMove() {
   // Warps
   for (const wp of map.warps) {
     if (Math.floor(P.x) === wp.x && Math.floor(P.y) === wp.y) {
-      if (wp.lock === 'gate' && !P.flags.gate) {
-        if (!P.warpMsgT || time - P.warpMsgT > 3) { P.warpMsgT = time; log('The Cinder Gate is sealed. Bring the three Rune-Shards to Sigrun.', 'warn'); }
-        const back = findPath(P.x, P.y, wp.x, wp.y + 2); P.path = back; P.y += 0.05;
+      const why = warpLocked(wp);
+      if (why) {
+        if (!P.warpMsgT || time - P.warpMsgT > 3) { P.warpMsgT = time; log(why, 'warn'); }
+        // step back off the warp, away from its centre
+        const dx = P.x - wp.x - 0.5, dy = P.y - wp.y - 0.5, d = Math.hypot(dx, dy) || 1;
+        let bx = wp.x + 0.5 + dx / d * 1.1, by = wp.y + 0.5 + dy / d * 1.1;
+        if (blocked(bx, by)) { const o = nearestOpen(wp.x + 0.5, wp.y + 1.5, 2); if (o && !(o.x === wp.x && o.y === wp.y)) { bx = o.x + 0.5; by = o.y + 0.5; } }
+        if (!blocked(bx, by)) { P.x = bx; P.y = by; } P.path = null; P.dash = null;
       } else { Sfx.warp(); gotoMap(wp.to, wp.tx, wp.ty); }
       break;
     }
   }
 }
+/* Warp locks: wp.lock names an entry here. The renderer may call warpLocked(wp) to colour a sealed portal. */
+const WARP_LOCKS = {
+  gate: { open: () => !!P.flags.gate, msg: 'The Cinder Gate is sealed. Bring the three Rune-Shards to Sigrun.' },
+  king: { open: () => !!P.flags.kingSlain, msg: 'The broken Bifrost will not bear your weight while the Ashen King still burns on his throne.' },
+};
+function warpLocked(wp) { const L = wp && wp.lock && WARP_LOCKS[wp.lock]; return L && !L.open() ? L.msg : null; }
 function updateMob(m, dt) {
   if (m.dead) { m.deathT += dt; return; }
   m.anim += dt; if (m.hitFlash > 0) m.hitFlash -= dt;
@@ -902,7 +989,8 @@ function updateMob(m, dt) {
       m.path = null; m.moving = false; face(m, P);
       if (m.atkCD <= 0) {
         m.atkCD = d.aspd * (m.slow > 0 ? 1 + 0.1 * (m.slowLv || 1) : 1); m.atkAnim = 0;
-        if (d.ranged) shot(m, P, 'arrow', () => { if (!m.dead) mobStrike(m); }, { spd: 13 });
+        if (d.ranged) shot(m, P, d.shot || 'arrow', () => { if (!m.dead) mobStrike(m, 1, d.magic ? { magic: true } : {}); }, { spd: d.shot && d.shot !== 'arrow' ? 11 : 13 });
+        else if (d.magic) after(0.32, () => { if (!m.dead && !P.dead && !(m.stun > 0) && dist(m, P) <= d.range + 0.9) mobStrike(m, 1, { magic: true }); });
         else after(0.32, () => { if (!m.dead && !P.dead && !(m.stun > 0) && dist(m, P) <= d.range + 0.9) mobStrike(m); });
       }
     } else {
@@ -915,8 +1003,8 @@ function updateMob(m, dt) {
       followPath(m, dt, spd); if (!spd) m.moving = false;
     }
     if (d.boss && d.abil) {
-      if (d.phase2 && !m.p2 && m.hp < m.maxhp * 0.5) { m.p2 = true; banner(d.name, 'The fire answers him directly now', 'band'); log(d.phase2, 'boss'); Sfx.boss(); }
-      for (const a of d.abil) { if (m.abil[a.id] === undefined) m.abil[a.id] = a.cd * 0.5; m.abil[a.id] -= dt * (m.p2 ? 1.5 : 1); if (m.abil[a.id] <= 0) { m.abil[a.id] = a.cd; doAbility(m, a); break; } }
+      if (d.phase2 && !m.p2 && m.hp < m.maxhp * 0.5) { m.p2 = true; banner(d.name, d.phase2Sub || 'The fire answers him directly now', 'band'); log(d.phase2, 'boss'); Sfx.boss(); }
+      for (const a of d.abil) { const k = a.key || a.id; if (m.abil[k] === undefined) m.abil[k] = a.cd * 0.5; m.abil[k] -= dt * (m.p2 ? 1.5 : 1); if (m.abil[k] <= 0) { m.abil[k] = a.cd; doAbility(m, a); break; } }
     }
   } else if (m.state === 'return') {
     if (!m.path) { const p = findPath(m.x, m.y, m.hx, m.hy, 3000); m.path = p ? smooth(m, p) : []; }
@@ -942,7 +1030,11 @@ function update(dt) {
     const t = teles[i]; t.t += dt;
     if (t.t >= t.dur) {
       teles.splice(i, 1); if (t.m.dead) continue; t.boom();
-      if (!P.dead && Math.hypot(P.x - t.x, P.y - t.y) <= t.r) { if (wardAt(t.x, t.y)) { floatText(P, 'Warded', 'info'); ring(t.x, t.y, t.r, '#9fe0c0'); } else mobStrike(t.m, t.a.mul, { sure: true, magic: true }); }
+      // Blasts of one cone / wave share a group: the player is hit at most once per group.
+      if (!P.dead && Math.hypot(P.x - t.x, P.y - t.y) <= t.r && !(t.grp && t.grp.hit)) {
+        if (t.grp) t.grp.hit = true;
+        if (wardAt(t.x, t.y)) { floatText(P, 'Warded', 'info'); ring(t.x, t.y, t.r, '#9fe0c0'); } else mobStrike(t.m, t.mul || t.a.mul, { sure: true, magic: true });
+      }
     }
   }
   for (let i = drops.length - 1; i >= 0; i--) { const d = drops[i]; d.t += dt; if (d.t > 180 && !d.lost && !(d.item && rarityOf(d.item) === 'unique') && !(d.item && ITEMS[d.item.id].type === 'key')) drops.splice(i, 1); }
@@ -983,8 +1075,11 @@ function gotoMap(id, x, y, quiet) {
   if (typeof prefetchSheets === 'function') prefetchSheets(); // lazy-load this map's sprite sheets
   if (P.lostZeny && P.lostZeny.map === id) drops.push({ kind: 'drop', zeny: P.lostZeny.zeny, lost: true, x: P.lostZeny.x, y: P.lostZeny.y, t: 0, id: uidc++ });
   $('bossbar').hidden = true; bossShown = null;
+  const firstVisit = !P.flags.seen[id]; P.flags.seen[id] = true;
   enterWorld();
   if (first || !quiet) banner(map.d.name, map.d.sub);
+  if (firstVisit && map.d.intro) log(map.d.intro, 'sys');
+  if (first && map.d.lv && P.lvl < map.d.lv[0] - 4) log(`The Ash is thick here. Its creatures are far stronger than you (Base Lv ${map.d.lv[0]}–${map.d.lv[1]}).`, 'warn');
   setScreenParts();
   if (id === 'throne' && !P.flags.kingIntro && !P.flags.kingSlain) { P.flags.kingIntro = true; after(1.2, () => say('The Ashen King', [MOBS.ashen_king.intro, '“You came for the Heart. It is behind me. So am I, in a sense. Come and take it.”'])); }
   UI.dirty = true; saveGame();
@@ -995,7 +1090,7 @@ function useObj(o) {
     openWin('way');
   } else if (o.kind === 'board') questBoard(o);
   else if (OBJ_TALK[o.kind]) OBJ_TALK[o.kind](o);
-  else if (o.kind === 'anvil') log('The anvil is still warm. Brokkr never lets it go cold.', 'sys');
+  else if (o.kind === 'anvil') log(o.text || 'The anvil is still warm. Brokkr never lets it go cold.', 'sys');
 }
 function rest() {
   P.hp = S.maxhp; P.sp = S.maxsp; P.lastWay = { map: map.id, x: map.way.x, y: map.way.y + 1.2 };

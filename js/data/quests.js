@@ -72,6 +72,11 @@ quest('main_7', { kind: 'main', auto: true, giver: null, turnIn: null, name: 'Th
 quest('main_8', { kind: 'main', auto: true, giver: null, turnIn: null, name: 'The Heart of Yggdrasil', area: 'Throne of Cinders', req: { quests: ['main_7'] },
   summary: 'Behind the throne, something that was dead is glowing.',
   obj: [{ type: 'cond', text: 'Decide the fate of the Tree at its Heart', check: () => !!P.flags.ending }] });
+quest('main_9', { kind: 'main', auto: true, giver: null, turnIn: null, name: 'The Broken Bridge', area: 'Throne of Cinders · Bifrost Ruins', req: { quests: ['main_7'] },
+  summary: 'With the King dead, the shattered Bifrost behind the Heart has woken. Something at the far end is howling.',
+  seq: true,
+  obj: [{ type: 'reach', map: 'bifrost', text: 'Cross the broken Bifrost, past the Heart of Yggdrasil' }, { type: 'talk', npc: 'heimdall', text: 'Find the watchman who still guards the bridge' }],
+  reward: { exp: 120000, jexp: 80000, items: [['honey_mead', 3]] } });
 
 /* ---------- Sigrun: bounties ---------- */
 quest('sigrun_porings', { giver: 'sigrun', name: 'Culling the Blight', area: 'Ashen Fields', req: { quests: ['main_1'] },
@@ -181,6 +186,123 @@ quest('vidar_letter', { giver: 'vidar', turnIn: 'vidar', name: 'An Old Man’s L
   seq: true,
   reward: { exp: 9000, jexp: 6000, items: [['earring', 1]], lore: 'tyr' } });
 
+/* ---------- Content round 3: the outer realms. One chain per map: arrival, local requests, the MVP hunt. ---------- */
+// Rimeshore (Base Lv 28-38): Ragna and Old Hrafn at the beach camp
+quest('rime_arrival', { giver: 'vidar', turnIn: 'ragna', name: 'The Frozen Shore', area: 'Rimeshore', req: { lvl: 28 },
+  summary: 'Follow the Withered Wood’s east road down to the frozen coast and find the living there.',
+  offer: ['<i>Vidar pokes the fire.</i> East of the Wood, the road runs down to the sea. The sea froze the night the Tree burned, with the longships still on it.', 'There are people there. Stubborn ones. Go and see whether they are still alive, and whether they need a sword more than we do.'],
+  progress: 'The Wood’s east road, down to the coast. Look for a fire on the ice.',
+  done: ['Vidar sent you? The one-eyed man who never stays for dinner? <i>Ragna almost smiles.</i> Then you are welcome at our fire. Here, you will need these on the ice.'],
+  obj: [{ type: 'reach', map: 'rimeshore', x: 8.5, y: 34.5, r: 6, place: 'the Rimeshore Waystone' }],
+  reward: { exp: 30000, jexp: 22000, zeny: 3000, items: [['white_potion', 3]] } });
+quest('ragna_wolves', { giver: 'ragna', name: 'Wolves on the Ice', area: 'Rimeshore', req: { lvl: 29, test: () => !!P.flags.talked.ragna },
+  summary: 'The snow wolves and rime porings are picking off Ragna’s fishers. Thin them out.',
+  offer: ['The snow wolves learned to wait by the fishing holes. When someone kneels to pull up a line, they come. The rime porings follow them and eat what is left.', 'Ten wolves and eight porings. Fight on the dunes, not the ice. The ice is theirs.'],
+  progress: 'Ten Snow Wolves, eight Rime Porings. The dunes west of the beach.',
+  done: ['The fishers went out today and came back. All of them. <i>She hands you a sealed flask.</i> My mother’s mead. Do not waste it.'],
+  obj: [{ type: 'kill', mob: 'snow_wolf', n: 10 }, { type: 'kill', mob: 'rime_poring', n: 8 }],
+  reward: { exp: 60000, jexp: 45000, zeny: 6000, items: [['white_potion', 4], ['honey_mead', 1]] } });
+quest('hrafn_nets', { giver: 'hrafn', name: 'Nets of the Drowned', area: 'Rimeshore', req: { lvl: 31, test: () => !!P.flags.talked.ragna },
+  summary: 'Old Hrafn needs draugr nets and hermit shells to mend the camp’s gear.',
+  offer: ['Our nets are rotten. The draugr’s nets are rotten too, but they are rotten <i>strong</i>, if you follow me.', 'Six of their nets, and three shells off the shell knights on the lagoon. Shell makes a good float. Don’t ask how I know.'],
+  progress: 'Six Draugr’s Nets, three Hermit Shells.',
+  done: ['<i>He is knotting before you finish putting them down.</i> Good. Good. Here, I kept these for someone who deserved them.'],
+  obj: [{ type: 'collect', item: 'draugr_net', n: 6 }, { type: 'collect', item: 'hermit_shell', n: 3 }],
+  reward: { exp: 70000, jexp: 50000, zeny: 7000, items: [['yellow_potion', 10], ['fly_wing', 5]] } });
+quest('ragna_jarl', { giver: 'ragna', name: 'The Drowned Jarl', area: 'Rimeshore', req: { lvl: 34, quests: ['ragna_wolves'] },
+  summary: 'Ragna’s father still stands at the prow of his frozen longship in the sea-cave to the north. Give him his rest.',
+  offer: ['My father took his whole crew into the ice rather than let the storm have them. He is still out there, in the sea-cave north along the beach, at the prow of his ship.', 'I cannot do it. I have tried. Every time, I see his face. You never knew his face. Go.'],
+  progress: 'The sea-cave is north along the beach, past the barrier of ice.',
+  done: ['<i>Ragna listens to the ice for a long time.</i> It is quiet out there now. Thank you. Take what he would have given you, if he had been himself.'],
+  obj: [{ type: 'boss', mob: 'drowned_jarl' }],
+  reward: { exp: 150000, jexp: 110000, zeny: 15000, items: [['white_potion', 5], ['honey_mead', 3]] } });
+
+// Mirewell (Base Lv 34-44): Eira at the waystone camp, Bolli at the crossing
+quest('mire_arrival', { giver: 'ragna', turnIn: 'eira', name: 'Lights in the Mire', area: 'Mirewell', req: { lvl: 33, quests: ['rime_arrival'] },
+  summary: 'Take the trail south past the barrows to Mirewell and find Ragna’s sister Eira.',
+  offer: ['My sister Eira lives in the mire, south past the barrows. She went there to learn herbs from a witch, and stayed when the witch went bad.', 'Tell her I am alive. Tell her I am still stubborn. She will know what that means.'],
+  progress: 'South past the barrows, then through the marsh to Eira’s camp.',
+  done: ['Still stubborn? <i>Eira laughs, and it sounds exactly like Ragna.</i> Good. Stubborn is how we are still alive. Sit. Eat something that is not moving.'],
+  obj: [{ type: 'reach', map: 'mirewell', x: 36.5, y: 7.5, r: 6, place: 'the Mirewell Waystone' }],
+  reward: { exp: 40000, jexp: 30000, zeny: 4000, items: [['white_potion', 3]] } });
+quest('eira_medicine', { giver: 'eira', name: 'Bitter Medicine', area: 'Mirewell', req: { lvl: 35, test: () => !!P.flags.talked.eira },
+  summary: 'Eira needs toadskin and wisp flame to brew medicine that still works in the Ash.',
+  offer: ['Toadskin draws poison. Wisp flame burns clean, if you can catch it without it catching you.', 'Six skins and four flames. The toads are lazy; the wisps are not.'],
+  progress: 'Six Slick Toadskins, four Wisp Flames.',
+  done: ['<i>The brew turns gold, then clear.</i> There. The first honest medicine this marsh has made in a hundred years. Take some.'],
+  obj: [{ type: 'collect', item: 'toad_skin', n: 6 }, { type: 'collect', item: 'wisp_flame', n: 4 }],
+  reward: { exp: 80000, jexp: 60000, zeny: 8000, items: [['white_potion', 5], ['honey_mead', 2]] } });
+quest('bolli_trolls', { giver: 'bolli', name: 'Toll for the Trolls', area: 'Mirewell', req: { lvl: 38, test: () => !!P.flags.talked.eira },
+  summary: 'The mire trolls and the Crone’s hags hold the boardwalks. Bolli wants his crossings back.',
+  offer: ['The trolls under the boardwalks used to take a toll. A fish, a song. Now they take the traveller.', 'And the hags walk the planks at night, looking for the ones the trolls missed. Six of each. Then maybe I can build a boat again.'],
+  progress: 'Six Mire Trolls, six Marsh Hags.',
+  done: ['You hear that? Nothing. Nobody screaming on the planks. I could get used to that. Here, for your trouble.'],
+  obj: [{ type: 'kill', mob: 'mire_troll', n: 6 }, { type: 'kill', mob: 'marsh_hag', n: 6 }],
+  reward: { exp: 120000, jexp: 90000, zeny: 10000, items: [['honey_mead', 3]] } });
+quest('eira_crone', { giver: 'eira', name: 'The Crone’s Cauldron', area: 'Mirewell', req: { lvl: 40, quests: ['eira_medicine'] },
+  summary: 'The Bog Crone stirs her cauldron on the island in the south of the mire. End her.',
+  offer: ['She taught me everything I know about herbs. Then the Tree burned, and she taught herself what the hungry would pay for.', 'Her island is at the south end of the boardwalks. The hexes she throws stay on the ground and burn. Do not stand in them.'],
+  progress: 'The Crone’s island, south along the boardwalks. Stay out of her hexes.',
+  done: ['<i>Eira is quiet for a long while.</i> She used to sing while she stirred. I hope she remembers the song, wherever she went. This was hers. Take it.'],
+  obj: [{ type: 'boss', mob: 'bog_crone' }],
+  reward: { exp: 250000, jexp: 180000, zeny: 25000, items: [['honey_mead', 5]] } });
+
+// Nidavellir Deep (Base Lv 40-50): Sindri at the great forge, Nýr in the hall of statues
+const SINDRI_W = { novice: 'dvergr_seax', swordsman: 'dvergr_longsword', mage: 'dvergr_rod', archer: 'dvergr_bow', acolyte: 'dvergr_hammer',
+  knight: 'dvergr_spear', oathkeeper: 'dvergr_longsword', runecaster: 'dvergr_staff', sage: 'dvergr_codex', wolfhunter: 'dvergr_bow', skald: 'dvergr_lur', priest: 'dvergr_hammer', monk: 'dvergr_knuckles' };
+quest('nida_arrival', { giver: 'brokkr', turnIn: 'sindri', name: 'Brokkr’s Brother', area: 'Nidavellir Deep', req: { lvl: 40 },
+  summary: 'Carry Brokkr’s letter down to his brother Sindri, in the dwarf-halls under Gloamheim.',
+  offer: ['<i>Brokkr does not look up from the anvil.</i> There is a stair in Gloamheim, past where Gaunt keeps his hall. It goes down to Nidavellir. My brother is down there. Sindri.', 'We argued. About a hammer. It was a very good hammer. Take him this, and don’t read it.'],
+  progress: 'Gloamheim, past Gaunt’s hall, down the stair. Or through the old mine east of Mirewell.',
+  give: [['brokkr_letter', 1]],
+  obj: [{ type: 'deliver', item: 'brokkr_letter', n: 1, npc: 'sindri', text: 'Give Brokkr’s letter to Sindri in Nidavellir Deep' }],
+  done: ['<i>Sindri reads it twice, then folds it very small.</i> “Sorry about the hammer.” Four hundred years, and that is what he writes. <i>He blows his nose loudly.</i> Here. For carrying it.'],
+  reward: { exp: 60000, jexp: 45000, zeny: 6000, items: [['white_potion', 5]], lore: 'nidavellir' } });
+quest('sindri_forge', { giver: 'sindri', name: 'Fire for the Deep Forge', area: 'Nidavellir Deep', req: { lvl: 42, test: () => !!P.flags.talked.sindri },
+  summary: 'Sindri needs magma cores, amethyst and dvergr ore to forge you a dwarf-made weapon.',
+  offer: ['My brother makes good steel. I make better. Do not tell him I said so; do tell him I said so.', 'Five magma cores from the slimes for heat, six amethyst shards from the spiders for the edge, four lumps of dvergr ore from the golems and the dead miners. Then we talk.'],
+  progress: 'Five Magma Cores, six Amethyst Shards, four Dvergr Ore.',
+  done: ['<i>The forge roars for a whole day. When the steel cools, there are runes on it you did not see him carve.</i> Four times refined. Brokkr would have stopped at three.'],
+  obj: [{ type: 'collect', item: 'magma_core', n: 5 }, { type: 'collect', item: 'amethyst', n: 6 }, { type: 'collect', item: 'dvergr_ore', n: 4 }],
+  reward: { exp: 100000, jexp: 75000, items: classWeapon(SINDRI_W, 4) } });
+quest('nyr_shift', { giver: 'nyr', name: 'The Last Shift', area: 'Nidavellir Deep', req: { lvl: 44 },
+  summary: 'Nýr’s dead miners and their golems are still working. Let the shift end.',
+  offer: ['My lads never heard the horn for the end of the shift. The golems neither. They dig and they dig, and anything that walks past, they dig into.', 'Ten of my lads and five of the golems. Gently, if you can. Quickly, if you can’t.'],
+  progress: 'Ten Dwarf Revenants, five Stone Golems.',
+  done: ['<i>Far away, very faintly, a horn sounds, though nobody blew it.</i> That’s the horn. Shift’s over. <i>Nýr takes off his helmet.</i> Thank you, friend.'],
+  obj: [{ type: 'kill', mob: 'dwarf_revenant', n: 10 }, { type: 'kill', mob: 'stone_golem', n: 5 }],
+  reward: { exp: 180000, jexp: 130000, zeny: 15000, items: [['white_potion', 8]] } });
+quest('sindri_fafnir', { giver: 'sindri', name: 'The Hoard-Wyrm', area: 'Nidavellir Deep', req: { lvl: 46, quests: ['sindri_forge'] },
+  summary: 'Fafnir sleeps on the old hoard at the bottom of the Deep. Kill him, and the forges can burn clean again.',
+  offer: ['Fafnir was a dwarf once. Our kin. He killed his father for a ring and turned into a wyrm to sit on the gold. The Ash woke him.', 'His hoard is past the hall of statues, down where the lava still runs. Mind his breath: step out of the fire, not back from it.'],
+  progress: 'Past the hall of statues, down to the hoard. Step sideways out of his breath.',
+  done: ['<i>Sindri holds up a single gold coin to the forge light.</i> Just gold now. Good. Here, the rest is yours; I only wanted the one.'],
+  obj: [{ type: 'boss', mob: 'fafnir' }],
+  reward: { exp: 400000, jexp: 280000, zeny: 40000, items: [['honey_mead', 8]] } });
+
+// Bifrost Ruins (Base Lv 48-60): Heimdall at the landing; Vidar sends you after the wolf
+quest('heimdall_wardens', { giver: 'heimdall', name: 'Wardens of a Fallen Hall', area: 'Bifrost Ruins', req: { lvl: 48, test: () => !!P.flags.talked.heimdall },
+  summary: 'The rune sentinels and the Valkyrie shades attack anything alive on the bridge. Clear the way to the wolf.',
+  offer: ['The sentinels guard halls that are not there anymore. The Valkyries carry souls to a Valhalla that is gone. Neither will let you pass.', 'Eight of each. I would do it myself, but I cannot leave my post. I have not left it in ten thousand years.'],
+  progress: 'Eight Rune Sentinels, eight Valkyrie Shades.',
+  done: ['The Valkyries sang as they went. I had forgotten that song. Take this, from the old armoury.'],
+  obj: [{ type: 'kill', mob: 'rune_sentinel', n: 8 }, { type: 'kill', mob: 'valkyrie_shade', n: 8 }],
+  reward: { exp: 220000, jexp: 160000, zeny: 20000, items: [['honey_mead', 5]] } });
+quest('heimdall_horn', { giver: 'heimdall', name: 'Gjallarhorn', area: 'Bifrost Ruins', req: { lvl: 50, quests: ['heimdall_wardens'] },
+  summary: 'Hold Gjallarhorn’s stand in the north while Fenrir’s pups and the harpies try to throw it off the bridge.',
+  offer: ['Gjallarhorn stands on the northern island. If they throw it off the bridge, nothing will ever call the gods home again, even if there were gods to call.', 'Stand by the horn for a minute. They will come. Do not let them move you.'],
+  progress: 'Stand beside Gjallarhorn on the northern island until the pack gives up.',
+  done: ['<i>Heimdall touches the horn with one finger, very gently.</i> Still there. Still whole. So are you. Take this; it was a friend’s.'],
+  obj: [{ type: 'survive', map: 'bifrost', x: 31.5, y: 14.5, r: 5, secs: 60, place: 'Gjallarhorn’s stand', wave: { mobs: ['sky_harpy', 'fenrir_whelp'], every: 9, n: 2, max: 5 } }],
+  reward: { exp: 300000, jexp: 220000, zeny: 25000, items: P => [[P.st.int >= P.st.str ? 'aesir_brooch' : 'aesir_ring', 1]] } });
+quest('vidar_fenrir', { giver: 'vidar', turnIn: 'vidar', name: 'The Silent God’s Duty', area: 'Bifrost Ruins', req: { lvl: 50, quests: ['main_9'] },
+  summary: 'Vidar was fated to kill Fenrir at the end of the world. He asks you to do it instead.',
+  offer: ['<i>Vidar is quiet for a long time.</i> You have been to the bridge. You heard him.', 'I was born to kill that wolf. The Norns wrote it. My father died in his jaws, and I tore them apart. That was the story. Then the story burned, and the wolf did not.', 'I am old, and I am tired, and if I go up there the story will finish itself the way it always meant to. You are not in the story. Go and break it for me.'],
+  progress: 'Fenrir, on the chained island at the far end of the Bifrost Ruins.',
+  done: ['<i>Vidar closes his one eye.</i> So the wolf is dead, and not by my hand. The Norns will be furious. <i>He smiles.</i> Good.', 'Take these. They are the last embers of the Tree I kept for myself. I do not need them anymore.'],
+  obj: [{ type: 'boss', mob: 'fenrir', text: 'Slay Fenrir in the Bifrost Ruins' }],
+  reward: { exp: 800000, jexp: 500000, zeny: 100000, items: [['ygg_ember', 3]], lore: 'fenrir_slain' } });
+
 /* ---------- Vidar: trials of the second paths ----------
    One trial per second class. Offered at Base Lv 30 + Job Lv 40 to its first class; only one trial at a time
    (abandon it to switch paths). onComplete performs the job change (jobChange in js/core.js): skills stay
@@ -256,9 +378,12 @@ const BOARDS = {
   emberhold_board: { name: 'Bounty Board', title: 'Ashen Fields', map: 'emberhold', x: 13.5, y: 18.5, perDay: 2, pool: [] },
   wood_board: { name: 'Bounty Board', title: 'Withered Wood', map: 'withered_wood', x: 9.5, y: 33.5, perDay: 2, pool: [] },
   keep_board: { name: 'Bounty Board', title: 'Gloamheim', map: 'gloamheim', x: 32.5, y: 52.5, perDay: 2, pool: [] },
+  deep_board: { name: 'Bounty Board', title: 'Nidavellir Deep', map: 'nidavellir', x: 9.5, y: 30.5, perDay: 2, pool: [] },
+  bifrost_board: { name: 'Bounty Board', title: 'Bifrost Ruins', map: 'bifrost', x: 7.5, y: 49.5, perDay: 2, pool: [] },
 };
 function bounty(id, board, name, o) {
-  const ob = o.obj[0], mobsOf = ob.type === 'kill' ? [].concat(ob.mob) : Object.keys(MOBS).filter(k => (MOBS[k].drops || []).some(d => d[0] === ob.item));
+  // Collect bounties are priced from the ordinary monsters that drop the item (an MVP's guaranteed drop would inflate them).
+  const ob = o.obj[0], mobsOf = ob.type === 'kill' ? [].concat(ob.mob) : Object.keys(MOBS).filter(k => !MOBS[k].boss && (MOBS[k].drops || []).some(d => d[0] === ob.item));
   const avg = mobsOf.reduce((a, k) => a + mobExp(MOBS[k]), 0) / Math.max(1, mobsOf.length), lvl = Math.max(...mobsOf.map(k => MOBS[k].lvl));
   const exp = Math.round(avg * ob.n * (ob.type === 'kill' ? 0.6 : 1.1) / 10) * 10;
   quest(id, Object.assign({ kind: 'daily', repeat: 'daily', giver: board, name, area: BOARDS[board].title, req: { lvl: Math.max(1, lvl - 4) },
@@ -278,3 +403,13 @@ bounty('bb_skeletons', 'keep_board', 'Bounty: Skeleton Soldiers', { summary: 'Th
 bounty('bb_archers', 'keep_board', 'Bounty: Grave Archers', { summary: 'Archers on the walls shoot at anything warm.', obj: [{ type: 'kill', mob: 'grave_archer', n: 10 }] });
 bounty('bb_ecto', 'keep_board', 'Bounty: Ectoplasm', { summary: 'Sigrun wants ectoplasm to feed the Waystone’s fire.', obj: [{ type: 'collect', item: 'ectoplasm', n: 6 }] });
 bounty('bb_knights', 'keep_board', 'Bounty: Rust Knights', { summary: 'Rust Knights guard the inner halls. Six fewer would help.', obj: [{ type: 'kill', mob: 'rust_knight', n: 6 }] });
+bounty('bb_bats', 'deep_board', 'Bounty: Cave Bats', { summary: 'The bats have found Sindri’s forge warm. Sindri has not found them charming.', obj: [{ type: 'kill', mob: 'cave_bat', n: 15 }] });
+bounty('bb_spiders', 'deep_board', 'Bounty: Crystal Spiders', { summary: 'The crystal galleries are webbed shut again.', obj: [{ type: 'kill', mob: 'crystal_spider', n: 10 }] });
+bounty('bb_cores', 'deep_board', 'Bounty: Magma Cores', { summary: 'The deep forge eats magma cores. Feed it.', obj: [{ type: 'collect', item: 'magma_core', n: 6 }] });
+bounty('bb_golems', 'deep_board', 'Bounty: Stone Golems', { summary: 'Golems are digging through the hall of statues. Stop them before they dig through a king.', obj: [{ type: 'kill', mob: 'stone_golem', n: 6 }] });
+bounty('bb_revenants', 'deep_board', 'Bounty: Dwarf Revenants', { summary: 'Nýr asks for his lads to be laid down. Kindly.', obj: [{ type: 'kill', mob: 'dwarf_revenant', n: 10 }] });
+bounty('bb_prisms', 'bifrost_board', 'Bounty: Prism Porings', { summary: 'The prism porings are nibbling the bridge. It does not have much left to nibble.', obj: [{ type: 'kill', mob: 'prism_poring', n: 15 }] });
+bounty('bb_harpies', 'bifrost_board', 'Bounty: Sky Harpies', { summary: 'Harpies keep diving at Heimdall. He will not move, so you must.', obj: [{ type: 'kill', mob: 'sky_harpy', n: 12 }] });
+bounty('bb_cores_aesir', 'bifrost_board', 'Bounty: Aesir Rune Cores', { summary: 'Heimdall wants the sentinels’ cores back, to relight the bridge one rune at a time.', obj: [{ type: 'collect', item: 'aesir_core', n: 5 }] });
+bounty('bb_shades', 'bifrost_board', 'Bounty: Valkyrie Shades', { summary: 'Let the fallen Valkyries finish their last ride.', obj: [{ type: 'kill', mob: 'valkyrie_shade', n: 10 }] });
+bounty('bb_whelps', 'bifrost_board', 'Bounty: Fenrir Whelps', { summary: 'The pack grows every night. Cull it.', obj: [{ type: 'kill', mob: 'fenrir_whelp', n: 10 }] });

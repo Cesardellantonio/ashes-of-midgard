@@ -25,7 +25,7 @@
 const SHEET_BASE = (typeof window !== 'undefined' && window.AOM_SPRITE_BASE) || 'assets/sprites/';
 // Missing index files are harmless. The same sheet id may appear in several files (index.json also lists the
 // index_classes2b.json sheets): the first file in this list that names an id wins, whatever order the XHRs finish in.
-const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json'];
+const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json'];
 const SHEETS = {
   byId: {},          // id -> load record (created on first request)
   entries: {},       // id -> { id, layer, body, variant } from the index files
@@ -35,7 +35,8 @@ const SHEETS = {
 };
 const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
 const LAYER_ORDER = ['body', 'mob', 'npc', 'hair', 'shield', 'weapon'];
-const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace' };  // fist -> none
+const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace',
+  spear: 'spear', twohand: 'twohand', staff: 'staff', book: 'book', lute: 'lute', whip: 'whip', knuckle: 'knuckle' };  // fist -> none
 
 /* ---------- Loading ---------- */
 function sheetXHR(url, ok, bad) {
@@ -148,7 +149,7 @@ function playerLayerWants() {
   if (!P) return null;
   const body = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`;
   const w = [[body, 'body', null], [body, 'hair', P.hairStyle === 'long' ? 'long' : 'spiky']];
-  if (P.equip && P.equip.shield) w.push([body, 'shield', 'guard']);
+  if (P.equip && P.equip.shield) w.push([body, 'shield', (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard']);   // shieldVariant: action.js (Oathkeeper -> 'tower')
   const wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null; if (wv) w.push([body, 'weapon', wv]);
   return w;
 }
@@ -157,11 +158,16 @@ function prefetchSheets() {
   try {
     const pw = playerLayerWants(); if (pw && sheetId(pw[0][0], 'body', null)) for (const w of pw) sheetRec(w[0], w[1], w[2]);
     if (typeof map === 'undefined' || !map) return;
-    const types = new Set();
-    for (const s of map.d.spawns || []) types.add(s[0]);
-    if (map.d.boss) types.add(map.d.boss);
-    for (const t of [...types]) for (const a of (MOBS[t] && MOBS[t].abil) || []) if (a.mob) types.add(a.mob);
+    // Generic over map data (no map list): every MOBS key the map definition names — spawns ([type, n] rows in any
+    // array field), boss / bosses, plain type strings — plus live mobs, closed over summons (abil.mob, transitively).
+    const types = new Set(), isMob = t => typeof t === 'string' && typeof MOBS !== 'undefined' && !!MOBS[t];
+    for (const k in map.d) {
+      const v = map.d[k];
+      if (isMob(v)) types.add(v);
+      else if (Array.isArray(v)) for (const r of v) { if (isMob(r)) types.add(r); else if (Array.isArray(r) && isMob(r[0])) types.add(r[0]); else if (r && isMob(r.type)) types.add(r.type); }
+    }
     for (const m of mobs || []) types.add(m.type);
+    for (const t of types) for (const a of (MOBS[t] && MOBS[t].abil) || []) if (a.mob) types.add(a.mob);   // Set iteration visits added summons too
     for (const t of types) sheetRec(t, 'mob', null);
     for (const n of map.npcs || []) sheetRec(n.id, 'npc', null);
   } catch (e) { /* prefetch is best-effort */ }
@@ -346,11 +352,13 @@ function setVis(e, recs, o) {
 }
 // Single-sheet variant for mobs/NPCs: no per-frame array or options allocation.
 const _REC1 = [null];
+// Bosses keep their own meshes: one entity gains nothing from batching, and they stay in the per-object
+// transparent sort (big hazes / heat volumes around boss arenas composite exactly as before).
 function setVis1(e, rec, glow, noCast) {
   let v = VIS.get(e);
   if (!v || !v.sheet || v.recs.length !== 1 || v.recs[0] !== rec) {
     if (v) disposeVis(v); _REC1[0] = rec;
-    v = makeSheetVis(_REC1, { glow, noCast, batch: !noCast && sprBatchOn() }); VIS.set(e, v);
+    v = makeSheetVis(_REC1, { glow, noCast, batch: !noCast && !(e.d && e.d.boss) && sprBatchOn() }); VIS.set(e, v);
   }
   v.seen = frameNo; return v;
 }

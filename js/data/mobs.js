@@ -36,9 +36,76 @@ const MOBS = {
     abil: [{ id: 'slam', cd: 5.5, r: 2.8, mul: 1.6, delay: 1.0 }, { id: 'rain', cd: 7, n: 6, r: 1.8, mul: 1.5, delay: 1.4 }, { id: 'nova', cd: 13, r: 5, mul: 2, delay: 1.9 }, { id: 'summon', cd: 22, mob: 'cinder_thrall', n: 2, max: 3 }],
     phase2: 'The King tears the burning crown from his brow and drives it into the floor. The fire answers him directly now.',
     intro: '“Another one the Tree refused.” The voice is kind, which is worse. “Kneel, little ember, and I will let you burn quickly.”' },
+
+  /* ---------- Content round 3 (design/world2.md). Sheets mob_<id> are in index_world2a/b.json. ----------
+     New fields: shot (projectile kind for ranged: arrow, spear, fire, ice, soul, holy, bolt), magic (hits use MDEF),
+     phase2Sub (banner under the name at 50 % HP), outro (log line when an MVP falls). New ability kinds:
+     { id: 'breath', cd, len, arc, rays, mul, delay, col }  cone toward the player
+     { id: 'wave', cd, n, spread, len, r, speed, mul, delay, col }  n lines rolling outward
+     { id: 'curse', cd, r, n, mul, delay, dur, tick, slow, col }  hex circles that leave slowing, burning zones */
+  // Rimeshore (Base Lv 28-38)
+  rime_poring: { name: 'Rime Poring', lvl: 28, hp: 2300, atk: [80, 98], def: 12, mdef: 22, elem: 'water', race: 'plant', speed: 1.9, aspd: 1.6, range: 1.3, spr: 'blob', col: '#bfe4ff', size: 1, eye: '#2a4a6a', drops: [['frost_jelly', .5], ['blue_potion', .05], ['yellow_potion', .06]] },
+  snow_wolf: { name: 'Snow Wolf', lvl: 31, hp: 2900, atk: [100, 124], def: 16, mdef: 8, elem: 'water', race: 'brute', aggro: true, sight: 8, speed: 3.8, aspd: 1.25, range: 1.4, spr: 'wolf', col: '#e8eef4', size: 1.1, eye: '#7ff0ff', drops: [['frost_mane', .45], ['wolf_pelt', .2], ['yellow_potion', .08]] },
+  draugr_fisher: { name: 'Draugr Fisher', lvl: 33, hp: 3700, atk: [110, 138], def: 26, mdef: 14, elem: 'undead', race: 'undead', aggro: true, sight: 8, speed: 2.1, aspd: 1.9, range: 4.5, ranged: true, shot: 'spear', spr: 'human',
+    look: { body: '#4e6a5e', trim: '#d8b84a', legs: '#34463e', skin: '#8aa89a', head: 'human', hair: '#3a4a40', weapon: 'fork', wcol: '#8a8a7a', eye: '#ffe07a' }, drops: [['draugr_net', .45], ['bone_shard', .3], ['yellow_potion', .08]] },
+  ice_wraith: { name: 'Ice Wraith', lvl: 35, hp: 3300, atk: [118, 150], def: 0, mdef: 40, elem: 'water', race: 'undead', aggro: true, sight: 7, speed: 3.0, aspd: 1.5, range: 1.5, flee: 25, magic: true, spr: 'ghost', col: '#d8f0ff', size: 1, glow: '#7fd0ff', drops: [['rime_essence', .45], ['blue_potion', .06], ['yellow_potion', .06]] },
+  shell_knight: { name: 'Shell Knight', lvl: 37, hp: 5600, atk: [128, 160], def: 46, mdef: 10, elem: 'water', race: 'insect', aggro: true, sight: 6, speed: 1.8, aspd: 1.7, range: 1.6, spr: 'grub', col: '#c8763a', size: 2.2, eye: '#1a1a1a', drops: [['hermit_shell', .45], ['yellow_potion', .1], ['white_potion', .02]] },
+  drowned_jarl: { name: 'The Drowned Jarl', title: 'King Under the Ice', lvl: 38, hp: 52000, atk: [165, 210], def: 40, mdef: 25, elem: 'undead', race: 'undead', boss: true, aggro: true, sight: 8, speed: 2.3, aspd: 1.4, range: 2.8, spr: 'human',
+    look: { body: '#3a5a52', trim: '#b8a04a', legs: '#26382f', skin: '#6a8a7a', head: 'helm', weapon: 'greatsword', wcol: '#5a6a6a', eye: '#ffe07a', cape: '#1e3a34', scale: 2.4 }, glow: '#7fc8ff', expMul: 14,
+    abil: [{ id: 'slam', cd: 6, r: 3, mul: 1.7, delay: 1.1 }, { id: 'wave', cd: 9, n: 3, spread: 0.42, len: 9, r: 1.0, speed: 7, mul: 1.6, delay: 0.9, col: '#9fd8ff', shout: 'The tide!' }, { id: 'rain', cd: 12, n: 5, r: 1.5, mul: 1.3, delay: 1.4 }, { id: 'summon', cd: 18, mob: 'draugr_fisher', n: 2, max: 4, shout: 'Crew, to me!' }],
+    phase2: 'The Jarl drives his anchor into the ice. Black water wells up through the cracks around your feet.', phase2Sub: 'The sea answers its king',
+    drops: [['rime_essence', 1], ['draugr_net', 1]],
+    intro: 'A longship frozen into the ice, and a king still at its prow. “I drowned with my crew for a god who never came. Row with us, or rot with us.”',
+    outro: 'The Jarl sinks through the ice without a sound. The frozen longship creaks, as if it is finally allowed to go home.' },
+
+  // Mirewell (Base Lv 34-44)
+  bog_toad: { name: 'Bog Toad', lvl: 34, hp: 3600, atk: [110, 136], def: 16, mdef: 12, elem: 'water', race: 'brute', speed: 2.0, aspd: 1.7, range: 2.4, spr: 'blob', col: '#6a9a3a', size: 1.5, eye: '#f0d04a', drops: [['toad_skin', .5], ['yellow_potion', .08]] },
+  mire_leech: { name: 'Mire Leech', lvl: 36, hp: 3400, atk: [116, 144], def: 10, mdef: 26, elem: 'water', race: 'insect', aggro: true, sight: 5, speed: 1.7, aspd: 1.3, range: 1.3, spr: 'grub', col: '#7a4a8a', size: 2, drops: [['leech_teeth', .45], ['blue_potion', .06]] },
+  wisp: { name: 'Will-o’-Wisp', lvl: 38, hp: 2800, atk: [122, 152], def: 4, mdef: 45, elem: 'ghost', race: 'demon', aggro: true, sight: 8, speed: 3.0, aspd: 1.9, range: 5, ranged: true, shot: 'soul', magic: true, flee: 30, spr: 'ghost', col: '#b8ff9a', size: 0.9, glow: '#8aff7a', drops: [['wisp_flame', .45], ['blue_potion', .08]] },
+  marsh_hag: { name: 'Marsh Hag', lvl: 40, hp: 4600, atk: [130, 166], def: 18, mdef: 36, elem: 'shadow', race: 'demihuman', aggro: true, sight: 8, speed: 2.1, aspd: 2.0, range: 5, ranged: true, shot: 'soul', magic: true, spr: 'human',
+    look: { body: '#4a5a32', trim: '#7a8a4a', legs: '#2e3420', skin: '#8a9a6a', head: 'hood', robe: true, weapon: 'staffv', wcol: '#d8d0b8', eye: '#c8ff6a' }, drops: [['bone_charm', .45], ['white_potion', .03]] },
+  mire_troll: { name: 'Mire Troll', lvl: 42, hp: 7800, atk: [150, 190], def: 38, mdef: 10, elem: 'earth', race: 'brute', aggro: true, sight: 7, speed: 2.0, aspd: 1.8, range: 1.8, spr: 'human',
+    look: { body: '#4a6a3a', trim: '#6a4a2a', legs: '#3a4a2a', skin: '#5a7a4a', head: 'kobold', weapon: 'mace', wcol: '#6a4a2a', eye: '#ffd04a', scale: 1.4, wide: true }, drops: [['troll_moss', .5], ['white_potion', .04]] },
+  bog_crone: { name: 'The Bog Crone', title: 'Mother of the Mire', lvl: 44, hp: 84000, atk: [175, 225], def: 38, mdef: 42, elem: 'shadow', race: 'demihuman', boss: true, aggro: true, sight: 9, speed: 1.9, aspd: 1.6, range: 3, magic: true, spr: 'human',
+    look: { body: '#4a2a5a', trim: '#8a6a3a', legs: '#2a1a30', skin: '#7a9a6a', head: 'hood', robe: true, weapon: 'staffv', wcol: '#6a4a2a', eye: '#b8ff5a', scale: 2.3 }, glow: '#9aff6a', expMul: 15,
+    abil: [{ id: 'curse', cd: 8, r: 2.2, n: 2, mul: 1.1, delay: 1.3, dur: 6, tick: 0.3, slow: 35, col: '#a066e0' }, { id: 'rain', cd: 10, n: 6, r: 1.6, mul: 1.3, delay: 1.5 }, { id: 'nova', cd: 14, r: 4.8, mul: 1.7, delay: 1.8 }, { id: 'summon', cd: 20, mob: 'wisp', n: 2, max: 4, shout: 'Little lights, come!' }],
+    phase2: 'The cauldron boils over. Every hex the Crone ever cast comes up in the steam at once.', phase2Sub: 'The cauldron boils over',
+    drops: [['bone_charm', 1], ['wisp_flame', 1]],
+    intro: 'The cauldron walks on chicken legs. The woman in it stirs with a ladle as long as a spear. “Another pretty corpse for the soup. Sit, dear. It won’t take long.”',
+    outro: 'The cauldron tips, spills, and the bog drinks it. For the first time in a hundred years, frogs start to sing in Mirewell.' },
+
+  // Nidavellir Deep (Base Lv 40-50)
+  cave_bat: { name: 'Cave Bat', lvl: 40, hp: 3400, atk: [126, 158], def: 12, mdef: 10, elem: 'shadow', race: 'brute', aggro: true, sight: 8, speed: 4.0, aspd: 1.2, range: 1.3, flee: 35, spr: 'blob', col: '#4a3a4a', size: 1.2, eye: '#ff4a3a', drops: [['bat_wing', .5], ['white_potion', .03]] },
+  crystal_spider: { name: 'Crystal Spider', lvl: 43, hp: 5200, atk: [140, 176], def: 34, mdef: 20, elem: 'earth', race: 'insect', aggro: true, sight: 7, speed: 3.1, aspd: 1.4, range: 1.5, spr: 'grub', col: '#6a4a8a', size: 2.2, eye: '#ff6ab0', drops: [['amethyst', .45], ['white_potion', .04]] },
+  magma_slime: { name: 'Magma Slime', lvl: 45, hp: 5000, atk: [148, 186], def: 20, mdef: 30, elem: 'fire', race: 'plant', speed: 1.8, aspd: 1.6, range: 1.3, spr: 'blob', col: '#ff7a2a', size: 1.1, glow: '#ff8a3a', eye: '#fff0b0', drops: [['magma_core', .45], ['white_potion', .05]] },
+  stone_golem: { name: 'Stone Golem', lvl: 47, hp: 9800, atk: [165, 208], def: 55, mdef: 15, elem: 'earth', race: 'brute', aggro: true, sight: 6, speed: 1.7, aspd: 2.0, range: 1.9, spr: 'human',
+    look: { body: '#7a7670', trim: '#5a5650', legs: '#5a5650', skin: '#8a8680', head: 'helm', weapon: 'none', eye: '#6ad0ff', scale: 1.5, wide: true }, drops: [['rune_stone', .45], ['white_potion', .05], ['dvergr_ore', .15]] },
+  dwarf_revenant: { name: 'Dwarf Revenant', lvl: 49, hp: 6400, atk: [172, 216], def: 30, mdef: 30, elem: 'undead', race: 'undead', aggro: true, sight: 8, speed: 2.5, aspd: 1.5, range: 1.6, spr: 'ghost', col: '#9ae0d0', size: 1.2, glow: '#7ff0e0', drops: [['dvergr_ore', .45], ['bone_shard', .2], ['white_potion', .05]] },
+  fafnir: { name: 'Fafnir', title: 'The Hoard-Wyrm', lvl: 50, hp: 135000, atk: [215, 275], def: 50, mdef: 40, elem: 'fire', race: 'brute', boss: true, aggro: true, sight: 9, speed: 2.2, aspd: 1.5, range: 3.2, spr: 'wolf', col: '#4a8a5a', size: 2.5, eye: '#ffb04a', glow: '#ff8a3a', expMul: 15,
+    abil: [{ id: 'breath', cd: 7, len: 7, arc: 0.5, rays: 3, mul: 2.0, delay: 1.2, col: '#ff7a2a', shout: 'MINE!' }, { id: 'slam', cd: 6, r: 3.2, mul: 1.7, delay: 1.0 }, { id: 'rain', cd: 11, n: 7, r: 1.7, mul: 1.5, delay: 1.5 }, { id: 'summon', cd: 22, mob: 'magma_slime', n: 2, max: 3, shout: 'Burn them!' }],
+    phase2: 'Fafnir rises off the hoard. Gold coins rain from his belly scales, red-hot, and the whole hall is his throat now.', phase2Sub: 'The hoard burns',
+    drops: [['magma_core', 1], ['dvergr_ore', 1]],
+    intro: 'Coins slide like water as something enormous uncoils beneath them. “A thief. They are all thieves. Even the one who made me was a thief.”',
+    outro: 'Fafnir’s last breath is only smoke. The gold goes dark, and it is just metal again. Somewhere above, Sindri’s forge flares.' },
+
+  // Bifrost Ruins (Base Lv 48-60)
+  prism_poring: { name: 'Prism Poring', lvl: 48, hp: 5200, atk: [160, 200], def: 25, mdef: 45, elem: 'holy', race: 'plant', speed: 2.0, aspd: 1.5, range: 1.3, spr: 'blob', col: '#f0d0ff', size: 1, glow: '#ffc8f0', eye: '#4a3a6a', drops: [['prism_shard', .5], ['white_potion', .05], ['honey_mead', .03]] },
+  sky_harpy: { name: 'Sky Harpy', lvl: 51, hp: 6000, atk: [178, 222], def: 20, mdef: 20, elem: 'wind', race: 'demihuman', aggro: true, sight: 9, speed: 4.0, aspd: 1.25, range: 1.6, flee: 40, spr: 'human',
+    look: { body: '#c8a0d8', trim: '#f0e0a0', legs: '#8a6a9a', skin: '#f2dcc8', head: 'human', hair: '#f0c8e0', wings: true, weapon: 'none', eye: '#6a3a8a' }, drops: [['harpy_feather', .45], ['white_potion', .05]] },
+  rune_sentinel: { name: 'Rune Sentinel', lvl: 54, hp: 11500, atk: [196, 246], def: 60, mdef: 40, elem: 'holy', race: 'demihuman', aggro: true, sight: 8, speed: 1.9, aspd: 1.8, range: 5, ranged: true, shot: 'holy', magic: true, spr: 'human',
+    look: { body: '#c8a040', trim: '#fff0b0', legs: '#8a6a2a', skin: '#e8c060', head: 'helm', weapon: 'none', shield: true, eye: '#8ae0ff', scale: 1.2 }, drops: [['aesir_core', .45], ['white_potion', .06]] },
+  valkyrie_shade: { name: 'Valkyrie Shade', lvl: 56, hp: 8800, atk: [210, 262], def: 26, mdef: 50, elem: 'ghost', race: 'undead', aggro: true, sight: 9, speed: 3.2, aspd: 1.3, range: 2.2, flee: 20, spr: 'ghost', col: '#dce8ff', size: 1.25, glow: '#b8d0ff', drops: [['valkyrie_plume', .45], ['white_potion', .06], ['honey_mead', .04]] },
+  fenrir_whelp: { name: 'Fenrir Whelp', lvl: 58, hp: 10500, atk: [224, 280], def: 36, mdef: 24, elem: 'shadow', race: 'brute', aggro: true, sight: 9, speed: 4.2, aspd: 1.15, range: 1.4, spr: 'wolf', col: '#2a2430', size: 0.95, eye: '#ff5a2a', glow: '#b06aff', drops: [['gleipnir_link', .45], ['honey_mead', .05]] },
+  fenrir: { name: 'Fenrir', title: 'The Wolf at the End of the World', lore: 'fenrir_slain', lvl: 60, hp: 260000, atk: [290, 370], def: 55, mdef: 45, elem: 'shadow', race: 'brute', boss: true, aggro: true, sight: 11, speed: 3.6, aspd: 1.2, range: 3.2, spr: 'wolf', col: '#1e1a24', size: 2.6, eye: '#ff6a2a', glow: '#b06aff', expMul: 16,
+    abil: [{ id: 'leap', cd: 7, r: 2.4, mul: 1.9, delay: 1.0 }, { id: 'breath', cd: 9, len: 7.5, arc: 0.55, rays: 3, mul: 2.2, delay: 1.2, col: '#b06aff', shout: 'HROOO!' }, { id: 'wave', cd: 11, n: 5, spread: 0.5, len: 10, r: 0.95, speed: 8, mul: 1.8, delay: 1.0, col: '#c8b8ff', shout: '!' },
+      { id: 'nova', cd: 15, r: 5.2, mul: 2.2, delay: 1.9 }, { id: 'summon', cd: 20, mob: 'fenrir_whelp', n: 2, max: 4, shout: 'Pups!' }],
+    phase2: 'The last links of Gleipnir snap. Fenrir stands to his full height, and the sun behind the clouds goes dark.', phase2Sub: 'Gleipnir breaks',
+    drops: [['gleipnir_link', 1], ['aesir_core', 1]],
+    intro: '“Odin’s son sends a corpse to finish his work?” The wolf laughs, and the chains laugh with him. “Come, little ember. I have swallowed bigger fires than you.”',
+    outro: 'Fenrir falls across the broken bridge, and for a moment the Bifrost glows every colour at once. Far away, an old man with one eye closes it.' },
 };
 for (const k in MOBS) { const d = MOBS[k]; d.id = k; const base = { blob: 30, grub: 18, hare: 32, wolf: 30, human: 58, ghost: 46, tree: 62, shroom: 32 }[d.spr]; d.h = base * (d.look && d.look.scale ? d.look.scale : (d.size || 1)); }
 const mobExp = d => Math.round((4 * Math.pow(d.lvl, 2.1) + 6) * (d.expMul || 1));
 const expNeed = l => Math.floor(20 * Math.pow(l, 2.2)) + 10;
 const jexpNeed = l => Math.floor(12 * Math.pow(l, 2.1)) + 10;
-const MAXLV = 50;
+const MAXLV = 60;

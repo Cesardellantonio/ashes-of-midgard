@@ -42,9 +42,11 @@ function iconURL(t) {
 }
 const ICONCV = {};
 function iconCanvas(t) { iconURL(t); return ICONCV[t.icon + '|' + (t.color || '')]; }
+// Icons for buffs and debuffs that are not skills (the Bog Crone's hex).
+const BUFF_ICONS = { hex: { el: 'shadow', rune: 'ᚺ' } };
 function skillIcon(id) {
   const key = 'sk|' + id; if (iconCache[key]) return iconCache[key];
-  const sk = SKILLS[id]; const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
+  const sk = SKILLS[id] || BUFF_ICONS[id] || { el: 'neutral', rune: '?' }; const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
   const col = ELCOL[sk.el] || '#aaa';
   const gr = g.createRadialGradient(24, 22, 2, 32, 32, 34); gr.addColorStop(0, shade(col, 0.2)); gr.addColorStop(0.7, shade(col, -0.55)); gr.addColorStop(1, '#0a0806');
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
@@ -126,6 +128,7 @@ const TIPS = [
   { t: () => `You have a skill point. Press <b>${winKey('skills')}</b> and click <b>+</b>. Hover a skill and press <b>1–9</b> to bind it.`, show: () => P.skillPts > 0 && P.jlvl <= 4, done: () => P.skillPts === 0 || UI.open.skills },
   { t: () => 'Job Lv 10 and Basic Skill 9: return to Emberhold and speak with <b>Vidar</b> to choose your path.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic >= 9, done: () => P.cls !== 'novice' },
   { t: () => 'Job Lv 10 reached. Spend all 9 points on <b>Basic Skill</b> (press S), then see Vidar.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic < 9, done: () => P.skills.basic >= 9 },
+  { t: () => `Two Waystones kindled. Any Waystone can send you to the other; press <b>${winKey('worldmap')}</b> for the World Map.`, show: () => Object.keys(P.kindled).length >= 2, done: () => !!P.flags.tips.worldmap || P.lvl >= 20 },
 ];
 function currentTip() { if (!started || P.dead) return null; for (const t of TIPS) { if (t.done()) continue; if (t.show && !t.show()) continue; return t.t(); } return null; }
 
@@ -140,7 +143,8 @@ const WIN = {
   journal: { title: 'Journal', w: 460, pos: () => [W / 2 - 230, 70] },
   help: { title: 'How to Play', w: 440, pos: () => [W / 2 - 220, 70] },
   shop: { title: 'Brokkr’s Forge', w: 420, pos: () => [W / 2 - 440, 90] },
-  way: { title: 'Waystone', w: 300, pos: () => [W / 2 - 150, H / 2 - 170] },
+  way: { title: 'Waystone', w: 320, pos: () => [W / 2 - 160, H / 2 - 190] },
+  worldmap: { title: 'World Map', w: 640, pos: () => [W / 2 - 320, 60] },
 };
 function openWin(id) {
   let el = $('w-' + id);
@@ -228,23 +232,25 @@ const RENDER = {
     const act = isAction();
     const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>`;
     const keys = act
-      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · H Help')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
-      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
-    return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
-      <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there.</p>
+      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
+      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
+    return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
+      <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
   },
   shop() {
+    const tb = $('w-shop') && $('w-shop').querySelector('.tb span'); if (tb) tb.textContent = UI.shopBy === 'sindri' ? 'Sindri’s Deep Forge' : 'Brokkr’s Forge';
     const sc = Object.keys(P.flags.shards).length, cap = [10, 20, 30, 99][sc];
     const tabs = `<div class="tabs"><button class="btn ${UI.shopMode === 'buy' ? 'on' : ''}" data-act="mode:buy">Buy</button><button class="btn ${UI.shopMode === 'sell' ? 'on' : ''}" data-act="mode:sell">Sell</button><button class="btn ${UI.shopMode === 'refine' ? 'on' : ''}" data-act="mode:refine">Refine</button><span style="margin-left:auto;align-self:center" class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
     if (UI.shopMode === 'buy') {
       const sub = `<div class="tabs"><button class="btn ${UI.shopTab === 'supplies' ? 'on' : ''}" data-act="tab:supplies">Supplies</button><button class="btn ${UI.shopTab === 'weapons' ? 'on' : ''}" data-act="tab:weapons">Weapons</button><button class="btn ${UI.shopTab === 'armor' ? 'on' : ''}" data-act="tab:armor">Armor</button></div>`;
-      const pots = ['red_potion', 'orange_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple'].concat(sc >= 1 ? ['yellow_potion'] : [], sc >= 2 ? ['white_potion'] : []);
+      const pots = ['red_potion', 'orange_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple'].concat(sc >= 1 ? ['yellow_potion'] : [], sc >= 2 ? ['white_potion'] : [], P.flags.gate && P.lvl >= 40 ? ['honey_mead'] : []);
       let ids;
       // Second-class gear only shows for second classes, and only up to 5 levels above your own.
       const t2 = CLASSES[P.cls].tier >= 2;
       if (UI.shopTab === 'supplies') ids = pots;
-      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= cap && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
+      // Round-3 gear (Lv 45+) only shows within 5 levels of your own, like second-class gear.
+      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= cap && (t.lvl < 45 || t.lvl <= P.lvl + 5) && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
       const rows = ids.map(id => { const t = ITEMS[id]; const ok = t.type !== 'equip' || jobOk(t, P.cls); const stack = t.type === 'use'; return `<div class="li ${ok ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}</span><span class="row"><span class="p">${fmt(t.price)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= t.price ? '' : 'disabled'}>Buy</button>${stack ? `<button class="btn" data-act="buy:${id}:10" ${P.zeny >= t.price * 10 ? '' : 'disabled'}>×10</button>` : ''}</span></div>`; }).join('');
       const note = sc < 3 ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">“Bring me proof the Shardbearers can die and I’ll open the good racks.” Stock rises with each Rune-Shard.</p>` : '';
       return tabs + sub + `<div class="list">${rows}</div>` + note;
@@ -264,10 +270,47 @@ const RENDER = {
     return tabs + `<p class="muted" style="margin:0 0 8px;line-height:1.4">“Up to +4, nothing breaks. Past that the metal gets proud, and proud metal shatters.”</p><div class="list">${rows || '<div class="muted">No equipment to refine. Accessories cannot be refined.</div>'}</div>`;
   },
   way() {
-    const list = Object.keys(MAPDEFS).filter(k => P.kindled[k] && k !== map.id).map(k => `<button class="btn" style="width:100%;text-align:left;margin-top:4px" data-act="travel:${k}">${MAPDEFS[k].name} <span class="muted">· ${MAPDEFS[k].sub}</span></button>`).join('');
-    return `<p class="muted" style="margin:0 0 8px;line-height:1.45">The ember inside is warm. Resting heals you and saves your progress, but everything you killed on this map will rise again.</p><button class="btn big" style="width:100%" data-act="rest">Rest</button><div class="sec">Travel to a kindled Waystone</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}`;
+    const list = travelList().filter(k => k !== map.id).map(k => travelButton(k)).join('');
+    return `<p class="muted" style="margin:0 0 8px;line-height:1.45">The ember inside is warm. Resting heals you and saves your progress, but everything you killed on this map will rise again.</p><button class="btn big" style="width:100%" data-act="rest">Rest</button><div class="sec">Travel to a kindled Waystone</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}<button class="btn" style="width:100%;margin-top:8px" data-act="worldmap">World Map <kbd>${winKey('worldmap')}</kbd></button>`;
+  },
+  // World Map: every realm, its level range and waystone, the roads between them; travel from a kindled Waystone.
+  worldmap() {
+    P.flags.tips.worldmap = true;
+    const at = atWaystone(), E = worldEdges(), ids = MAP_ORDER.filter(k => MAPDEFS[k]);
+    const lines = E.map(e => { const a = MAPDEFS[e.a].world, b = MAPDEFS[e.b].world; const seen = P.flags.seen[e.a] || P.flags.seen[e.b]; return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${e.locked ? '#b0402a' : seen ? '#c8a860' : '#6a6258'}" stroke-width="${e.locked ? 2 : 2.5}" ${e.locked || !seen ? 'stroke-dasharray="6 5"' : ''} opacity="${seen ? 0.9 : 0.55}"/>`; }).join('');
+    const nodes = ids.map(k => {
+      const d = MAPDEFS[k], [x, y] = d.world, here = map.id === k, seen = !!P.flags.seen[k], lit = !!P.kindled[k], hasWay = !!genMap(k).way, can = at && lit && !here;
+      const lv = d.lv ? `Lv ${d.lv[0]}–${d.lv[1]}` : 'Safe haven', warn = d.lv && P.lvl < d.lv[0] - 4;
+      const way = hasWay ? `<text x="${x + 64}" y="${y + 16}" text-anchor="end" font-size="12" fill="${lit ? '#ffb050' : '#7a7068'}">${lit ? '✦' : '◇'}</text>` : '';
+      return `<g ${can ? `data-act="travel:${k}" style="cursor:pointer"` : ''} data-tip="wm:${k}"><rect x="${x - 70}" y="${y - 22}" width="140" height="44" rx="6" fill="${here ? '#4a3a1c' : seen ? '#221c18' : '#15120f'}" stroke="${here ? '#ffd070' : can ? '#ffb050' : seen ? '#8a7a5a' : '#4a4038'}" stroke-width="${here || can ? 2 : 1}"/>`
+        + `<text x="${x}" y="${y - 3}" text-anchor="middle" font-size="13" font-weight="700" fill="${seen ? '#f4e8d0' : '#9a9088'}">${esc(d.name)}</text>`
+        + `<text x="${x}" y="${y + 13}" text-anchor="middle" font-size="11" fill="${warn ? '#ff8a6a' : seen ? '#c8b898' : '#7a7068'}">${seen ? lv : lv + ' · unexplored'}</text>${way}${here ? `<circle cx="${x - 58}" cy="${y - 8}" r="4" fill="#ffd070"/>` : ''}</g>`;
+    }).join('');
+    const svg = `<svg viewBox="0 0 640 400" style="width:100%;height:auto;display:block;background:radial-gradient(ellipse at 40% 55%,#2a241c,#0e0c0a);border:1px solid #4a4038;border-radius:6px;font-family:inherit">${lines}${nodes}</svg>`;
+    const kindled = travelList().filter(k => k !== map.id);
+    const list = kindled.map(k => travelButton(k, !at)).join('');
+    return `${svg}<p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">✦ kindled Waystone · ◇ Waystone not yet kindled · dashed red: sealed road. ${at ? 'You stand by a Waystone: pick a kindled one to travel there.' : 'Travel between kindled Waystones from any Waystone.'}</p><div class="sec">Kindled Waystones</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}`;
   },
 };
+// Kindled waystones in story order; the travel buttons show the level range.
+function travelList() { return MAP_ORDER.filter(k => MAPDEFS[k] && P.kindled[k]).concat(Object.keys(P.kindled).filter(k => MAPDEFS[k] && !MAP_ORDER.includes(k))); }
+function travelButton(k, off) { const d = MAPDEFS[k]; return `<button class="btn" style="width:100%;text-align:left;margin-top:4px" data-act="travel:${k}" ${off ? 'disabled' : ''}>${esc(d.name)} <span class="muted">· ${d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : esc(d.sub)}</span></button>`; }
+const atWaystone = () => !!(map && map.way && P.kindled[map.id] && !P.dead && dist(P, map.way) < 3.2);
+// Roads between maps, from the warps of every map (maps are generated once and cached).
+let WM_EDGES = null;
+function worldEdges() {
+  if (!WM_EDGES) {
+    const seen = {}; WM_EDGES = [];
+    for (const k of Object.keys(MAPDEFS)) for (const wp of genMap(k).warps) { if (!MAPDEFS[wp.to]) continue; const key = [k, wp.to].sort().join('|'); if (seen[key]) { if (wp.lock) seen[key].lock = wp.lock; continue; } seen[key] = { a: k, b: wp.to, lock: wp.lock }; WM_EDGES.push(seen[key]); }
+  }
+  for (const e of WM_EDGES) e.locked = !!(e.lock && WARP_LOCKS[e.lock] && !WARP_LOCKS[e.lock].open());
+  return WM_EDGES;
+}
+function travelTo(k) {
+  if (!P.kindled[k] || !MAPDEFS[k]) return;
+  if (!atWaystone()) { log('You can only travel from a kindled Waystone.', 'warn'); return; }
+  closeWin('way'); closeWin('worldmap'); Sfx.warp(); const m = genMap(k); gotoMap(k, m.way.x, m.way.y + 1.5);
+}
 function journalQuests() {
   const QA = P.quests.active, kinds = [['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties']];
   const objRows = id => questObjectives(id).map(o => `<div class="obj ${o.done ? 'done' : o.open ? 'now' : ''}"><span class="m">${o.done ? '✓' : o.open ? '▸' : '·'}</span><span>${esc(o.text)}${o.counted ? ` <b class="qn">${o.cur}/${o.max}</b>` : ''}</span></div>`).join('');
@@ -368,6 +411,7 @@ function tipFor(key) {
   if (k === 'item') { const it = findItem(+v); return it ? itemTooltip(it) : null; }
   if (k === 'shop') return itemTooltip({ id: v }, true);
   if (k === 'skill') return skillTooltip(v);
+  if (k === 'wm') { const d = MAPDEFS[v]; if (!d) return null; const ms = [...new Set(d.spawns.map(s => s[0]))].map(id => MOBS[id].name); return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${esc(d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : d.sub)}${P.flags.seen[v] && ms.length ? '<br>' + esc(ms.join(', ')) : ''}${P.flags.seen[v] && d.boss && MOBS[d.boss] ? `<br>MVP: ${esc(MOBS[d.boss].name)}${P.flags.bosses[d.boss] ? ' (slain)' : ''}` : ''}</div><div class="muted">${P.kindled[v] ? 'Waystone kindled' : genMap(v).way ? 'Waystone not kindled' : ''}</div>`; }
   if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${[...Object.entries(b.bonus || {}).map(([a, n]) => bonusLine(a, n)), ...buffLines(b)].join('<br>')}</div><div class="muted">${b.count !== undefined ? `×${b.count}` : Math.ceil(b.t) + 's left'}</div>` : null; }
   return null;
 }
@@ -392,7 +436,8 @@ function handleAct(act, e) {
     case 'jtab': UI.jTab = b; UI.abandonArm = null; break;
     case 'qtrack': P.quests.track = P.quests.track === b ? null : b; break;
     case 'qabandon': if (UI.abandonArm === b) { UI.abandonArm = null; questAbandon(b); } else UI.abandonArm = b; break;
-    case 'travel': closeWin('way'); Sfx.warp(); { const m = genMap(b); gotoMap(b, m.way.x, m.way.y + 1.5); } break;
+    case 'travel': travelTo(b); break;
+    case 'worldmap': openWin('worldmap'); break;
     case 'wipe': UI.wipeArm = true; break;
     case 'ctrl': setCtrlMode(b); break;
     case 'wipe2': store('aom-save', null); location.reload(); break;
@@ -402,12 +447,13 @@ function handleAct(act, e) {
 function doRefine(it) {
   const cost = refineCost(it); if (P.zeny < cost || (it.refine || 0) >= 10) return;
   P.zeny -= cost; const ch = refineChance(it);
-  if (Math.random() * 100 < ch) { it.refine = (it.refine || 0) + 1; log(`Brokkr’s hammer rings true. ${itemName(it)}.`, 'lvl'); Sfx.level(); burst(12.5, 13.5, 20, '#ffd27a', 20, 2.5); }
+  const an = map.objs.find(o => o.kind === 'anvil') || P, smith = UI.shopBy === 'sindri' ? 'Sindri' : 'Brokkr';
+  if (Math.random() * 100 < ch) { it.refine = (it.refine || 0) + 1; log(`${smith}’s hammer rings true. ${itemName(it)}.`, 'lvl'); Sfx.level(); burst(an.x, an.y, 20, '#ffd27a', 20, 2.5); }
   else {
     const name = itemName(it);
     for (const s of SLOTS) if (P.equip[s] === it) P.equip[s] = null;
     const i = P.inv.indexOf(it); if (i >= 0) P.inv.splice(i, 1);
-    log(`The metal screams and shatters. ${name} is gone.`, 'bad'); Sfx.slam(); burst(12.5, 13.5, 20, '#888', 26, 3);
+    log(`The metal screams and shatters. ${name} is gone.`, 'bad'); Sfx.slam(); burst(an.x, an.y, 20, '#888', 26, 3);
   }
   calcStats();
 }
@@ -558,10 +604,33 @@ function drawSkillOverlay() {
       const pts = groundLoop(z.x, z.y, 0.45, 10); strokeLoop(pts, rgba(z.col, 0.28), rgba(z.col, 0.9), 1.6 * sc, [3, 3]);
       runeAt(z.x, z.y, 0.1, z.rune || '•', z.col, 13 * sc); continue;
     }
+    if (z.hostile) { // enemy hex: a boiling purple pool with a spiked rim
+      const r = z.r * (0.95 + 0.05 * pulse);
+      strokeLoop(groundLoop(z.x, z.y, r, 28), rgba(z.col, 0.24 * life), rgba(z.col, 0.9 * life), 2.6 * sc, [3, 4]);
+      strokeLoop(groundLoop(z.x, z.y, r * 0.62, 20), null, rgba('#e0b0ff', 0.45 * life), 1.2 * sc, [2, 6]);
+      if (Math.random() < 0.35) parts.push({ x: z.x + rand(-r, r) * 0.7, y: z.y + rand(-r, r) * 0.7, z: 2, vx: 0, vy: 0, vz: rand(20, 45), life: 0.7, max: 0.7, col: z.col, size: 3, float: true });
+      if (z.rune) runeAt(z.x, z.y, 0.15, z.rune, '#e8c8ff', 22 * sc);
+      continue;
+    }
     const r = z.r * (z.kind === 'storm' ? 1 : 0.97 + 0.03 * pulse);
     strokeLoop(groundLoop(z.x, z.y, r, 28), rgba(z.col, (z.ward ? 0.1 : 0.16) * life), rgba(z.col, 0.75 * life), (z.ward ? 1.6 : 2.2) * sc, z.ward ? [8, 6] : null);
     if (z.kind === 'storm' || z.kind === 'quagmire') { const rot = time * (z.kind === 'storm' ? 2.4 : 0.4); for (let k = 1; k <= 2; k++) { const rr = r * k / 3; const pts = []; for (let i = 0; i < 14; i++) { const a = rot * (k % 2 ? 1 : -1) + i / 14 * 6.2832, px = z.x + Math.cos(a) * rr, py = z.y + Math.sin(a) * rr; pts.push(proj(px, py, groundH(px, py) + 0.08)); } strokeLoop(pts, null, rgba(z.col, 0.45 * life), 1.2 * sc, [6, 8]); } }
     if (z.rune) runeAt(z.x, z.y, 0.15, z.rune, z.col, 22 * sc);
+  }
+  // Boss cones and rolling lines: the circle telegraphs are drawn by the renderer; add the exact outline once per cast.
+  const shapes = new Set();
+  for (const t of teles) if (t.shape && (t.shape.kind === 'cone' || t.shape.kind === 'lines') && !t.m.dead) shapes.add(t.grp);
+  for (const g of shapes) {
+    const s = g.shape, gp = (x, y) => proj(x, y, groundH(x, y) + 0.07), k = 0.5 + 0.5 * Math.sin(time * 14);
+    if (s.kind === 'cone') {
+      const pts = [gp(s.x, s.y)]; for (let i = 0; i <= 12; i++) { const a = s.ang - s.half + 2 * s.half * i / 12; pts.push(gp(s.x + Math.cos(a) * s.len, s.y + Math.sin(a) * s.len)); }
+      strokeLoop(pts, `rgba(255,90,30,${0.1 + 0.05 * k})`, `rgba(255,190,90,${0.6 + 0.3 * k})`, 2 * sc, [7, 5]);
+    } else {
+      for (let j = 0; j < s.n; j++) {
+        const a = s.ang + (s.n > 1 ? (j - (s.n - 1) / 2) * s.spread : 0), ux = Math.cos(a), uy = Math.sin(a), px = -uy * s.w / 2, py = ux * s.w / 2, x0 = s.x + ux * 0.8, y0 = s.y + uy * 0.8, x1 = s.x + ux * s.len, y1 = s.y + uy * s.len;
+        strokeLoop([gp(x0 + px, y0 + py), gp(x1 + px, y1 + py), gp(x1 - px, y1 - py), gp(x0 - px, y0 - py)], `rgba(140,200,255,${0.08 + 0.05 * k})`, `rgba(190,230,255,${0.55 + 0.3 * k})`, 1.8 * sc, [6, 5]);
+      }
+    }
   }
   // Auras (songs, Oath of Tyr, Magic Rod) and the Kyrie bubble
   for (const k in P.buffs) {
@@ -660,6 +729,7 @@ addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey) return;
   const map_ = { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help' };
   if (map_[k]) { toggleWin(map_[k]); return; }
+  if (k === ',' || (k === 'w' && !isAction())) { toggleWin('worldmap'); return; }
   if (k === 'x') { if ((P.skills.basic || 0) < 3) { log('You need Basic Skill 3 to sit.', 'warn'); return; } if (P.target || P.casting) return; P.sitting = !P.sitting; P.path = null; log(P.sitting ? 'You sit and catch your breath.' : 'You stand.', 'sys'); return; }
   if (k === 'z') { let best = null, bd = 3.5; for (const d of drops) { const dd = dist(d, P); if (dd < bd) { bd = dd; best = d; } } if (best) { P.target = null; P.goal = { kind: 'drop', ref: best }; P.path = null; } return; }
   if (k === '[' || k === 'q') { cam.yawT += Math.PI / 8; return; }
@@ -681,7 +751,8 @@ let questMigrate = false;
 function applySave(o) {
   P = Object.assign(newPlayer(o.name, o.hair), o); uidc = Math.max(uidc, o.uidc || 1);
   P.flags = Object.assign({ shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {} }, P.flags);
-  for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked']) P.flags[k] = P.flags[k] || {};
+  for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked', 'seen']) P.flags[k] = P.flags[k] || {};
+  for (const k in P.kindled || {}) P.flags.seen[k] = true; if (P.map) P.flags.seen[P.map] = true; // saves from before the World Map
   P.quests = questNorm(o.quests); questMigrate = !o.quests; // saves from before the quest system: story quests are caught up without rewards
   resetRuntime();
 }
@@ -751,10 +822,25 @@ function frame(now) {
     if (started) hover = pickAt(mouse.x, mouse.y);
     update(dt);
     render(dt);
-    if (started) { renderHUD(); if (UI.dirty) renderAll(); if (time % 0.25 < dt) drawMinimap(); }
+    if (started) { renderHUD(); if (UI.dirty) renderAll(); if (time % 0.25 < dt) { drawMinimap(); drawMinimapExtras(); } }
     setCursor(hover ? (hover.kind === 'mob' ? 'atk' : hover.kind === 'drop' ? 'pick' : 'talk') : 'def');
   } catch (err) { console.error(err); showErr(err); }
 }
+// Minimap additions drawn over drawMinimap() (js/gfx-render.js): the Waystone, sealed warps of any lock kind, the MVP lair.
+function drawMinimapExtras() {
+  const mc = $('mini'); if (!mc || !map) return; const g = mc.getContext('2d');
+  const s = Math.min(mc.width / map.w, mc.height / map.h), ox = (mc.width - map.w * s) / 2, oy = (mc.height - map.h * s) / 2, X = x => ox + x * s, Y = y => oy + y * s;
+  g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.lineWidth = 1.5;
+  if (map.way) { const x = X(map.way.x), y = Y(map.way.y), r = 5; g.fillStyle = P.kindled[map.id] ? '#ffb050' : '#8a8078'; g.strokeStyle = '#1a1008'; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.stroke(); }
+  for (const wp of map.warps) if (wp.lock && wp.lock !== 'gate' && warpLocked(wp)) { g.fillStyle = '#b03020'; g.strokeStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(X(wp.x + 0.5), Y(wp.y + 0.5), 4, 0, 7); g.fill(); g.stroke(); }
+  if (map.d.boss && map.bossPos && !P.flags.bosses[map.d.boss] && P.flags.seen[map.id]) { g.strokeStyle = 'rgba(255,122,42,.8)'; g.setLineDash([3, 3]); g.beginPath(); g.arc(X(map.bossPos.x), Y(map.bossPos.y), 7 * s / 2 + 4, 0, 7); g.stroke(); g.setLineDash([]); }
+  g.restore();
+}
+// World Map button in the HUD menu (index.html is not ours; add it at load).
+(function worldMapButton() {
+  const menu = document.querySelector('#info .menu'); if (!menu || menu.querySelector('[data-win="worldmap"]')) return;
+  const b = document.createElement('button'); b.className = 'btn'; b.dataset.win = 'worldmap'; b.style.gridColumn = '1 / -1'; b.innerHTML = 'World Map<kbd>W</kbd>'; menu.appendChild(b);
+})();
 function boot(data) {
   resize();
   P = newPlayer('Unkindled', '#b9b3a8'); resetRuntime(); calcStats();

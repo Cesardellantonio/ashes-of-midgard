@@ -10,10 +10,11 @@ const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, 
 let HITSTOP = 0, SHAKE = 0;
 const isAction = () => CTRL.mode === 'action';
 const WINKEYS = {
-  action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help' },
-  classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help' },
+  action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap' },
+  classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help', KeyW: 'worldmap' },
 };
-const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv' };
+// Comma is not an action key: ui.js opens the World Map on ',' in both modes (and on W in classic mode).
+const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap' };
 const ACTION_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN']);
 
 function setCtrlMode(m) {
@@ -23,10 +24,11 @@ function setCtrlMode(m) {
   UI.dirty = true;
 }
 function refreshKeyHints() {
-  const map = WINKEYS[CTRL.mode]; const inv = {}; for (const k in map) inv[map[k]] = k.replace('Key', '');
+  const map = WINKEYS[CTRL.mode]; const inv = {}; for (const k in map) inv[map[k]] = keyLabel(k);
   document.querySelectorAll('.menu [data-win]').forEach(b => { const kb = b.querySelector('kbd'); if (kb) kb.textContent = inv[b.dataset.win] || ''; });
 }
-const winKey = id => { const map = WINKEYS[CTRL.mode]; for (const k in map) if (map[k] === id) return k.replace('Key', ''); return ''; };
+const keyLabel = code => code === 'Comma' ? ',' : code.replace('Key', '');
+const winKey = id => { const map = WINKEYS[CTRL.mode]; for (const k in map) if (map[k] === id) return keyLabel(k); return ''; };
 
 /* ---------- Input ---------- */
 addEventListener('keydown', e => {
@@ -199,7 +201,7 @@ function actionUpdate(dt) {
   if (v && P.casting) cancelCast();
   if (v && !(P.swingT > 0) && P.charge < 0) {
     P.path = null; P.target = null; P.goal = null; P.pending = null; P.sitting = false; P.flags.tips.moved = true;
-    const spd = S.move * (P.blocking ? 0.4 : 1);
+    const spd = S.move * (P.blocking ? 0.4 : 1) * surfMul(P);
     if (!P.blocking) { P.fx = v[0]; P.fy = v[1]; }
     stepMove(v[0] * spd * dt, v[1] * spd * dt);
     P.moving = true; P.walk += dt * spd * 3.4; busy = true;

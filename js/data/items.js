@@ -42,6 +42,13 @@ etc('jellopy', 'Jellopy', 6, '#d8a0b0'); etc('fluff', 'Fluff', 8, '#e8e0d0'); et
 etc('burlap', 'Scorched Burlap', 20, '#9a7a4a'); etc('tree_root', 'Tree Root', 26, '#6a4a2a'); etc('spore', 'Grey Spore', 30, '#8a7a9a');
 etc('wolf_claw', 'Wolf Claw', 38, '#cfc6b0'); etc('wolf_pelt', 'Ashen Pelt', 70, '#6a6460'); etc('kobold_hair', 'Matted Kobold Hair', 42, '#8a6a3a');
 etc('bone_shard', 'Bone Shard', 60, '#e0d8c0'); etc('ectoplasm', 'Ectoplasm', 76, '#a0c0e0'); etc('rusted_chain', 'Rusted Chain', 96, '#8a5a3a'); etc('cinder_ash', 'Cinder Ash', 130, '#e07a3a');
+// Round 3 materials (Rimeshore, Mirewell, Nidavellir, Bifrost)
+etc('frost_jelly', 'Frostjelly', 140, '#bfe4ff'); etc('frost_mane', 'Frosted Mane', 160, '#e8eef4'); etc('draugr_net', 'Draugr’s Net', 175, '#6a8a6a'); etc('rime_essence', 'Rime Essence', 190, '#9fd8ff'); etc('hermit_shell', 'Hermit Shell', 210, '#c8763a');
+etc('toad_skin', 'Slick Toadskin', 180, '#6a9a3a'); etc('leech_teeth', 'Leech Teeth', 195, '#8a5a9a'); etc('wisp_flame', 'Wisp Flame', 215, '#aaff8a'); etc('bone_charm', 'Bone Charm', 230, '#d8d0b8'); etc('troll_moss', 'Troll Moss', 245, '#4a6a3a');
+etc('bat_wing', 'Bat Wing', 220, '#4a3a4a'); etc('amethyst', 'Amethyst Shard', 250, '#a870e0'); etc('magma_core', 'Magma Core', 270, '#ff7a2a'); etc('rune_stone', 'Rune Stone', 300, '#8a8680'); etc('dvergr_ore', 'Dvergr Ore', 320, '#c8a860');
+etc('prism_shard', 'Prism Shard', 300, '#f0d0ff'); etc('harpy_feather', 'Harpy Feather', 320, '#c8a0d8'); etc('aesir_core', 'Aesir Rune Core', 380, '#e8c060'); etc('valkyrie_plume', 'Valkyrie Plume', 360, '#dce8ff'); etc('gleipnir_link', 'Link of Gleipnir', 420, '#6a5a7a');
+use_('honey_mead', 'Honey Mead', { heal: [650, 850], price: 2600, icon: 'potion', color: '#e8b040', desc: 'Restores 650–850 HP. Mead from the halls of Asgard, still sweet after the end of the world.' });
+
 ITEMS.shard_blood = { id: 'shard_blood', name: 'Rune-Shard of Blood', type: 'key', icon: 'shard', color: '#e04a5a', desc: 'One third of the Rune of Binding. It is warm and it beats.' };
 ITEMS.shard_moon = { id: 'shard_moon', name: 'Rune-Shard of the Moon', type: 'key', icon: 'shard', color: '#a8d0ff', desc: 'One third of the Rune of Binding. It casts a shadow even in the dark.' };
 ITEMS.shard_oath = { id: 'shard_oath', name: 'Rune-Shard of the Oath', type: 'key', icon: 'shard', color: '#e8d890', desc: 'One third of the Rune of Binding. It is heavier than it should be.' };
@@ -80,6 +87,23 @@ arm('knight_plate', 'Ash-Knight Plate', 'body', 15, 2, 36, 12500, 1, ['knight', 
 arm('seidr_robe', 'Seiðr Robe', 'body', 7, 20, 36, 12000, 1, ['runecaster', 'sage', 'priest'], { bonus: { int: 2 } });
 arm('hunter_leathers', 'Hunter’s Leathers', 'body', 10, 5, 36, 11500, 1, ['wolfhunter', 'skald', 'monk'], { bonus: { agi: 2 } });
 
+/* Round 3 gear: dwarf-forged (Lv 46, Nidavellir) and Aesir (Lv 54, Bifrost). Brokkr stocks them once the gate is
+   open; second-class types stay second-class only (tier2Item). */
+weap('dvergr_seax', 'Dvergr Seax', 'dagger', 104, 0, 46, 26000, 1); weap('dvergr_longsword', 'Dvergr Longsword', 'sword', 150, 0, 46, 27000, 1);
+weap('dvergr_rod', 'Dvergr Rune-Rod', 'rod', 56, 150, 46, 27000, 1); weap('dvergr_bow', 'Dvergr Longbow', 'bow', 138, 0, 46, 27000, 1); weap('dvergr_hammer', 'Dvergr Warhammer', 'mace', 142, 30, 46, 27000, 1);
+weap('dvergr_spear', 'Dvergr Hewing Spear', 'spear', 196, 0, 46, 29000, 1); weap('dvergr_greatsword', 'Dvergr Greatsword', 'twohand', 232, 0, 46, 30000, 1); weap('dvergr_staff', 'Dvergr Runestaff', 'staff', 62, 200, 46, 29000, 1);
+weap('dvergr_codex', 'Codex of the Dvergar', 'book', 132, 132, 46, 29000, 1); weap('dvergr_lur', 'Dvergr Lur', 'lute', 166, 0, 46, 29000, 1); weap('dvergr_chain', 'Dvergr Chain-Lash', 'whip', 160, 0, 46, 29000, 1); weap('dvergr_knuckles', 'Dvergr Knuckles', 'knuckle', 166, 0, 46, 29000, 1);
+weap('aesir_dirk', 'Aesir Dirk', 'dagger', 128, 0, 54, 42000, 1); weap('aesir_blade', 'Aesir Blade', 'sword', 176, 0, 54, 43000, 1); weap('aesir_wand', 'Aesir Wand', 'rod', 66, 182, 54, 43000, 1);
+weap('aesir_bow', 'Aesir Bow', 'bow', 166, 0, 54, 43000, 1); weap('aesir_mace', 'Aesir Mace', 'mace', 168, 40, 54, 43000, 1); weap('aesir_spear', 'Aesir Spear', 'spear', 226, 0, 54, 46000, 1);
+weap('aesir_greatsword', 'Aesir Greatsword', 'twohand', 262, 0, 54, 47000, 1); weap('aesir_staff', 'Aesir Staff', 'staff', 70, 232, 54, 46000, 1); weap('aesir_tome', 'Aesir Tome', 'book', 154, 154, 54, 46000, 1);
+weap('aesir_harp', 'Aesir Harp', 'lute', 192, 0, 54, 46000, 1); weap('aesir_lash', 'Aesir Lash', 'whip', 186, 0, 54, 46000, 1); weap('aesir_fists', 'Aesir Fists', 'knuckle', 192, 0, 54, 46000, 1);
+arm('dvergr_mail', 'Dvergr Mail', 'body', 17, 3, 46, 24000, 1, ['swordsman', 'acolyte']); arm('frostweave_robe', 'Frostweave Robe', 'body', 8, 24, 46, 24000, 1, ['mage', 'acolyte'], { bonus: { int: 2 } });
+arm('wyrmhide_coat', 'Wyrmhide Coat', 'body', 13, 8, 46, 23000, 1); arm('dvergr_helm', 'Dvergr Helm', 'head', 9, 1, 46, 18000, 1, ['swordsman', 'acolyte']);
+arm('rime_circlet', 'Rime Circlet', 'head', 3, 8, 46, 17000, 1, null, { bonus: { int: 2 } }); arm('dvergr_boots', 'Dvergr Boots', 'boots', 7, 1, 46, 16000, 1); arm('dvergr_shield', 'Dvergr Shield', 'shield', 10, 2, 46, 19000, 1, ['swordsman', 'acolyte']);
+arm('aesir_plate', 'Aesir Plate', 'body', 20, 6, 54, 38000, 1, ['swordsman', 'acolyte']); arm('aesir_robe', 'Aesir Robe', 'body', 10, 30, 54, 38000, 1, ['mage', 'acolyte'], { bonus: { int: 3 } });
+arm('aesir_leathers', 'Aesir Leathers', 'body', 15, 10, 54, 36000, 1, null, { bonus: { agi: 2 } }); arm('aesir_helm', 'Aesir Helm', 'head', 11, 3, 54, 30000, 1);
+arm('aesir_greaves', 'Aesir Greaves', 'boots', 9, 2, 54, 28000, 1); arm('aesir_ring', 'Ring of the Aesir', 'acc', 0, 2, 50, 30000, 0, null, { bonus: { str: 3, dex: 3 } }); arm('aesir_brooch', 'Brooch of the Aesir', 'acc', 0, 4, 50, 30000, 0, null, { bonus: { int: 3, agi: 3 } });
+
 // Gear only second classes can use (Brokkr keeps it off the racks for everyone else).
 const tier2Item = t => !!(t.jobs && t.jobs.length && t.jobs.every(j => CLASSES[j] && CLASSES[j].tier >= 2));
 const U = (o) => Object.assign({ unique: true, price: 4000 }, o);
@@ -115,12 +139,44 @@ weap('u_gleipnir', 'Gleipnir Cord', 'whip', 144, 0, 30, 0, 1, U2({ bonus: { agi:
 weap('u_jarngreipr', 'Járngreipr', 'knuckle', 150, 0, 30, 0, 1, U2({ bonus: { str: 4, aspd: 12 }, lore: 'Thor’s iron gloves. One is missing. The other is enough.' }));
 // Ashen King
 arm('u_crown', 'Crown of Cinders', 'head', 5, 5, 1, 0, 1, null, U({ boss: 'ashen_king', bonus: { str: 3, agi: 3, vit: 3, int: 3, dex: 3, luk: 3 }, lore: 'It is warm. It fits.' }));
+// Round 3 MVPs. Each drops one unique usable by your class when there is one (bossDefeated in core.js).
+// The Drowned Jarl
+arm('u_jarl_crown', 'Crown of the Drowned', 'head', 7, 4, 36, 0, 1, null, U({ boss: 'drowned_jarl', bonus: { vit: 4, maxhpPct: 8 }, lore: 'Broken, barnacled, and still cold enough to burn.' }));
+weap('u_aegir_anchor', 'Anchor of Ægir', 'mace', 160, 40, 36, 0, 1, U({ boss: 'drowned_jarl', bonus: { str: 4, vit: 3 }, lore: 'It held a longship against the storm that sank it.' }));
+weap('u_ran_harpoon', 'Rán’s Harpoon', 'spear', 196, 0, 36, 0, 1, U({ boss: 'drowned_jarl', bonus: { str: 4, hit: 12 }, lore: 'The sea goddess fished for drowned men with it.' }));
+weap('u_tidecaller', 'Tidecaller', 'staff', 58, 190, 36, 0, 1, U({ boss: 'drowned_jarl', bonus: { int: 5, maxsp: 120 }, lore: 'Hold it to your ear and you hear surf that stopped a thousand years ago.' }));
+weap('u_rimeglass_bow', 'Rimeglass Bow', 'bow', 150, 0, 36, 0, 1, U({ boss: 'drowned_jarl', bonus: { dex: 5, aspd: 8 }, lore: 'Strung with frozen kelp that never thaws.' }));
+// The Bog Crone
+arm('u_crone_shawl', 'Crone’s Moss Shawl', 'body', 9, 14, 42, 0, 1, null, U({ boss: 'bog_crone', bonus: { int: 4, mdef: 5 }, lore: 'It still smells of the soup.' }));
+weap('u_hexwood_rod', 'Hexwood Rod', 'rod', 50, 170, 42, 0, 1, U({ boss: 'bog_crone', bonus: { int: 5, matk: 20 }, lore: 'Every knot in the wood is a curse that did not finish.' }));
+weap('u_bogthorn_whip', 'Bogthorn Lash', 'whip', 176, 0, 42, 0, 1, U({ boss: 'bog_crone', bonus: { agi: 4, luk: 4 }, lore: 'Braided from the reeds that grow where the cauldron spilled.' }));
+weap('u_ladle', 'The Crone’s Ladle', 'mace', 170, 60, 42, 0, 1, U({ boss: 'bog_crone', bonus: { int: 4, vit: 4 }, lore: 'It stirred a hundred years of soup. It can stir a skull.' }));
+weap('u_toadstool_bow', 'Toadstool Bow', 'bow', 170, 0, 42, 0, 1, U({ boss: 'bog_crone', bonus: { dex: 5, crit: 8 }, lore: 'The spores in the grip make your aim very calm.' }));
+// Fafnir
+arm('u_fafnir_scale', 'Scale of Fafnir', 'shield', 12, 4, 48, 0, 1, null, U({ boss: 'fafnir', bonus: { maxhpPct: 8, dmgRed: 5 }, lore: 'One scale from his belly. It was the only one not covered in gold.' }));
+weap('u_gram', 'Gram', 'twohand', 270, 0, 48, 0, 1, U({ boss: 'fafnir', bonus: { str: 6, crit: 10 }, lore: 'Sigurd’s sword, reforged by Regin. It killed Fafnir once. It remembers how.' }));
+weap('u_ridill', 'Ridill', 'dagger', 140, 0, 48, 0, 1, U({ boss: 'fafnir', bonus: { agi: 5, crit: 16 }, lore: 'Regin’s own blade. He used it to cut out the wyrm’s heart.' }));
+weap('u_hoard_staff', 'Hoard-Wyrm’s Staff', 'staff', 66, 226, 48, 0, 1, U({ boss: 'fafnir', bonus: { int: 6, maxsp: 150 }, lore: 'A gold-banded staff from the bottom of the hoard. It is warm to the touch.' }));
+arm('u_andvaranaut', 'Andvaranaut', 'acc', 0, 3, 48, 0, 0, null, U({ boss: 'fafnir', bonus: { luk: 6, str: 3, int: 3 }, lore: 'The ring that made more gold. It also made Fafnir.' }));
+// Fenrir
+weap('u_fenrir_fang', 'Fang of Fenrir', 'dagger', 172, 0, 55, 0, 1, U({ boss: 'fenrir', bonus: { agi: 6, crit: 18 }, lore: 'It bit off Tyr’s hand. It will not stop at yours.' }));
+weap('u_tyrs_oath', 'Tyr’s Oath', 'sword', 240, 0, 55, 0, 1, U({ boss: 'fenrir', bonus: { str: 6, hit: 20 }, lore: 'A sword with no hilt guard, for a god who had no right hand.' }));
+weap('u_moonsbane', 'Moonsbane', 'bow', 220, 0, 55, 0, 1, U({ boss: 'fenrir', bonus: { dex: 7, aspd: 12 }, lore: 'Strung with a hair from Fenrir’s tail. His sons would know it anywhere.' }));
+weap('u_varg_staff', 'Staff of the Varg', 'staff', 74, 262, 55, 0, 1, U({ boss: 'fenrir', bonus: { int: 8, matk: 30 }, lore: 'A wolf’s thighbone, carved with the runes that bound him.' }));
+weap('u_ragnarok_spear', 'Ragnarök', 'spear', 262, 0, 55, 0, 1, U({ boss: 'fenrir', bonus: { str: 6, agi: 4 }, lore: 'Named for the end it failed to prevent.' }));
+arm('u_fenrir_mantle', 'Mantle of the Wolf', 'body', 16, 12, 55, 0, 1, null, U({ boss: 'fenrir', bonus: { str: 4, agi: 4, vit: 4 }, lore: 'Black fur that drinks the light. It is warm in a way that is not comforting.' }));
 
 const CARDS = {
   blight_poring: { luk: 2, flee: 2 }, ash_grub: { vit: 1, maxhp: 100 }, hollow_hare: { agi: 1, luk: 1 }, cinder_drop: { dex: 1, hit: 5 }, scarecrow_husk: { str: 1, atk: 5 },
   thorn_willow: { maxsp: 60 }, mourning_spore: { int: 1, maxsp: 25 }, ash_wolf: { str: 1, crit: 4 }, kobold_archer: { dex: 2, hit: 5 }, rotwood_kobold: { atk: 15 },
   skeleton_soldier: { atk: 10, def: 2 }, grave_archer: { dex: 1, crit: 5 }, wraith: { flee: 15 }, rust_knight: { dmgRed: 12 }, cinder_thrall: { matk: 25, int: 1 },
   blight_mother: { maxhpPct: 20 }, hati: { agi: 4, aspd: 10 }, sir_gaunt: { str: 3, leech: 4 }, ashen_king: { str: 3, agi: 3, vit: 3, int: 3, dex: 3, luk: 3 },
+  // Round 3
+  rime_poring: { mdef: 3, maxsp: 80 }, snow_wolf: { agi: 2, crit: 5 }, draugr_fisher: { dex: 1, hit: 15 }, ice_wraith: { flee: 12, mdef: 4 }, shell_knight: { def: 4, maxhpPct: 5 },
+  bog_toad: { vit: 1, maxhp: 400 }, mire_leech: { leech: 2 }, wisp: { matk: 30 }, marsh_hag: { int: 2, maxsp: 60 }, mire_troll: { str: 1, atk: 25 },
+  cave_bat: { agi: 1, aspd: 5 }, crystal_spider: { luk: 2, crit: 8 }, magma_slime: { atk: 12, matk: 12 }, stone_golem: { def: 5, dmgRed: 6 }, dwarf_revenant: { str: 2, atk: 10 },
+  prism_poring: { luk: 4, flee: 5 }, sky_harpy: { agi: 3, move: 5 }, rune_sentinel: { def: 3, mdef: 6 }, valkyrie_shade: { dex: 3, hit: 10, crit: 5 }, fenrir_whelp: { str: 2, crit: 6 },
+  drowned_jarl: { vit: 5, maxhpPct: 15, dmgRed: 5 }, bog_crone: { int: 5, matk: 60 }, fafnir: { str: 5, atk: 40, maxhpPct: 10 }, fenrir: { str: 6, agi: 6, atk: 60, crit: 15 },
 };
 for (const k in CARDS) ITEMS['c_' + k] = { id: 'c_' + k, name: MOBS[k].name + ' Card', type: 'card', bonus: CARDS[k], price: MOBS[k].boss ? 4000 : 40, icon: 'card', color: MOBS[k].col || (MOBS[k].look && MOBS[k].look.body) || '#888', mob: k, desc: 'Insert into equipment with a free slot. Cannot be removed.' };
 
@@ -161,4 +217,5 @@ const RARE_B = { weapon: ['Bite', 'Fang', 'Edge', 'Song', 'Thirst', 'Sting'], bo
 /* Quest items (type 'key', quest: true): cannot be sold or dropped; quests take them on turn-in. */
 function questItem(id, name, o) { ITEMS[id] = Object.assign({ id, name, type: 'key', quest: true, icon: 'etc', color: '#c8a070' }, o); }
 questItem('astrid_plush', 'Pip the Poring', { icon: 'plush', color: '#f29db2', desc: 'A stitched pink Poring with one button eye. It smells of smoke and of Astrid.' });
+questItem('brokkr_letter', 'Brokkr’s Letter', { icon: 'letter', color: '#d8c0a0', desc: 'Soot-stained, folded small. It says “SINDRI” on the outside in letters an inch tall.' });
 questItem('vidar_letter', 'Sealed Letter', { icon: 'letter', color: '#e8dcc0', desc: 'Vidar’s letter to Sigrun. The seal is an eye, closed.' });

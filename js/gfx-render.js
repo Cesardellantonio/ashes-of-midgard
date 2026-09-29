@@ -16,6 +16,12 @@
    - designed target / lock rings and ember-rune boss telegraphs.
    The render lead's GFX / lightTint / shadow map are optional:
    everything here probes for them each frame.
+
+   Perf round 2: single-layer mob/NPC sheets, contact blobs and ground
+   drops are instanced (see "Instanced batches"): one draw + one shadow
+   draw per sheet instead of ~4 draws per entity. The overlay uses
+   projTo() into reused arrays, cached gradients/glow sprites/strings,
+   and PFX particles are pooled.
    ========================================================= */
 const UNITPLANE = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 const FLATPLANE = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
@@ -243,7 +249,7 @@ function sprApply(mat, st, flip) {
 const IB = [];
 function sprBatchOn() { return typeof window === 'undefined' || window.AOM_SPR_BATCH !== false; }
 // o: { geo() -> BufferGeometry, mat, attrs: { name: itemSize }, color: bool (instanceColor), depth: customDepthMaterial, order }
-function ibNew(o) { const B = Object.assign({ n: 0, cap: 0, mesh: null, m: null, A: {}, c: null, keys: Object.keys(o.attrs || {}) }, o); IB.push(B); return B; }
+function ibNew(o) { const B = Object.assign({ n: 0, cap: 0, mesh: null, m: null, A: {}, c: null, warm: 0, keys: Object.keys(o.attrs || {}) }, o); IB.push(B); ibAlloc(B, o.cap || 16); return B; }
 function ibAlloc(B, cap) {
   const old = B.mesh, geo = B.geo();
   for (const k of B.keys) {
@@ -260,15 +266,38 @@ function ibAlloc(B, cap) {
 function ibPush(B) { if (B.n >= B.cap) ibAlloc(B, Math.max(16, B.cap * 2)); return B.n++; }
 function ibFlag(a, n) { a.updateRange.offset = 0; a.updateRange.count = n * a.itemSize; a.needsUpdate = true; }
 function ibReset() { for (let i = 0; i < IB.length; i++) IB[i].n = 0; }
+// Back-to-front instance order (B.sort): the same far-to-near order three's transparent sort gave the separate
+// meshes, so overlapping coplanar sprites (mobs on the same tile, loot piles) resolve exactly as before.
+let _sk = new Float64Array(64), _si = new Int32Array(64), _stmp = new Float32Array(64 * 16);
+const _sortCmp = (a, b) => (_sk[b] - _sk[a]) || (a - b);
+function ibSort(B) {
+  const n = B.n; if (n < 2) return;
+  if (_sk.length < n) { _sk = new Float64Array(B.cap); _si = new Int32Array(B.cap); }
+  const e = camera.matrixWorld.elements, fx = -e[8], fy = -e[9], fz = -e[10], cx = e[12], cy = e[13], cz = e[14], m = B.m;
+  let sorted = true;
+  for (let i = 0; i < n; i++) { const o = i * 16; _sk[i] = (m[o + 12] - cx) * fx + (m[o + 13] - cy) * fy + (m[o + 14] - cz) * fz; _si[i] = i; if (i && _sk[i] > _sk[i - 1]) sorted = false; }
+  if (sorted) return;
+  const idx = _si.subarray(0, n); idx.sort(_sortCmp);
+  const perm = (arr, sz) => {
+    if (_stmp.length < n * sz) _stmp = new Float32Array(Math.max(n * sz, _stmp.length * 2));
+    _stmp.set(arr.subarray(0, n * sz));
+    for (let i = 0; i < n; i++) { const src = idx[i] * sz, dst = i * sz; for (let k = 0; k < sz; k++) arr[dst + k] = _stmp[src + k]; }
+  };
+  perm(m, 16); if (B.c) perm(B.c, 3); for (let k = 0; k < B.keys.length; k++) perm(B.A[B.keys[k]], B.attrs[B.keys[k]]);
+}
 function ibFlush() {
+  camera.updateMatrixWorld();
   for (let b = 0; b < IB.length; b++) {
     const B = IB[b], m = B.mesh; if (!m) continue;
     if (m.parent !== scene) scene.add(m);
-    m.count = B.n; m.visible = B.n > 0; if (!B.n) continue;
+    // An empty batch stays visible (count 0: three binds its program but issues no draw) for its first frames, so
+    // its shader compiles during boot / map warm-up instead of hitching the frame where the first drop or mob appears.
+    m.count = B.n; m.visible = B.n > 0 || B.warm < 3; B.warm++; if (!B.n) continue;
+    if (B.sort) ibSort(B);
     ibFlag(m.instanceMatrix, B.n); if (m.instanceColor) ibFlag(m.instanceColor, B.n);
     const at = m.geometry.attributes; for (let k = 0; k < B.keys.length; k++) ibFlag(at[B.keys[k]], B.n);
     if (B.depth) m.castShadow = SPRF.shadows;
-    if (B.rec) sprMapSet(B.mat, B.rec.tex);
+    if (B.rec) sprMapSet(B.mat, B.rec.tex); else if (B.tex) sprMapSet(B.mat, B.tex);
   }
 }
 // Instance i's matrix = T(x,y,z) * RotY(c = cos yaw, s = sin yaw) * S(sx,sy,sz), column-major (Object3D.matrix layout).
@@ -322,7 +351,7 @@ function sprBatch(rec) {
   if (rec.batch) return rec.batch;
   const mat = spriteMat(null); mat.userData.u = { uTexSize: { value: new THREE.Vector2(64, 64) } }; mat.onBeforeCompile = SPR_OBC_I; sprMapSet(mat, rec.tex);
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: rec.tex, alphaTest: 0.5, side: THREE.DoubleSide }); depth.onBeforeCompile = CAST_OBC_I;
-  return (rec.batch = ibNew({ geo: ibGeo(sheetPlane(rec.json)), mat, depth, attrs: SPRB_ATTR, order: -0.5, rec }));
+  return (rec.batch = ibNew({ geo: ibGeo(sheetPlane(rec.json)), mat, depth, attrs: SPRB_ATTR, order: -0.5, rec, sort: true }));
 }
 // One instance of layer L (see placeSheetVis): same transform, UVs and look as the per-entity mesh path.
 function sprInstance(L, x, y, z, sx, st, flip) {
@@ -336,7 +365,7 @@ function sprInstance(L, x, y, z, sx, st, flip) {
   a = A.iCast; if (st.cast && st.a > 0.3) { a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = sx; } else a[o] = a[o + 1] = a[o + 2] = a[o + 3] = 0;
 }
 // Contact blob under a sprite (one shared batch): smaller and fainter when real shadows are on.
-const BLOBS = ibNew({ geo: () => FLATPLANE.clone(), mat: SHADOWMAT, attrs: {}, order: -1.5 });
+const BLOBS = ibNew({ geo: () => FLATPLANE.clone(), mat: SHADOWMAT, attrs: {}, order: -1.5, cap: 64 });
 function placeBlob(v, x, gh, y, r, z, on) {
   if (!on) return;
   const s = r * (SPRF.shadows ? 0.62 : 0.85) * (1 - Math.min(0.5, z * 0.3));
@@ -425,7 +454,7 @@ const RCOL = { common: 0xffffff, magic: 0x7fa0ff, rare: 0xffd84a, unique: 0xff9a
    instanced rarity-glow mesh. If the atlas fills up, further icons fall back to one mesh per drop. */
 const DROPAT = (() => {
   const S = 34, N = 15, c = mkCanvas(512, 512), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  return { S, N, c, g, tex: null, slot: {}, n: 0 };
+  return { S, N, c, g, tex: canvasTex(c, { pixel: true }), slot: {}, n: 0 };
 })();
 function dropKey(d) { if (d.zeny) return d.lost ? 'lost' : 'zeny'; const t = ITEMS[d.item.id]; return t.icon + '|' + (t.color || ''); }
 // UV rect (u0, v0, u1, v1) of the drop's icon in the atlas, or null when the atlas is full.
@@ -438,19 +467,20 @@ function dropSlot(d) {
   g.drawImage(src, 0, 0, 1, 32, px - 1, py, 1, 32); g.drawImage(src, 31, 0, 1, 32, px + 32, py, 1, 32);
   g.drawImage(src, 0, 0, 1, 1, px - 1, py - 1, 1, 1); g.drawImage(src, 31, 0, 1, 1, px + 32, py - 1, 1, 1);
   g.drawImage(src, 0, 31, 1, 1, px - 1, py + 32, 1, 1); g.drawImage(src, 31, 31, 1, 1, px + 32, py + 32, 1, 1);
-  if (!A.tex) A.tex = canvasTex(A.c, { pixel: true }); else A.tex.needsUpdate = true;
+  A.tex.needsUpdate = true;
   uv = [px / 512, 1 - (py + 32) / 512, (px + 32) / 512, 1 - py / 512];
   return (A.slot[k] = uv);
 }
 function DROP_OBC(sh) { sh.vertexShader = 'attribute vec4 iUV;\n' + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX); }
 let DROPB = null, DROPG = null;
-function dropBatches() {
+function dropBatches() {   // created at load (see below), so their shaders compile with the first frames
   if (DROPB) return;
   const mat = spriteMat(sprTexEnc(DROPAT.tex)); mat.onBeforeCompile = DROP_OBC;
-  DROPB = ibNew({ geo: ibGeo(UNITPLANE), mat, attrs: { iUV: 4 }, order: -0.5 });
+  DROPB = ibNew({ geo: ibGeo(UNITPLANE), mat, attrs: { iUV: 4 }, order: -0.5, sort: true, tex: DROPAT.tex });
   const gm = new THREE.MeshBasicMaterial({ map: TEX.soft, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
   DROPG = ibNew({ geo: () => FLATPLANE.clone(), mat: gm, attrs: {}, color: true, order: -1 });
 }
+dropBatches();
 function makeDropVis(d) {
   const v = { meshes: [], F: null, uv: sprBatchOn() ? dropSlot(d) : null, glowC: null, gm: null, gx: NaN, gy: NaN, gh: 0 };
   const r = d.lost ? 'lostz' : d.zeny ? null : rarityOf(d.item);
@@ -609,7 +639,8 @@ const SWING = (() => {
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); mesh.visible = false; mesh.renderOrder = 4; mesh.frustumCulled = false; scene.add(mesh);
   return { mesh, mat, n: 0, last: -1 };
 })();
-const SWINGCOL = { sword: ['#8fb8ff', '#ffffff'], dagger: ['#b8e0ff', '#ffffff'], mace: ['#ffb060', '#fff2d0'], rod: ['#c49aff', '#fff0ff'], fist: ['#ffe0b0', '#ffffff'], heavy: ['#ff8a2a', '#fff4c0'] };
+const SWINGCOL = { sword: ['#8fb8ff', '#ffffff'], dagger: ['#b8e0ff', '#ffffff'], mace: ['#ffb060', '#fff2d0'], rod: ['#c49aff', '#fff0ff'], fist: ['#ffe0b0', '#ffffff'], heavy: ['#ff8a2a', '#fff4c0'],
+  spear: ['#d8d0ff', '#ffffff'], twohand: ['#a8c0ff', '#ffffff'], staff: ['#c49aff', '#fff0ff'], book: ['#ffe0a0', '#ffffff'], lute: ['#ffd070', '#fff6d0'], whip: ['#e0a0ff', '#fff0ff'], knuckle: ['#9fd0ff', '#ffffff'] };
 const _sv = new THREE.Vector3(), _sv2 = new THREE.Vector3();
 function syncSwing() {
   const SW = SWING, m = SW.mesh, wt = (typeof S !== 'undefined' && S && S.wtype) || 'fist';

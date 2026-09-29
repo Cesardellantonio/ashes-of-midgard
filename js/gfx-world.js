@@ -8,7 +8,7 @@
    animated lava, lightTint() for sprites. Post: gfx-post.js.
    ========================================================= */
 const PXU = 36;                       // sprite pixels per world unit
-const PCOL = { fire: '#ff7a2a', ice: '#9fd8ff', soul: '#c8a8ff', holy: '#fff0b0', arrow: '#d8c8a0', bolt: '#fff6a0' };
+const PCOL = { fire: '#ff7a2a', ice: '#9fd8ff', soul: '#c8a8ff', holy: '#fff0b0', arrow: '#d8c8a0', bolt: '#fff6a0', spear: '#e8e0ff', raven: '#b8c8ff', sphere: '#9fd0ff' };
 const glc = $('gl');
 const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
 renderer.outputEncoding = THREE.sRGBEncoding;
@@ -21,6 +21,23 @@ let COSP = Math.cos(cam.pitch), PPU = 30;
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.5); sun.position.set(-22, 40, 28); scene.add(sun); scene.add(sun.target);
 const torch = new THREE.PointLight(0xffa860, 0, 13, 1.6); scene.add(torch);
+// Dynamic-caster shadow light: same direction as the sun, zero intensity. Its shadow map holds only
+// the sprites (re-rendered every frame); the sun's own map holds the static world (cached).
+const sunDyn = new THREE.DirectionalLight(0xffffff, 0); scene.add(sunDyn); scene.add(sunDyn.target);
+function POST_VOL() { return !!(SHADOW.split && GFX.composer && GFX.composer.hdr && GFX.composer.depthOK); }
+const SHADOW = { ok: false, split: false, need: true, cx: 1e9, cz: 1e9, R: 0, renders: 0, margin: 6, tex: null, mat: sun.shadow.matrix };
+// Directional light 0 (the sun) is shadowed by both maps; light 1 (sunDyn) adds no light, so its own
+// shadow lookup is skipped. Lambert's getShadowMask() already multiplies every directional shadow.
+(() => {
+  const C = THREE.ShaderChunk, cond = '( UNROLLED_LOOP_INDEX < NUM_DIR_LIGHT_SHADOWS )';
+  const a = 'directLight.color *= all( bvec2( directLight.visible, receiveShadow ) ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+  if (!C.lights_fragment_begin.includes(a) || !C.lights_fragment_begin.includes(cond)) { console.warn('[gfx] shadow chunk not patched'); return; }
+  C.lights_fragment_begin = C.lights_fragment_begin.replace(cond, cond + ' && ( UNROLLED_LOOP_INDEX != 1 || NUM_DIR_LIGHT_SHADOWS != 2 )').replace(a, a + `
+		#if ( UNROLLED_LOOP_INDEX == 0 ) && ( NUM_DIR_LIGHT_SHADOWS == 2 )
+		directLight.color *= all( bvec2( directLight.visible, receiveShadow ) ) ? getShadow( directionalShadowMap[ 1 ], directionalLightShadows[ 1 ].shadowMapSize, directionalLightShadows[ 1 ].shadowBias, directionalLightShadows[ 1 ].shadowRadius, vDirectionalShadowCoord[ 1 ] ) : 1.0;
+		#endif`);
+  SHADOW.ok = true;
+})();
 let curWorld = null;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), _v3 = new THREE.Vector3();
 
@@ -30,12 +47,17 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), _v3 = new THREE.Ve
    World: grass = 3D grass tufts per open grass tile (0 = none); smallShadow = small props
    (barrels, rocks, bones...) cast sun shadows; detail = ground shader level (0 colour
    detail only, 1 + normal detail, 2 + macro variation); farProps = the wilderness props
-   outside the playable map. The props on the map are always on. */
+   outside the playable map. The props on the map are always on.
+   Post (gfx-post.js): msaa = scene MSAA samples; mist = depth-based ground mist / height fog;
+   heat = lava heat shimmer; ao = half-res SSAO (aoN taps); vol = ray-marched volumetric sun/moon
+   light through the cached static shadow map (volN steps); pools = flickering ground light pools.
+   Shadows: the sun's static world shadows are cached (re-rendered only when the view drifts or the
+   world changes, see SHADOW); a second zero-intensity light re-renders only the sprite casters. */
 const GFX_PRESETS = {
-  low:    { pr: 1.5, post: false, shadow: 0,    lights: 2, bloomMips: 0, dof: 0, msaa: 0, grass: 0, smallShadow: false, detail: 0, farProps: false },
-  medium: { pr: 1,   post: true,  shadow: 1024, lights: 4, bloomMips: 4, dof: 1, msaa: 2, grass: 1.5, smallShadow: false, detail: 1, farProps: true },
-  high:   { pr: 1.5, post: true,  shadow: 2048, lights: 6, bloomMips: 5, dof: 2, msaa: 4, grass: 3, smallShadow: true,  detail: 2, farProps: true },
-  ultra:  { pr: 2,   post: true,  shadow: 4096, lights: 8, bloomMips: 6, dof: 3, msaa: 4, grass: 7, smallShadow: true,  detail: 2, farProps: true },
+  low:    { pr: 1.5, post: false, shadow: 0,    lights: 2, bloomMips: 0, dof: 0, msaa: 0, grass: 0, smallShadow: false, detail: 0, farProps: false, mist: false, heat: false, ao: false, vol: false, pools: false },
+  medium: { pr: 1,   post: true,  shadow: 1024, lights: 4, bloomMips: 4, dof: 1, msaa: 2, grass: 1.5, smallShadow: false, detail: 1, farProps: true, mist: true, heat: true, ao: false, vol: false, pools: true },
+  high:   { pr: 1.5, post: true,  shadow: 2048, lights: 6, bloomMips: 4, dof: 2, msaa: 2, grass: 3, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 8, vol: true, volN: 10, pools: true },
+  ultra:  { pr: 2,   post: true,  shadow: 4096, lights: 8, bloomMips: 6, dof: 3, msaa: 4, grass: 7, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 12, vol: true, volN: 16, pools: true },
 };
 let GFX_EPOCH = 1;                    // bumped when material programs must recompile
 const GFX = {
@@ -63,8 +85,11 @@ const PL = [];                        // point-light pool (fixed size per qualit
 function applyQuality() {
   const Q = GFX.preset;
   renderer.setPixelRatio(Math.min(Q.pr, window.devicePixelRatio || 1));
-  renderer.shadowMap.enabled = Q.shadow > 0; sun.castShadow = Q.shadow > 0;
-  if (Q.shadow > 0 && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  const on = Q.shadow > 0, split = on && SHADOW.ok;
+  renderer.shadowMap.enabled = on; sun.castShadow = on; sunDyn.castShadow = split;
+  const size = (l, n) => { if (l.shadow.mapSize.x !== n) { l.shadow.mapSize.set(n, n); if (l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; } } };
+  if (on) { size(sun, Q.shadow); size(sunDyn, Math.max(1024, Q.shadow >> 1)); }
+  SHADOW.split = split; sun.shadow.autoUpdate = !split; SHADOW.need = true;
   while (PL.length > Q.lights) scene.remove(PL.pop());
   while (PL.length < Q.lights) { const l = new THREE.PointLight(0xffa050, 0, 7, 2); PL.push(l); scene.add(l); }
   renderer.toneMapping = Q.post ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
@@ -76,7 +101,18 @@ function refreshMaterials(root) {
   root.traverse(o => { const m = o.material; if (!m) return; if (Array.isArray(m)) m.forEach(x => { x.needsUpdate = true; }); else m.needsUpdate = true; });
   root.userData.epoch = GFX_EPOCH;
 }
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 160; sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.035;
+for (const l of [sun, sunDyn]) { l.shadow.camera.near = 1; l.shadow.camera.far = 160; l.shadow.bias = -0.0006; l.shadow.normalBias = 0.035; }
+// Split shadow pass: the static world (curWorld) renders into the sun's cached map only when SHADOW.need;
+// every frame only the dynamic casters (sprites, outside curWorld) render into sunDyn's map.
+(() => {
+  const sm = renderer.shadowMap, base = sm.render, one = [null];
+  sm.render = function (lights, sc, c) {
+    if (!SHADOW.split || sc !== scene || !curWorld || lights.length !== 2) return base.call(this, lights, sc, c);
+    if (SHADOW.need) { sun.shadow.needsUpdate = true; one[0] = sun; base.call(this, one, curWorld, c); SHADOW.need = false; SHADOW.renders++; }
+    const v = curWorld.visible; curWorld.visible = false; one[0] = sunDyn; base.call(this, one, sc, c); curWorld.visible = v;
+    SHADOW.tex = sun.shadow.map ? sun.shadow.map.texture : null;
+  };
+})();
 
 /* ---------- Colour helpers (sRGB authoring -> linear lighting) ---------- */
 function linCol(hex) { return new THREE.Color(hex).convertSRGBToLinear(); }
@@ -112,6 +148,7 @@ const RLOOK = {
     grade: { lift: [0.014, 0.012, 0.024], gamma: [1, 1, 1], gain: [1.04, 1.01, 0.95], sat: 1.04, contrast: 1.06, shadowTint: [0.0, 0.0, 0.016], highTint: [0.02, 0.01, -0.01] },
     vignette: 0.3, grain: 0.024, dof: { band: 0.1, ramp: 0.4, top: 0.85, bottom: 0.6 },
     lt: { amb: [0.56, 0.59, 0.68], sun: [0.46, 0.41, 0.31] },
+    mist: { col: 0xe0e2d6, k: 1, amb: 0.15, lit: 1.1, amt: 0.14, h: 0.35, max: 0.1, scale: 0.045, wind: [0.05, 0.016], scatter: 0.15 },
   },
   withered_wood: {
     exposure: 0.9, sky: [0x24402e, 0x5a7a50], haze: 0x4a6646, fog: [30, 115],
@@ -122,6 +159,9 @@ const RLOOK = {
     vignette: 0.4, grain: 0.026, dof: { band: 0.1, ramp: 0.38, top: 0.85, bottom: 0.65 },
     lt: { amb: [0.46, 0.56, 0.48], sun: [0.48, 0.44, 0.3] },
     shafts: { n: 16, clearing: true, gap: 7, len: 10, width: 2.4, color: 0xfff0b8, op: 0.13 },
+    mist: { col: 0xb8d0b0, k: 1, amb: 0.1, lit: 1.3, amt: 0.6, h: 0.7, max: 0.32, scale: 0.05, wind: [0.035, 0.012], scatter: 0.3 },
+    vol: { col: 0xfff0c0, k: 0.62, dens: 0.075, ext: 1, top: 5, scale: 0.05, wind: [0.02, 0.008], noise: 0.8 },
+    motes: { n: 700, col: 0xfff2c0, size: 0.06, box: 26, hmin: 0.3, hmax: 4.5, lit: true },
   },
   gloamheim: {
     exposure: 1.1, sky: [0x07070f, 0x14132a], haze: 0x0c0b18, fog: [30, 82],
@@ -133,6 +173,9 @@ const RLOOK = {
     spec: [0x2a2a36, 26],
     shafts: { n: 9, clearing: false, gap: 9, len: 6, width: 2.6, color: 0x9fb0ff, op: 0.07 },
     lt: { amb: [0.46, 0.48, 0.68], sun: [0.06, 0.06, 0.1] },
+    mist: { col: 0x8c9cd0, k: 1, amb: 0.03, lit: 1.6, amt: 0.6, h: 0.55, max: 0.4, scale: 0.065, wind: [0.022, 0.01], scatter: 0.5 },
+    vol: { col: 0xa8b8ff, k: 0.3, dens: 0.055, ext: 1, top: 3.4, scale: 0.07, wind: [0.015, 0.008], noise: 0.8 },
+    motes: { n: 500, col: 0xc8d4ff, size: 0.05, box: 24, hmin: 0.2, hmax: 3, lit: true },
   },
   throne: {
     exposure: 1.0, sky: [0x100404, 0x3c1408], haze: 0x1e0906, fog: [34, 125],
@@ -143,13 +186,43 @@ const RLOOK = {
     vignette: 0.48, grain: 0.03, dof: { band: 0.1, ramp: 0.4, top: 0.85, bottom: 0.6 },
     lt: { amb: [0.78, 0.6, 0.5], sun: [0.2, 0.14, 0.1] },
     paint: { g1: [46, 38, 38], g2: [84, 70, 66] },      // dark basalt instead of red clay
+    heat: { amp: 0.0045, y: -0.25 },
+    hfog: { col: 0xff5a1e, k: 0.3, amt: 0.22, h: 0.3, max: 0.3 },
+    mist: { col: 0x7a4a3a, k: 1, amb: 0.04, lit: 1.2, amt: 0.3, h: 0.5, max: 0.22, scale: 0.05, wind: [0.01, -0.03], scatter: 0.5 },
   },
 };
-// Fallback for maps without an entry: derive from MAPDEFS.look.
+// Maps without an RLOOK entry: MAPDEFS[id].render (data hook for new maps), else derived from MAPDEFS.look.
+// render = { sky:[top,horizon], fog:[color,near,far], exposure, sun:[color,intensity,dir], hemi:[sky,ground,int],
+//   bloom:[threshold,strength], grade:{...}, mist, hfog, vol, heat, shafts, motes, lights, trees } (all optional)
+const RLOOK_GEN = {};
 function rlookFor(m) {
   if (RLOOK[m.id]) return RLOOK[m.id];
-  const L = m.d.look, base = RLOOK.ashen_fields;
-  return Object.assign({}, base, { haze: L.fog, sky: [L.fog, L.fog], hemi: [L.hemi[0], L.hemi[1], L.hemi[2] * 0.8], sun: [L.sun[0], L.sun[1] * 3], torch: [0xffa860, L.torch, 10] });
+  if (RLOOK_GEN[m.id]) return RLOOK_GEN[m.id];
+  const L = (m.d && m.d.look) || {}, base = RLOOK.ashen_fields, Rd = m.d && m.d.render, dark = m.d && m.d.gen === 'dungeon';
+  let R;
+  try {
+    R = Object.assign({}, base, { haze: L.fog !== undefined ? L.fog : base.haze, sky: [L.fog !== undefined ? L.fog : base.sky[0], L.fog !== undefined ? L.fog : base.sky[1]],
+      hemi: L.hemi ? [L.hemi[0], L.hemi[1], L.hemi[2] * 0.8] : base.hemi, sun: L.sun ? [L.sun[0], L.sun[1] * 3] : base.sun, torch: [0xffa860, L.torch || 0, 10], mist: null, hfog: null });
+    if (dark) Object.assign(R, { exposure: 1.1, lights: RLOOK.gloamheim.lights, bloom: RLOOK.gloamheim.bloom, lt: RLOOK.gloamheim.lt });
+    if (Rd) {
+      const num = (v, d) => typeof v === 'number' && isFinite(v) ? v : d;
+      if (Rd.sky) R.sky = [Rd.sky[0], Rd.sky[1] !== undefined ? Rd.sky[1] : Rd.sky[0]];
+      if (Rd.fog) { R.haze = Rd.fog[0]; R.fog = [num(Rd.fog[1], base.fog[0]), num(Rd.fog[2], base.fog[1])]; if (!Rd.sky) R.sky = [Rd.fog[0], Rd.fog[0]]; }
+      R.exposure = num(Rd.exposure, R.exposure);
+      if (Rd.sun) { R.sun = [Rd.sun[0], num(Rd.sun[1], base.sun[1])]; if (Rd.sun[2] && Rd.sun[2].length === 3) R.sunDir = Rd.sun[2].slice(); }
+      if (Rd.hemi) R.hemi = [Rd.hemi[0], Rd.hemi[1], num(Rd.hemi[2], base.hemi[2])];
+      if (Rd.bloom) R.bloom = { threshold: num(Rd.bloom[0], base.bloom.threshold), knee: 0.4, strength: num(Rd.bloom[1], base.bloom.strength) };
+      if (Rd.grade) R.grade = Object.assign({}, base.grade, Rd.grade);
+      for (const k of ['mist', 'hfog', 'vol', 'heat', 'shafts', 'motes', 'lights', 'dof', 'vignette', 'grain', 'lt', 'spec', 'paint', 'ao']) if (Rd[k] !== undefined) R[k] = Rd[k];
+      // sprite light tint from the lights when not given: ambient ~ hemi sky, direct ~ sun
+      if (!Rd.lt && (Rd.hemi || Rd.sun)) {
+        const h = new THREE.Color(R.hemi[0]).convertSRGBToLinear(), su = new THREE.Color(R.sun[0]).convertSRGBToLinear(), hi = R.hemi[2] / 0.42, si = R.sun[1] / 0.8;
+        R.lt = { amb: [h.r, h.g, h.b].map(v => clamp(0.3 + v * 0.45 * hi, 0.25, 0.9)), sun: [su.r, su.g, su.b].map(v => clamp(v * 0.5 * si, 0, 0.8)) };
+      }
+    }
+    new THREE.Color(R.haze); new THREE.Color(R.sky[0]); new THREE.Color(R.sun[0]);   // throws on garbage colours
+  } catch (e) { console.warn('[gfx] bad render look for', m.id, e); R = Object.assign({}, base); }
+  return (RLOOK_GEN[m.id] = R);
 }
 let RL = null;                        // current map's render look (read by gfx-post.js)
 const SKY = { hazeLin: new THREE.Color(), fogOut: new THREE.Color(), top: new THREE.Color(), hor: new THREE.Color(), sunDir: new THREE.Vector3(0, 1, 0), exposure: 1 };
@@ -235,7 +308,10 @@ function skirtTex(m) {
    layer edges: cobbles break up along their stones, dirt creeps between grass clumps).
    kind -> [size px, span in tiles, relief in world units]. Built once, shared by all maps. */
 const DETAIL = {};
-const DETAIL_KINDS = { grass: [256, 2, 0.035], dirt: [512, 4, 0.05], cobble: [512, 4, 0.075], flag: [512, 4, 0.06], ash: [256, 4, 0.025], basalt: [512, 4, 0.07] };
+const DETAIL_KINDS = { grass: [256, 2, 0.035], dirt: [512, 4, 0.05], cobble: [512, 4, 0.075], flag: [512, 4, 0.06], ash: [512, 4, 0.03], basalt: [512, 4, 0.07], snow: [256, 4, 0.045], mud: [512, 4, 0.05], cloud: [256, 4, 0.03] };
+// look.floor -> ground detail texture (unknown floors fall back to the nearest existing one)
+const FLOOR_DETAIL = { grass: 'grass', flag: 'flag', carved: 'flag', stone: 'flag', rock: 'basalt', basalt: 'basalt', snow: 'snow', ice: 'snow', mud: 'mud', swamp: 'mud', dirt: 'dirt', sand: 'dirt', cloud: 'cloud' };
+function floorDetail(f) { return FLOOR_DETAIL[f] || 'grass'; }
 const FLAG_ROWS = [[1, 2, 1], [2, 2], [1, 1, 2], [2, 1, 1], [1.5, 1.5, 1], [1, 1.5, 1.5], [1, 1, 1, 1]];
 // Fast periodic value noise on cached hash lattices (P must be a power of two).
 const LAT = {};
@@ -271,9 +347,9 @@ function detailTex(kind) {
   const [N, span, relief] = DETAIL_KINDS[kind], Hh = new Float32Array(N * N), Ll = new Float32Array(N * N), vo = [0, 0, 0], sd = kind.length * 131 + kind.charCodeAt(0);
   const hs = (a, b, k) => hash2(a, b, sd + k);
   const f8 = mkfbm(8, kind === 'dirt' ? 4 : 5, sd), f32 = mkfbm(32, 2, sd + 40), f16 = mkfbm(16, 3, sd + 9), fc = mkfbm(8, 3, sd + 20);
-  const V = kind === 'dirt' ? mkvoro(64, 0.9, sd + 3) : kind === 'cobble' ? mkvoro(16, 0.62, sd) : kind === 'basalt' ? mkvoro(8, 0.55, sd) : null;
+  const V = kind === 'dirt' || kind === 'mud' ? mkvoro(64, 0.9, sd + 3) : kind === 'ash' ? mkvoro(12, 0.8, sd + 4) : kind === 'cobble' ? mkvoro(16, 0.62, sd) : kind === 'basalt' ? mkvoro(8, 0.55, sd) : null;
   const FR = [0, 1, 2, 3].map(r => FLAG_ROWS[(hs(r, 1, 0) * FLAG_ROWS.length) | 0]), FO = [0, 1, 2, 3].map(r => Math.floor(hs(r, 2, 0) * 8) * 0.5), SL = new Float32Array(128 * 5).map((_, i) => hs(i, 3, 0));
-  const cellR = new Float32Array(V ? 64 * 64 * 3 : 0); for (let i = 0; i < cellR.length / 3; i++) { cellR[i * 3] = hs(i, 3, 0); cellR[i * 3 + 1] = hs(i, 9, 0); cellR[i * 3 + 2] = hs(i, 11, 0); }
+  const cellR = new Float32Array(V ? 64 * 64 * 3 : 0);   // per-cell randoms (cell ids < 64*64 for every grid used) for (let i = 0; i < cellR.length / 3; i++) { cellR[i * 3] = hs(i, 3, 0); cellR[i * 3 + 1] = hs(i, 9, 0); cellR[i * 3 + 2] = hs(i, 11, 0); }
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const u = x / N, v = y / N, i = y * N + x, sp = NZ.b[(y & 255) * 256 + (x & 255)] - 0.5; let h = 0.5, l = 0.5;
     if (kind === 'grass') {
@@ -297,8 +373,21 @@ function detailTex(kind) {
       h = top * (0.8 + 0.15 * SL[q + 4]) + tilt + (n - 0.5) * 0.14 - crack * 0.35;
       l = (0.32 + 0.32 * SL[q + 4] + (n - 0.5) * 0.36) * (0.45 + 0.55 * top) - crack * 0.2 + sp * 0.07;
     } else if (kind === 'ash') {
+      // burnt ground: charred crust plates split by dark cracks, powdery grey ash drifts, char and flake specks
+      const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32); V(u * 12, v * 12, vo); const e = vo[1] - vo[0], r = cellR[vo[2] * 3];
+      const crack = 1 - smoothstep(0.02, 0.07, e), drift = smoothstep(0.45, 0.7, a);
+      h = a * 0.5 + b * 0.2 + (1 - crack) * 0.3 * (0.7 + 0.3 * r) - drift * 0.1;
+      l = 0.46 + (r - 0.5) * 0.18 + (b - 0.5) * 0.3 + drift * 0.22 - crack * 0.34 * (1 - drift) + (sp < -0.46 ? -0.28 : sp > 0.47 ? 0.3 : sp * 0.12);
+    } else if (kind === 'snow') {
+      const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32), rip = Math.sin((u * 3 + a * 0.8) * 6.283 * 6) * 0.5 + 0.5;
+      h = a * 0.75 + rip * 0.12 + b * 0.13; l = 0.5 + (a - 0.5) * 0.28 + (b - 0.5) * 0.12 + (sp > 0.485 ? 0.35 : 0) + rip * 0.04;
+    } else if (kind === 'mud') {
+      const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32); V(u * 64, v * 64, vo); const c = vo[2] * 3;
+      const r = cellR[c], rad = 0.14 + 0.18 * cellR[c + 1], bump = r < 0.25 ? Math.max(0, 1 - (vo[0] / rad) ** 2) : 0, wet = smoothstep(0.42, 0.3, a);
+      h = a * 0.7 + b * 0.1 + Math.sqrt(bump) * 0.25 - wet * 0.1; l = 0.5 + (a - 0.5) * 0.5 + (b - 0.5) * 0.25 - wet * 0.22 + (bump > 0 ? (cellR[c + 2] - 0.4) * 0.4 : 0) + sp * 0.1;
+    } else if (kind === 'cloud') {
       const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32);
-      h = a * 0.7 + b * 0.3; l = 0.5 + (a - 0.5) * 0.6 + (b - 0.5) * 0.35 + (sp < -0.48 ? -0.3 : sp * 0.1);
+      h = a * 0.85 + b * 0.15; l = 0.5 + (a - 0.5) * 0.45 + (b - 0.5) * 0.1;
     } else if (kind === 'basalt') {
       V(u * 8, v * 8, vo); const e = vo[1] - vo[0], r = cellR[vo[2] * 3], n = f16(u * 16, v * 16), top = smoothstep(0.01, 0.16, e);
       h = top * (0.75 + 0.25 * r) + (n - 0.5) * 0.16; l = (0.36 + 0.3 * r + (n - 0.5) * 0.32) * (0.4 + 0.6 * top) + sp * 0.06;
@@ -361,8 +450,13 @@ const GD_MAP = `vec2 gSl = vec2(0.0); float gH = 0.5;
   #ifdef GD_ASH
   if (mk.b > 0.003) {
     vec4 d = texture2D(uDA, wp * uDS.w);
-    float e = mk.b + (d.a - 0.5) * 0.45 + (lowN - 0.5) * 0.3, w = smoothstep(0.34, 0.66, e) * 0.9;
-    col = mix(col * (1.0 - 0.3 * smoothstep(0.2, 0.4, e)), uAshC * (0.22 + 1.56 * d.b) * (0.8 + 0.4 * lowN), w); gSl = mix(gSl, (d.rg - 0.5) * 4.0, w); gH = mix(gH, d.a, w);
+    float e = mk.b + (d.a - 0.5) * 0.5 + (lowN - 0.5) * 0.22, w = smoothstep(0.44, 0.56, e);
+    float rim = smoothstep(0.1, 0.42, e) * (1.0 - w);
+    col = mix(col, col * vec3(1.02, 0.8, 0.46) * 0.85, rim * 0.8);                 // singed, dry grass around the burn
+    col *= 1.0 - smoothstep(0.32, 0.46, e) * (1.0 - w) * 0.4;                      // charred ring
+    vec3 ash = uAshC * (0.2 + 1.6 * d.b) * (0.85 + 0.3 * lowN);
+    ash = mix(ash * vec3(0.5, 0.46, 0.44), ash, smoothstep(0.5, 0.75, e));          // char at the edge, pale ash inside
+    col = mix(col, ash, w); gSl = mix(gSl, (d.rg - 0.5) * 4.0, w); gH = mix(gH, d.a, w);
   }
   #endif
   #ifdef GD_PATH
@@ -426,7 +520,7 @@ function groundMask(m) {
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
     const tx = (x + 0.5) / R, ty = (y + 0.5) / R, o = (y * MW + x) * 4, p = bil(pb, tx, ty), c = bil(cf, tx, ty);
     let a = 0;
-    if (ashK) { const an = vnoise(tx / 6, ty / 6, sd + 31) * 0.62 + vnoise(tx / 2.2, ty / 2.2, sd + 32) * 0.38; a = smoothstep(0.57, 0.72, an) * ashK * (1 - Math.min(1, p * 1.6)); }
+    if (ashK) { const an = vnoise(tx / 3.3, ty / 3.3, sd + 31) * 0.58 + vnoise(tx / 1.3, ty / 1.3, sd + 32) * 0.42; a = smoothstep(0.6, 0.76, an) * ashK * (1 - Math.min(1, p * 1.6)); }
     D[o] = p * 255; D[o + 1] = c * 255; D[o + 2] = a * 255; D[o + 3] = 255;
     hasP = hasP || p > 0.01; hasC = hasC || c > 0.01; hasA = hasA || a > 0.01;
   }
@@ -692,7 +786,8 @@ function buildShafts(m, R, grp) {
    old primitive placeholders instead. Collision is unchanged: blocked tiles get blocking
    props, walkable tiles only get low scatter or props off the walking lines. */
 const PROP_LIGHT = { dng_brazier: [0, 1.05, 0], town_lamp_post: [0.46, 1.9, 0], waystone: [0, 3.2, 0] };   // index.json `light`
-const PROP_EMIT = { emissive_coals: 2.6, emissive_rune: 2.8, emissive_lamp: 3.4, emissive_obsidian: 2.4, emissive_basalt: 2.2, emissive_ember: 2.8 };
+const PROP_EMIT = { emissive_coals: 2.6, emissive_rune: 2.8, emissive_lamp: 3.4, emissive_obsidian: 2.4, emissive_basalt: 2.2, emissive_ember: 2.8,
+  emissive_bifrost: 1.4, emissive_crystal_ice: 2.0, emissive_bog: 1.8, emissive_shroom: 2.0, emissive_amethyst: 2.2, emissive_lava: 2.6, emissive_rune_gold: 2.6 };
 const PROP_SWAY = { leaves: 1, cloth_banner: 1.8, cloth_awning: 0.5 };
 const PROP_TINT = { town: new THREE.Color(1.6, 1.36, 1.05), keep: new THREE.Color(0.58, 0.58, 0.64) };
 const PROP_ALL = ['dng_banner', 'dng_bones', 'dng_brazier', 'dng_chain', 'dng_grave_a', 'dng_grave_b', 'dng_pillar', 'dng_rubble_a', 'dng_rubble_b', 'dng_wall', 'rock_field_a', 'rock_field_b', 'rock_field_c', 'rock_field_d', 'ruin_column_fallen', 'ruin_wall_a', 'ruin_wall_b', 'ruin_wall_c', 'throne_basalt_rock', 'throne_obsidian_pillar', 'town_barrel', 'town_crates', 'town_fence', 'town_house_big', 'town_house_small', 'town_lamp_post', 'town_market_stall', 'town_well', 'tree_autumn_a', 'tree_autumn_b', 'tree_dead_a', 'tree_dead_b', 'tree_green_a', 'tree_green_b', 'tree_green_c', 'tree_oak_dark', 'tree_pine_a', 'tree_pine_b', 'waystone'];
@@ -786,38 +881,72 @@ function makeTemplate(id, gltf) {
     const geo = o.geometry; if (!o.matrixWorld.equals(new THREE.Matrix4())) geo.applyMatrix4(o.matrixWorld);
     geo.computeBoundingBox(); const bb = geo.boundingBox;
     rad = Math.max(rad, Math.hypot(Math.max(-bb.min.x, bb.max.x), Math.max(-bb.min.z, bb.max.z))); top = Math.max(top, bb.max.y);
-    const mat = propMaterial(o.material, parser, /^(tree_|rock_)/.test(id)), nm = mat.name;
+    const kind = PROPS.kind(id), mat = propMaterial(o.material, parser, kind === 'tree' || kind === 'rock'), nm = mat.name;
     let amp = nm.startsWith('leaves') ? PROP_SWAY.leaves : PROP_SWAY[nm] || (nm.startsWith('cloth_') ? 1 : 0);
     if (id === 'dng_chain') amp = 0.45;
     const sway = amp > 0 && !!geo.attributes._sway;
-    if (sway) windify(mat, amp, id.startsWith('tree_'));
+    if (sway) windify(mat, amp, kind === 'tree');
+    if (id === 'dng_wall') capify(mat);
     let depth = null;
     if (mat.alphaTest > 0 || sway) { depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: mat.alphaTest > 0 ? mat.map : null, alphaTest: mat.alphaTest || 0 }); if (sway) windify(depth, amp); }
     parts.push({ geo, mat, depth, name: nm });
   }
   return { id, parts, rad, top, small: top < 1.2 };
 }
+// Manifest (assets/models/index.json): kind, LODs (lod1), texture-sharing kits (kit_<family>.glb holding
+// several models as named root nodes at the origin). Everything degrades to per-file loading without it.
+PROPS.man = null; PROPS.kits = {};
+PROPS.manifest = () => PROPS.manP || (PROPS.manP = new Promise(res => {
+  const done = j => { try { const by = {}; for (const e of (j && j.models) || []) by[e.id] = e; PROPS.man = { by, kits: (j && j.kits) || {} }; } catch (e) { PROPS.man = null; } res(PROPS.man); };
+  try { const l = new THREE.FileLoader(); l.setResponseType('json'); l.load(PROPS.url + 'index.json', done, undefined, () => res(null)); } catch (e) { res(null); }
+}));
+PROPS.info = id => (PROPS.man && PROPS.man.by[id]) || null;
+PROPS.kind = id => { const e = PROPS.info(id); return (e && e.kind) || (/^tree_/.test(id) ? 'tree' : /^rock_/.test(id) ? 'rock' : ''); };
+PROPS.lod = id => { const e = PROPS.info(id); return (e && e.lod1) || null; };
+PROPS.gltf = url => new Promise((res, rej) => { if (!PROPS.loader) PROPS.loader = new THREE.GLTFLoader(); PROPS.loader.load(url, res, undefined, rej); });
 PROPS.load = function (id) {
   if (PROPS.tpl[id]) return Promise.resolve(PROPS.tpl[id]);
   if (PROPS.pend[id]) return PROPS.pend[id];
   if (!THREE.GLTFLoader) return (PROPS.pend[id] = Promise.reject(new Error('THREE.GLTFLoader missing')));
-  if (!PROPS.loader) PROPS.loader = new THREE.GLTFLoader();
-  return (PROPS.pend[id] = new Promise((res, rej) => PROPS.loader.load(PROPS.url + id + '.glb', gl => { try { res(PROPS.tpl[id] = makeTemplate(id, gl)); } catch (e) { rej(e); } }, undefined, rej)));
+  const single = () => PROPS.gltf(PROPS.url + id + '.glb').then(gl => (PROPS.tpl[id] = makeTemplate(id, gl)));
+  return (PROPS.pend[id] = PROPS.manifest().then(() => {
+    const e = PROPS.info(id), k = e && e.kit, K = k && PROPS.man.kits[k];
+    if (!K || !K.file) return single();
+    if (!PROPS.kits[k]) PROPS.kits[k] = PROPS.gltf(PROPS.url + K.file);
+    return PROPS.kits[k].then(gl => { const o = gl.scene.getObjectByName(id); return o ? (PROPS.tpl[id] = makeTemplate(id, { scene: o, parser: gl.parser })) : single(); }, single);
+  }));
 };
 PROPS.ready = ids => ids.every(id => PROPS.tpl[id]);
 PROPS.ensure = ids => Promise.all(ids.map(PROPS.load));
 // After the first map is dressed, quietly fetch the rest (2.9 MB total) so later maps pop in dressed.
-PROPS.prefetch = () => { if (PROPS.prefetched) return; PROPS.prefetched = true; let i = 0; const next = () => { if (i >= PROP_ALL.length) return; PROPS.load(PROP_ALL[i++]).then(next, next); }; setTimeout(next, 1200); };
+PROPS.prefetch = () => {
+  if (PROPS.prefetched) return; PROPS.prefetched = true;
+  const all = [...PROP_ALL, 'town_bounty_board', ...PROP_ALL.map(PROPS.lod).filter(Boolean)]; let i = 0;
+  const next = () => { if (i >= all.length) return; PROPS.load(all[i++]).then(next, next); }; setTimeout(next, 1200);
+};
 PROPS.boot = ['tree_green_a', 'tree_green_b', 'tree_green_c', 'tree_autumn_a', 'tree_autumn_b', 'dng_wall', 'town_house_big', 'town_house_small', 'waystone', 'dng_brazier', 'town_well', 'town_market_stall', 'town_crates', 'town_barrel', 'town_lamp_post', 'town_fence', 'rock_field_a', 'rock_field_b', 'rock_field_c', 'rock_field_d'];
 PROPS.mat = (id, name) => { const t = PROPS.tpl[id]; if (!t) return null; const p = t.parts.find(q => q.name === name); return p ? p.mat : null; };
 const TINTED = {};
-function tintMat(mat, key) { const k = mat.uuid + key; if (!TINTED[k]) { const t = mat.clone(); t.color.multiply(PROP_TINT[key]); TINTED[k] = t; } return TINTED[k]; }
+function tintMat(mat, key) {
+  const k = mat.uuid + key;
+  if (!TINTED[k]) { const t = mat.clone(); t.color.multiply(PROP_TINT[key]); t.onBeforeCompile = mat.onBeforeCompile; t.customProgramCacheKey = mat.customProgramCacheKey; TINTED[k] = t; }
+  return TINTED[k];
+}
 // Instance every (model, tint, chunk) group; one InstancedMesh per template part.
-function buildProps(grp, items) {
+// Trees use their LOD1 (fewer tris, half the leaf fill) outside the map and on low / medium.
+const lodLow = () => GFX.quality === 'low' || GFX.quality === 'medium';
+function propId(it, lq) { if ((it.far || lq) && PROPS.kind(it.id) === 'tree') { const l = PROPS.lod(it.id); if (l && PROPS.tpl[l]) return l; } return it.id; }
+function propIds(items, lq) {
+  const req = new Set(), opt = new Set();
+  for (const it of items) { (it.opt ? opt : req).add(it.id); if ((it.far || lq) && PROPS.kind(it.id) === 'tree') { const l = PROPS.lod(it.id); if (l) opt.add(l); } }
+  for (const id of req) opt.delete(id);
+  return { req: [...req], opt: [...opt] };
+}
+function buildProps(grp, items, lq) {
   const CH = 32, by = new Map();
-  for (const it of items) {
-    const tpl = PROPS.tpl[it.id]; if (!tpl) continue;
-    const k = it.id + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + Math.floor(it.x / CH) + ',' + Math.floor(it.z / CH);
+  for (const it0 of items) {
+    const id = propId(it0, lq), it = it0, tpl = PROPS.tpl[id]; if (!tpl) continue;
+    const k = id + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + Math.floor(it.x / CH) + ',' + Math.floor(it.z / CH);
     let e = by.get(k); if (!e) by.set(k, e = { tpl, tint: it.tint, far: !!it.far, list: [] }); e.list.push(it);
   }
   const q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), M = new THREE.Matrix4(), Y = new THREE.Vector3(0, 1, 0);
@@ -860,7 +989,7 @@ const TOWN_DRESS = {
   },
 };
 function pickW(list, r) { let t = 0; for (const e of list) t += e[1]; let x = r * t; for (const e of list) { x -= e[1]; if (x <= 0) return e[0]; } return list[list.length - 1][0]; }
-function treeSet(m) { if (PROP_TREES[m.id]) return PROP_TREES[m.id]; const k = (m.d.look.trees || []).join(); return k.includes('forest') ? PROP_TREES.withered_wood : k.includes('dead') ? PROP_TREES.ashen_fields : PROP_TREES.emberhold; }
+function treeSet(m) { if (PROP_TREES[m.id]) return PROP_TREES[m.id]; if (m.d.render && Array.isArray(m.d.render.trees) && m.d.render.trees.length) return m.d.render.trees; const k = (m.d.look.trees || []).join(); return k.includes('forest') ? PROP_TREES.withered_wood : k.includes('dead') ? PROP_TREES.ashen_fields : PROP_TREES.emberhold; }
 function planProps(m) {
   const w = m.w, h = m.h, sd = m.d.seed * 17 + 5, gen = m.d.gen, items = [], ao = [], lights = [], avoid = [];
   const H = (x, z) => groundHm(m, x, z);
@@ -881,7 +1010,7 @@ function planProps(m) {
     for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const j = acc[yy * w + xx]; if (j >= 0 && (pts[j][0] - cx) ** 2 + (pts[j][1] - cz) ** 2 < minD * minD) { ok = false; break; } }
     if (!ok) continue; acc[i] = pts.length; pts.push([cx, cz]);
     const id = pickW(trees, hs(x, y, 4));
-    add(id, cx, cz, hs(x, y, 6) * 6.283, (TREE_S[id] || 0.74) * tS * (0.86 + 0.3 * hs(x, y, 5)), { dy: -0.05 });
+    const it = add(id, cx, cz, hs(x, y, 6) * 6.283, (TREE_S[id] || 0.74) * tS * (0.86 + 0.3 * hs(x, y, 5)), { dy: -0.05 }); if (!PROP_ALL.includes(id)) it.opt = true;
   }
   // -- rocks
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -957,6 +1086,17 @@ function planProps(m) {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (!isT(x, y, T.LAVA)) continue; const d = dOpen(x, y); if (d >= 1.2 && d <= 3.2 && hs(x, y, 41) < 0.16) rock(x + 0.5, y + 0.5, 0.65 + hs(x, y, 42) * 0.55); }
     const r = mulberry32(sd); for (let k = 0; k < 40; k++) { const a = r() * 6.283, d = 17 + r() * 16, x = w / 2 + Math.cos(a) * d, z = h / 2 + Math.sin(a) * d; rock(x, z, 0.8 + r() * 0.9); }
   }
+  // -- bounty boards (the mesh is built in buildWorld): contact AO, no grass tufts through it
+  // (the art team's town_bounty_board model, scaled so the quest '!' drawn at 1.95 sits on its roof; primitive fallback)
+  for (const o of m.objs) if (o.kind === 'board') {
+    const it = add('town_bounty_board', o.x, o.y, (hash2(o.x * 10 | 0, o.y * 10 | 0, 3) - 0.5) * 0.3, BOARD_S); it.opt = true; it.board = o;
+    ao.push([o.x, o.y + 0.05, 1.1, 0.36]); avoid.push([o.x, o.y, 0.9]);
+  }
+  // -- data decor on generated maps: m.decor = [{ model, x, y, rot, scale }] (glTF ids; a missing model is skipped)
+  if (Array.isArray(m.decor)) for (const d of m.decor) {
+    if (!d || typeof d.model !== 'string' || !/^[\w-]+$/.test(d.model) || !isFinite(d.x) || !isFinite(d.y)) continue;
+    const it = add(d.model, +d.x, +d.y, +d.rot || 0, +d.scale || 1); it.opt = true;
+  }
   // -- wilderness outside the map: trees (and rocks / ruins) continue into the haze
   if (gen === 'field' || gen === 'town') {
     const r = mulberry32(m.d.seed * 13 + 7), E = 14, dens = gen === 'town' ? 0.13 : dense ? 0.17 : 0.13;
@@ -968,7 +1108,7 @@ function planProps(m) {
       const near = d < 2.5;   // the first rows still cast shadows onto the map edge
       if (k < 0.1) add(pickW(PROP_ROCKS, r()), cx, cz, r() * 6.283, 0.8 + r() * 0.6, { y: gy - 0.05, far: !near });
       else if (k < 0.13 && gen === 'field' && !dense) add(pickW(PROP_RUINS, r()), cx, cz, r() * 6.283, 0.6 + r() * 0.3, { y: gy - 0.08, far: !near });
-      else { const id = pickW(trees, r()); add(id, cx, cz, r() * 6.283, (TREE_S[id] || 0.74) * (0.95 + r() * 0.35), { y: gy - 0.05, far: !near }); }
+      else { const id = pickW(trees, r()), it = add(id, cx, cz, r() * 6.283, (TREE_S[id] || 0.74) * (0.95 + r() * 0.35), { y: gy - 0.05, far: !near }); if (!PROP_ALL.includes(id)) it.opt = true; }
     }
   }
   return { items, ao, lights, avoid, ok: true };
@@ -1030,10 +1170,11 @@ function buildGrass(m, dens) {
     const n = dens * (0.3 + 1.4 * vnoise(x / 4.5, y / 4.5, m.d.seed + 71)) * (t === T.TREE ? 0.5 : 1);
     for (let k = Math.floor(n + r()); k > 0; k--) {
       const px = x + r(), pz = y + r(), q = mk.at(px, pz);
-      if (q[0] > 0.3 || q[1] > 0.22 || q[2] > 0.3 + r() * 0.4 || avoid.some(a => (a[0] - px) ** 2 + (a[1] - pz) ** 2 < a[2] * a[2])) continue;
+      if (q[0] > 0.3 || q[1] > 0.22 || q[2] > 0.35 + r() * 0.3 || avoid.some(a => (a[0] - px) ** 2 + (a[1] - pz) ** 2 < a[2] * a[2])) continue;
       const ck = Math.floor(px / CH) + ',' + Math.floor(pz / CH); let L_ = chunks.get(ck); if (!L_) chunks.set(ck, L_ = []);
-      const v = r() < fc ? 2 + (r() < 0.5 ? 1 : 0) : (r() < 0.3 ? 1 : 0), bi = (clamp(pz * BR | 0, 0, h * BR - 1) * BW + clamp(px * BR | 0, 0, BW - 1)) * 3, tk = 1.3 + r() * 0.3;
-      L_.push([px, groundHm(m, px, pz) - 0.02, pz, v, (0.6 + r() * 0.45) * (v === 1 ? 1.12 : 1), gb.base[bi] * tk, gb.base[bi + 1] * tk, gb.base[bi + 2] * tk]);
+      const dry = smoothstep(0.02, 0.3, q[2]), v = dry > 0.3 ? (r() < 0.5 ? 1 : 0) : r() < fc ? 2 + (r() < 0.5 ? 1 : 0) : (r() < 0.3 ? 1 : 0), bi = (clamp(pz * BR | 0, 0, h * BR - 1) * BW + clamp(px * BR | 0, 0, BW - 1)) * 3, tk = 1.3 + r() * 0.3;
+      const tr = gb.base[bi] * tk, tg = gb.base[bi + 1] * tk, tb = gb.base[bi + 2] * tk, lum = tr * 0.3 + tg * 0.6 + tb * 0.1;   // singed straw near the burns
+      L_.push([px, groundHm(m, px, pz) - 0.02, pz, v, (0.6 + r() * 0.45) * (v === 1 ? 1.12 : 1) * (1 - dry * 0.3), tr + (lum * 1.25 - tr) * dry, tg + (lum * 0.95 - tg) * dry, tb + (lum * 0.45 - tb) * dry]);
     }
   }
   const grp = new THREE.Group(), M = new THREE.Matrix4();
@@ -1054,8 +1195,13 @@ function disposeGrass(grp) { for (const o of grp.children) { o.geometry.deleteAt
 // Apply the quality preset to a world: grass density, small-prop shadow casting.
 function worldQuality(grp) {
   const Q = GFX.preset, m = grp.userData.map; if (!m) return;
+  const A = m.anim || {}, R = rlookFor(m); SHADOW.need = true;
+  if (A.pools) A.pools.visible = !!Q.pools;
+  if (A.motes) A.motes.visible = !!Q.post;
+  if (A.shaftGrp) A.shaftGrp.visible = !(Q.vol && Q.post && R.vol && POST_VOL());
+  if (grp.userData.propLod !== undefined && grp.userData.propLod !== lodLow() && grp.userData.rebuildProps) { grp.userData.propLod = lodLow(); grp.userData.rebuildProps(lodLow()); }
   const pr = grp.userData.props; if (pr) for (const o of pr.children) { if (o.userData.small === true || o.userData.small === false) o.castShadow = !o.userData.small || Q.smallShadow; if (o.userData.far) o.visible = Q.farProps; }
-  const n = m.d.look.floor === 'grass' ? Q.grass : 0;
+  const n = (m.d.look.floor || 'grass') === 'grass' ? Q.grass : 0;
   if (grp.userData.grassN !== n) {
     if (grp.userData.grass) { grp.remove(grp.userData.grass); disposeGrass(grp.userData.grass); grp.userData.grass = null; }
     if (n > 0) { grp.userData.grass = buildGrass(m, n); grp.add(grp.userData.grass); }
@@ -1065,7 +1211,7 @@ function worldQuality(grp) {
 
 /* ---------- Legacy primitive props (fallback when the glTF models can't load) ---------- */
 function legacyProps(m, grp, lam, A) {
-  const L = m.d.look, w = m.w, h = m.h;
+  const L = Object.assign({ trees: ['green', 'green', 'autumn'], tint: [1, 1, 1], rock: 0x9a958a }, m.d.look), w = m.w, h = m.h;
   const solid = (geo, mat) => { const me = new THREE.Mesh(geo, mat); me.castShadow = true; me.receiveShadow = true; grp.add(me); return me; };
   const tint = new THREE.Color(L.tint[0], L.tint[1], L.tint[2]);
   const walls = [], ruins = [], rocks = [], pillars = [], graves = [], trees = new Map();
@@ -1132,6 +1278,194 @@ function legacyProps(m, grp, lam, A) {
   refreshMaterials(grp);
 }
 
+/* ---------- Terrain heightmap texture (post: mist / height fog hug the ground) ---------- */
+function heightTex(m) {
+  const W1 = m.w + 1, H1 = m.h + 1, n = W1 * H1; let mn = 1e9, mx = -1e9;
+  for (let i = 0; i < n; i++) { const v = m.hgt[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  const rg = Math.max(0.01, mx - mn), D = new Uint8Array(n * 4);
+  // G = air mask: 0 over the hidden solid mass of a dungeon (no lit dust / mist in the void), else 1
+  const dng = m.d.gen === 'dungeon', solid = (x, y) => { if (x < 0 || y < 0 || x >= m.w || y >= m.h) return true; const i = y * m.w + x; return m.t[i] === T.WALL && !(m.vis && m.vis[i]); };
+  for (let y = 0; y < H1; y++) for (let x = 0; x < W1; x++) {
+    const i = y * W1 + x, air = !dng || !(solid(x - 1, y - 1) && solid(x, y - 1) && solid(x - 1, y) && solid(x, y));
+    D[i * 4] = clamp((m.hgt[i] - mn) / rg * 255, 0, 255); D[i * 4 + 1] = air ? 255 : 0; D[i * 4 + 3] = 255;
+  }
+  const t = new THREE.DataTexture(D, W1, H1, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
+  return { tex: t, w1: W1, h1: H1, min: mn, range: rg };
+}
+
+/* ---------- Bounty boards: small roofed notice board (primitives + a painted face) ---------- */
+TEX.wood = (() => {
+  const c = mkCanvas(64, 64), g = c.getContext('2d'), r = mulberry32(71);
+  g.fillStyle = '#7a5434'; g.fillRect(0, 0, 64, 64);
+  for (let i = 0; i < 60; i++) { g.strokeStyle = `rgba(${r() < 0.5 ? '40,24,12' : '160,120,80'},${0.12 + r() * 0.2})`; g.lineWidth = 1; g.beginPath(); const y = r() * 64; g.moveTo(0, y); g.bezierCurveTo(20, y + (r() - 0.5) * 6, 44, y + (r() - 0.5) * 6, 64, y + (r() - 0.5) * 4); g.stroke(); }
+  return canvasTex(c);
+})();
+TEX.board = (() => {
+  const W = 256, H = 168, c = mkCanvas(W, H), g = c.getContext('2d'), r = mulberry32(1234);
+  for (let i = 0; i < 6; i++) {   // vertical planks with grain and dark gaps
+    const x = i * W / 6, v = 110 + r() * 26; g.fillStyle = `rgb(${v | 0},${v * 0.7 | 0},${v * 0.44 | 0})`; g.fillRect(x, 0, W / 6, H);
+    for (let k = 0; k < 9; k++) { g.strokeStyle = `rgba(50,30,14,${0.12 + r() * 0.18})`; g.beginPath(); const gx = x + 3 + r() * (W / 6 - 6); g.moveTo(gx, 0); g.bezierCurveTo(gx + (r() - 0.5) * 8, H * 0.3, gx + (r() - 0.5) * 8, H * 0.7, gx + (r() - 0.5) * 6, H); g.stroke(); }
+    g.fillStyle = 'rgba(30,16,6,.8)'; g.fillRect(x, 0, 2, H);
+    if (r() < 0.6) { g.fillStyle = 'rgba(40,22,10,.6)'; g.beginPath(); g.ellipse(x + 10 + r() * 20, 20 + r() * 120, 3, 5, 0, 0, 7); g.fill(); }
+  }
+  const note = (x, y, w, h, a, col, kind) => {
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = 'rgba(20,10,4,.35)'; g.fillRect(-w / 2 + 3, -h / 2 + 4, w, h);
+    g.fillStyle = col; g.fillRect(-w / 2, -h / 2, w, h);
+    g.fillStyle = 'rgba(120,90,50,.25)'; g.fillRect(-w / 2, h / 2 - 5, w, 5); g.fillRect(w / 2 - 4, -h / 2, 4, h);
+    if (kind === 'wanted') {
+      g.fillStyle = '#6a1a12'; g.font = 'bold 13px serif'; g.textAlign = 'center'; g.fillText('WANTED', 0, -h / 2 + 15);
+      g.fillStyle = '#2a1a10'; g.beginPath(); g.arc(0, -2, 11, 0, 7); g.fill(); g.fillRect(-7, 6, 14, 7);
+      g.fillStyle = col; g.fillRect(-6, -5, 4, 4); g.fillRect(2, -5, 4, 4);
+      g.fillStyle = '#6a1a12'; g.fillRect(-w / 2 + 8, h / 2 - 16, w - 16, 3);
+    } else {
+      g.strokeStyle = 'rgba(40,30,24,.75)'; g.lineWidth = 1.4;
+      for (let k = 0; k < 5; k++) { const yy = -h / 2 + 12 + k * (h - 22) / 5; g.beginPath(); g.moveTo(-w / 2 + 6, yy); let xx = -w / 2 + 6; while (xx < w / 2 - 8 - (k === 4 ? w * 0.3 : 0)) { xx += 3 + r() * 5; g.lineTo(xx, yy + (r() - 0.5) * 2); } g.stroke(); }
+    }
+    g.fillStyle = '#b82a1a'; g.beginPath(); g.arc(0, -h / 2 + 5, 3.2, 0, 7); g.fill(); g.fillStyle = '#ff9a80'; g.fillRect(-1, -h / 2 + 3, 1.5, 1.5);
+    g.restore();
+  };
+  note(52, 58, 64, 78, -0.08, '#efe4c6', 'wanted'); note(126, 50, 56, 60, 0.05, '#f2ead6'); note(196, 64, 58, 72, -0.04, '#e8dcbc');
+  note(96, 124, 60, 48, 0.07, '#f4ecd8'); note(170, 128, 50, 44, -0.1, '#e4d4b0');
+  g.strokeStyle = '#3a2210'; g.lineWidth = 6; g.strokeRect(3, 3, W - 6, H - 6);
+  const t = canvasTex(c); t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); return t;
+})();
+const BOARD = { wood: null, face: null, geo: null, faceGeo: null }, BOARD_S = 0.72;
+function boardMesh(lam) {
+  if (!BOARD.geo) {
+    // the notice face leans back a little so the camera (about 50 deg above the horizon) reads it
+    const parts = [], LEAN = -0.26, box = (x, y, z, sx, sy, sz, rx, lean) => { const g = ni(new THREE.BoxGeometry(sx, sy, sz)); if (rx) g.rotateX(rx); if (lean) { g.translate(0, y - 1.02, z); g.rotateX(LEAN); g.translate(x, 1.02, 0); } else g.translate(x, y, z); parts.push(g); };
+    box(-0.6, 0.9, 0, 0.11, 1.84, 0.11); box(0.6, 0.9, 0, 0.11, 1.84, 0.11);               // posts
+    box(0, 1.02, -0.02, 1.3, 0.86, 0.06, 0, true);                                          // backing boards
+    box(0, 1.46, 0.02, 1.42, 0.07, 0.1, 0, true); box(0, 0.58, 0.02, 1.42, 0.07, 0.1, 0, true); // top / bottom rails
+    box(0, 1.76, 0.1, 1.6, 0.045, 0.28, -0.55); box(0, 1.76, -0.1, 1.6, 0.045, 0.28, 0.55);  // little gable roof
+    box(0, 1.86, 0, 1.64, 0.06, 0.07);                                                     // ridge
+    box(-0.6, 0.02, 0, 0.2, 0.1, 0.2); box(0.6, 0.02, 0, 0.2, 0.1, 0.2);                   // footings
+    BOARD.geo = merge(parts);
+    BOARD.faceGeo = new THREE.PlaneGeometry(1.24, 0.8).translate(0, 0.015, 0.016).rotateX(LEAN).translate(0, 1.02, 0);
+  }
+  if (!BOARD.wood) { BOARD.wood = lam({ map: TEX.wood, color: linCol(0xc8a888) }); BOARD.face = lam({ map: TEX.board }); }
+  const g = new THREE.Group(), a = new THREE.Mesh(BOARD.geo, BOARD.wood), b = new THREE.Mesh(BOARD.faceGeo, BOARD.face);
+  a.castShadow = a.receiveShadow = b.receiveShadow = true; g.add(a, b); return g;
+}
+
+/* ---------- Light pools: soft flickering ground glow under fires / lamps (1 draw call per map) ---------- */
+const POOLU = { uT: { value: 0 }, uWay: { value: 0 } };
+function buildPools(m, plan, R) {
+  const Lc = R.lights || RLOOK.ashen_fields.lights, E = [], dark = R.exposure > 1.05;
+  const col = (hex, k) => linCol(hex).multiplyScalar(k);
+  for (const b of m.braziers) E.push([b.x, b.y, dark ? 3.2 : 2.6, col(Lc.brazier[0], dark ? 0.5 : 0.3), b.x * 3.1 + b.y, 1, 0]);
+  if (m.way) E.push([m.way.x, m.way.y, 3.4, col(Lc.way[0], dark ? 0.4 : 0.22), 0.7, 1, 1]);
+  const lamp = Lc.lamp || [0xffc070];
+  for (const l of plan.lights) E.push([l.x, l.z, 1.9, col(lamp[0], dark ? 0.3 : 0.14), l.x * 1.7 + l.z, 0.25, 0]);
+  for (const wp of m.warps) E.push([wp.x + 0.5, wp.y + 0.5, 1.9, col(Lc.warp[0], 0.22), 2, 0.3, 0]);
+  if (!E.length) return null;
+  const G = 6, per = (G + 1) * (G + 1), n = E.length, pos = new Float32Array(n * per * 3), ctr = new Float32Array(n * per * 4), cl = new Float32Array(n * per * 4), idx = [];
+  E.forEach(([x, z, r, c, ph, fl, way], e) => {
+    for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+      const k = e * per + j * (G + 1) + i, px = x - r + 2 * r * i / G, pz = z - r + 2 * r * j / G;
+      pos[k * 3] = px; pos[k * 3 + 1] = groundHm(m, px, pz) + 0.035; pos[k * 3 + 2] = pz;
+      ctr[k * 4] = x; ctr[k * 4 + 1] = z; ctr[k * 4 + 2] = r; ctr[k * 4 + 3] = ph;
+      cl[k * 4] = c.r; cl[k * 4 + 1] = c.g; cl[k * 4 + 2] = c.b; cl[k * 4 + 3] = fl + way * 10;
+    }
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = e * per + j * (G + 1) + i, b = a + 1, c2 = a + G + 1, d = c2 + 1; idx.push(a, c2, b, b, c2, d); }
+  });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aC', new THREE.BufferAttribute(ctr, 4)); geo.setAttribute('aCol', new THREE.BufferAttribute(cl, 4)); geo.setIndex(idx);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: POOLU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    vertexShader: `attribute vec4 aC, aCol; uniform float uT, uWay; varying vec2 vD; varying vec3 vCol;
+      void main(){ vD = (position.xz - aC.xy) / aC.z; float fl = mod(aCol.w, 10.0), ph = aC.w;
+        float f = 1.0 - fl * (0.12 + 0.1 * sin(uT * 11.0 + ph) + 0.07 * sin(uT * 23.7 + ph * 2.0) + 0.05 * sin(uT * 5.3 + ph * 0.7));
+        vCol = aCol.rgb * f * f * (aCol.w >= 10.0 ? uWay : 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `varying vec2 vD; varying vec3 vCol;
+      void main(){ float q = clamp(1.0 - dot(vD, vD), 0.0, 1.0); gl_FragColor = vec4(vCol * q * q * (0.35 + 0.65 * q), 1.0);
+        #include <tonemapping_fragment>
+        #include <encodings_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat); mesh.renderOrder = -1; mesh.frustumCulled = false; return mesh;
+}
+
+/* ---------- Dust motes drifting in the light (Points; lit only where the static shadow map sees the sun) ---------- */
+const MOTEU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uScale: { value: 400 }, tShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() }, uLitOn: { value: 0 } };
+function buildMotes(S) {
+  const n = S.n || 500, seed = new Float32Array(n * 4), r = mulberry32(4242);
+  for (let i = 0; i < n * 4; i++) seed[i] = r();
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+  const vtx = renderer.capabilities.maxVertexTextures > 0 && S.lit;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uCol: { value: linCol(S.col || 0xfff0c0) }, uBox: { value: S.box || 24 }, uH: { value: new THREE.Vector2(S.hmin || 0.3, S.hmax || 4) }, uSize: { value: S.size || 0.05 } }, MOTEU),
+    defines: vtx ? { MOTE_LIT: 1 } : {}, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    vertexShader: `attribute vec4 aSeed; uniform float uT, uBox, uScale, uSize, uLitOn; uniform vec3 uC; uniform vec2 uH; varying float vB;
+      #ifdef MOTE_LIT
+      uniform sampler2D tShadow; uniform mat4 uShadowM;
+      float unpackD(const in vec4 v){ return dot(v, (255.0 / 256.0) / vec4(256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0)); }
+      #endif
+      void main(){
+        vec2 drift = vec2(sin(uT * 0.31 + aSeed.z * 6.28), cos(uT * 0.23 + aSeed.w * 6.28)) * 0.7 + vec2(0.11, 0.05) * uT;
+        vec2 o = uC.xz - uBox * 0.5, xz = o + mod(aSeed.xy * uBox + drift - o, uBox);
+        float y = uC.y + mix(uH.x, uH.y, fract(aSeed.z + uT * 0.012 * (0.4 + aSeed.w))) + sin(uT * 0.9 + aSeed.x * 20.0) * 0.12;
+        vec3 p = vec3(xz.x, y, xz.y);
+        float tw = 0.55 + 0.45 * sin(uT * (1.3 + aSeed.w * 2.2) + aSeed.y * 40.0);
+        float edge = 1.0 - smoothstep(0.3, 0.5, max(abs(xz.x - uC.x), abs(xz.y - uC.z)) / uBox);
+        float lit = 1.0;
+        #ifdef MOTE_LIT
+        if (uLitOn > 0.5) { vec4 sc = uShadowM * vec4(p, 1.0); if (sc.x > 0.0 && sc.x < 1.0 && sc.y > 0.0 && sc.y < 1.0) lit = mix(0.1, 1.0, step(sc.z, unpackD(texture2D(tShadow, sc.xy)) + 0.002)); }
+        #endif
+        vB = tw * edge * lit;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+        gl_PointSize = uSize * (0.6 + 0.8 * aSeed.w) * uScale / -mv.z;
+      }`,
+    fragmentShader: `uniform vec3 uCol; varying float vB;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d); gl_FragColor = vec4(uCol * vB * a * 1.6, 1.0);
+        #include <tonemapping_fragment>
+        #include <encodings_fragment>
+      }`,
+  });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 5; return pts;
+}
+
+/* ---------- Carved stone caps on the keep wall blocks (the model's top faces) ----------
+   World-up faces of dng_wall get their own albedo: tile-aligned slabs with a carved groove and
+   bevel, flagstone joints and grain from the floor detail texture, grime and moss; tinted by the
+   instance tint (keep blue-grey / town warm). Other faces keep the model texture. */
+const CAPU = { uCapD: { value: null } };
+function capify(mat) {
+  mat.onBeforeCompile = sh => {
+    if (!CAPU.uCapD.value) CAPU.uCapD.value = detailTex('flag').tex;
+    Object.assign(sh.uniforms, CAPU);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCapW, vCapN;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+      { vec4 cw = vec4(transformed, 1.0); vec3 cn = objectNormal;
+        #ifdef USE_INSTANCING
+        cw = instanceMatrix * cw; cn = mat3(instanceMatrix) * cn;
+        #endif
+        vCapW = (modelMatrix * cw).xyz; vCapN = normalize(mat3(modelMatrix) * cn); }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCapW, vCapN; uniform sampler2D uCapD; float capUp; vec2 capSl;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      capUp = smoothstep(0.6, 0.9, vCapN.y); capSl = vec2(0.0);
+      if (capUp > 0.0) {
+        vec2 wp = vCapW.xz, f = fract(wp) - 0.5, af = abs(f);
+        vec4 dd = texture2D(uCapD, wp * 0.31 + vec2(0.13, 0.57));
+        float e = max(af.x, af.y), groove = smoothstep(0.425, 0.465, e) * (1.0 - smoothstep(0.485, 0.5, e) * 0.5);
+        float bevel = smoothstep(0.33, 0.43, e) * (1.0 - groove);
+        float grime = texture2D(uCapD, wp * 0.071 + vec2(0.4, 0.2)).b, moss = smoothstep(0.58, 0.72, texture2D(uCapD, wp * 0.113 + vec2(0.71, 0.33)).a + (grime - 0.5) * 0.4);
+        vec3 tint = diffuse / max(max(diffuse.r, diffuse.g), max(diffuse.b, 0.01));
+        vec3 st = vec3(0.6, 0.57, 0.53) * mix(vec3(1.0), tint, 0.6) * (0.42 + 1.05 * dd.b) * (0.8 + 0.4 * grime);
+        st *= (1.0 - groove * 0.62) * (1.0 + bevel * 0.22);
+        st = mix(st, vec3(0.16, 0.24, 0.1) * (0.6 + 0.8 * dd.b), moss * 0.55 * (1.0 - groove));
+        diffuseColor.rgb = mix(diffuseColor.rgb, st, capUp);
+        capSl = (dd.rg - 0.5) * 3.0 - sign(f) * step(af.yx, af.xy) * vec2(1.0, 1.0) * (smoothstep(0.34, 0.44, e) - smoothstep(0.44, 0.49, e)) * 2.2;
+      }`)
+      .replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\nspecularStrength *= 1.0 - capUp * 0.85;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      if (capUp > 0.0) normal = normalize(normal - capUp * 0.9 * (viewMatrix * vec4(capSl.x, 0.0, capSl.y, 0.0)).xyz);`);
+  };
+  mat.customProgramCacheKey = () => 'cap';
+  return mat;
+}
+
 /* ---------- World building ---------- */
 function buildWorld(m) {
   if (m.world) return m.world;
@@ -1141,6 +1475,7 @@ function buildWorld(m) {
   const lam = (o) => new THREE.MeshPhongMaterial(Object.assign({ specular: spec ? spec[0] : 0x000000, shininess: spec ? spec[1] : 1 }, o));
   const solid = (geo, mat) => { const me = new THREE.Mesh(geo, mat); me.castShadow = true; me.receiveShadow = true; grp.add(me); return me; };
   const plan = planProps(m); m.propLights = plan.lights; m.propAvoid = plan.avoid; m.propItems = plan.items;
+  m.hgtInfo = heightTex(m); A.halos = [];
   // Ground: painted macro + detail layers (see groundDetail)
   const gg = new THREE.PlaneGeometry(w, h, w, h); gg.rotateX(-Math.PI / 2); gg.translate(w / 2, 0, h / 2);
   const pos = gg.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, m.hgt[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]);
@@ -1148,7 +1483,7 @@ function buildWorld(m) {
   const pg = paintGround(m, plan), mk = groundMask(m); m.gbase = pg; m.gmask = mk;
   const shadeT = new THREE.CanvasTexture(pg.shade); shadeT.flipY = false; shadeT.generateMipmaps = false; shadeT.minFilter = THREE.LinearFilter; pg.shade = null;
   const gmat = lam({ map: canvasTex(pg.macro, { aniso: true }) }); pg.macro = null;
-  const baseK = L.floor === 'flag' ? 'flag' : L.floor === 'rock' ? 'basalt' : 'grass';
+  const baseK = floorDetail(L.floor);
   groundDetail(gmat, {
     base: detailTex(baseK), mask: mk.tex, shade: shadeT, mapInv: new THREE.Vector2(1 / w, 1 / h), nrm: baseK === 'flag' ? 1.25 : 1,
     path: mk.hasP ? detailTex('dirt') : null, pathC: rgbLin(L.path || [150, 130, 100]),
@@ -1164,7 +1499,7 @@ function buildWorld(m) {
   if (m.way) {
     const gh = groundHm(m, m.way.x, m.way.y), ay = PROP_LIGHT.waystone[1] * 0.9;
     const fl = flameSprite(3.4, 1.7, 0.55); fl.position.set(m.way.x, gh + ay + 0.5, m.way.y); fl.scale.set(0.9, 1.35, 1); grp.add(fl);
-    const halo = glowSprite(linCol(0xff8a30), 0.35, 3, 3); halo.position.set(m.way.x, gh + ay + 0.3, m.way.y); grp.add(halo);
+    const halo = glowSprite(linCol(0xff8a30), 0.35, 3, 3); halo.position.set(m.way.x, gh + ay + 0.3, m.way.y); grp.add(halo); A.halos.push({ s: halo, op: 0.35, ph: 0.7, fl: 1 });
     A.way = { fl, halo, rune: null }; A.flames.push({ s: fl, sx: 0.9, sy: 1.35 });
   }
   // Warp portals
@@ -1181,11 +1516,22 @@ function buildWorld(m) {
   for (const b of m.braziers) {
     const gh = groundHm(m, b.x, b.y), ay = PROP_LIGHT.dng_brazier[1];
     const fl = flameSprite(3.2, 1.5, 0.5); fl.position.set(b.x, gh + ay + 0.28, b.y); fl.scale.set(0.5, 0.75, 1); grp.add(fl);
-    const halo = glowSprite(linCol(0xff7a20), 0.3, 1.8, 1.8); halo.position.set(b.x, gh + ay + 0.2, b.y); grp.add(halo);
+    const halo = glowSprite(linCol(0xff7a20), 0.3, 1.8, 1.8); halo.position.set(b.x, gh + ay + 0.2, b.y); grp.add(halo); A.halos.push({ s: halo, op: 0.3, ph: b.x * 3.1 + b.y, fl: 1 });
     A.flames.push({ s: fl, sx: 0.5, sy: 0.75 });
   }
   // Lamp-post lanterns: a soft glow (the emissive glass blooms; the light pool adds the rest)
-  for (const l of plan.lights) { const s = glowSprite(linCol(0xffc070), 0.4, 1.1, 1.1); s.position.set(l.x, l.h, l.z); grp.add(s); }
+  // (a wide faint outer halo reads as night glow in the lantern's own haze)
+  for (const l of plan.lights) {
+    const s = glowSprite(linCol(0xffc070), 0.4, 1.1, 1.1); s.position.set(l.x, l.h, l.z); grp.add(s); A.halos.push({ s, op: 0.4, ph: l.x * 1.7 + l.z, fl: 0.25 });
+    const o = glowSprite(linCol(0xffb060), 0.1, 3.2, 3.2); o.position.set(l.x, l.h - 0.15, l.z); grp.add(o); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.2 : 0.1, ph: l.x * 1.7 + l.z, fl: 0.3 });
+  }
+  // Bounty boards (quest objects): a 3D notice board replaces the 2D overlay placeholder (model via props,
+  // primitive mesh when the model can't load, see dress())
+  const boards = plan.items.filter(it => it.board); A.boards = boards.length;
+  const boardFallback = () => { if (PROPS.tpl.town_bounty_board || A.boardMesh) return; A.boardMesh = true; for (const it of boards) { const b = boardMesh(lam); b.position.set(it.x, it.y, it.z); b.rotation.y = it.r; grp.add(b); } };
+  // Flickering ground light pools and drifting dust motes
+  A.pools = buildPools(m, plan, R); if (A.pools) grp.add(A.pools);
+  if (R.motes) { A.motes = buildMotes(R.motes); grp.add(A.motes); }
   // Anvil
   const metal = lam({ color: linCol(0x3a3430), specular: 0x333333, shininess: 30 });
   for (const o of m.objs) if (o.kind === 'anvil') { const g = new THREE.Group(); const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), metal); b1.position.y = 0.2; const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.36), lam({ color: linCol(0x5a5654), specular: 0x444444, shininess: 40 })); b2.position.y = 0.5; b1.castShadow = b2.castShadow = true; g.add(b1, b2); g.position.set(o.x, groundHm(m, o.x, o.y), o.y); grp.add(g); }
@@ -1200,13 +1546,28 @@ function buildWorld(m) {
     A.heart = { coreM, glowS };
   }
   // Volumetric-looking light shafts (additive crossed planes along the sun direction)
-  if (R.shafts) A.shafts = buildShafts(m, R, grp);
+  if (R.shafts) { const sg = new THREE.Group(); grp.add(sg); A.shafts = buildShafts(m, R, sg); A.shaftGrp = sg; }
   // 3D props: instanced from the glTF templates once loaded (cached => immediate on revisits)
   const props = new THREE.Group(); grp.add(props); grp.userData.props = props; grp.userData.map = m;
-  const ids = [...new Set(plan.items.map(it => it.id))];
-  const dress = () => { buildProps(props, plan.items); worldQuality(grp); PROPS.prefetch(); };
-  if (PROPS.ready(ids)) dress();
-  else PROPS.ensure(ids).then(dress, e => { console.warn('[props] models unavailable, using placeholders:', e && e.message || e); legacyProps(m, props, lam, A); });
+  // required models must all load (else the legacy primitives); optional ones (decor, LODs, board) are skipped when missing
+  const dress = lq => { buildProps(props, plan.items, lq); grp.userData.propLod = lq; boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
+  const start = () => {
+    const lq = lodLow(), { req, opt } = propIds(plan.items, lq), loadOpt = () => Promise.all(opt.map(id => PROPS.load(id).catch(() => null)));
+    if (PROPS.ready(req) && PROPS.ready(opt)) return dress(lq);
+    PROPS.ensure(req).then(() => loadOpt().then(() => dress(lq)), e => {
+      console.warn('[props] models unavailable, using placeholders:', e && e.message || e); legacyProps(m, props, lam, A);
+      loadOpt().then(() => { buildProps(props, plan.items.filter(it => it.opt), lq); boardFallback(); SHADOW.need = true; });
+    });
+  };
+  if (PROPS.man || !THREE.GLTFLoader) start(); else PROPS.manifest().then(start);
+  grp.userData.rebuildProps = lq => {
+    const { req, opt } = propIds(plan.items, lq);
+    if (!PROPS.ready(req)) return;   // legacy placeholders: nothing to swap
+    Promise.all(opt.map(id => PROPS.load(id).catch(() => null))).then(() => {
+      for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) o.geometry.dispose(); }
+      dress(lq);
+    });
+  };
   m.world = grp; m.anim = A;
   return grp;
 }
@@ -1235,6 +1596,9 @@ function enterWorld() {
   if (curWorld.userData.epoch !== GFX_EPOCH) refreshMaterials(curWorld);
   worldQuality(curWorld);
   applyLook();
+  GFX.world = { hgt: map.hgtInfo || null, shadow: SHADOW };
+  if (map.anim && map.anim.boards && typeof QUEST_UI !== 'undefined') QUEST_UI.boards = false;   // the 3D board mesh replaces the overlay placeholder
+  SHADOW.need = true;
   // static light sources for the point-light pool
   LSRC.length = 0; const Lc = RL.lights;
   for (const b of map.braziers) LSRC.push({ x: b.x, y: b.y, h: groundH(b.x, b.y) + 1.35, c: linCol(Lc.brazier[0]), i: Lc.brazier[1], d: Lc.brazier[2], fl: 1, ph: b.x * 3.1 + b.y });
@@ -1346,26 +1710,39 @@ function updateLights() {
     const l = PL[k], s = _cand[k];
     if (!s) { l.intensity = 0; continue; }
     let I = s.i;
-    if (s.fl && !s.dyn) I *= 1 - s.fl * (0.1 + 0.08 * Math.sin(time * 11 + s.ph) + 0.06 * Math.sin(time * 23.7 + s.ph * 2));
+    let jx = 0, jz = 0;
+    if (s.fl && !s.dyn) { I *= flick(s.fl, s.ph); if (s.fl >= 1) { jx = Math.sin(time * 7.1 + s.ph) * 0.05; jz = Math.cos(time * 8.3 + s.ph) * 0.05; } }
     if (s.warp) { const locked = s.warp.lock === 'gate' && !P.flags.gate; _col.setRGB(locked ? 1 : s.c.r, locked ? 0.25 : s.c.g, locked ? 0.12 : s.c.b); l.color.copy(_col); } else l.color.copy(s.c);
-    l.intensity = I; l.distance = s.d; l.position.set(s.x, s.h, s.y);
+    l.intensity = I; l.distance = s.d; l.position.set(s.x + jx, s.h, s.y + jz);
   }
 }
 const _sr = new THREE.Vector3(), _su = new THREE.Vector3(), _sf = new THREE.Vector3(), _st = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
-function updateSun() {
-  const d = SKY.sunDir, R = clamp(cam.dist * 0.5, 9, 30), sc = sun.shadow.camera;
+// Aim a directional shadow at (x, y, z) with half-extent R, snapped to whole shadow texels so edges
+// don't shimmer while the frustum follows the camera.
+function aimShadow(l, R, x, y, z) {
+  const d = SKY.sunDir, sc = l.shadow.camera;
   if (sc.right !== R) { sc.left = -R; sc.right = R; sc.top = R; sc.bottom = -R; sc.updateProjectionMatrix(); }
-  // snap the shadow camera to whole shadow texels so edges don't shimmer while walking
   _sf.copy(d).negate(); _sr.crossVectors(_sf, UP).normalize(); _su.crossVectors(_sr, _sf).normalize();
-  _st.set(cam.tx, cam.th, cam.ty); const tex = 2 * R / (sun.shadow.mapSize.x || 1024);
+  _st.set(x, y, z); const tex = 2 * R / (l.shadow.mapSize.x || 1024);
   const a = Math.round(_st.dot(_sr) / tex) * tex, b = Math.round(_st.dot(_su) / tex) * tex, c = _st.dot(_sf);
   _st.copy(_sr).multiplyScalar(a).addScaledVector(_su, b).addScaledVector(_sf, c);
-  sun.target.position.copy(_st); sun.position.copy(_st).addScaledVector(d, 70); sun.target.updateMatrixWorld();
+  l.target.position.copy(_st); l.position.copy(_st).addScaledVector(d, 70); l.target.updateMatrixWorld();
+}
+function updateSun() {
+  const R = clamp(cam.dist * 0.5, 9, 30);
+  if (!SHADOW.split) { aimShadow(sun, R, cam.tx, cam.th, cam.ty); return; }
+  aimShadow(sunDyn, R, cam.tx, cam.th, cam.ty);
+  // static map: a margin wider than the view, re-centred (and re-rendered) only when the view drifts
+  const Rs = R + SHADOW.margin, far = Math.max(Math.abs(cam.tx - SHADOW.cx), Math.abs(cam.ty - SHADOW.cz)) > SHADOW.margin * 0.6;
+  if (far || SHADOW.R !== Rs || SHADOW.need) { aimShadow(sun, Rs, cam.tx, cam.th, cam.ty); SHADOW.cx = cam.tx; SHADOW.cz = cam.ty; SHADOW.R = Rs; SHADOW.need = true; }
 }
 function updateAtmosphere() {
   const k = cam.dist / 40; if (scene.fog && RL) { scene.fog.near = RL.fog[0] * k; scene.fog.far = RL.fog[1] * k; LAVAU.uFog.value.set(scene.fog.near, scene.fog.far); }
   skyDome.position.copy(camera.position);
 }
+const _dbs = new THREE.Vector2();
+// Fire flicker (shared by point lights, halos and ground pools): a few incommensurate sines
+function flick(fl, ph) { return 1 - fl * (0.12 + 0.1 * Math.sin(time * 11 + ph) + 0.07 * Math.sin(time * 23.7 + ph * 2) + 0.05 * Math.sin(time * 5.3 + ph * 0.7)); }
 function animateWorld(dt) {
   const A = map.anim; if (!A) return;
   for (const f of A.flames) { const k = 1 + Math.sin(time * 13 + f.sx * 40) * 0.08 + Math.sin(time * 7.3) * 0.05; f.s.scale.set(f.sx * (2 - k), f.sy * k, 1); }
@@ -1383,6 +1760,12 @@ function animateWorld(dt) {
     if (Math.random() < 0.5) parts.push({ x: w.wp.x + 0.5 + rand(-0.5, 0.5), y: w.wp.y + 0.5 + rand(-0.5, 0.5), z: 0, vx: 0, vy: 0, vz: rand(50, 110), life: rand(0.8, 1.4), max: 1.4, col: locked ? '#ff8a6a' : '#bfe4ff', size: 2.5, float: true });
   }
   if (A.shafts) for (const sh of A.shafts) sh.mat.opacity = sh.op * (0.7 + 0.3 * Math.sin(time * 0.6 + sh.ph));
+  if (A.halos) for (const h of A.halos) h.s.material.opacity = h.op * flick(h.fl, h.ph);
+  POOLU.uT.value = time; POOLU.uWay.value = lit ? 1 : 0;
+  if (A.motes) {
+    MOTEU.uT.value = time; MOTEU.uC.value.set(cam.tx, cam.th, cam.ty); MOTEU.uScale.value = renderer.getDrawingBufferSize(_dbs).y * 0.5 * camera.projectionMatrix.elements[5];
+    MOTEU.tShadow.value = SHADOW.tex; MOTEU.uShadowM.value.copy(sun.shadow.matrix); MOTEU.uLitOn.value = SHADOW.split && SHADOW.tex ? 1 : 0;
+  }
   if (A.lava) LAVAU.uTime.value = time;
   if (A.groundEmis) { const k = 0.85 + 0.15 * Math.sin(time * 1.3); A.groundEmis.emissive.setRGB(1.5 * k, 0.62 * k, 0.25 * k); }
   if (A.heart) { const alive = P.flags.kingSlain; const k = alive ? 0.6 + Math.sin(time * 2) * 0.3 : 0.05; if (alive) A.heart.coreM.color.setRGB(0.4 + k * 2.6, 0.2 + k * 1.6, 0.05 + k * 0.4); else A.heart.coreM.color.setRGB(0.04, 0.015, 0.008); A.heart.glowS.material.opacity = alive ? k * 0.7 : 0; }
