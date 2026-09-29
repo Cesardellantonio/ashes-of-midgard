@@ -31,7 +31,7 @@ const SHEETS = {
   indexLeft: SHEET_INDEX_FILES.length, indexReady: false, indexFiles: [],
   loaded: [], failed: [], requests: 0,
 };
-const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in
+const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
 const LAYER_ORDER = ['body', 'mob', 'npc', 'hair', 'shield', 'weapon'];
 const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace' };  // fist -> none
 
@@ -119,7 +119,7 @@ function loadSheet(id) {
   sheetXHR(SHEET_BASE + id + '.json', j => { rec.json = j; fin(); }, fin);
   try {
     new THREE.TextureLoader().load(SHEET_BASE + id + '.png', t => {
-      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
+      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; if (typeof sprTexEnc === 'function') sprTexEnc(t);
       rec.tex = t; rec.texW = t.image.width; rec.texH = t.image.height; fin();
     }, undefined, () => fin(new Error(id + '.png failed to load')));
   } catch (e) { fin(e); }
@@ -238,9 +238,9 @@ function sheetMobPose(m, v, J) {
   const A = J.actions, n = a => (A[a] ? A[a].frames : 1), fps = a => (A[a] && A[a].fps) || 8, ph = (m.id % 7) * 0.37;
   const held = a => { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * fps(a)); };
   let act, f, tint, opacity;
-  if (m.dead) { act = 'dead'; f = Math.floor((m.deathT || 0) * fps('dead')); opacity = clamp(1 - ((m.deathT || 0) - 0.35) / 0.45, 0, 1); }
+  if (m.dead) { act = 'dead'; f = Math.floor((m.deathT || 0) * fps('dead')); }   // death: pixel dissolve (sprFrame), not a fade
   else if (m.frozen > 0) { act = 'hurt'; f = 0; tint = [0.55, 0.8, 1]; }
-  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = held('hurt'); if (m.hitFlash > 0) tint = [1, 0.72, 0.72]; }
+  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = held('hurt'); }   // hit: white flash + squash (sprFrame)
   else if (m.atkAnim >= 0) { act = 'attack'; f = Math.floor(m.atkAnim * n('attack')); }
   else if (m.leap) { act = 'walk'; f = Math.floor(time * fps('walk') * 1.5); }
   else if (m.d.boss && activeTele(m)) { const t = activeTele(m); act = sheetHas(J, 'skill') ? 'skill' : 'attack'; f = Math.floor(clamp(t.t / t.dur, 0, 0.999) * n(act)); }
@@ -252,22 +252,22 @@ function sheetMobPose(m, v, J) {
 }
 
 /* ---------- Visual ---------- */
-const HAIRTINT = {};
-function hairTint(hex) { hex = hex || '#b9b3a8'; if (HAIRTINT[hex]) return HAIRTINT[hex]; const c = new THREE.Color(hex); return (HAIRTINT[hex] = [c.r / HAIR_GREY, c.g / HAIR_GREY, c.b / HAIR_GREY]); }
 function sheetPlane(json) {
   const fw = json.frameW / PXU, fh = json.frameH / PXU, ax = json.anchor[0] / PXU, ay = json.anchor[1] / PXU;
   // anchor (feet) at the origin: mirroring with scale.x = -1 flips around the feet
   return new THREE.PlaneGeometry(fw, fh).translate(fw / 2 - ax, ay - fh / 2, 0);
 }
 // recs: ready load records (draw order sorted by layer). o.xray: player x-ray silhouette. o.glow: glow colour.
+// o.noCast: no sun shadow (ghosts). Each layer gets a sun-facing shadow caster sharing its geometry (and so its frame UVs).
 function makeSheetVis(recs, o = {}) {
   const v = { sheet: true, key: recs.map(r => r.id).join('|'), layers: [], meshes: [], swings: 0, lastAtk: -1, act: null, actT: 0, sector: undefined };
   recs = recs.slice().sort((a, b) => LAYER_ORDER.indexOf(a.json.layer || (a.entry && a.entry.layer) || 'body') - LAYER_ORDER.indexOf(b.json.layer || (b.entry && b.entry.layer) || 'body'));
   // layers share one transform; creation order = draw order (same depth, LessEqual)
   for (const rec of recs) {
     const geo = sheetPlane(rec.json), layer = (rec.entry && rec.entry.layer) || rec.json.layer || 'body';
-    const mat = spriteMat(rec.tex); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
-    const L = { id: rec.id, rec, layer, geo, uv0: geo.attributes.uv.array.slice(), mat, mesh, xray: null, rk: '' };
+    const mat = fxSpriteMat(rec.tex, layer === 'hair'); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+    const L = { id: rec.id, rec, layer, geo, uv0: geo.attributes.uv.array.slice(), mat, mesh, xray: null, rk: '', caster: null };
+    if (!o.noCast) { L.caster = makeCaster(geo, rec.tex); v.meshes.push(L.caster); }
     if (o.xray) {
       const xm = spriteMat(rec.tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
         // stencil: each covered pixel is tinted once even where layers overlap
@@ -278,7 +278,7 @@ function makeSheetVis(recs, o = {}) {
   }
   v.shadow = new THREE.Mesh(FLATPLANE, SHADOWMAT); v.shadow.renderOrder = -1; scene.add(v.shadow); v.meshes.push(v.shadow);
   if (o.glow) { v.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: new THREE.Color(o.glow), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); scene.add(v.glow); v.meshes.push(v.glow); }
-  v.dispose = () => { for (const m of v.meshes) { scene.remove(m); if (m.material !== SHADOWMAT) m.material.dispose(); } for (const L of v.layers) L.geo.dispose(); };
+  v.dispose = () => { for (const m of v.meshes) disposeMesh(m); for (const L of v.layers) L.geo.dispose(); };
   return v;
 }
 function setLayerFrame(L, act, d, f) {
@@ -290,18 +290,20 @@ function setLayerFrame(L, act, d, f) {
     L.rk = k; const uv = sheetUV(r, L.rec.texW, L.rec.texH), a = L.geo.attributes.uv, s = a.array, o = L.uv0;
     for (let i = 0; i < s.length; i += 2) { s[i] = uv.u0 + o[i] * (uv.u1 - uv.u0); s[i + 1] = uv.v0 + o[i + 1] * (uv.v1 - uv.v0); }
     a.needsUpdate = true;
+    const u = L.mat.userData.u; if (u) u.uFrameV.value.set(uv.v0, uv.v1);
   }
   return r;
 }
-// Place all layers of a sheet vis at entity e. Returns the first layer's rect.
-function placeSheetVis(v, e, act, d, f, flip, tint, opacity, hairRGB) {
-  const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU, sx = flip ? -1 : 1;
+// Place all layers of a sheet vis at entity e with look st (see sprFrame). Returns the first layer's rect.
+function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
+  const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU + st.zoff, sx = flip ? -1 : 1;
   let rect = null;
   for (const L of v.layers) {
     const r = setLayerFrame(L, act, d, f); if (!rect) rect = r;
-    L.mesh.scale.set(sx, 1 / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
-    if (L.layer === 'hair' && hairRGB) L.mat.color.setRGB(tint[0] * hairRGB[0], tint[1] * hairRGB[1], tint[2] * hairRGB[2]); else L.mat.color.setRGB(tint[0], tint[1], tint[2]);
-    L.mat.opacity = opacity === undefined ? 1 : opacity;
+    L.mesh.scale.set(sx * st.sx, st.sy / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
+    if (L.layer === 'hair') applyHairRamp(L.mat, hairHex);
+    sprApply(L.mat, st, flip);
+    if (L.caster) { L.caster.visible = L.mesh.visible && st.cast && st.a > 0.3; if (L.caster.visible) { L.caster.scale.set(sx, CAST_H, 1); L.caster.position.set(e.x, gh + z, e.y); L.caster.rotation.y = SPRF.cyaw; } }
     if (L.xray) { L.xray.scale.copy(L.mesh.scale); L.xray.position.copy(L.mesh.position); L.xray.rotation.y = cam.yaw; L.xray.visible = L.mesh.visible && !P.dead; }
   }
   return { rect, gh, z };
@@ -331,10 +333,11 @@ function syncSheetPlayer() {
   const body = v.layers[0].rec.json;
   v.sector = facingSector(P.fx === undefined ? 1 : P.fx, P.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(body, v.sector), pose = sheetPlayerPose(v, body);
-  const tn = pose.tint || map.d.look.tint;
-  const pl = placeSheetVis(v, P, pose.act, dir.d, pose.f, dir.flip, tn, undefined, hairTint(P.hair));
-  v.shadow.position.set(P.x, pl.gh + 0.03, P.y); v.shadow.scale.setScalar(0.45 * (1 - Math.min(0.5, pl.z * 0.3))); v.shadow.visible = true;
+  const st = sprFrame(v, P, { tint: pose.tint });
+  const pl = placeSheetVis(v, P, pose.act, dir.d, pose.f, dir.flip, st, P.hair);
+  placeBlob(v, P.x, pl.gh, P.y, 0.45, pl.z, true);
   P.sheetH = v.layers[0].rec.visH;
+  sprMotion(v, P, st, P.sheetH / PXU);
   v.diag = { act: pose.act, f: pose.f, dir: dir.name, d: dir.d, flip: dir.flip, sector: v.sector, rect: pl.rect, ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer) };
   return true;
 }
@@ -343,16 +346,18 @@ function syncSheetPlayer() {
 function syncSheetMob(m) {
   if (!SHEETS.indexReady) return false;
   const rec = sheetRec(m.type, 'mob', null); if (!recReady(rec)) { m.sheetH = 0; return false; }
-  const d = m.d, v = setVis(m, [rec], { glow: d.glow }), J = rec.json;
+  const d = m.d, ghost = isGhost(m), v = setVis(m, [rec], { glow: d.glow, noCast: ghost }), J = rec.json;
   const pose = sheetMobPose(m, v, J); if (!pose) { m.sheetH = 0; disposeVis(v); VIS.delete(m); return false; }
   v.sector = facingSector(m.fx === undefined ? (m.dir || 1) : m.fx, m.fy || 0, cam.yaw, v.sector);
-  const dir = sectorToDir(J, v.sector), tn = pose.tint || map.d.look.tint;
-  const pl = placeSheetVis(v, m, pose.act, dir.d, pose.f, dir.flip, tn, pose.opacity);
+  const dir = sectorToDir(J, v.sector), st = sprFrame(v, m, { tint: pose.tint, opacity: pose.opacity, ghost });
+  const pl = placeSheetVis(v, m, pose.act, dir.d, pose.f, dir.flip, st);
   const human = d.spr === 'human', s = human ? ((d.look && d.look.scale) || 1) : (d.size || 1);
-  const shR = (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85));
-  v.shadow.position.set(m.x, pl.gh + 0.03, m.y); v.shadow.scale.setScalar(shR * (1 - Math.min(0.5, pl.z * 0.3))); v.shadow.visible = pose.opacity === undefined || pose.opacity > 0.3;
+  const shR = (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85)) * (ghost ? 0.8 : 1);
+  placeBlob(v, m.x, pl.gh, m.y, shR, pl.z, st.a > 0.3 && st.dis < 0.6);
   m.sheetH = rec.visH;
-  if (v.glow) { const hu = rec.visH / PXU; v.glow.position.set(m.x, pl.gh + pl.z + hu / COSP * 0.5, m.y); const gs = hu * 2.2; v.glow.scale.set(gs, gs, 1); v.glow.visible = !m.dead; }
+  const hu = rec.visH / PXU;
+  if (v.glow) { v.glow.position.set(m.x, pl.gh + pl.z + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
+  sprMotion(v, m, st, hu);
   v.diag = { act: pose.act, f: pose.f, dir: dir.name, flip: dir.flip, rect: pl.rect, id: rec.id };
   return true;
 }
@@ -369,8 +374,9 @@ function syncSheetNPC(n) {
   const want = talk && sheetHas(J, 'talk') ? 'talk' : 'idle', A = J.actions[want] || {};
   const r = sheetFrame(J, want, Math.floor(time * (A.fps || 6) + n.x)); if (!r) { n.sheetH = 0; disposeVis(v); VIS.delete(n); return false; }
   const dir = sectorToDir(J, v.sector);
-  const pl = placeSheetVis(v, n, r.act, dir.d, r.f, dir.flip, map.d.look.tint);
-  v.shadow.position.set(n.x, pl.gh + 0.03, n.y); v.shadow.scale.setScalar(0.45 * Math.max(1, ((n.look && n.look.scale) || 1) * 0.8)); v.shadow.visible = true;
+  const st = sprFrame(v, n, {});
+  const pl = placeSheetVis(v, n, r.act, dir.d, r.f, dir.flip, st);
+  placeBlob(v, n.x, pl.gh, n.y, 0.45 * Math.max(1, ((n.look && n.look.scale) || 1) * 0.8), pl.z, true);
   n.sheetH = rec.visH;
   v.diag = { act: r.act, f: r.f, dir: dir.name, id: rec.id };
   return true;
