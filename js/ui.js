@@ -511,7 +511,7 @@ addEventListener('resize', () => { resize(); if (map) setScreenParts(); });
 /* =========================================================
    Save / load / boot
    ========================================================= */
-const SAVE_KEYS = ['name', 'hair', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime'];
+const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime'];
 function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; return JSON.stringify(o); }
 function saveGame() { if (!started || !P) return; const s = serialize(); if (s) store('aom-save', s); }
 function loadSave() { const raw = store('aom-save'); if (!raw) return null; try { return JSON.parse(raw); } catch (e) { return null; } }
@@ -532,9 +532,11 @@ function startGame(fresh) {
   log(fresh ? 'You wake in the Ash with nothing but a knife and a shirt.' : `Welcome back, ${P.name}.`, 'sys');
   log(`Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
 }
+const OPT_ON = 'border-color:#3a6ae0;box-shadow:0 0 0 1px #3a6ae0;background:linear-gradient(#e8f0ff,#c4d4f4);color:#1a3a8a';
 function showTitle() {
   const save = loadSave(); const hairs = ['#b9b3a8', '#1d1a1a', '#a4532a', '#caa04f', '#6a7890'];
-  let hair = hairs[0], armed = false;
+  let hair = hairs[0], gender = 'm', hairStyle = 'spiky', armed = false;
+  const opt = (grp, val, txt, on) => `<button class="btn t-opt" data-g="${grp}" data-v="${val}" aria-pressed="${on}" style="${on ? OPT_ON : ''}">${txt}</button>`;
   $('title').innerHTML = `<div class="t-wrap">
     <div class="t-rune">ᚨᛊᚺᛖᛊ · ᛟᚠ · ᛗᛁᛞᚷᚨᚱᛞ</div>
     <h1>Ashes of Midgard</h1>
@@ -542,17 +544,23 @@ function showTitle() {
     <div class="t-card rwin"><div class="rtb">Character</div><div class="rbd">
       ${save ? `<button class="btn big" id="bCont">Continue · ${esc(save.name)}, Lv ${save.lvl} ${CLASSES[save.cls] ? CLASSES[save.cls].name : ''}</button><div class="sec" style="margin:6px 0 0">Or begin again</div>` : ''}
       <label for="nm">Name</label><input id="nm" maxlength="16" value="Unkindled" autocomplete="off" spellcheck="false">
+      <label>Body</label><div class="hairs" role="group" aria-label="Body">${opt('gender', 'm', 'Male', true)}${opt('gender', 'f', 'Female', false)}</div>
+      <label>Hair style</label><div class="hairs" role="group" aria-label="Hair style">${opt('style', 'spiky', 'Spiky', true)}${opt('style', 'long', 'Long', false)}</div>
       <label>Hair</label><div class="hairs">${hairs.map((h, i) => `<button class="hair ${i ? '' : 'on'}" data-h="${h}" style="background:${h}" aria-label="Hair color ${i + 1}"></button>`).join('')}</div>
       <button class="btn big" id="bNew">Rise</button>
     </div></div>
     <p class="t-foot">Single-player · Saves in this browser at every Waystone</p></div>`;
   $('title').querySelectorAll('.hair').forEach(b => b.onclick = () => { hair = b.dataset.h; $('title').querySelectorAll('.hair').forEach(x => x.classList.toggle('on', x === b)); });
+  $('title').querySelectorAll('.t-opt').forEach(b => b.onclick = () => {
+    if (b.dataset.g === 'gender') gender = b.dataset.v; else hairStyle = b.dataset.v;
+    $('title').querySelectorAll(`.t-opt[data-g="${b.dataset.g}"]`).forEach(x => { const on = x === b; x.setAttribute('aria-pressed', on); x.style.cssText = on ? OPT_ON : ''; });
+  });
   if (save) $('bCont').onclick = () => { Sfx.unlock(); applySave(save); startGame(false); };
   $('bNew').onclick = () => {
     Sfx.unlock();
     if (save && !armed) { armed = true; $('bNew').textContent = 'Rise, and erase the saved character'; $('bNew').classList.add('warn'); return; }
     const name = ($('nm').value || 'Unkindled').trim().slice(0, 16) || 'Unkindled';
-    P = newPlayer(name, hair); uidc = 1;
+    P = newPlayer(name, hair, gender, hairStyle); uidc = 1;
     const kn = makeItem('knife'), sh = makeItem('cotton_shirt'); P.equip.weapon = kn; P.equip.body = sh;
     P.inv.push(makeItem('red_potion', { qty: 10 }), makeItem('fly_wing', { qty: 3 }), makeItem('butterfly_wing', { qty: 1 }), makeItem('apple', { qty: 5 }));
     intro(() => startGame(true));

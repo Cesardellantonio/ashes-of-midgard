@@ -1,0 +1,44 @@
+{
+ "sheets": [
+  {
+   "id": "novice_f.body",
+   "layer": "body",
+   "body": "novice_f"
+  },
+  {
+   "id": "hair_long_f",
+   "layer": "hair",
+   "body": "novice_f"
+  },
+  {
+   "id": "hair_spiky_f",
+   "layer": "hair",
+   "body": "novice_f"
+  },
+  {
+   "id": "weapon_knife_f",
+   "layer": "weapon",
+   "body": "novice_f"
+  },
+  {
+   "id": "novice_m.body",
+   "layer": "body",
+   "body": "novice_m"
+  },
+  {
+   "id": "hair_long_m",
+   "layer": "hair",
+   "body": "novice_m"
+  },
+  {
+   "id": "hair_spiky_m",
+   "layer": "hair",
+   "body": "novice_m"
+  },
+  {
+   "id": "weapon_knife_m",
+   "layer": "weapon",
+   "body": "novice_m"
+  }
+ ]
+}

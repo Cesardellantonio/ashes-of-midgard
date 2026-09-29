@@ -9,7 +9,7 @@ const SHADOWMAT = new THREE.MeshBasicMaterial({ map: TEX.shadow, transparent: tr
 const VIS = new Map(), DV = new Map();
 let frameNo = 0;
 function clearVis() { for (const v of VIS.values()) disposeVis(v); VIS.clear(); for (const v of DV.values()) for (const m of v.meshes) scene.remove(m); DV.clear(); }
-function disposeVis(v) { for (const m of v.meshes) { scene.remove(m); if (m.material !== SHADOWMAT) m.material.dispose(); } }
+function disposeVis(v) { if (v.dispose) return v.dispose(); for (const m of v.meshes) { scene.remove(m); if (m.material !== SHADOWMAT) m.material.dispose(); } }
 function spriteMat(tex, o = {}) { return new THREE.MeshBasicMaterial(Object.assign({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }, o)); }
 function makeSpriteVis(e, F) {
   const mat = spriteMat(F.idle[0].f); const mesh = new THREE.Mesh(UNITPLANE, mat); scene.add(mesh);
@@ -82,7 +82,7 @@ function syncEntities() {
   for (const m of mobs) syncSprite(m, framesForMob(m), mobPose(m));
   for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } syncSprite(n, framesForNPC(n), { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
-  if (started) syncSprite(P, framesForPlayer(), playerPose());
+  if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
   for (const [e, v] of VIS) if (v.seen !== frameNo) { disposeVis(v); VIS.delete(e); }
   const king = mobs.find(m => m.type === 'ashen_king' && !m.dead); if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
 }

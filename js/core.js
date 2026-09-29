@@ -470,9 +470,9 @@ function clearLine(x0, y0, x1, y1) {
 /* =========================================================
    Player and stats
    ========================================================= */
-function newPlayer(name, hair) {
+function newPlayer(name, hair, gender, hairStyle) {
   return {
-    name, hair, cls: 'novice', lvl: 1, exp: 0, jlvl: 1, jexp: 0, statPts: 25, skillPts: 0,
+    name, hair, gender: gender === 'f' ? 'f' : 'm', hairStyle: hairStyle === 'long' ? 'long' : 'spiky', cls: 'novice', lvl: 1, exp: 0, jlvl: 1, jexp: 0, statPts: 25, skillPts: 0,
     st: { str: 1, agi: 1, vit: 1, int: 1, dex: 1, luk: 1 }, skills: { basic: 0, first_aid: 1 },
     hp: 1, sp: 1, zeny: 150, inv: [], equip: { weapon: null, shield: null, head: null, body: null, boots: null, acc: null },
     hot: [{ k: 'skill', id: 'first_aid' }, null, null, null, null, null, { k: 'item', id: 'fly_wing' }, { k: 'item', id: 'butterfly_wing' }, { k: 'item', id: 'red_potion' }],
