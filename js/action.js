@@ -98,7 +98,9 @@ function softTarget(range, cone) {
   }
   return best;
 }
-function actionTarget(sk) { const r = sk.range === 'weapon' ? S.range : (sk.range || 9); return softTarget(r + 0.5, 0.2) || nearestMob(r); }
+// Skill target in keyboard mode: the locked / soft target in front of you, else the nearest enemy in range.
+// A foe a few steps beyond reach but in front of you also counts: the skill closes in (see useSkill).
+function actionTarget(sk, lv) { const r = skillRange(sk, lv); return softTarget(r + 0.5, 0.2) || nearestMob(r + 0.3) || softTarget(r + 3, 0.55); }
 function actLockCycle() {
   const list = mobs.filter(m => !m.dead && dist(m, P) < 12).sort((a, b) => dist(a, P) - dist(b, P));
   if (!list.length) { CTRL.lock = null; return; }
@@ -116,9 +118,9 @@ function actLight() {
   const t = softTarget(S.wtype === 'bow' ? S.range + 1 : S.range + 1.4, 0.3); if (t) face(P, t);
   P.swingT = swing; P.atkAnim = 0; P.sitting = false; P.path = null; P.target = null; P.goal = null;
   const mul = [1, 1.12, 1.6][step];
-  if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => physHit(t, mul, fin ? { knock: 1.5, from: { x: P.x, y: P.y } } : {})); Sfx.bow(); return; }
+  if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, fin ? { knock: 1.5, from: { x: P.x, y: P.y } } : {}); attackProcs(t); }); Sfx.bow(); return; }
   stepMove(P.fx * 0.18, P.fy * 0.18);
-  after(swing * 0.45, () => { if (!P.dead) meleeArc(S.range + (fin ? 0.5 : 0.25), fin ? 0.15 : 0.35, mul, { knock: fin ? 1.6 : 0.3, stun: fin ? 0.55 : 0.22, from: { x: P.x, y: P.y } }); });
+  after(swing * 0.45, () => { if (!P.dead && meleeArc(S.range + (fin ? 0.5 : 0.25), fin ? 0.15 : 0.35, mul, { knock: fin ? 1.6 : 0.3, stun: fin ? 0.55 : 0.22, from: { x: P.x, y: P.y } }) && t && !t.dead) attackProcs(t); });
   Sfx.swing();
   if (fin) after(swing * 0.45, () => ring(P.x + P.fx * 0.9, P.y + P.fy * 0.9, 1.1, '#fff0b0'));
 }
@@ -181,7 +183,6 @@ function actInteract() {
 /* ---------- Per-frame ---------- */
 function actionUpdate(dt) {
   pollPad(dt);
-  if (P.iframes > 0) P.iframes -= dt;
   P.stamT -= dt; if (P.stamT <= 0 && !P.blocking) P.stamina = Math.min(100, P.stamina + 34 * dt);
   if (P.blocking) { P.stamina = Math.max(0, P.stamina - 3 * dt); if (P.stamina <= 0) P.blocking = false; }
   if (P.comboT > 0) { P.comboT -= dt; if (P.comboT <= 0) P.combo = 0; }
@@ -205,4 +206,23 @@ function actionUpdate(dt) {
   } else if (busy || P.blocking) P.moving = false;
   if (P.blocking) busy = true;
   return busy;
+}
+
+/* ---------- Hooks into the renderer's tables (files owned by the graphics / performance teams) ----------
+   Weapon type ids equal the sprite weapon variants (art/CONTRACT.md), so every WNAME key maps to itself.
+   Projectile kinds added by second-class skills get a colour. Tower shields use the 'tower' shield sheet. */
+if (typeof WTYPE_VARIANT !== 'undefined') for (const k in WNAME) if (!WTYPE_VARIANT[k]) WTYPE_VARIANT[k] = k;
+if (typeof PCOL !== 'undefined') Object.assign(PCOL, { spear: '#e8e0ff', raven: '#b8c8ff', sphere: '#9fd0ff' }, Object.assign({}, PCOL));
+if (typeof SWINGCOL !== 'undefined') Object.assign(SWINGCOL, { spear: ['#d8d0ff', '#ffffff'], twohand: ['#a8c0ff', '#ffffff'], staff: ['#c49aff', '#fff0ff'], book: ['#ffe0a0', '#ffffff'], lute: ['#ffd070', '#fff6d0'], whip: ['#e0a0ff', '#fff0ff'], knuckle: ['#9fd0ff', '#ffffff'] }, Object.assign({}, SWINGCOL));
+// Shield sprite variant for the equipped shield: the item's `sv` ('guard' | 'tower'), falling back to whichever sheet the body has.
+function shieldVariant(body) {
+  const it = P && P.equip && P.equip.shield; if (!it) return null;
+  const want = (ITEMS[it.id] && ITEMS[it.id].sv) || 'guard', other = want === 'tower' ? 'guard' : 'tower';
+  if (typeof sheetId !== 'function' || sheetId(body, 'shield', want)) return want;
+  return sheetId(body, 'shield', other) ? other : want;
+}
+if (typeof playerLayerWants === 'function') {
+  const baseWants = playerLayerWants;
+  // eslint-disable-next-line no-global-assign
+  try { playerLayerWants = function () { const w = baseWants(); if (w) for (const e of w) if (e[1] === 'shield') e[2] = shieldVariant(e[0]) || e[2]; return w; }; } catch (e) { /* renderer made it const: needs the one-line hook */ }
 }

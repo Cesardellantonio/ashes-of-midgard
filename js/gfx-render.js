@@ -144,7 +144,7 @@ function makeCaster(geo, tex) {
 }
 // Casters face the sun (widest silhouette), choosing the side whose +x matches camera right
 // so a sword held on screen-right casts on the same side.
-const SPRF = { shadows: false, cyaw: 0, t: 0, dt: 0, rx: 1, ry: 0, lights: null, lightsMap: null };
+const SPRF = { shadows: false, cyaw: 0, t: 0, dt: 0, rx: 1, ry: 0, cy: 1, sy: 0, lights: null, lightsMap: null };
 function casterYaw() {
   const s = sunLight(); if (!s) return cam.yaw;
   const dx = s.position.x - s.target.position.x, dz = s.position.z - s.target.position.z;
@@ -161,9 +161,10 @@ function sprLights() {
   for (const w of map.warps || []) L.push({ x: w.x + 0.5, y: w.y + 0.5, r: 3.2, c: [0.55, 0.78, 1.0], i: 0.45, h: 0.1 });
   SPRF.lights = L; SPRF.lightsMap = map; return L;
 }
+const _LT = { r: 1, g: 1, b: 1 };
 function sprLight(v, x, y) {
   let r = 1, g = 1, b = 1;
-  if (typeof lightTint === 'function') { try { const c = lightTint(x, y); if (c) { r = c.r; g = c.g; b = c.b; } } catch (e) { /* keep 1 */ } }
+  if (typeof lightTint === 'function') { try { const c = lightTint(x, y, _LT); if (c) { r = c.r; g = c.g; b = c.b; } } catch (e) { /* keep 1 */ } }
   if (!v.lt) v.lt = { r, g, b };
   else { const k = 1 - Math.exp(-SPRF.dt * 7); v.lt.r += (r - v.lt.r) * k; v.lt.g += (g - v.lt.g) * k; v.lt.b += (b - v.lt.b) * k; }
   return v.lt;
@@ -192,6 +193,7 @@ function sprRim(e, st) {
   // rim values are linear light amounts added to the lit texel (not colours: no sRGB conversion)
   const k = Math.min(1, bw) / bw * 0.85; st.rim[0] = Math.min(0.8, st.rim[0] * k); st.rim[1] = Math.min(0.8, st.rim[1] * k); st.rim[2] = Math.min(0.8, st.rim[2] * k);
 }
+const FLASH_WHITE = [1, 0.97, 0.9], FLASH_HURT = [1, 0.32, 0.26];
 function newSprState() { return { col: [1, 1, 1], a: 1, sx: 1, sy: 1, zoff: 0, rim: [0, 0, 0], rdx: 0, rdy: 0, flash: [1, 1, 1, 0], dis: 0, fade: 0, cast: true, ghost: false }; }
 // Compute the look of entity e this frame. o: { tint, opacity, ghost }
 function sprFrame(v, e, o) {
@@ -202,11 +204,11 @@ function sprFrame(v, e, o) {
   st.a = o.opacity === undefined ? 1 : o.opacity; st.ghost = !!o.ghost; st.fade = 0; st.zoff = 0; st.dis = 0; st.cast = SPRF.shadows && !o.ghost;
   sprRim(e, st);
   // hit flash + squash (mobs: hitFlash; player: hurtT)
-  let fl = 0, fc = [1, 0.97, 0.9];
+  let fl = 0, fc = FLASH_WHITE;
   const hf = e === P ? (P.hurtT || 0) / 0.3 * 0.22 : (e.hitFlash || 0);
   if (!e.dead && hf > (v.lastHF || 0) + 0.04) v.sqT = time;
   v.lastHF = e.dead ? 0 : hf;
-  if (e === P) { if (P.hurtT > 0.15) { fl = 0.55 * (P.hurtT - 0.15) / 0.15; fc = [1, 0.32, 0.26]; } }
+  if (e === P) { if (P.hurtT > 0.15) { fl = 0.55 * (P.hurtT - 0.15) / 0.15; fc = FLASH_HURT; } }
   else if (!e.dead && hf > 0) fl = hf > 0.17 ? 0.72 : 0.6 * hf / 0.17;
   if (e.dead && e.deathT !== undefined && e.deathT < 0.12) fl = 0.9 * (1 - e.deathT / 0.12);
   st.flash[0] = toLin(fc[0]); st.flash[1] = toLin(fc[1]); st.flash[2] = toLin(fc[2]); st.flash[3] = fl;
@@ -225,8 +227,121 @@ function sprApply(mat, st, flip) {
   u.uFlash.value.set(st.flash[0], st.flash[1], st.flash[2], st.flash[3]);
   u.uDissolve.value = st.dis; u.uFade.value = st.fade;
 }
-// Contact blob under a sprite: smaller and fainter when real shadows are on.
-function placeBlob(v, x, gh, y, r, z, on) { v.shadow.position.set(x, gh + 0.03, y); v.shadow.scale.setScalar(r * (SPRF.shadows ? 0.62 : 0.85) * (1 - Math.min(0.5, z * 0.3))); v.shadow.visible = on; }
+/* ---------- Instanced batches (perf round 2) ----------
+   Entities that share a texture share one InstancedMesh: single-layer mob/NPC sheets (one batch per sheet: colour
+   pass + sun-shadow caster in the same mesh), contact blobs (one batch for everything) and ground drops (an icon
+   atlas + a rarity-glow batch). Instance data is rebuilt every frame between ibReset() and ibFlush() in
+   syncEntities; only the used range is uploaded. Batches have frustumCulled = false (instances are culled by the
+   GPU) and a fixed renderOrder, so they do not depend on the per-object depth sort:
+     -1.5 contact blobs (before the -1 decals/rings/drop glows, as a blob under an entity always sorted before them)
+     -1   drop glows (as before)
+     -0.5 sprite + drop batches: binary-alpha, alpha-tested, depth-writing, so they are drawn before every
+          renderOrder-0 transparent (glows, ghosts, the layered player sprite, world transparents), which then
+          depth-test against them exactly as the back-to-front sort did.
+   Ghost mobs (semi-transparent) and the multi-layer player keep their own meshes. window.AOM_SPR_BATCH = false
+   turns sprite batching off (A/B comparisons). */
+const IB = [];
+function sprBatchOn() { return typeof window === 'undefined' || window.AOM_SPR_BATCH !== false; }
+// o: { geo() -> BufferGeometry, mat, attrs: { name: itemSize }, color: bool (instanceColor), depth: customDepthMaterial, order }
+function ibNew(o) { const B = Object.assign({ n: 0, cap: 0, mesh: null, m: null, A: {}, c: null, keys: Object.keys(o.attrs || {}) }, o); IB.push(B); return B; }
+function ibAlloc(B, cap) {
+  const old = B.mesh, geo = B.geo();
+  for (const k of B.keys) {
+    const sz = B.attrs[k], a = new THREE.InstancedBufferAttribute(new Float32Array(cap * sz), sz).setUsage(THREE.DynamicDrawUsage);
+    if (old) a.array.set(old.geometry.attributes[k].array); geo.setAttribute(k, a); B.A[k] = a.array;
+  }
+  const mesh = new THREE.InstancedMesh(geo, B.mat, cap); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  if (B.color) mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  if (old) { mesh.instanceMatrix.array.set(old.instanceMatrix.array); if (B.color) mesh.instanceColor.array.set(old.instanceColor.array); scene.remove(old); old.dispose(); old.geometry.dispose(); }
+  mesh.frustumCulled = false; mesh.renderOrder = B.order || 0; mesh.count = 0; mesh.visible = false;
+  if (B.depth) { mesh.castShadow = true; mesh.customDepthMaterial = B.depth; }
+  scene.add(mesh); B.mesh = mesh; B.cap = cap; B.m = mesh.instanceMatrix.array; B.c = B.color ? mesh.instanceColor.array : null;
+}
+function ibPush(B) { if (B.n >= B.cap) ibAlloc(B, Math.max(16, B.cap * 2)); return B.n++; }
+function ibFlag(a, n) { a.updateRange.offset = 0; a.updateRange.count = n * a.itemSize; a.needsUpdate = true; }
+function ibReset() { for (let i = 0; i < IB.length; i++) IB[i].n = 0; }
+function ibFlush() {
+  for (let b = 0; b < IB.length; b++) {
+    const B = IB[b], m = B.mesh; if (!m) continue;
+    if (m.parent !== scene) scene.add(m);
+    m.count = B.n; m.visible = B.n > 0; if (!B.n) continue;
+    ibFlag(m.instanceMatrix, B.n); if (m.instanceColor) ibFlag(m.instanceColor, B.n);
+    const at = m.geometry.attributes; for (let k = 0; k < B.keys.length; k++) ibFlag(at[B.keys[k]], B.n);
+    if (B.depth) m.castShadow = SPRF.shadows;
+    if (B.rec) sprMapSet(B.mat, B.rec.tex);
+  }
+}
+// Instance i's matrix = T(x,y,z) * RotY(c = cos yaw, s = sin yaw) * S(sx,sy,sz), column-major (Object3D.matrix layout).
+function ibMat(B, i, x, y, z, c, s, sx, sy, sz) {
+  const e = B.m, o = i * 16;
+  e[o] = c * sx; e[o + 1] = 0; e[o + 2] = -s * sx; e[o + 3] = 0;
+  e[o + 4] = 0; e[o + 5] = sy; e[o + 6] = 0; e[o + 7] = 0;
+  e[o + 8] = s * sz; e[o + 9] = 0; e[o + 10] = c * sz; e[o + 11] = 0;
+  e[o + 12] = x; e[o + 13] = y; e[o + 14] = z; e[o + 15] = 1;
+}
+function ibGeo(src) { return () => { const g = new THREE.BufferGeometry(); for (const k of ['position', 'normal', 'uv']) g.setAttribute(k, src.attributes[k].clone()); g.setIndex(src.index.clone()); return g; }; }
+
+// Instanced sprite shader: the SPR_* chunks read per-instance varyings in place of the per-material uniforms.
+const SPR_VI = `attribute vec4 iUV; attribute vec4 iCol; attribute vec4 iFlash; attribute vec4 iRim; attribute vec4 iMisc;
+varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec2 vIFrameV;
+`;
+const SPR_HEAD_I = `
+uniform vec2 uTexSize;
+varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec2 vIFrameV;
+#define uFlash vIFlash
+#define uRim vIRim.xyz
+#define uDissolve vIRim.w
+#define uRimDir vIMisc.xy
+#define uFade vIMisc.z
+#define uFrameV vIFrameV
+float sprHash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+`;
+const IUV_VERTEX = 'vUv = ( uvTransform * vec3( mix( iUV.xy, iUV.zw, uv ), 1 ) ).xy;';   // iUV = (u0, v0, u1, v1)
+function SPR_OBC_I(sh) {
+  Object.assign(sh.uniforms, this.userData.u);
+  sh.vertexShader = SPR_VI + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX + ' vICol = iCol; vIFlash = iFlash; vIRim = iRim; vIMisc = iMisc; vIFrameV = iUV.yw;');
+  sh.fragmentShader = SPR_HEAD_I + sh.fragmentShader
+    .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity ) * vICol;')
+    .replace('#include <map_fragment>', SPR_MAP)
+    .replace('#include <alphatest_fragment>', SPR_TEST)
+    .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );', SPR_OUT);
+}
+// Sun-shadow caster pass of a sprite batch: same UV rect, but its own transform (faces the sun, unstretched):
+// iCast = (x, y, z, mirror sign; 0 = no shadow -> degenerate quad). uCastCS = cos/sin of the caster yaw.
+const CASTU = { uCastCS: { value: new THREE.Vector2(1, 0) }, uCastH: { value: CAST_H } };
+function CAST_OBC_I(sh) {
+  Object.assign(sh.uniforms, CASTU);
+  sh.vertexShader = 'attribute vec4 iUV; attribute vec4 iCast; uniform vec2 uCastCS; uniform float uCastH;\n' + sh.vertexShader
+    .replace('#include <uv_vertex>', IUV_VERTEX)
+    .replace('#include <project_vertex>', `vec4 mvPosition = vec4( iCast.w * transformed.x * uCastCS.x + transformed.z * uCastCS.y + iCast.x, transformed.y * uCastH + iCast.y,
+      -iCast.w * transformed.x * uCastCS.y + transformed.z * uCastCS.x + iCast.z, 1.0 );
+    mvPosition = modelViewMatrix * mvPosition; gl_Position = projectionMatrix * mvPosition;`);
+}
+const SPRB_ATTR = { iUV: 4, iCol: 4, iFlash: 4, iRim: 4, iMisc: 4, iCast: 4 };
+function sprBatch(rec) {
+  if (rec.batch) return rec.batch;
+  const mat = spriteMat(null); mat.userData.u = { uTexSize: { value: new THREE.Vector2(64, 64) } }; mat.onBeforeCompile = SPR_OBC_I; sprMapSet(mat, rec.tex);
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: rec.tex, alphaTest: 0.5, side: THREE.DoubleSide }); depth.onBeforeCompile = CAST_OBC_I;
+  return (rec.batch = ibNew({ geo: ibGeo(sheetPlane(rec.json)), mat, depth, attrs: SPRB_ATTR, order: -0.5, rec }));
+}
+// One instance of layer L (see placeSheetVis): same transform, UVs and look as the per-entity mesh path.
+function sprInstance(L, x, y, z, sx, st, flip) {
+  const B = sprBatch(L.rec), i = ibPush(B), o = i * 4, A = B.A, uv = L.uv, ts = B.mat.userData.u.uTexSize.value;
+  ibMat(B, i, x, y, z, SPRF.cy, SPRF.sy, sx * st.sx, st.sy / COSP, 1);
+  let a = A.iUV; a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
+  a = A.iCol; a[o] = st.col[0]; a[o + 1] = st.col[1]; a[o + 2] = st.col[2]; a[o + 3] = st.a;
+  a = A.iFlash; a[o] = st.flash[0]; a[o + 1] = st.flash[1]; a[o + 2] = st.flash[2]; a[o + 3] = st.flash[3];
+  a = A.iRim; a[o] = st.rim[0]; a[o + 1] = st.rim[1]; a[o + 2] = st.rim[2]; a[o + 3] = st.dis;
+  a = A.iMisc; a[o] = st.rdx * (flip ? -1 : 1) / ts.x; a[o + 1] = st.rdy / ts.y; a[o + 2] = st.fade; a[o + 3] = 0;
+  a = A.iCast; if (st.cast && st.a > 0.3) { a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = sx; } else a[o] = a[o + 1] = a[o + 2] = a[o + 3] = 0;
+}
+// Contact blob under a sprite (one shared batch): smaller and fainter when real shadows are on.
+const BLOBS = ibNew({ geo: () => FLATPLANE.clone(), mat: SHADOWMAT, attrs: {}, order: -1.5 });
+function placeBlob(v, x, gh, y, r, z, on) {
+  if (!on) return;
+  const s = r * (SPRF.shadows ? 0.62 : 0.85) * (1 - Math.min(0.5, z * 0.3));
+  ibMat(BLOBS, ibPush(BLOBS), x, gh + 0.03, y, 1, 0, s, s, s);
+}
 // Per-entity motion FX: footstep dust, death embers, ghost wisps.
 function sprMotion(v, e, st, hu) {
   if (typeof PFX === 'undefined') return;
@@ -251,9 +366,8 @@ function sprMotion(v, e, st, hu) {
 /* ---------- Procedural (fallback) sprites ---------- */
 function makeSpriteVis(e, F) {
   const tex = F.idle[0].f, mat = fxSpriteMat(tex); const mesh = new THREE.Mesh(UNITPLANE, mat); scene.add(mesh);
-  const shadow = new THREE.Mesh(FLATPLANE, SHADOWMAT); shadow.renderOrder = -1; scene.add(shadow);
   const caster = makeCaster(UNITPLANE, tex);
-  const v = { F, mat, mesh, shadow, caster, meshes: [mesh, shadow, caster], flip: e.fx < 0 ? -1 : 1 };
+  const v = { F, mat, mesh, caster, meshes: [mesh, caster], flip: e.fx < 0 ? -1 : 1 };
   if (e === P) { const xm = spriteMat(tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth }); v.xray = new THREE.Mesh(UNITPLANE, xm); v.xray.renderOrder = 5; scene.add(v.xray); v.meshes.push(v.xray); }
   const glow = e.d && e.d.glow; if (glow) { v.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: new THREE.Color(glow), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); scene.add(v.glow); v.meshes.push(v.glow); }
   return v;
@@ -306,31 +420,81 @@ function dropTex(d) {
   return (DROPTEX[k] = canvasTex(c, { pixel: true }));
 }
 const RCOL = { common: 0xffffff, magic: 0x7fa0ff, rare: 0xffd84a, unique: 0xff9a30, card: 0xd0a8ff, key: 0xffa870 };
+/* Ground drops: one instanced icon mesh (the 32x32 icons packed into a 512x512 atlas, 34-px slots with a 1-px
+   edge copy so bilinear minification samples exactly what the single-texture clamp-to-edge version sampled) and one
+   instanced rarity-glow mesh. If the atlas fills up, further icons fall back to one mesh per drop. */
+const DROPAT = (() => {
+  const S = 34, N = 15, c = mkCanvas(512, 512), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  return { S, N, c, g, tex: null, slot: {}, n: 0 };
+})();
+function dropKey(d) { if (d.zeny) return d.lost ? 'lost' : 'zeny'; const t = ITEMS[d.item.id]; return t.icon + '|' + (t.color || ''); }
+// UV rect (u0, v0, u1, v1) of the drop's icon in the atlas, or null when the atlas is full.
+function dropSlot(d) {
+  const A = DROPAT, k = dropKey(d); let uv = A.slot[k]; if (uv !== undefined) return uv;
+  if (A.n >= A.N * A.N) return (A.slot[k] = null);
+  const src = dropTex(d).image, i = A.n++, px = (i % A.N) * A.S + 1, py = Math.floor(i / A.N) * A.S + 1, g = A.g;
+  g.drawImage(src, px, py);
+  g.drawImage(src, 0, 0, 32, 1, px, py - 1, 32, 1); g.drawImage(src, 0, 31, 32, 1, px, py + 32, 32, 1);     // edge copies (= clamp)
+  g.drawImage(src, 0, 0, 1, 32, px - 1, py, 1, 32); g.drawImage(src, 31, 0, 1, 32, px + 32, py, 1, 32);
+  g.drawImage(src, 0, 0, 1, 1, px - 1, py - 1, 1, 1); g.drawImage(src, 31, 0, 1, 1, px + 32, py - 1, 1, 1);
+  g.drawImage(src, 0, 31, 1, 1, px - 1, py + 32, 1, 1); g.drawImage(src, 31, 31, 1, 1, px + 32, py + 32, 1, 1);
+  if (!A.tex) A.tex = canvasTex(A.c, { pixel: true }); else A.tex.needsUpdate = true;
+  uv = [px / 512, 1 - (py + 32) / 512, (px + 32) / 512, 1 - py / 512];
+  return (A.slot[k] = uv);
+}
+function DROP_OBC(sh) { sh.vertexShader = 'attribute vec4 iUV;\n' + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX); }
+let DROPB = null, DROPG = null;
+function dropBatches() {
+  if (DROPB) return;
+  const mat = spriteMat(sprTexEnc(DROPAT.tex)); mat.onBeforeCompile = DROP_OBC;
+  DROPB = ibNew({ geo: ibGeo(UNITPLANE), mat, attrs: { iUV: 4 }, order: -0.5 });
+  const gm = new THREE.MeshBasicMaterial({ map: TEX.soft, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+  DROPG = ibNew({ geo: () => FLATPLANE.clone(), mat: gm, attrs: {}, color: true, order: -1 });
+}
+function makeDropVis(d) {
+  const v = { meshes: [], F: null, uv: sprBatchOn() ? dropSlot(d) : null, glowC: null, gm: null, gx: NaN, gy: NaN, gh: 0 };
+  const r = d.lost ? 'lostz' : d.zeny ? null : rarityOf(d.item);
+  if (v.uv) {
+    dropBatches(); if (r && r !== 'common') v.glowC = new THREE.Color(r === 'lostz' ? 0xff2020 : RCOL[r]);
+    return v;
+  }
+  const mat = spriteMat(sprTexEnc(dropTex(d))); const mesh = new THREE.Mesh(UNITPLANE, mat); scene.add(mesh); v.mat = mat; v.mesh = mesh; v.meshes.push(mesh);
+  if (r && r !== 'common') { const gm = new THREE.MeshBasicMaterial({ map: TEX.soft, color: r === 'lostz' ? 0xff2020 : RCOL[r], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }); const gl = new THREE.Mesh(FLATPLANE, gm); gl.renderOrder = -1; scene.add(gl); v.glowM = gl; v.meshes.push(gl); }
+  return v;
+}
 function syncDrop(d) {
   let v = VIS.get(d);
-  if (!v) {
-    const mat = spriteMat(sprTexEnc(dropTex(d))); const mesh = new THREE.Mesh(UNITPLANE, mat); scene.add(mesh); v = { mat, mesh, meshes: [mesh], F: null };
-    const r = d.lost ? 'lostz' : d.zeny ? null : rarityOf(d.item);
-    if (r && r !== 'common') { const gm = new THREE.MeshBasicMaterial({ map: TEX.soft, color: r === 'lostz' ? 0xff2020 : RCOL[r], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }); const gl = new THREE.Mesh(FLATPLANE, gm); gl.renderOrder = -1; scene.add(gl); v.glowM = gl; v.meshes.push(gl); }
-    VIS.set(d, v);
-  }
+  if (!v) { v = makeDropVis(d); VIS.set(d, v); }
   v.seen = frameNo;
-  const gh = groundH(d.x, d.y), bounce = Math.max(0, 1 - d.t * 2.5) * Math.abs(Math.sin(d.t * 9)) * 0.6, s = d.lost ? 0.9 : 0.62;
+  if (v.gx !== d.x || v.gy !== d.y || v.gm !== map) { v.gx = d.x; v.gy = d.y; v.gm = map; v.gh = groundH(d.x, d.y); }   // drops do not move: ground height once
+  const gh = v.gh, bounce = Math.max(0, 1 - d.t * 2.5) * Math.abs(Math.sin(d.t * 9)) * 0.6, s = d.lost ? 0.9 : 0.62;
+  if (v.uv) {
+    const B = DROPB, i = ibPush(B), a = B.A.iUV, o = i * 4, uv = v.uv;
+    ibMat(B, i, d.x, gh + bounce, d.y, SPRF.cy, SPRF.sy, s, s / COSP, 1);
+    a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
+    if (v.glowC) { const G = DROPG, j = ibPush(G), gs = 0.6 + Math.sin(time * 4) * 0.08, c = G.c, q = j * 3; ibMat(G, j, d.x, gh + 0.04, d.y, 1, 0, gs, gs, gs); c[q] = v.glowC.r; c[q + 1] = v.glowC.g; c[q + 2] = v.glowC.b; }
+    return;
+  }
   v.mesh.scale.set(s, s / COSP, 1); v.mesh.position.set(d.x, gh + bounce, d.y); v.mesh.rotation.y = cam.yaw;
   if (v.glowM) { v.glowM.position.set(d.x, gh + 0.04, d.y); v.glowM.scale.setScalar(0.6 + Math.sin(time * 4) * 0.08); }
 }
+function visSweep(v, e) { if (v.seen !== frameNo) { disposeVis(v); VIS.delete(e); } }
 function syncEntities() {
   frameNo++;
   SPRF.dt = clamp(time - SPRF.t, 0, 0.25); SPRF.t = time;
   SPRF.shadows = shadowsOn(); SPRF.cyaw = casterYaw(); SPRF.rx = Math.cos(cam.yaw); SPRF.ry = -Math.sin(cam.yaw);
+  SPRF.cy = Math.cos(cam.yaw); SPRF.sy = Math.sin(cam.yaw); CASTU.uCastCS.value.set(Math.cos(SPRF.cyaw), Math.sin(SPRF.cyaw));
   SHADOWMAT.opacity = SPRF.shadows ? 0.42 : 0.6;
+  ibReset();
   const sh = typeof syncSheetMob === 'function';
   for (const m of mobs) if (!(sh && syncSheetMob(m))) syncSprite(m, framesForMob(m), mobPose(m));
   for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
   if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
-  for (const [e, v] of VIS) if (v.seen !== frameNo) { disposeVis(v); VIS.delete(e); }
-  const king = mobs.find(m => m.type === 'ashen_king' && !m.dead); if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
+  VIS.forEach(visSweep);
+  ibFlush();
+  let king = null; for (const m of mobs) if (m.type === 'ashen_king' && !m.dead) { king = m; break; }
+  if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
   syncSwing();
   PFX.update(SPRF.dt);
 }
@@ -361,46 +525,63 @@ const PFX = (() => {
     geo.setDrawRange(0, 0);
     const mat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 400 } }, vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: false, blending, defines: soft ? { PFX_SOFT: '' } : {} });
     const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 2; scene.add(pts);
-    return { geo, mat, pts, pos, col, size, list: [], N };
+    return { geo, mat, pts, pos, col, size, list: [], free: [], N };
   }
   const A = sys(true, THREE.NormalBlending, 400), B = sys(false, THREE.AdditiveBlending, 500), C = sys(false, THREE.NormalBlending, 300);
   const cap = () => { const q = gfxQ(); return q === 'low' ? 0.35 : q === 'medium' ? 0.7 : 1; };
-  const add = (S, p) => { if (S.list.length < S.N * cap()) S.list.push(p); };
-  const DUST = { grass: [0.84, 0.8, 0.64], flag: [0.66, 0.66, 0.72], rock: [0.46, 0.4, 0.38] };
+  // Particles are pooled per system (no per-spawn / per-frame objects); colours are plain numbers: c0..c2 and, when
+  // lerp is set, the end colour d0..d2. The random draws happen in the same order as before, full or not.
+  function add(S, x, y, z, vx, vy, vz, g, drag, max, c0, c1, c2, lerp, d0, d1, d2, a0, s0, s1, wob) {
+    if (!(S.list.length < S.N * cap())) return;
+    const p = S.free.pop() || {};
+    p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.g = g; p.drag = drag; p.life = 0; p.max = max;
+    p.c0 = c0; p.c1 = c1; p.c2 = c2; p.lerp = lerp; p.d0 = d0; p.d1 = d1; p.d2 = d2; p.a0 = a0; p.s0 = s0; p.s1 = s1; p.wob = wob;
+    S.list.push(p);
+  }
+  const DUST = { grass: [0.84, 0.8, 0.64], flag: [0.66, 0.66, 0.72], rock: [0.46, 0.4, 0.38] }, COBBLE = [0.86, 0.8, 0.68];
   function dust(x, y, z, n, s) {
-    const L = map.d.look, c = L.cobble && map.deco ? [0.86, 0.8, 0.68] : (DUST[L.floor] || DUST.grass);
+    const L = map.d.look, c = L.cobble && map.deco ? COBBLE : (DUST[L.floor] || DUST.grass);
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * 6.283, sp = rand(0.25, 0.9) * s;
-      add(A, { x: x + Math.cos(a) * 0.12, y: y + 0.06, z: z + Math.sin(a) * 0.12, vx: Math.cos(a) * sp, vy: rand(0.2, 0.7), vz: Math.sin(a) * sp, g: -0.4, drag: 3.5, life: 0, max: rand(0.45, 0.8), c, a0: rand(0.5, 0.68), s0: 0.2 * s, s1: rand(0.55, 0.85) * s });
+      const a = Math.random() * 6.283, sp = rand(0.25, 0.9) * s, vy = rand(0.2, 0.7), max = rand(0.45, 0.8), a0 = rand(0.5, 0.68), s1 = rand(0.55, 0.85) * s;
+      add(A, x + Math.cos(a) * 0.12, y + 0.06, z + Math.sin(a) * 0.12, Math.cos(a) * sp, vy, Math.sin(a) * sp, -0.4, 3.5, max, c[0], c[1], c[2], false, 0, 0, 0, a0, 0.2 * s, s1, 0);
     }
   }
   function ember(x, y, z, cold) {
-    if (Math.random() < 0.72) add(B, { x, y, z, vx: rand(-0.4, 0.4), vy: rand(0.8, 2.2), vz: rand(-0.4, 0.4), g: 0.6, drag: 1.2, life: 0, max: rand(0.5, 1.1), c: cold ? [0.7, 0.9, 1.4] : [1.6, rand(0.7, 1.0), 0.25], c2: cold ? [0.2, 0.3, 0.6] : [0.7, 0.1, 0.02], a0: 1, s0: rand(0.07, 0.12), s1: 0.03, wob: rand(2, 5) });
-    else add(C, { x, y, z, vx: rand(-0.3, 0.3), vy: rand(0.3, 1.0), vz: rand(-0.3, 0.3), g: 0.1, drag: 1.5, life: 0, max: rand(0.7, 1.3), c: cold ? [0.75, 0.8, 0.9] : [0.2, 0.18, 0.18], a0: 0.9, s0: rand(0.06, 0.1), s1: 0.05, wob: rand(1, 3) });
+    if (Math.random() < 0.72) {
+      const vx = rand(-0.4, 0.4), vy = rand(0.8, 2.2), vz = rand(-0.4, 0.4), max = rand(0.5, 1.1), g1 = cold ? 0.9 : rand(0.7, 1.0), s0 = rand(0.07, 0.12), wob = rand(2, 5);
+      if (cold) add(B, x, y, z, vx, vy, vz, 0.6, 1.2, max, 0.7, g1, 1.4, true, 0.2, 0.3, 0.6, 1, s0, 0.03, wob);
+      else add(B, x, y, z, vx, vy, vz, 0.6, 1.2, max, 1.6, g1, 0.25, true, 0.7, 0.1, 0.02, 1, s0, 0.03, wob);
+    } else {
+      const vx = rand(-0.3, 0.3), vy = rand(0.3, 1.0), vz = rand(-0.3, 0.3), max = rand(0.7, 1.3), s0 = rand(0.06, 0.1), wob = rand(1, 3);
+      if (cold) add(C, x, y, z, vx, vy, vz, 0.1, 1.5, max, 0.75, 0.8, 0.9, false, 0, 0, 0, 0.9, s0, 0.05, wob);
+      else add(C, x, y, z, vx, vy, vz, 0.1, 1.5, max, 0.2, 0.18, 0.18, false, 0, 0, 0, 0.9, s0, 0.05, wob);
+    }
   }
-  function wisp(x, y, z) { add(B, { x, y, z, vx: rand(-0.15, 0.15), vy: rand(0.2, 0.5), vz: rand(-0.15, 0.15), g: 0, drag: 0.5, life: 0, max: rand(0.9, 1.6), c: [0.45, 0.7, 1], c2: [0.15, 0.25, 0.55], a0: 0.7, s0: 0.07, s1: 0.02, wob: rand(1, 2) }); }
+  function wisp(x, y, z) { const vx = rand(-0.15, 0.15), vy = rand(0.2, 0.5), vz = rand(-0.15, 0.15), max = rand(0.9, 1.6), wob = rand(1, 2); add(B, x, y, z, vx, vy, vz, 0, 0.5, max, 0.45, 0.7, 1, true, 0.15, 0.25, 0.55, 0.7, 0.07, 0.02, wob); }
   function step(S, dt) {
-    const L = S.list, lin = sprLinear(); let n = 0;
+    const L = S.list, lin = sprLinear(), pos = S.pos, col = S.col, size = S.size; let n = 0;
     for (let i = 0; i < L.length; i++) {
-      const p = L[i]; p.life += dt; if (p.life >= p.max) continue;
+      const p = L[i]; p.life += dt; if (p.life >= p.max) { S.free.push(p); continue; }
       const k = p.life / p.max, dr = Math.exp(-p.drag * dt);
       p.vx *= dr; p.vz *= dr; p.vy = p.vy * dr + p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.wob) { p.x += Math.sin(time * p.wob + i) * 0.25 * dt; }
       L[n++] = p;
-      const j = n - 1, c = p.c2 ? [p.c[0] + (p.c2[0] - p.c[0]) * k, p.c[1] + (p.c2[1] - p.c[1]) * k, p.c[2] + (p.c2[2] - p.c[2]) * k] : p.c;
-      S.pos[j * 3] = p.x; S.pos[j * 3 + 1] = p.y; S.pos[j * 3 + 2] = p.z;
-      S.col[j * 4] = lin ? Math.pow(c[0], 2.2) : c[0]; S.col[j * 4 + 1] = lin ? Math.pow(c[1], 2.2) : c[1]; S.col[j * 4 + 2] = lin ? Math.pow(c[2], 2.2) : c[2];
-      S.col[j * 4 + 3] = p.a0 * (p.c2 ? (1 - k * k) : (1 - k) * Math.min(1, k * 8 + 0.3));
-      S.size[j] = p.s0 + (p.s1 - p.s0) * (1 - (1 - k) * (1 - k));
+      const j = n - 1;
+      let r = p.c0, g = p.c1, b = p.c2;
+      if (p.lerp) { r = p.c0 + (p.d0 - p.c0) * k; g = p.c1 + (p.d1 - p.c1) * k; b = p.c2 + (p.d2 - p.c2) * k; }
+      pos[j * 3] = p.x; pos[j * 3 + 1] = p.y; pos[j * 3 + 2] = p.z;
+      col[j * 4] = lin ? Math.pow(r, 2.2) : r; col[j * 4 + 1] = lin ? Math.pow(g, 2.2) : g; col[j * 4 + 2] = lin ? Math.pow(b, 2.2) : b;
+      col[j * 4 + 3] = p.a0 * (p.lerp ? (1 - k * k) : (1 - k) * Math.min(1, k * 8 + 0.3));
+      size[j] = p.s0 + (p.s1 - p.s0) * (1 - (1 - k) * (1 - k));
     }
     L.length = n; S.geo.setDrawRange(0, n);
-    if (n) { for (const a of ['position', 'pcol', 'psize']) S.geo.attributes[a].needsUpdate = true; }
+    if (n) { const at = S.geo.attributes; at.position.needsUpdate = true; at.pcol.needsUpdate = true; at.psize.needsUpdate = true; }
     S.mat.uniforms.uScale.value = H * renderer.getPixelRatio() * 0.5 * camera.projectionMatrix.elements[5];
   }
   return {
     dust, ember, wisp,
     update(dt) { step(A, dt); step(B, dt); step(C, dt); },
-    clear() { A.list.length = B.list.length = C.list.length = 0; for (const S of [A, B, C]) S.geo.setDrawRange(0, 0); },
+    clear() { for (const S of [A, B, C]) { for (const p of S.list) S.free.push(p); S.list.length = 0; S.geo.setDrawRange(0, 0); } },
   };
 })();
 
@@ -510,7 +691,8 @@ function decalMesh(tex, col, op, add, extra) { const m = new THREE.Mesh(FLATPLAN
 function syncDecal(key, build, place) { let v = DV.get(key); if (!v) { v = { meshes: build() }; DV.set(key, v); } v.seen = frameNo; place(v.meshes); }
 // Stencil bits: each overlapping telegraph fills a pixel once (bit 2 = base, bit 4 = grow); bit 1 stays the player's x-ray.
 const STENCIL_ONCE = bit => ({ stencilWrite: true, stencilRef: bit, stencilFuncMask: bit, stencilWriteMask: bit, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
-const _tc = new THREE.Color(), _tc2 = new THREE.Color();
+const _tc = new THREE.Color(), _tc2 = new THREE.Color(), _castCol = new THREE.Color();
+function dvSweep(v, k) { if (v.seen !== frameNo) { for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.delete(k); } }
 function syncDecals() {
   for (const t of teles) syncDecal(t, () => {
     const base = decalMesh(FXT.disc, 0x000000, 0.3, false, STENCIL_ONCE(2)); base.renderOrder = -3;
@@ -519,7 +701,7 @@ function syncDecals() {
     return [base, grow, rune];
   }, ([base, grow, rune]) => {
     const gh = groundH(t.x, t.y) + 0.05, k = clamp(t.t / t.dur, 0, 1), late = smoothstep(0.7, 1, k);
-    for (const m of [base, grow, rune]) m.position.set(t.x, gh, t.y);
+    base.position.set(t.x, gh, t.y); grow.position.set(t.x, gh, t.y); rune.position.set(t.x, gh, t.y);
     base.scale.setScalar(t.r); rune.scale.setScalar(t.r * 1.04); grow.scale.setScalar(Math.max(0.01, t.r * (0.08 + 0.92 * k)));
     // heat: deep crimson -> ember orange -> white-hot at the end
     wcol('#6a0c06', base.material.color); base.material.opacity = 0.42 + 0.2 * late;
@@ -532,9 +714,9 @@ function syncDecals() {
     if (f.k === 'ring') syncDecal(f, () => [decalMesh(TEX.ring, new THREE.Color(f.col), 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(Math.max(0.01, f.r * (0.3 + 0.7 * k))); a.material.opacity = 1 - k; });
     else if (f.k === 'mark') syncDecal(f, () => [decalMesh(TEX.target, 0xffe070, 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(0.5 - k * 0.2); a.material.opacity = 1 - k; a.rotation.y = k * 2; });
   }
-  if (P && P.casting) { const col = new THREE.Color(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
+  if (P && P.casting) { const col = _castCol.set(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
   syncTargetRing();
-  for (const [k, v] of DV) if (v.seen !== frameNo) { for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.delete(k); }
+  DV.forEach(dvSweep);
 }
 const TRING = { t0: 0, tg: null, mode: '' };
 // Target / lock / hover rings: a soft underglow, the main ring, and (lock) a counter-rotating bracket set.
@@ -549,17 +731,21 @@ function syncTargetRing() {
     const col = mode === 'lock' ? '#ff3a5a' : mode === 'target' ? '#ff6a3a' : '#ffd070';
     const R = TRING; if (R.tg !== tg || R.mode !== mode) { R.t0 = time; R.tg = tg; R.mode = mode; }
     const age = time - R.t0, pop = 1 + 0.35 * Math.exp(-age * 14);
-    for (const m of [glow, ring, lock]) m.position.set(tg.x, gh, tg.y);
+    glow.position.set(tg.x, gh, tg.y); ring.position.set(tg.x, gh, tg.y); lock.position.set(tg.x, gh, tg.y);
     wcol(col, glow.material.color); glow.scale.setScalar(s * 1.1); glow.material.opacity = mode === 'hover' ? 0.18 : 0.32 + 0.08 * Math.sin(time * 5);
     ring.material.map = mode === 'hover' ? FXT.hover : FXT.target; wcol(col, ring.material.color);
     ring.material.opacity = mode === 'hover' ? 0.7 : 0.95; ring.rotation.y = time * (mode === 'hover' ? 0.4 : 0.9); ring.scale.setScalar(s * pop * (1 + 0.03 * Math.sin(time * 6)));
     lock.visible = mode === 'lock'; if (lock.visible) { wcol('#ffb0c0', lock.material.color); lock.rotation.y = -time * 1.6; lock.scale.setScalar(s * 0.92 * pop); lock.material.opacity = 0.85; }
   });
 }
+/* ---------- Screen projection into reusable arrays ----------
+   Same math as gfx-world.js proj() (Vector3.project), but writes into a caller-owned array: no garbage per call. */
+const _pv = new THREE.Vector3(), PA = [0, 0, 0], PB = [0, 0, 0];
+function projTo(o, x, y, z) { _pv.set(x, z, y).project(camera); o[0] = (_pv.x * 0.5 + 0.5) * W; o[1] = (-_pv.y * 0.5 + 0.5) * H; o[2] = _pv.z; return o; }
 /* ---------- Picking ---------- */
 function pickAt(sx, sy) {
   let best = null, bd = 1e9;
-  const test = (e, hw, rw) => { const gh = groundH(e.x, e.y) + (e.z || 0) / PXU; const p = proj(e.x, e.y, gh + hw * 0.5); if (p[2] > 1) return; const d = Math.hypot(sx - p[0], sy - p[1]), r = Math.max(16, rw * PPU); if (d < r && d < bd) { bd = d; best = e; } };
+  const test = (e, hw, rw) => { const gh = groundH(e.x, e.y) + (e.z || 0) / PXU; const p = projTo(PA, e.x, e.y, gh + hw * 0.5); if (p[2] > 1) return; const d = Math.hypot(sx - p[0], sy - p[1]), r = Math.max(16, rw * PPU); if (d < r && d < bd) { bd = d; best = e; } };
   for (const m of mobs) if (!m.dead) { const hw = headH(m); test(m, hw, Math.max(0.45, hw * 0.4)); }
   for (const n of map.npcs) test(n, headH(n), 0.55);
   for (const o of map.objs) if (o.kind !== 'anvil') test(o, o.kind === 'heart' ? 2.5 : 2.6, 0.8);
@@ -570,19 +756,34 @@ function pickAt(sx, sy) {
 const UIFONT = `'Nanum Gothic', 'Trebuchet MS', Tahoma, sans-serif`;
 const NUMFONT = `'Arial Black', 'Arial Bold', Gadget, 'Nanum Gothic', sans-serif`;
 function rrect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+const LFONT = new Map(), LWIDTH = new Map();
+function labelFont(size) { let f = LFONT.get(size); if (!f) { f = `700 ${size}px ${UIFONT}`; LFONT.set(size, f); } return f; }
+// measureText once per (size, text); ctx.font must already be labelFont(size)
+function labelWidth(txt, size) {
+  let m = LWIDTH.get(size); if (!m) { m = new Map(); LWIDTH.set(size, m); }
+  let w = m.get(txt); if (w === undefined) { if (m.size > 400) m.clear(); w = ctx.measureText(txt).width; m.set(txt, w); } return w;
+}
 function label(txt, x, y, col, size, box) {
-  ctx.font = `700 ${size}px ${UIFONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  if (box) { const w = ctx.measureText(txt).width + 12; ctx.fillStyle = 'rgba(12,10,16,.72)'; rrect(ctx, x - w / 2, y - size - 1, w, size + 7, 4); ctx.fill(); ctx.strokeStyle = 'rgba(255,236,200,.22)'; ctx.lineWidth = 1; ctx.stroke(); }
+  ctx.font = labelFont(size); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  if (box) { const w = labelWidth(txt, size) + 12; ctx.fillStyle = 'rgba(12,10,16,.72)'; rrect(ctx, x - w / 2, y - size - 1, w, size + 7, 4); ctx.fill(); ctx.strokeStyle = 'rgba(255,236,200,.22)'; ctx.lineWidth = 1; ctx.stroke(); }
   ctx.lineWidth = 3.2; ctx.strokeStyle = 'rgba(8,6,10,.92)'; ctx.lineJoin = 'round'; ctx.strokeText(txt, x, y); ctx.fillStyle = col; ctx.fillText(txt, x, y);
 }
 function star(x, y, r1, r2, n, col, rot) { ctx.fillStyle = col; ctx.beginPath(); for (let i = 0; i < n * 2; i++) { const a = i * Math.PI / n - Math.PI / 2 + (rot || 0), r = i % 2 ? r2 : r1; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); }
+// Vertical gauge gradients, cached per (c0, c1, h) in a local 0..h space (drawn under a y translation).
+const GGRAD = new Map();
+function gaugeGrad(c0, c1, h) {
+  let a = GGRAD.get(c0); if (!a) { a = new Map(); GGRAD.set(c0, a); }
+  let b = a.get(c1); if (!b) { b = new Map(); a.set(c1, b); }
+  let g = b.get(h); if (!g) { g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, c0); g.addColorStop(1, c1); b.set(h, g); }
+  return g;
+}
 // Framed gauge: dark rounded frame with a thin light rim, gradient fill, optional lag chip.
 function gauge(x, y, w, h, k, c0, c1, lag) {
   k = clamp(k, 0, 1);
   ctx.fillStyle = 'rgba(8,8,14,.82)'; rrect(ctx, x - 1.5, y - 1.5, w + 3, h + 3, 2.5); ctx.fill();
   ctx.strokeStyle = 'rgba(255,238,205,.32)'; ctx.lineWidth = 1; ctx.stroke();
   if (lag !== undefined && lag > k) { ctx.fillStyle = 'rgba(255,226,150,.85)'; ctx.fillRect(x + w * k, y, w * (lag - k), h); }
-  if (k > 0) { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, c0); g.addColorStop(1, c1); ctx.fillStyle = g; ctx.fillRect(x, y, w * k, h); ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(x, y, w * k, Math.max(1, h * 0.34)); }
+  if (k > 0) { ctx.fillStyle = gaugeGrad(c0, c1, h); ctx.translate(0, y); ctx.fillRect(x, 0, w * k, h); ctx.translate(0, -y); ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(x, y, w * k, Math.max(1, h * 0.34)); }
 }
 const HPLAG = new WeakMap();
 function lagOf(e, k) { let l = HPLAG.get(e); if (l === undefined || k > l) l = k; else l = Math.max(k, l - SPRF.dt * 0.9); HPLAG.set(e, l); return l; }
@@ -615,62 +816,96 @@ function numGlyph(txt, kind, px) {
   g.fillStyle = gr; g.fillText(txt, cx, cy);
   c.cw = c.width / q; c.ch = c.height / q; NUMC.set(key, c); return c;
 }
+/* Overlay caches: pre-rendered radial glows (drawn with drawImage + globalAlpha: every gradient below has all its
+   stop alphas proportional to the per-frame fade, so this is the same image), rgba() strings per colour, label
+   strings per mob type / drop, glyph lookups per float. */
+const GLOWC = new Map();
+function glowCanvas(key, w, h, paint) { let c = GLOWC.get(key); if (!c) { c = mkCanvas(w, h); paint(c.getContext('2d'), w, h); GLOWC.set(key, c); } return c; }
+// projectile head: '#fff' -> col (0.35) -> transparent, radius 32 px
+const projHead = col => glowCanvas('ph' + col, 64, 64, g => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, '#fff'); gr.addColorStop(0.35, col); gr.addColorStop(1, rgba(col, 0)); g.fillStyle = gr; g.beginPath(); g.arc(32, 32, 32, 0, 7); g.fill(); });
+// hit spark glow at full alpha (drawn with globalAlpha = fade), radius 64 px
+const sparkGlow = hurt => glowCanvas(hurt ? 'sgh' : 'sg', 128, 128, g => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, hurt ? 'rgba(255,140,120,0.8)' : 'rgba(255,250,220,0.85)'); gr.addColorStop(1, 'rgba(255,200,120,0)'); g.fillStyle = gr; g.beginPath(); g.arc(64, 64, 64, 0, 7); g.fill(); });
+// meteor scorch: circular gradient radius 160 clipped to a 160 x 96 ellipse, full alpha
+const meteorGlow = col => glowCanvas('mg' + col, 320, 192, g => { const gr = g.createRadialGradient(160, 96, 0, 160, 96, 160); gr.addColorStop(0, rgba('#fff0c0', 1)); gr.addColorStop(0.4, rgba(col, 0.7)); gr.addColorStop(1, rgba(col, 0)); g.fillStyle = gr; g.beginPath(); g.ellipse(160, 96, 160, 96, 0, 0, 7); g.fill(); });
+const PILLARG = new Map();
+function pillarGrad(col) { let g = PILLARG.get(col); if (!g) { g = ctx.createLinearGradient(0, 0, 0, 1); g.addColorStop(0, rgba(col, 0)); g.addColorStop(1, rgba(col, 0.6)); PILLARG.set(col, g); } return g; }
+const RGBAC = new Map();
+function rgbaC(col) { let c = RGBAC.get(col); if (!c) { c = { a0: rgba(col, 0), a8: rgba(col, 0.8) }; RGBAC.set(col, c); } return c; }
+const MLBL = new Map();
+function mobLabel(d) { let L = MLBL.get(d); if (!L || L.n !== d.name || L.l !== d.lvl) { L = { n: d.name, l: d.lvl, txt: `${d.name}  Lv ${d.lvl}` }; MLBL.set(d, L); } return L.txt; }
+const DROPCOL = { common: '#ffffff', magic: '#9ab8ff', rare: '#ffe070', unique: '#ffb050', card: '#e0c4ff', key: '#ffc090' };
+const DLBL = new WeakMap();
+function dropLabel(d) {
+  let L = DLBL.get(d); const q = d.item ? d.item.qty : 0;
+  if (!L || L.q !== q || L.z !== d.zeny) {
+    const rar = d.item ? rarityOf(d.item) : null;
+    L = { q, z: d.zeny, show: !!(d.lost || (d.item && (rar === 'unique' || rar === 'card' || rar === 'key' || rar === 'rare'))),
+      txt: d.lost ? `Your lost zeny (${fmt(d.zeny)})` : d.zeny ? `${fmt(d.zeny)} zeny` : itemName(d.item) + (d.item.qty > 1 ? ` ×${d.item.qty}` : ''),
+      col: d.lost ? '#ff9a9a' : d.zeny ? '#ffe070' : DROPCOL[rar] };
+    DLBL.set(d, L);
+  }
+  return L;
+}
 function drawOverlay() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
-  const sc = clamp(PPU / 34, 0.75, 1.5);
+  const sc = clamp(PPU / 34, 0.75, 1.5), a = PA, b = PB;
   // Particles and spell effects (additive)
   ctx.globalCompositeOperation = 'lighter';
-  for (const p of parts) { const q = proj(p.x, p.y, groundH(p.x, p.y) + p.z / PXU); if (q[2] > 1) continue; ctx.globalAlpha = Math.min(1, p.life / p.max * 1.4); ctx.fillStyle = p.col; const s = p.size * sc * 1.1; ctx.fillRect(q[0] - s / 2, q[1] - s / 2, s, s); }
+  for (const p of parts) { const q = projTo(a, p.x, p.y, groundH(p.x, p.y) + p.z / PXU); if (q[2] > 1) continue; ctx.globalAlpha = Math.min(1, p.life / p.max * 1.4); ctx.fillStyle = p.col; const s = p.size * sc * 1.1; ctx.fillRect(q[0] - s / 2, q[1] - s / 2, s, s); }
   ctx.globalAlpha = 1;
   for (const p of projs) {
-    const a = proj(p.x, p.y, p.zu), b = proj(p.x - p.vx * 0.6, p.y - p.vy * 0.6, p.zu - p.vz * 0.6); if (a[2] > 1) continue;
+    projTo(a, p.x, p.y, p.zu); projTo(b, p.x - p.vx * 0.6, p.y - p.vy * 0.6, p.zu - p.vz * 0.6); if (a[2] > 1) continue;
     if (p.kind === 'arrow') { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 2.5 * sc; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke(); ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 1.2 * sc; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] + (a[0] - b[0]) * 0.25, b[1] + (a[1] - b[1]) * 0.25); ctx.stroke(); ctx.globalCompositeOperation = 'lighter'; continue; }
-    const col = PCOL[p.kind] || '#fff', r = 13 * sc;
-    const tg = ctx.createLinearGradient(b[0], b[1], a[0], a[1]); tg.addColorStop(0, rgba(col, 0)); tg.addColorStop(1, rgba(col, 0.8)); ctx.strokeStyle = tg; ctx.lineWidth = r * 0.9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke();
-    const g = ctx.createRadialGradient(a[0], a[1], 0, a[0], a[1], r); g.addColorStop(0, '#fff'); g.addColorStop(0.35, col); g.addColorStop(1, rgba(col, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a[0], a[1], r, 0, 7); ctx.fill();
+    const col = PCOL[p.kind] || '#fff', r = 13 * sc, rc = rgbaC(col);
+    const tg = ctx.createLinearGradient(b[0], b[1], a[0], a[1]); tg.addColorStop(0, rc.a0); tg.addColorStop(1, rc.a8); ctx.strokeStyle = tg; ctx.lineWidth = r * 0.9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke();
+    ctx.drawImage(projHead(col), a[0] - r, a[1] - r, r * 2, r * 2);
     if (Math.random() < 0.6) parts.push({ x: p.x, y: p.y, z: (p.zu - groundH(p.x, p.y)) * PXU, vx: rand(-0.3, 0.3), vy: rand(-0.3, 0.3), vz: rand(-10, 30), life: 0.35, max: 0.35, col, size: 2.5 });
   }
   for (const f of fxs) {
     const k = f.t / f.dur;
-    if (f.k === 'pillar') { const e = f.e, gh = groundH(e.x, e.y), b = proj(e.x, e.y, gh), t = proj(e.x, e.y, gh + 6); const a = Math.sin(k * Math.PI), wd = (f.big ? 1.2 : 0.8) * PPU; const g = ctx.createLinearGradient(0, t[1], 0, b[1]); g.addColorStop(0, rgba(f.col, 0)); g.addColorStop(1, rgba(f.col, 0.6 * a)); ctx.fillStyle = g; ctx.fillRect(b[0] - wd / 2, t[1], wd, b[1] - t[1]); for (let i = 0; i < 8; i++) { ctx.fillStyle = rgba(f.col, a); const yy = b[1] - ((k * 1.4 + i / 8) % 1) * (b[1] - t[1]); ctx.fillRect(b[0] + Math.sin(i * 2.3 + time * 4) * wd * 0.55, yy, 2.5 * sc, 7 * sc); } }
-    else if (f.k === 'strike') { const gh = groundH(f.x, f.y), b = proj(f.x, f.y, gh), t = proj(f.x, f.y, gh + 9); const r = mulberry32(f.seed | 0); ctx.strokeStyle = `rgba(255,252,210,${1 - k})`; ctx.lineWidth = 3.5 * sc; ctx.shadowColor = '#bfe0ff'; ctx.shadowBlur = 14; ctx.beginPath(); ctx.moveTo(t[0], t[1]); const n = 7; for (let i = 1; i <= n; i++) ctx.lineTo(t[0] + (b[0] - t[0]) * i / n + (i < n ? (r() - 0.5) * 26 * sc : 0), t[1] + (b[1] - t[1]) * i / n); ctx.stroke(); ctx.shadowBlur = 0; }
-    else if (f.k === 'rain') { const gh = groundH(f.x, f.y); ctx.strokeStyle = `rgba(240,230,200,${1 - k})`; ctx.lineWidth = 1.6 * sc; for (let i = 0; i < 18; i++) { const ox = Math.sin(i * 12.9) * 1.8, oy = Math.cos(i * 7.3) * 1.8, z = (1 - k) * 5 + (i % 5) * 0.3; const a = proj(f.x + ox, f.y + oy, gh + z), b = proj(f.x + ox, f.y + oy, gh + z + 0.8); ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke(); } }
-    else if (f.k === 'meteor') { const a = proj(f.x, f.y, groundH(f.x, f.y)), r = 2 * PPU; const g = ctx.createRadialGradient(a[0], a[1], 0, a[0], a[1], r); g.addColorStop(0, rgba('#fff0c0', 1 - k)); g.addColorStop(0.4, rgba(f.col, 0.7 * (1 - k))); g.addColorStop(1, rgba(f.col, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(a[0], a[1], r, r * 0.6, 0, 0, 7); ctx.fill(); }
+    if (f.k === 'pillar') {
+      const e = f.e, gh = groundH(e.x, e.y); projTo(b, e.x, e.y, gh); projTo(a, e.x, e.y, gh + 6); const t = a; const al = Math.sin(k * Math.PI), wd = (f.big ? 1.2 : 0.8) * PPU;
+      ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = pillarGrad(f.col); ctx.translate(b[0] - wd / 2, t[1]); ctx.scale(wd, b[1] - t[1]); ctx.fillRect(0, 0, 1, 1); ctx.restore();
+      ctx.fillStyle = rgba(f.col, al);
+      for (let i = 0; i < 8; i++) { const yy = b[1] - ((k * 1.4 + i / 8) % 1) * (b[1] - t[1]); ctx.fillRect(b[0] + Math.sin(i * 2.3 + time * 4) * wd * 0.55, yy, 2.5 * sc, 7 * sc); }
+    }
+    else if (f.k === 'strike') { const gh = groundH(f.x, f.y); projTo(b, f.x, f.y, gh); projTo(a, f.x, f.y, gh + 9); const t = a; const r = mulberry32(f.seed | 0); ctx.strokeStyle = `rgba(255,252,210,${1 - k})`; ctx.lineWidth = 3.5 * sc; ctx.shadowColor = '#bfe0ff'; ctx.shadowBlur = 14; ctx.beginPath(); ctx.moveTo(t[0], t[1]); const n = 7; for (let i = 1; i <= n; i++) ctx.lineTo(t[0] + (b[0] - t[0]) * i / n + (i < n ? (r() - 0.5) * 26 * sc : 0), t[1] + (b[1] - t[1]) * i / n); ctx.stroke(); ctx.shadowBlur = 0; }
+    else if (f.k === 'rain') { const gh = groundH(f.x, f.y); ctx.strokeStyle = `rgba(240,230,200,${1 - k})`; ctx.lineWidth = 1.6 * sc; for (let i = 0; i < 18; i++) { const ox = Math.sin(i * 12.9) * 1.8, oy = Math.cos(i * 7.3) * 1.8, z = (1 - k) * 5 + (i % 5) * 0.3; projTo(a, f.x + ox, f.y + oy, gh + z); projTo(b, f.x + ox, f.y + oy, gh + z + 0.8); ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke(); } }
+    else if (f.k === 'meteor') { projTo(a, f.x, f.y, groundH(f.x, f.y)); const r = 2 * PPU; ctx.globalAlpha = 1 - k; ctx.drawImage(meteorGlow(f.col), a[0] - r, a[1] - r * 0.6, r * 2, r * 1.2); ctx.globalAlpha = 1; }
     else if (f.k === 'spark') {
-      const a = proj(f.x, f.y, f.h), r = (f.crit ? 28 : 19) * sc * (0.45 + k * 0.9), al = 1 - k;
-      const g = ctx.createRadialGradient(a[0], a[1], 0, a[0], a[1], r * 0.8); g.addColorStop(0, f.hurt ? `rgba(255,140,120,${0.8 * al})` : `rgba(255,250,220,${0.85 * al})`); g.addColorStop(1, 'rgba(255,200,120,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a[0], a[1], r * 0.8, 0, 7); ctx.fill();
-      ctx.strokeStyle = f.hurt ? `rgba(255,120,100,${al})` : `rgba(255,250,210,${al})`; ctx.lineWidth = (f.crit ? 3 : 2.2) * sc * (1 - k * 0.5); ctx.beginPath();
+      projTo(a, f.x, f.y, f.h); const r = (f.crit ? 28 : 19) * sc * (0.45 + k * 0.9), al = 1 - k, rg = r * 0.8;
+      ctx.globalAlpha = al; ctx.drawImage(sparkGlow(!!f.hurt), a[0] - rg, a[1] - rg, rg * 2, rg * 2);
+      ctx.strokeStyle = f.hurt ? 'rgb(255,120,100)' : 'rgb(255,250,210)'; ctx.lineWidth = (f.crit ? 3 : 2.2) * sc * (1 - k * 0.5); ctx.beginPath();
       for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4 + 0.3, rr = i % 2 ? r * 0.75 : r; ctx.moveTo(a[0] + Math.cos(an) * rr * 0.35, a[1] + Math.sin(an) * rr * 0.35); ctx.lineTo(a[0] + Math.cos(an) * rr, a[1] + Math.sin(an) * rr); } ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'butt';
   // Names
-  for (const n of map.npcs) { const a = proj(n.x, n.y, groundH(n.x, n.y)); if (a[2] < 1) label(n.name, a[0], a[1] + 17 * sc, '#cfe6ff', 11.5); }
-  for (const o of map.objs) if ((o.kind === 'way' || o.kind === 'heart') && hover === o) { const a = proj(o.x, o.y, groundH(o.x, o.y)); label(o.name, a[0], a[1] + 18 * sc, '#ffd8a8', 11.5); }
+  for (const n of map.npcs) { projTo(a, n.x, n.y, groundH(n.x, n.y)); if (a[2] < 1) label(n.name, a[0], a[1] + 17 * sc, '#cfe6ff', 11.5); }
+  for (const o of map.objs) if ((o.kind === 'way' || o.kind === 'heart') && hover === o) { projTo(a, o.x, o.y, groundH(o.x, o.y)); label(o.name, a[0], a[1] + 18 * sc, '#ffd8a8', 11.5); }
   for (const d of drops) {
-    if (!(mouse.alt || hover === d || d.lost || (d.item && ['unique', 'card', 'key', 'rare'].includes(rarityOf(d.item))))) continue;
-    const a = proj(d.x, d.y, groundH(d.x, d.y) + 0.9); if (a[2] > 1) continue;
-    const txt = d.lost ? `Your lost zeny (${fmt(d.zeny)})` : d.zeny ? `${fmt(d.zeny)} zeny` : itemName(d.item) + (d.item.qty > 1 ? ` ×${d.item.qty}` : '');
-    const col = d.lost ? '#ff9a9a' : d.zeny ? '#ffe070' : { common: '#ffffff', magic: '#9ab8ff', rare: '#ffe070', unique: '#ffb050', card: '#e0c4ff', key: '#ffc090' }[rarityOf(d.item)];
-    label(txt, a[0], a[1], col, 11, true);
+    const L = dropLabel(d); if (!(mouse.alt || hover === d || L.show)) continue;
+    projTo(a, d.x, d.y, groundH(d.x, d.y) + 0.9); if (a[2] > 1) continue;
+    label(L.txt, a[0], a[1], L.col, 11, true);
   }
   for (const m of mobs) {
-    if (m.dead) continue; const gh = groundH(m.x, m.y); const a = proj(m.x, m.y, gh); if (a[2] > 1) continue;
+    if (m.dead) continue; const gh = groundH(m.x, m.y); projTo(a, m.x, m.y, gh); if (a[2] > 1) continue;
     const sel = hover === m || P.target === m || (typeof CTRL !== 'undefined' && CTRL.lock === m);
     const k = m.hp / m.maxhp, lag = lagOf(m, k);
     if ((k < 1 || sel) && !m.d.boss) { const wd = Math.round(40 * sc), y = Math.round(a[1] + 9 * sc); gauge(Math.round(a[0] - wd / 2), y, wd, 4, k, k < 0.3 ? '#ff7a4a' : '#ff5a4a', k < 0.3 ? '#c02810' : '#b81c1c', lag); }
-    if (sel) { const lv = m.d.lvl - (P.lvl || 1), lc = lv >= 5 ? '#ff8a7a' : lv >= 0 ? '#ffe0b0' : '#c8f0c0'; label(`${m.d.name}  Lv ${m.d.lvl}`, a[0], a[1] + 28 * sc, m.d.aggro ? lc : '#ffffff', 12); }
+    if (sel) { const lv = m.d.lvl - (P.lvl || 1), lc = lv >= 5 ? '#ff8a7a' : lv >= 0 ? '#ffe0b0' : '#c8f0c0'; label(mobLabel(m.d), a[0], a[1] + 28 * sc, m.d.aggro ? lc : '#ffffff', 12); }
   }
   if (P && started && !P.dead) {
-    const gh = groundH(P.x, P.y), a = proj(P.x, P.y, gh), wd = Math.round(46 * sc), x = Math.round(a[0] - wd / 2), y = Math.round(a[1] + 9 * sc), hk = P.hp / S.maxhp;
+    const gh = groundH(P.x, P.y); projTo(a, P.x, P.y, gh); const wd = Math.round(46 * sc), x = Math.round(a[0] - wd / 2), y = Math.round(a[1] + 9 * sc), hk = P.hp / S.maxhp;
     gauge(x, y, wd, 4, hk, hk < 0.25 ? '#ff6a5a' : '#8cf07a', hk < 0.25 ? '#c81c1c' : '#26a832', lagOf(P, hk));
     gauge(x, y + 6.5, wd, 2.5, P.sp / S.maxsp, '#8ac4ff', '#2a6ae0');
     if (P.stamina < 100) gauge(x, y + 11.5, wd, 2, P.stamina / 100, P.stamina < 22 ? '#ffb070' : '#fff080', P.stamina < 22 ? '#e0501a' : '#d8b020');
-    if (P.casting) { const t = proj(P.x, P.y, gh + headH(P) + 0.35), k = 1 - P.castT / P.castMax; gauge(Math.round(t[0] - 30), Math.round(t[1] - 3), 60, 5, k, '#b8ff9a', '#3cb83c'); }
+    if (P.casting) { const t = projTo(b, P.x, P.y, gh + headH(P) + 0.35), k = 1 - P.castT / P.castMax; gauge(Math.round(t[0] - 30), Math.round(t[1] - 3), 60, 5, k, '#b8ff9a', '#3cb83c'); }
   }
   // RO-style damage numbers: pop, arc to the side, bounce; crits get a burst.
   for (const f of floats) {
-    const a = proj(f.x, f.y, f.hw); if (a[2] > 1) continue; const k = f.t; let x = a[0], y = a[1], life = 0.95, s = 1;
+    projTo(a, f.x, f.y, f.hw); if (a[2] > 1) continue; const k = f.t; let x = a[0], y = a[1], life = 0.95, s = 1;
     const st = NUMSTYLE[f.kind] || NUMSTYLE.info;
     if (f.kind === 'dmg' || f.kind === 'crit' || f.kind === 'hurt') {
       x += f.side * 46 * k * sc; y += (-230 * k + 270 * k * k) * sc;
@@ -685,7 +920,9 @@ function drawOverlay() {
     else if (f.kind === 'shout') { y -= 12 * k; s = 1 + 0.5 * Math.exp(-k * 18); }
     else if (f.kind === 'info') { y -= 26 * k; }
     const al = clamp((life - k) * 4, 0, 1); ctx.globalAlpha = al;
-    const px = Math.round(st.size * sc), gl = numGlyph(f.txt, f.kind, px), w = gl.cw * s, h = gl.ch * s;
+    const px = Math.round(st.size * sc);
+    if (f._gpx !== px || f._gt !== f.txt || f._gk !== f.kind) { f._g = numGlyph(f.txt, f.kind, px); f._gpx = px; f._gt = f.txt; f._gk = f.kind; }   // glyph lookup once per float (not a key string per frame)
+    const gl = f._g, w = gl.cw * s, h = gl.ch * s;
     if (f.kind === 'crit') { ctx.globalAlpha = al * 0.9; star(x, y, px * 1.25 * s, px * 0.6 * s, 10, 'rgba(210,30,20,.9)', k * 2); star(x, y, px * 0.95 * s, px * 0.45 * s, 10, 'rgba(255,140,40,.9)', -k * 3); ctx.globalAlpha = al; }
     if (f.kind === 'skill') { ctx.fillStyle = 'rgba(10,8,6,.55)'; rrect(ctx, x - w / 2 + 4, y - h * 0.32, w - 8, h * 0.64, h * 0.3); ctx.fill(); }
     ctx.drawImage(gl, x - w / 2, y - h / 2, w, h);
@@ -695,16 +932,23 @@ function drawOverlay() {
 }
 function setScreenParts() {
   screenParts = []; const n = map.d.part === 'dust' ? 40 : 60;
-  for (let i = 0; i < n; i++) screenParts.push({ x: Math.random() * W, y: Math.random() * H, v: rand(0.3, 1), s: rand(1, 2.6), ph: Math.random() * 6 });
+  for (let i = 0; i < n; i++) screenParts.push({ x: Math.random() * W, y: Math.random() * H, v: rand(0.3, 1), s: rand(1, 2.6), ph: Math.random() * 6, k: '', col: '' });
+}
+// A screen particle's colour depends only on its speed v and the map's particle kind: built once, not per frame.
+function spCol(p, kind) {
+  if (p.k === kind) return p.col; p.k = kind;
+  return (p.col = kind === 'ember' ? `rgba(255,${120 + p.v * 80 | 0},40,${0.55 * p.v})` : kind === 'dust' ? `rgba(180,190,230,${0.2 * p.v})` : kind === 'leaf' ? `rgba(120,150,60,${0.45 * p.v})`
+    : kind === 'petal' ? `rgba(255,200,220,${0.5 * p.v})` : `rgba(215,212,205,${0.35 * p.v})`);
 }
 function drawScreenParts() {
   const kind = map.d.part;
   for (const p of screenParts) {
-    if (kind === 'ember') { p.y -= p.v * 0.9; p.x += Math.sin(time + p.ph) * 0.4; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; } ctx.fillStyle = `rgba(255,${120 + p.v * 80 | 0},40,${0.55 * p.v})`; }
-    else if (kind === 'dust') { p.y += Math.sin(time * 0.5 + p.ph) * 0.15; p.x += 0.1 * p.v; if (p.x > W) p.x = 0; ctx.fillStyle = `rgba(180,190,230,${0.2 * p.v})`; }
-    else if (kind === 'leaf') { p.y += p.v * 0.6; p.x += Math.sin(time * 1.3 + p.ph) * 0.7; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } ctx.fillStyle = `rgba(120,150,60,${0.45 * p.v})`; }
-    else if (kind === 'petal') { p.y += p.v * 0.45; p.x += 0.3 + Math.sin(time + p.ph) * 0.4; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } if (p.x > W + 5) p.x = -5; ctx.fillStyle = `rgba(255,200,220,${0.5 * p.v})`; }
-    else { p.y += p.v * 0.5; p.x += 0.25 + Math.sin(time + p.ph) * 0.3; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } if (p.x > W + 5) p.x = -5; ctx.fillStyle = `rgba(215,212,205,${0.35 * p.v})`; }
+    if (kind === 'ember') { p.y -= p.v * 0.9; p.x += Math.sin(time + p.ph) * 0.4; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; } }
+    else if (kind === 'dust') { p.y += Math.sin(time * 0.5 + p.ph) * 0.15; p.x += 0.1 * p.v; if (p.x > W) p.x = 0; }
+    else if (kind === 'leaf') { p.y += p.v * 0.6; p.x += Math.sin(time * 1.3 + p.ph) * 0.7; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } }
+    else if (kind === 'petal') { p.y += p.v * 0.45; p.x += 0.3 + Math.sin(time + p.ph) * 0.4; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } if (p.x > W + 5) p.x = -5; }
+    else { p.y += p.v * 0.5; p.x += 0.25 + Math.sin(time + p.ph) * 0.3; if (p.y > H + 5) { p.y = -5; p.x = Math.random() * W; } if (p.x > W + 5) p.x = -5; }
+    ctx.fillStyle = spCol(p, kind);
     ctx.fillRect(p.x, p.y, p.s, p.s);
   }
 }

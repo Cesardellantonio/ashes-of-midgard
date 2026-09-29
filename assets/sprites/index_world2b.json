@@ -1,0 +1,64 @@
+{
+ "sheets": [
+  {
+   "id": "mob_draugr_fisher",
+   "layer": "mob",
+   "body": "draugr_fisher",
+   "variant": null
+  },
+  {
+   "id": "mob_marsh_hag",
+   "layer": "mob",
+   "body": "marsh_hag",
+   "variant": null
+  },
+  {
+   "id": "mob_mire_troll",
+   "layer": "mob",
+   "body": "mire_troll",
+   "variant": null
+  },
+  {
+   "id": "mob_stone_golem",
+   "layer": "mob",
+   "body": "stone_golem",
+   "variant": null
+  },
+  {
+   "id": "mob_dwarf_revenant",
+   "layer": "mob",
+   "body": "dwarf_revenant",
+   "variant": null
+  },
+  {
+   "id": "mob_sky_harpy",
+   "layer": "mob",
+   "body": "sky_harpy",
+   "variant": null
+  },
+  {
+   "id": "mob_rune_sentinel",
+   "layer": "mob",
+   "body": "rune_sentinel",
+   "variant": null
+  },
+  {
+   "id": "mob_valkyrie_shade",
+   "layer": "mob",
+   "body": "valkyrie_shade",
+   "variant": null
+  },
+  {
+   "id": "mob_drowned_jarl",
+   "layer": "mob",
+   "body": "drowned_jarl",
+   "variant": null
+  },
+  {
+   "id": "mob_bog_crone",
+   "layer": "mob",
+   "body": "bog_crone",
+   "variant": null
+  }
+ ]
+}

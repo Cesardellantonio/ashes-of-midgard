@@ -17,11 +17,20 @@ function iconURL(t) {
     case 'ember': { const gr = g.createRadialGradient(32, 34, 2, 32, 34, 24); gr.addColorStop(0, '#fff4c0'); gr.addColorStop(0.4, '#ffa040'); gr.addColorStop(1, 'rgba(200,60,10,0)'); g.fillStyle = gr; g.beginPath(); g.arc(32, 34, 24, 0, 7); g.fill(); g.fillStyle = '#5a2a10'; g.beginPath(); g.ellipse(32, 44, 12, 7, 0, 0, 7); g.fill(); break; }
     case 'etc': { const gr = g.createRadialGradient(26, 26, 2, 32, 34, 22); gr.addColorStop(0, shade(col, 0.4)); gr.addColorStop(1, shade(col, -0.45)); g.fillStyle = gr; g.beginPath(); g.moveTo(14, 40); g.quadraticCurveTo(14, 16, 34, 14); g.quadraticCurveTo(54, 18, 50, 40); g.quadraticCurveTo(44, 54, 30, 52); g.quadraticCurveTo(16, 50, 14, 40); g.fill(); break; }
     case 'shard': { g.fillStyle = col; g.beginPath(); g.moveTo(32, 4); g.lineTo(46, 26); g.lineTo(36, 60); g.lineTo(20, 34); g.closePath(); g.fill(); g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.moveTo(32, 4); g.lineTo(36, 60); g.lineTo(20, 34); g.closePath(); g.fill(); g.font = "22px 'Noto Sans Runic', sans-serif"; g.fillStyle = 'rgba(40,20,10,.7)'; g.textAlign = 'center'; g.fillText('ᛟ', 33, 38); break; }
+    case 'plush': { g.fillStyle = col; g.beginPath(); g.moveTo(10, 50); g.quadraticCurveTo(8, 16, 32, 14); g.quadraticCurveTo(56, 16, 54, 50); g.closePath(); g.fill(); g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(24, 26, 6, 4, -0.5, 0, 7); g.fill(); g.fillStyle = '#2a1a1a'; g.beginPath(); g.arc(24, 36, 3.5, 0, 7); g.fill(); g.fillStyle = '#e8d8b0'; g.beginPath(); g.arc(40, 36, 4.5, 0, 7); g.fill(); g.strokeStyle = '#6a3a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(37, 33); g.lineTo(43, 39); g.moveTo(43, 33); g.lineTo(37, 39); g.stroke(); g.strokeStyle = '#7a2a3a'; g.lineWidth = 2; g.beginPath(); g.arc(32, 42, 5, 0.3, 2.8); g.stroke(); break; }
+    case 'letter': { g.fillStyle = col; g.fillRect(10, 18, 44, 30); g.strokeStyle = '#8a7a5a'; g.lineWidth = 1.5; g.strokeRect(10.5, 18.5, 43, 29); g.beginPath(); g.moveTo(10, 18); g.lineTo(32, 36); g.lineTo(54, 18); g.stroke(); g.fillStyle = '#8a1a1a'; g.beginPath(); g.arc(32, 36, 6, 0, 7); g.fill(); g.strokeStyle = '#f0c0a0'; g.lineWidth = 1.2; g.beginPath(); g.ellipse(32, 36, 3, 1.6, 0, 0, 7); g.stroke(); break; }
     case 'card': { g.fillStyle = '#e8dcc0'; g.fillRect(14, 6, 36, 52); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.strokeRect(15, 7, 34, 50); g.fillStyle = col; g.beginPath(); g.arc(32, 28, 11, 0, 7); g.fill(); g.fillStyle = '#1a1010'; g.fillRect(28, 26, 2, 3); g.fillRect(34, 26, 2, 3); g.fillStyle = '#8a6a3a'; g.fillRect(19, 44, 26, 2); g.fillRect(19, 49, 18, 2); break; }
     case 'dagger': case 'sword': { const L = t.icon === 'sword' ? 1 : 0.65; g.save(); g.translate(32, 32); g.rotate(-Math.PI / 4); g.fillStyle = '#5a3a24'; g.fillRect(-3, 12 * L + 6, 6, 12); g.fillStyle = '#b89a50'; g.fillRect(-10, 10 * L + 4, 20, 4); const gr = g.createLinearGradient(-4, 0, 4, 0); gr.addColorStop(0, '#f0f0f4'); gr.addColorStop(1, '#8a8e98'); g.fillStyle = gr; g.beginPath(); g.moveTo(-4, 10 * L + 4); g.lineTo(4, 10 * L + 4); g.lineTo(3, -26 * L); g.lineTo(0, -30 * L); g.lineTo(-3, -26 * L); g.closePath(); g.fill(); g.restore(); break; }
     case 'rod': { g.strokeStyle = '#6b4a2a'; g.lineWidth = 5; g.beginPath(); g.moveTo(14, 54); g.lineTo(44, 18); g.stroke(); const gr = g.createRadialGradient(46, 16, 1, 46, 16, 10); gr.addColorStop(0, '#fff'); gr.addColorStop(0.4, '#b88aff'); gr.addColorStop(1, 'rgba(120,60,200,0)'); g.fillStyle = gr; g.beginPath(); g.arc(46, 16, 11, 0, 7); g.fill(); break; }
     case 'bow': { g.strokeStyle = '#7a5230'; g.lineWidth = 5; g.beginPath(); g.arc(18, 32, 26, -1.1, 1.1); g.stroke(); g.strokeStyle = '#ddd'; g.lineWidth = 1.2; g.beginPath(); g.moveTo(18 + Math.cos(-1.1) * 26, 32 + Math.sin(-1.1) * 26); g.lineTo(18 + Math.cos(1.1) * 26, 32 + Math.sin(1.1) * 26); g.stroke(); break; }
     case 'mace': { g.strokeStyle = '#5a3a24'; g.lineWidth = 5; g.beginPath(); g.moveTo(16, 52); g.lineTo(38, 24); g.stroke(); g.fillStyle = '#8a8a90'; g.beginPath(); g.arc(42, 20, 10, 0, 7); g.fill(); g.fillStyle = '#c0c0c8'; for (let i = 0; i < 6; i++) { const a = i * 1.05; g.beginPath(); g.moveTo(42 + Math.cos(a) * 9, 20 + Math.sin(a) * 9); g.lineTo(42 + Math.cos(a) * 15, 20 + Math.sin(a) * 15); g.lineTo(42 + Math.cos(a + 0.4) * 9, 20 + Math.sin(a + 0.4) * 9); g.fill(); } break; }
+    case 'twohand': { g.save(); g.translate(32, 34); g.rotate(-Math.PI / 4); g.fillStyle = '#4a3020'; g.fillRect(-3, 18, 6, 14); g.fillStyle = '#c8a050'; g.fillRect(-13, 14, 26, 5); const gr = g.createLinearGradient(-6, 0, 6, 0); gr.addColorStop(0, '#f4f4f8'); gr.addColorStop(1, '#7a7e8a'); g.fillStyle = gr; g.beginPath(); g.moveTo(-6, 14); g.lineTo(6, 14); g.lineTo(5, -34); g.lineTo(0, -40); g.lineTo(-5, -34); g.closePath(); g.fill(); g.restore(); break; }
+    case 'spear': { g.strokeStyle = '#7a5230'; g.lineWidth = 4; g.beginPath(); g.moveTo(8, 58); g.lineTo(46, 18); g.stroke(); g.fillStyle = '#d8dce6'; g.beginPath(); g.moveTo(44, 16); g.lineTo(58, 4); g.lineTo(50, 22); g.closePath(); g.fill(); g.fillStyle = '#c8a050'; g.fillRect(40, 18, 7, 5); break; }
+    case 'staff': { g.strokeStyle = '#5a3a1e'; g.lineWidth = 5; g.beginPath(); g.moveTo(10, 60); g.quadraticCurveTo(30, 36, 42, 14); g.stroke(); g.strokeStyle = '#7a5a2e'; g.lineWidth = 3; g.beginPath(); g.arc(44, 12, 7, 0.5, 5.5); g.stroke(); const gr = g.createRadialGradient(44, 12, 1, 44, 12, 9); gr.addColorStop(0, '#fff'); gr.addColorStop(0.45, '#8ae0a0'); gr.addColorStop(1, 'rgba(60,160,90,0)'); g.fillStyle = gr; g.beginPath(); g.arc(44, 12, 9, 0, 7); g.fill(); break; }
+    case 'book': { g.fillStyle = '#5a2a1a'; g.fillRect(14, 12, 36, 44); g.fillStyle = '#efe6cc'; g.fillRect(18, 14, 30, 40); g.fillStyle = '#7a3a24'; g.fillRect(14, 12, 8, 44); g.strokeStyle = '#c8a050'; g.lineWidth = 2; g.strokeRect(15, 13, 34, 42); g.font = "20px 'Noto Sans Runic', sans-serif"; g.fillStyle = '#8a3a1a'; g.textAlign = 'center'; g.fillText('ᛟ', 35, 42); break; }
+    case 'lute': { g.save(); g.translate(32, 32); g.rotate(-0.6); g.fillStyle = '#6a4a2a'; g.fillRect(-3, -30, 6, 26); g.fillStyle = '#b8743a'; g.beginPath(); g.ellipse(0, 12, 14, 18, 0, 0, 7); g.fill(); g.fillStyle = '#3a2412'; g.beginPath(); g.arc(0, 8, 4.5, 0, 7); g.fill(); g.strokeStyle = '#eee'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-2, -30); g.lineTo(-2, 24); g.moveTo(2, -30); g.lineTo(2, 24); g.stroke(); g.restore(); break; }
+    case 'whip': { g.strokeStyle = '#4a2a18'; g.lineWidth = 5; g.beginPath(); g.moveTo(10, 56); g.lineTo(20, 44); g.stroke(); g.strokeStyle = '#8a5a3a'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(20, 44); g.bezierCurveTo(56, 40, 10, 16, 40, 12); g.quadraticCurveTo(54, 10, 56, 22); g.stroke(); break; }
+    case 'knuckle': { g.fillStyle = '#6a6a74'; g.beginPath(); g.moveTo(12, 30); g.quadraticCurveTo(12, 18, 24, 18); g.lineTo(44, 18); g.quadraticCurveTo(54, 18, 54, 30); g.lineTo(54, 48); g.lineTo(12, 48); g.closePath(); g.fill(); g.fillStyle = '#c8ccd6'; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(16 + i * 10, 18); g.lineTo(21 + i * 10, 6); g.lineTo(26 + i * 10, 18); g.fill(); } g.fillStyle = '#3a3a44'; g.fillRect(18, 28, 30, 4); break; }
     case 'body': { g.fillStyle = '#7a6a58'; g.beginPath(); g.moveTo(18, 12); g.lineTo(26, 8); g.lineTo(32, 14); g.lineTo(38, 8); g.lineTo(46, 12); g.lineTo(54, 26); g.lineTo(46, 30); g.lineTo(46, 56); g.lineTo(18, 56); g.lineTo(18, 30); g.lineTo(10, 26); g.closePath(); g.fill(); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(31, 16, 2, 40); break; }
     case 'head': { g.fillStyle = '#8a7a64'; g.beginPath(); g.arc(32, 36, 20, Math.PI, 0); g.fill(); g.fillRect(10, 36, 44, 6); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(12, 40, 40, 2); break; }
     case 'shield': { const gr = g.createLinearGradient(12, 0, 52, 0); gr.addColorStop(0, '#8a7a60'); gr.addColorStop(1, '#4a3e30'); g.fillStyle = gr; g.beginPath(); g.moveTo(12, 12); g.lineTo(52, 12); g.lineTo(50, 36); g.quadraticCurveTo(44, 52, 32, 58); g.quadraticCurveTo(20, 52, 14, 36); g.closePath(); g.fill(); g.strokeStyle = '#c0a060'; g.lineWidth = 2; g.stroke(); break; }
@@ -52,42 +61,56 @@ function iconFor(ref) { return ref.k === 'skill' ? skillIcon(ref.id) : iconURL(I
 const UI = { open: {}, dirty: true, z: 10, shopTab: 'supplies', shopMode: 'buy', refineArm: null, socketCard: null, hoverBind: null, jobPick: null };
 const cache = {};
 function setText(id, v) { if (cache[id] !== v) { cache[id] = v; $(id).textContent = v; } }
-function setW(id, pct) { const v = clamp(pct, 0, 100).toFixed(1); if (cache['w' + id] !== v) { cache['w' + id] = v; $(id).style.width = v + '%'; } }
+// Widths are compared as integers (tenths of a percent), so an unchanged bar costs no string work.
+function setW(id, pct) { const v = Math.round(clamp(pct, 0, 100) * 10); if (cache['w' + id] !== v) { cache['w' + id] = v; $(id).style.width = (v / 10) + '%'; } }
+// HUD numbers: rebuild a string only when the numbers behind it change (fmt/toLocaleString per frame was 4-9% of CPU).
+const HUDA = {}, HUDB = {};
+function chg(k, a, b) { if (HUDA[k] === a && HUDB[k] === b) return false; HUDA[k] = a; HUDB[k] = b; return true; }
+let HOTEL = [], BUFFEL = [], tipT = -1, tipHTML = null;
 function renderHUD() {
-  setText('pname', P.name); setText('pclass', CLASSES[P.cls].name);
-  setW('hpb', P.hp / S.maxhp * 100); $('hpbar').classList.toggle('low', P.hp / S.maxhp < 0.25); setText('hpt', `${Math.ceil(P.hp)} / ${S.maxhp}`);
-  setW('stb', P.stamina); setText('stt', `${Math.floor(P.stamina)}`);
-  setW('spb', P.sp / S.maxsp * 100); setText('spt', `${Math.floor(P.sp)} / ${S.maxsp}`);
-  setText('blv', String(P.lvl)); setText('jlv', String(P.jlvl));
+  if (chg('name', P.name, P.cls)) { setText('pname', P.name); setText('pclass', CLASSES[P.cls].name); }
+  const hp = Math.ceil(P.hp), sp = Math.floor(P.sp), mh = S.maxhp, ms = S.maxsp;
+  setW('hpb', P.hp / mh * 100); const low = P.hp / mh < 0.25; if (chg('low', low, 0)) $('hpbar').classList.toggle('low', low);
+  if (chg('hp', hp, mh)) setText('hpt', hp + ' / ' + mh);
+  const st = Math.floor(P.stamina); setW('stb', P.stamina); if (chg('st', st, 0)) setText('stt', String(st));
+  setW('spb', P.sp / ms * 100); if (chg('sp', sp, ms)) setText('spt', sp + ' / ' + ms);
+  if (chg('lv', P.lvl, P.jlvl)) { setText('blv', String(P.lvl)); setText('jlv', String(P.jlvl)); }
   setW('bxp', P.lvl >= MAXLV ? 100 : P.exp / expNeed(P.lvl) * 100); setW('jxp', P.jlvl >= CLASSES[P.cls].maxJob ? 100 : P.jexp / jexpNeed(P.jlvl) * 100);
-  setText('zeny', fmt(P.zeny)); const sc = Object.keys(P.flags.shards).length; setText('shardct', sc ? `Shards ${sc}/3` : '');
-  $('pipS').className = P.statPts > 0 ? 'pip' : ''; $('pipK').className = P.skillPts > 0 ? 'pip' : '';
-  setText('mapn', map.d.name); setText('mapc', `${Math.floor(P.x)}, ${Math.floor(P.y)}`);
-  // Hotbar cooldowns
-  const hs = $('hotbar').children;
-  for (let i = 0; i < 9; i++) {
-    const ref = P.hot[i], el = hs[i]; if (!el) continue; const cd = el.querySelector('.cd');
+  if (chg('zeny', P.zeny, 0)) setText('zeny', fmt(P.zeny));
+  const sc = shardCount(); if (chg('shards', sc, 0)) setText('shardct', sc ? `Shards ${sc}/3` : '');
+  if (chg('pips', P.statPts > 0, P.skillPts > 0)) { $('pipS').className = P.statPts > 0 ? 'pip' : ''; $('pipK').className = P.skillPts > 0 ? 'pip' : ''; }
+  if (chg('map', map.id, 0)) setText('mapn', map.d.name);
+  const cx = Math.floor(P.x), cy = Math.floor(P.y); if (chg('mapc', cx, cy)) setText('mapc', cx + ', ' + cy);
+  // Hotbar cooldowns (element refs are cached by renderHotbar)
+  for (let i = 0; i < HOTEL.length; i++) {
+    const h = HOTEL[i], ref = P.hot[i]; if (!h) continue;
     let pct = 0, nosp = false;
-    if (ref && ref.k === 'skill') { const sk = SKILLS[ref.id]; const c = P.cd[ref.id] || 0; if (c > 0) pct = c / (sk.cd || 0.3) * 100; if (P.skills[ref.id] && P.sp < sk.sp(P.skills[ref.id])) nosp = true; }
-    if (ref && ref.k === 'item') { const n = countItem(ref.id); const ne = el.querySelector('.n'); if (ne && ne.textContent !== String(n)) ne.textContent = n; nosp = n === 0; }
-    if (cd) cd.style.height = pct + '%';
-    el.classList.toggle('nosp', nosp);
+    if (ref && ref.k === 'skill') { const sk = SKILLS[ref.id], lv = P.skills[ref.id]; const c = P.cd[ref.id] || 0; if (c > 0) pct = Math.round(c / (sk.cd || 0.3) * 100); if (lv && (P.sp < sk.sp(lv) || (sk.need && sk.need(lv)))) nosp = true; }
+    if (ref && ref.k === 'item') { const n = countItem(ref.id); if (h.n && h.cnt !== n) { h.cnt = n; h.n.textContent = n; } nosp = n === 0; }
+    if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.height = pct + '%'; }
+    if (h.nosp !== nosp) { h.nosp = nosp; h.el.classList.toggle('nosp', nosp); }
   }
   // Boss bar
   if (bossShown) { const k = Math.max(0, bossShown.hp / bossShown.maxhp); bossLag += (k - bossLag) * 0.03; if (bossLag < k) bossLag = k; setW('bossfill', k * 100); setW('bosslag', bossLag * 100); }
-  // Tips
-  const tip = currentTip(); const te = $('tip');
-  if (tip) { if (cache.tip !== tip) { cache.tip = tip; te.innerHTML = tip; } te.hidden = false; } else te.hidden = true;
-  // Buff timers
-  const bs = $('buffs').children; let i = 0; for (const k in P.buffs) { const el = bs[i++]; if (el) { const sp = el.querySelector('span'); const v = String(Math.ceil(P.buffs[k].t)); if (sp.textContent !== v) sp.textContent = v; } }
+  // Tips (rebuilt 4 times a second)
+  if (time - tipT > 0.25 || time < tipT) { tipT = time; tipHTML = currentTip(); const te = $('tip'); if (tipHTML) { if (cache.tip !== tipHTML) { cache.tip = tipHTML; te.innerHTML = tipHTML; } te.hidden = false; } else if (!te.hidden) te.hidden = true; }
+  renderTracker();
+  // Buff timers (or counters, e.g. spirit spheres)
+  for (let i = 0; i < BUFFEL.length; i++) { const e = BUFFEL[i], b = P.buffs[e.k]; if (!b) continue; const v = b.count !== undefined ? b.count : Math.ceil(b.t); if (e.v !== v) { e.v = v; e.sp.textContent = v; } }
 }
-function renderBuffs() { $('buffs').innerHTML = Object.keys(P.buffs).map(k => `<div class="buff" data-tip="buff:${k}"><img src="${skillIcon(P.buffs[k].icon)}" alt=""><span></span></div>`).join(''); }
+function renderBuffs() {
+  const ks = Object.keys(P.buffs);
+  $('buffs').innerHTML = ks.map(k => `<div class="buff${P.buffs[k].song ? ' song' : ''}" data-tip="buff:${k}"><img src="${skillIcon(P.buffs[k].icon)}" alt=""><span></span></div>`).join('');
+  const els = $('buffs').children; BUFFEL = ks.map((k, i) => ({ k, sp: els[i].querySelector('span'), v: null }));
+}
 function renderHotbar() {
   $('hotbar').innerHTML = P.hot.map((ref, i) => {
     if (!ref || (ref.k === 'skill' && !P.skills[ref.id])) return `<button class="hs" data-hot="${i}" aria-label="Empty slot ${i + 1}"><span class="k">${i + 1}</span></button>`;
     const n = ref.k === 'item' ? `<span class="n">${countItem(ref.id)}</span>` : '';
     return `<button class="hs" data-hot="${i}" data-tip="${ref.k}:${ref.id}" aria-label="Slot ${i + 1}"><img src="${iconFor(ref)}" alt=""><span class="k">${i + 1}</span>${n}<span class="cd" style="height:0"></span></button>`;
   }).join('');
+  const hs = $('hotbar').children; HOTEL = [];
+  for (let i = 0; i < 9; i++) { const el = hs[i]; HOTEL.push(el ? { el, cd: el.querySelector('.cd'), n: el.querySelector('.n'), pct: 0, nosp: false, cnt: -1 } : null); }
 }
 function useHot(i) {
   const ref = P.hot[i]; if (!ref || !started) return;
@@ -114,7 +137,7 @@ const WIN = {
   inv: { title: 'Items', w: 360, pos: () => [W - 380, 150] },
   equip: { title: 'Equipment', w: 380, pos: () => [W - 400, 150] },
   skills: { title: 'Skills', w: 380, pos: () => [16, 250] },
-  journal: { title: 'Journal', w: 440, pos: () => [W / 2 - 220, 80] },
+  journal: { title: 'Journal', w: 460, pos: () => [W / 2 - 230, 70] },
   help: { title: 'How to Play', w: 440, pos: () => [W / 2 - 220, 70] },
   shop: { title: 'Brokkr’s Forge', w: 420, pos: () => [W / 2 - 440, 90] },
   way: { title: 'Waystone', w: 300, pos: () => [W / 2 - 150, H / 2 - 170] },
@@ -145,7 +168,7 @@ function dragify(el) {
   el.addEventListener('pointerdown', () => { el.style.zIndex = ++UI.z; });
 }
 function renderWin(id) { const el = $('w-' + id); if (!el || el.hidden) return; const bd = el.querySelector('.bd'); const st = bd.scrollTop; bd.innerHTML = RENDER[id](); bd.scrollTop = st; }
-function renderAll() { for (const id in UI.open) if (UI.open[id]) renderWin(id); renderHotbar(); UI.dirty = false; }
+function renderAll() { for (const id in UI.open) if (UI.open[id]) renderWin(id); renderHotbar(); renderTracker(true); UI.dirty = false; }
 
 const RENDER = {
   status() {
@@ -176,30 +199,29 @@ const RENDER = {
     return `<div class="eq">${slots}</div><p class="muted" style="margin:8px 0 0;font-size:11.5px">Click an equipped item to take it off. Weapon type: ${S.wtype === 'fist' ? 'bare hands' : WNAME[S.wtype]}. Range ${S.range.toFixed(1)} cells.</p>`;
   },
   skills() {
-    const list = CLASSES[P.cls].skills.slice(); if (P.cls !== 'novice') list.push('first_aid');
-    const rows = list.map(id => {
+    // Current class first, then the classes it grew from (their skills stay learned and can still be raised).
+    const chain = classChain(P.cls).reverse(), seen = new Set();
+    const row = id => {
       const sk = SKILLS[id], lv = P.skills[id] || 0, can = P.skillPts > 0 && lv < sk.max && id !== 'first_aid';
-      return `<div class="sk" data-bind="${sk.passive ? '' : 'skill:' + id}" data-tip="skill:${id}"><img src="${skillIcon(id)}" alt="" data-act="${sk.passive || !lv ? '' : 'cast:' + id}"><div><div class="nm">${sk.name} <span class="lv">Lv ${lv}/${sk.max}${sk.passive ? ' · passive' : lv ? ` · ${sk.sp(lv)} SP` : ''}</span></div><div class="ds">${sk.desc(Math.max(1, lv))}</div></div><button class="btn plus" data-act="learn:${id}" ${can ? '' : 'disabled'} aria-label="Learn ${sk.name}">+</button></div>`;
-    }).join('');
-    return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}<p class="muted" style="margin:8px 0 0;font-size:11.5px">Hover a learned skill and press 1–9 to bind it. Click its icon to use it. Enemy skills target what is under the cursor, then your current target.</p>`;
+      const why = !sk.passive && lv && sk.need ? sk.need(lv) : null;
+      return `<div class="sk" data-bind="${sk.passive ? '' : 'skill:' + id}" data-tip="skill:${id}"><img src="${skillIcon(id)}" alt="" data-act="${sk.passive || !lv ? '' : 'cast:' + id}" style="${lv ? '' : 'opacity:.55;filter:grayscale(.6)'}"><div><div class="nm">${sk.name} <span class="lv">Lv ${lv}/${sk.max}${sk.passive ? ' · passive' : lv ? ` · ${sk.sp(lv)} SP` : ''}</span></div><div class="ds">${sk.desc(Math.max(1, lv))}${why ? ` <span style="color:#b02a1a">(${esc(why)})</span>` : ''}</div></div><button class="btn plus" data-act="learn:${id}" ${can ? '' : 'disabled'} aria-label="Learn ${sk.name}">+</button></div>`;
+    };
+    let rows = '';
+    for (const c of chain) {
+      const ids = CLASSES[c].skills.filter(id => !seen.has(id) && SKILLS[id] && (c === P.cls || P.skills[id] !== undefined)); ids.forEach(id => seen.add(id));
+      if (c === 'novice' && P.cls !== 'novice') { if (!seen.has('first_aid')) ids.push('first_aid'); ids.splice(ids.indexOf('basic'), ids.includes('basic') ? 1 : 0); }
+      if (!ids.length) continue;
+      if (chain.length > 1) rows += `<div class="sec" style="margin-top:${c === chain[0] ? 0 : 10}px">${c === 'novice' ? 'Common' : CLASSES[c].name}${c === P.cls ? '' : ' <span class="muted" style="font-weight:400">· still learnable</span>'}</div>`;
+      rows += ids.map(row).join('');
+    }
+    const nxt = nextClasses(P.cls), cap = CLASSES[P.cls].maxJob;
+    const hint = nxt.length && P.cls !== 'novice' ? `<p class="muted" style="margin:8px 0 0;font-size:11.5px">Next path: ${nxt.map(c => CLASSES[c].name).join(' or ')} · Job Lv 40 and Base Lv 30, then speak with Vidar.</p>` : '';
+    return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}/${cap}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}${hint}<p class="muted" style="margin:8px 0 0;font-size:11.5px">Hover a learned skill and press 1–9 to bind it. Click its icon to use it. ${isAction() ? 'With the keyboard, enemy skills take the enemy in front of you (Tab locks one); ground skills land in front of you.' : 'Enemy skills target what is under the cursor, then your current target. Ground skills land at the cursor.'}</p>`;
   },
   journal() {
-    const f = P.flags, sh = f.shards;
-    const obj = [
-      ['Speak with Sigrun at the Waystone in Emberhold.', f.talked.sigrun],
-      ['Reach Job Lv 10, master Basic Skill, and take a path from Vidar.', P.cls !== 'novice'],
-      ['Take the Rune-Shard of Blood from the Blight Mother, deep in the Ashen Fields.', sh.shard_blood],
-      ['Take the Rune-Shard of the Moon from Hati in the Withered Wood.', sh.shard_moon],
-      ['Take the Rune-Shard of the Oath from Sir Gaunt in Gloamheim Keep.', sh.shard_oath],
-      ['Bring the three shards to Sigrun so she can open the Cinder Gate.', f.gate],
-      ['Pass through the Cinder Gate and slay the Ashen King.', f.kingSlain],
-      ['Decide the fate of the Tree.', f.ending],
-    ];
-    let nowSet = false;
-    const rows = obj.map(([t, d]) => { let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } return `<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${t}</span></div>`; }).join('');
-    const lore = Object.keys(LORE).filter(k => f.lore[k]).map(k => `<p class="lore"><b>${LORE[k][0]}</b>${LORE[k][1]}</p>`).join('');
-    const pt = Math.floor(P.playTime / 60);
-    return `<div class="sec">Path</div>${rows}<div class="sec">Chronicle</div>${lore}<p class="muted" style="font-size:11.5px;margin:6px 0 0">Time in the Ash: ${Math.floor(pt / 60)}h ${pt % 60}m</p>`;
+    const tab = UI.jTab === 'chronicle' ? 'chronicle' : 'quests';
+    const tabs = `<div class="tabs"><button class="btn ${tab === 'quests' ? 'on' : ''}" data-act="jtab:quests">Quests</button><button class="btn ${tab === 'chronicle' ? 'on' : ''}" data-act="jtab:chronicle">Chronicle</button></div>`;
+    return tabs + (tab === 'quests' ? journalQuests() : journalChronicle());
   },
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
@@ -219,9 +241,11 @@ const RENDER = {
       const sub = `<div class="tabs"><button class="btn ${UI.shopTab === 'supplies' ? 'on' : ''}" data-act="tab:supplies">Supplies</button><button class="btn ${UI.shopTab === 'weapons' ? 'on' : ''}" data-act="tab:weapons">Weapons</button><button class="btn ${UI.shopTab === 'armor' ? 'on' : ''}" data-act="tab:armor">Armor</button></div>`;
       const pots = ['red_potion', 'orange_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple'].concat(sc >= 1 ? ['yellow_potion'] : [], sc >= 2 ? ['white_potion'] : []);
       let ids;
+      // Second-class gear only shows for second classes, and only up to 5 levels above your own.
+      const t2 = CLASSES[P.cls].tier >= 2;
       if (UI.shopTab === 'supplies') ids = pots;
-      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= cap && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon')).sort((a, b) => (b.jobs.includes(P.cls) - a.jobs.includes(P.cls)) || a.lvl - b.lvl).map(t => t.id);
-      const rows = ids.map(id => { const t = ITEMS[id]; const ok = t.type !== 'equip' || t.jobs.includes(P.cls); const stack = t.type === 'use'; return `<div class="li ${ok ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}</span><span class="row"><span class="p">${fmt(t.price)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= t.price ? '' : 'disabled'}>Buy</button>${stack ? `<button class="btn" data-act="buy:${id}:10" ${P.zeny >= t.price * 10 ? '' : 'disabled'}>×10</button>` : ''}</span></div>`; }).join('');
+      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= cap && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
+      const rows = ids.map(id => { const t = ITEMS[id]; const ok = t.type !== 'equip' || jobOk(t, P.cls); const stack = t.type === 'use'; return `<div class="li ${ok ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}</span><span class="row"><span class="p">${fmt(t.price)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= t.price ? '' : 'disabled'}>Buy</button>${stack ? `<button class="btn" data-act="buy:${id}:10" ${P.zeny >= t.price * 10 ? '' : 'disabled'}>×10</button>` : ''}</span></div>`; }).join('');
       const note = sc < 3 ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">“Bring me proof the Shardbearers can die and I’ll open the good racks.” Stock rises with each Rune-Shard.</p>` : '';
       return tabs + sub + `<div class="list">${rows}</div>` + note;
     }
@@ -244,6 +268,51 @@ const RENDER = {
     return `<p class="muted" style="margin:0 0 8px;line-height:1.45">The ember inside is warm. Resting heals you and saves your progress, but everything you killed on this map will rise again.</p><button class="btn big" style="width:100%" data-act="rest">Rest</button><div class="sec">Travel to a kindled Waystone</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}`;
   },
 };
+function journalQuests() {
+  const QA = P.quests.active, kinds = [['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties']];
+  const objRows = id => questObjectives(id).map(o => `<div class="obj ${o.done ? 'done' : o.open ? 'now' : ''}"><span class="m">${o.done ? '✓' : o.open ? '▸' : '·'}</span><span>${esc(o.text)}${o.counted ? ` <b class="qn">${o.cur}/${o.max}</b>` : ''}</span></div>`).join('');
+  let h = '';
+  for (const [k, label] of kinds) {
+    const ids = Object.keys(QA).filter(id => QUESTS[id].kind === k); if (!ids.length) continue;
+    h += `<div class="sec">${label}</div>`;
+    for (const id of ids) {
+      const q = QUESTS[id], ready = questReady(id), tr = P.quests.track === id, ti = questTurnIn(q);
+      const arm = UI.abandonArm === id;
+      h += `<div class="qcard ${tr ? 'tr' : ''}"><div class="qh"><b>${esc(q.name)}</b><span class="muted">${esc(q.area || '')}</span></div>`;
+      if (q.summary) h += `<div class="muted qs">${esc(q.summary)}</div>`;
+      h += objRows(id);
+      if (ready && ti) h += `<div class="qready">Ready · return to ${esc(questGiverName(ti))}</div>`;
+      const rw = questRewardText(q); if (rw) h += `<div class="qr">Reward: ${esc(rw)}</div>`;
+      h += `<div class="row" style="margin-top:4px"><button class="btn" data-act="qtrack:${id}">${tr ? 'Tracking' : 'Track'}</button>${q.kind !== 'main' ? `<button class="btn ${arm ? 'warn' : ''}" data-act="qabandon:${id}">${arm ? 'Confirm abandon' : 'Abandon'}</button>` : ''}</div></div>`;
+    }
+  }
+  if (!h) h = '<p class="muted">No quests in progress.</p>';
+  // The next path (second classes come from Vidar's trials)
+  const nx = nextClasses(P.cls);
+  if (CLASSES[P.cls].tier === 1 && nx.length && !Object.keys(QA).some(id => QUESTS[id].trial)) {
+    const ok = P.lvl >= 30 && P.jlvl >= 40;
+    h = `<div class="qcard"><div class="qh"><b>The next path</b><span class="muted">Emberhold</span></div><div class="muted qs">${nx.map(c => CLASSES[c].name).join(' or ')}. ${ok ? 'You are ready: ask Vidar for a trial.' : `Reach Job Lv 40 (${P.jlvl}/40) and Base Lv 30 (${P.lvl}/30), then ask Vidar for a trial.`}</div></div>` + h;
+  }
+  // Where to find more work: quests whose requirements are met but not yet taken
+  const avail = Object.keys(QUESTS).filter(id => !QUESTS[id].auto && questStatus(id) === 'available');
+  if (avail.length) {
+    const by = {}; for (const id of avail) { const g = QUESTS[id].giver; (by[g] = by[g] || []).push(id); }
+    h += `<div class="sec">Available</div>` + Object.keys(by).map(g => `<div class="obj"><span class="m" style="color:#d08a10">!</span><span><b>${esc(questGiverName(g).replace(/^the /, 'The '))}</b>: ${by[g].map(id => esc(QUESTS[id].name)).join(', ')}</span></div>`).join('');
+  }
+  const done = Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind !== 'daily');
+  const side = done.filter(id => QUESTS[id].kind === 'side').length, total = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'side').length;
+  h += `<div class="sec">Completed</div><p class="muted" style="margin:0;line-height:1.5">${done.length ? done.map(id => esc(QUESTS[id].name)).join(' · ') : 'Nothing yet.'}</p><p class="muted" style="font-size:11.5px;margin:6px 0 0">Side quests ${side}/${total} · Bounties claimed ${Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind === 'daily').reduce((a, id) => a + P.quests.done[id].n, 0)}</p>`;
+  return h;
+}
+function journalChronicle() {
+  const main = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'main');
+  let nowSet = false;
+  const rows = main.map(id => { const st = questStatus(id), d = st === 'done'; let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } const t = QUESTS[id].obj.map(o => objText(o)).join('; '); return `<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${esc(QUESTS[id].name)} <span class="muted">· ${esc(t)}</span></span></div>`; }).join('');
+  const lore = Object.keys(LORE).filter(k => P.flags.lore[k]).map(k => `<p class="lore"><b>${LORE[k][0]}</b>${LORE[k][1]}</p>`).join('');
+  const pt = Math.floor(P.playTime / 60);
+  const path = classChain(P.cls).map(c => CLASSES[c].name).join(' → ');
+  return `<div class="sec">Path</div><p class="muted" style="margin:0 0 4px">${esc(path)}</p>${rows}<div class="sec">Chronicle</div>${lore}<p class="muted" style="font-size:11.5px;margin:6px 0 0">Time in the Ash: ${Math.floor(pt / 60)}h ${pt % 60}m</p>`;
+}
 const sellPrice = i => { const t = ITEMS[i.id]; if (t.type === 'equip') return Math.floor((t.price || 1500) / 2 * (i.rarity === 'rare' ? 2.5 : i.rarity === 'magic' ? 1.5 : 1) + (i.refine || 0) * 150); return Math.floor(t.price / 2); };
 const refineCost = i => Math.round((200 + ITEMS[i.id].lvl * 40) * ((i.refine || 0) + 1));
 const refineChance = i => [100, 100, 100, 100, 60, 50, 40, 30, 20, 10][i.refine || 0];
@@ -259,21 +328,36 @@ function itemTooltip(it, fromShop) {
     if (!fromShop) { for (const a of it.affixes || []) h += `<div class="tt-b">${bonusLine(a.s, a.v)}</div>`; for (const c of it.cards || []) h += `<div class="tt-c">✦ ${ITEMS[c].name}: ${Object.entries(ITEMS[c].bonus).map(([k, v]) => bonusLine(k, v)).join(', ')}</div>`; }
     const sN = fromShop ? t.slots : it.slotsN; if (sN) h += `<div class="tt-l">Slots ${'◆'.repeat((it.cards || []).length)}${'◇'.repeat(sN - (it.cards || []).length)}</div>`;
     h += `<div class="${P.lvl < t.lvl ? 'tt-bad' : 'muted'}">Requires Lv ${t.lvl}</div>`;
-    h += `<div class="${t.jobs.includes(P.cls) ? 'muted' : 'tt-bad'}">${t.jobs.length === 5 ? 'All paths' : t.jobs.map(j => CLASSES[j].name).join(', ')}</div>`;
+    h += `<div class="${jobOk(t, P.cls) ? 'muted' : 'tt-bad'}">${t.jobs === ALLJ || t.jobs.length === ALLJ.length ? 'All paths' : t.jobs.map(j => CLASSES[j].name).join(', ')}</div>`;
     if (t.lore) h += `<div class="tt-lore">${esc(t.lore)}</div>`;
   } else {
-    h += `<div class="tt-sub">${{ use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type]}</div>`;
+    h += `<div class="tt-sub">${t.quest ? 'Quest item' : { use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type]}</div>`;
     if (t.type === 'card') h += `<div class="tt-c">${Object.entries(t.bonus).map(([k, v]) => bonusLine(k, v)).join('<br>')}</div>`;
     if (t.desc) h += `<div class="tt-l" style="margin-top:3px">${esc(t.desc)}</div>`;
   }
   if (!fromShop && t.type !== 'key') h += `<div class="tt-p">Sells for ${fmt(sellPrice(it))}z</div>`;
   return h;
 }
+// Extra lines for special buffs (the engine fields documented at addBuff in js/core.js).
+function buffLines(b) {
+  const o = [];
+  if (b.endow) o.push(`Attacks are ${b.endow}; ${b.endow} spells +${b.amp}%`);
+  if (b.guard) o.push(`${b.guard}% chance to block a blow`);
+  if (b.share) o.push(`${b.share}% of damage taken is shared with Tyr`);
+  if (b.shield !== undefined && b.hits !== undefined) o.push(`Absorbs ${Math.max(0, Math.round(b.shield))} more damage or ${b.hits} blows`);
+  if (b.absorb) o.push(`Drinks spells: ${b.absorb}% returns as SP`);
+  if (b.regen) o.push('HP and SP recover twice as often');
+  if (b.castCut) o.push(`Cast time −${b.castCut}%`); if (b.cdCut) o.push(`Cooldowns −${b.cdCut}%`);
+  if (b.wtype) o.push(`Only with a ${WNAME[b.wtype].toLowerCase()}`);
+  return o;
+}
+const TGTTEXT = { enemy: 'Targets an enemy', self: 'Self', ground: 'Targets the ground (cursor, or in front of you)', heal: 'Self, or an undead enemy', dir: 'Aimed where you face, or at the cursor' };
 function skillTooltip(id) {
   const sk = SKILLS[id], lv = P.skills[id] || 0;
-  let h = `<div class="tt-name">${sk.name}</div><div class="tt-sub">${sk.passive ? 'Passive' : { enemy: 'Targets an enemy', self: 'Self', ground: 'Targets the ground at your cursor', heal: 'Self, or an undead enemy' }[sk.tgt]} · Lv ${lv}/${sk.max}</div>`;
+  let h = `<div class="tt-name">${sk.name}</div><div class="tt-sub">${sk.passive ? 'Passive' : TGTTEXT[sk.tgt]} · Lv ${lv}/${sk.max}</div>`;
   h += `<div class="tt-l">${sk.desc(Math.max(1, lv))}</div>`;
-  if (!sk.passive && lv) h += `<div class="muted" style="margin-top:3px">${sk.sp(lv)} SP${sk.cast ? ` · ${(sk.cast(lv) * Math.max(0.2, 1 - S.dex / 150)).toFixed(1)}s cast` : ''}</div>`;
+  if (!sk.passive && lv) { const r = sk.tgt === 'self' ? 0 : skillRange(sk, lv); h += `<div class="muted" style="margin-top:3px">${sk.sp(lv)} SP${sk.cast ? ` · ${castTime(sk, lv).toFixed(1)}s cast` : ''}${r ? ` · range ${+r.toFixed(1)}` : ''}</div>`; }
+  if (!sk.passive && lv && sk.need && sk.need(lv)) h += `<div class="tt-bad" style="margin-top:3px">${esc(sk.need(lv))}</div>`;
   if (lv < sk.max && lv > 0) h += `<div class="muted" style="margin-top:3px">Next level: ${sk.desc(lv + 1)}</div>`;
   return h;
 }
@@ -284,7 +368,7 @@ function tipFor(key) {
   if (k === 'item') { const it = findItem(+v); return it ? itemTooltip(it) : null; }
   if (k === 'shop') return itemTooltip({ id: v }, true);
   if (k === 'skill') return skillTooltip(v);
-  if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${Object.entries(b.bonus).map(([a, n]) => bonusLine(a, n)).join('<br>')}</div><div class="muted">${Math.ceil(b.t)}s left</div>` : null; }
+  if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${[...Object.entries(b.bonus || {}).map(([a, n]) => bonusLine(a, n)), ...buffLines(b)].join('<br>')}</div><div class="muted">${b.count !== undefined ? `×${b.count}` : Math.ceil(b.t) + 's left'}</div>` : null; }
   return null;
 }
 
@@ -305,6 +389,9 @@ function handleAct(act, e) {
     case 'sellmats': { let v = 0; P.inv = P.inv.filter(i => { if (ITEMS[i.id].type === 'etc') { v += Math.floor(ITEMS[i.id].price / 2) * i.qty; return false; } return true; }); P.zeny += v; log(`Sold materials for ${fmt(v)} zeny.`, 'loot'); Sfx.coin(); break; }
     case 'refine': { const it = findItem(+b); if (!it) break; const ch = refineChance(it); if (ch < 100 && UI.refineArm !== it.uid) { UI.refineArm = it.uid; break; } UI.refineArm = null; doRefine(it); break; }
     case 'rest': rest(); break;
+    case 'jtab': UI.jTab = b; UI.abandonArm = null; break;
+    case 'qtrack': P.quests.track = P.quests.track === b ? null : b; break;
+    case 'qabandon': if (UI.abandonArm === b) { UI.abandonArm = null; questAbandon(b); } else UI.abandonArm = b; break;
     case 'travel': closeWin('way'); Sfx.warp(); { const m = genMap(b); gotoMap(b, m.way.x, m.way.y + 1.5); } break;
     case 'wipe': UI.wipeArm = true; break;
     case 'ctrl': setCtrlMode(b); break;
@@ -339,91 +426,19 @@ function dialog(name, text, opts) {
 }
 function closeDialog() { $('dialog').hidden = true; if (dlgResolve) { const r = dlgResolve; dlgResolve = null; r(-1); } }
 async function say(name, pages) { for (let i = 0; i < pages.length; i++) { const r = await dialog(name, pages[i], [i < pages.length - 1 ? 'Next' : 'Close']); if (r < 0) break; } $('dialog').hidden = true; }
-const LORE = {
-  ash: ['The Ash', 'Before the end there were nine realms on the branches of Yggdrasil. Then Surtr’s herald climbed up out of Muspelheim, crowned himself the Ashen King, and set the roots on fire. The gods did not answer. The dead stopped staying dead, because Hel’s gate burned too.'],
-  sigrun: ['Sigrun', 'She was a Valkyrie. When the Tree burned there were no more halls to carry the fallen to, so she stayed in Midgard and lit the Waystones instead. She says the Tree refuses some of the dead. You are one of them.'],
-  blight_mother: ['The Blight Mother', 'She was a Poring once, the pink and harmless kind children chased through the fields of Prontera. She swallowed the Shard of Blood thinking it was a sweet. It made her a mother of thousands, and none of her children have souls.'],
-  hati: ['Hati', 'The wolf who chased the moon for ten thousand years. When the sky burned he finally caught it and swallowed it, and the Shard of the Moon with it. He was only ever trying to finish the one thing he was made for.'],
-  sir_gaunt: ['Sir Gaunt', 'He swore to Tyr that he would hold Gloamheim until the end of the world. The world ended. He is still holding it, against everyone, forever. The Shard of the Oath was the only thing keeping his armor together.'],
-  vidar: ['Vidar', 'The old wanderer has one eye and a great deal of advice. He asks you not to tell Sigrun who he really is. She knows. She has always known.'],
-  ashen_king: ['The Ashen King', 'He was a fire giant’s herald, sent ahead to prepare the world for burning. With his master gone quiet he crowned himself instead. In the end he only wanted what everyone in Midgard wants: for the fire to mean something.'],
-};
-function shardCount() { return Object.keys(P.flags.shards).length; }
+// NPC definitions, dialog scripts (talkSigrun, talkVidar...) and LORE live in js/data/npcs.js.
 let talkNPC = null; // NPC whose dialog is open (sprite sheets play "talk")
 async function talkTo(n) {
   talkNPC = n;
   try {
-    if (n.id === 'sigrun') return await talkSigrun();
-    if (n.id === 'brokkr') return await talkBrokkr();
-    if (n.id === 'vidar') return await talkVidar();
-    if (n.id === 'astrid') return await talkAstrid();
+    const def = NPCS[n.id] || {};
+    if (!(def.urgent && def.urgent())) {
+      questEvent('talk', n.id);
+      if (await questTalk(n, def)) return;
+    }
+    if (def.talk) await def.talk(n);
+    questEvent('talk', n.id); questRefresh();
   } finally { if (talkNPC === n) talkNPC = null; }
-}
-async function talkSigrun() {
-  const f = P.flags; const N = 'Sigrun, the Ember Maiden';
-  if (!f.talked.sigrun) {
-    await say(N, [
-      'You are breathing. Good. The Tree spat you back out, same as the rest of us.',
-      'I am Sigrun. I carried the fallen to Valhalla once. Now there is no Valhalla, so I tend the last Waystone in Midgard and count the ones who come back wrong.',
-      'When the Ashen King burned the roots of Yggdrasil, the Rune of Binding that held the realms together shattered. Three shards fell. Three creatures swallowed them, and the Ash made them into something worse.',
-      '<i>She points east, then further east, then north.</i> The Blight Mother, deep in the Ashen Fields. Hati the Moon-Eater, in the Withered Wood beyond. And Sir Gaunt, who swore an oath to Tyr and broke it, in Gloamheim Keep.',
-      'Bring me all three shards and I can open the Cinder Gate behind me. The King waits past it, on a throne of burned roots.',
-      'You are a Novice. The Ash will eat you. Hunt the small things in the fields first. When you have learned enough, speak to old Vidar by the broken houses. He knows the four paths.',
-    ]);
-    f.talked.sigrun = true; f.lore.sigrun = true; UI.dirty = true; return;
-  }
-  if (shardCount() === 3 && !f.gate) {
-    await say(N, ['<i>The three shards rise out of your pack on their own and hang in the air between you, turning.</i>', 'Blood, Moon and Oath. I did not think anyone would do it. I stopped hoping a long time ago, and it turns out hope does not care whether you stop.', '<i>She presses the shards together. The Rune of Binding does not heal, but it remembers what it was. Behind her, the Cinder Gate groans open.</i>', 'The King is waiting. Rest first. Whatever you decide up there, decide it as yourself.']);
-    f.gate = true; banner('The Cinder Gate Opens', 'North of the Waystone', 'band gold long'); Sfx.victory(); UI.dirty = true; saveGame(); return;
-  }
-  if (f.ending) { await say(N, [f.ending === 'embers' ? 'There is a new Waystone at the top of the world now. It has your name on it. I tend it every morning.' : 'You wear the crown well. I let the fire here go out. I hope you understand.']); return; }
-  const lines = { 0: 'The Blight Mother lies east, where the fields turn to bog. Her children are weak. She is not.', 1: 'One shard. It beats like a heart, doesn’t it? Hati hunts the Withered Wood, east of the fields. Take potions. He is fast.', 2: 'Two. Sir Gaunt holds Gloamheim, north through the Wood. He was the best of us. Heal magic burns him, if you have any.', 3: 'The gate is open. Go.' };
-  const r = await dialog(N, lines[shardCount()] + (f.kingSlain ? '<br><br>The King is dead? Then go to the Heart. The choice is yours, not mine.' : ''), ['Tend my wounds', 'Farewell']);
-  $('dialog').hidden = true;
-  if (r === 0) { P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffb060'); Sfx.heal(); log('Sigrun’s hands are warm. Your wounds close.', 'npc'); }
-}
-async function talkBrokkr() {
-  const N = 'Brokkr the Smith';
-  if (!P.flags.talked.brokkr) { P.flags.talked.brokkr = true; await say(N, ['Another one back from the dead? Hah. You’ll need steel, then. The dead always need steel.', 'I buy anything the Ash leaves lying around. I sell what I can forge. And for a price I’ll <i>refine</i> your gear. Up to +4 the metal takes it. Past that it starts to think for itself.']); }
-  UI.shopMode = 'buy'; openWin('shop');
-}
-async function talkVidar() {
-  const N = 'Vidar the Wanderer';
-  if (P.cls === 'novice') {
-    if (P.jlvl < 10 || P.skills.basic < 9) { await say(N, ['<i>An old man in a grey hood. One eye catches the firelight. The other is not there.</i>', 'A Novice. You do not know which end of the sword to hold. Come back when you do.', `Reach Job Level 10 and learn Basic Skill to level 9. <i>(Job Lv ${P.jlvl}/10, Basic Skill ${P.skills.basic}/9.)</i>`]); return; }
-    const r = await dialog(N, 'So. You have learned the basics. There are four paths left in Midgard. Choose one and walk it until it kills you or you finish it.', ['Swordsman', 'Mage', 'Archer', 'Acolyte', 'Not yet']);
-    if (r < 0 || r > 3) { $('dialog').hidden = true; return; }
-    const cls = ['swordsman', 'mage', 'archer', 'acolyte'][r];
-    const r2 = await dialog(N, `<b>${CLASSES[cls].name}.</b> ${CLASSES[cls].blurb}<br><br>This cannot be undone.`, [`Become a ${CLASSES[cls].name}`, 'Let me think']);
-    $('dialog').hidden = true;
-    if (r2 !== 0) return;
-    P.cls = cls; P.jlvl = 1; P.jexp = 0; for (const s of CLASSES[cls].skills) P.skills[s] = P.skills[s] || 0;
-    const w = makeItem(CLASSES[cls].starter); if (addItem(w)) { const cur = P.equip.weapon; if (!cur || canEquip(w) === null) equip(w); }
-    calcStats(); P.hp = S.maxhp; P.sp = S.maxsp;
-    pillar(P, '#f0d070', true); banner(CLASSES[cls].name, 'A path chosen', 'band gold'); Sfx.victory();
-    log(`You are now a ${CLASSES[cls].name}. Vidar gave you a ${ITEMS[CLASSES[cls].starter].name}. New skills are in the Skills window (S).`, 'lvl');
-    UI.dirty = true; saveGame(); return;
-  }
-  if (shardCount() >= 2 && !P.flags.lore.vidar) {
-    P.flags.lore.vidar = true;
-    await say(N, ['<i>He watches the fire a long time before he speaks.</i>', 'I gave an eye once, at a well, for wisdom. I learned how the world would end. I did not learn how to stop it. That is the trouble with wisdom.', 'Don’t tell Sigrun who I am. She would be kind about it, and I could not bear that.']);
-    return;
-  }
-  await say(N, [pick(['The Ash remembers every name it burned. Try not to give it yours.', 'Every Shardbearer was something good once. Remember that, and then kill them anyway.', 'STR for the arm, VIT for the heart, DEX for the eye. The rest is luck, and LUK.', 'When the ground glows red under a great beast, move. That is all the wisdom I have left.'])]);
-}
-async function talkAstrid() {
-  const N = 'Astrid';
-  if (!P.flags.talked.astrid) { P.flags.talked.astrid = true; addItem(makeItem('butterfly_wing', { qty: 2 })); await say(N, ['Are you a ghost? Sigrun says the people who come back aren’t ghosts. They’re just… late.', 'Here. I found these. If you flap them they take you home to the fire. I don’t need them. I don’t go anywhere.', '<i>She gives you 2 Butterfly Wings.</i>']); return; }
-  const lines = shardCount() >= 1 ? ['You smell like jelly. Did you fight the big pink one? She used to be nice, I think.', 'Is the wolf really eating the moon? Can you make him give it back?', 'If you kill the King, will the Tree grow back? Will my mum come back?'] : ['There used to be Porings in the fields. Pink ones. They bounced. Now they bite.', 'Sigrun cries when she thinks nobody is looking. I look anyway.'];
-  await say(N, [pick(lines)]);
-}
-async function talkHeart() {
-  const N = 'The Heart of Yggdrasil';
-  if (!P.flags.kingSlain) { await say(N, ['<i>A knot of burned root as big as a house. Something inside it is not quite dead. The King stands between you and it.</i>']); return; }
-  if (P.flags.ending) { await say(N, [P.flags.ending === 'embers' ? '<i>The Heart glows softly. Somewhere far below, a root has turned green.</i>' : '<i>The Heart is cold. It answers to you now.</i>']); return; }
-  const r = await dialog(N, '<i>The Heart pulses once, very faintly, like something asking permission. The King’s crown lies in the ash at your feet, still warm.</i><br><br>You could give the Tree the ember that would not go out, the one inside you. Or you could pick up the crown.', ['Relight the Tree', 'Take the Crown of Cinders', 'Not yet']);
-  $('dialog').hidden = true;
-  if (r === 0) ending('embers'); else if (r === 1) ending('ash');
 }
 function ending(kind) {
   P.flags.ending = kind; saveGame();
@@ -434,6 +449,149 @@ function ending(kind) {
   if (kind === 'ash' && !P.inv.some(i => i.id === 'u_crown') && !(P.equip.head && P.equip.head.id === 'u_crown')) addItem(makeItem('u_crown'), true);
   $('bEnd').onclick = () => { el.hidden = true; log(kind === 'embers' ? 'The Tree breathes. The Ash is still out there, and so are you.' : 'The crown sits warm on your brow. The Ash is yours now.', 'lvl'); };
   Sfx.victory();
+}
+
+/* =========================================================
+   UI: quests (tracker, toasts, NPC markers)
+   ========================================================= */
+const QUEST_UI = { markers: true, boards: true }; // the renderer may set these false once it draws them itself
+(function questStyles() {
+  const st = document.createElement('style');
+  st.textContent = `
+#qtrack{position:absolute;right:calc(8px + env(safe-area-inset-right,0px));top:calc(220px + env(safe-area-inset-top,0px));width:210px;font-size:11.5px;cursor:pointer}
+#qtrack .rbd{padding:4px 8px 6px}
+#qtrack .qt{font-weight:800;color:#2c3858;margin-bottom:2px}
+#qtrack .o{display:grid;grid-template-columns:12px 1fr auto;gap:4px;line-height:1.35;color:var(--ink)}
+#qtrack .o.done{color:var(--faint)}#qtrack .o.done .m{color:var(--good)}#qtrack .o .m{color:#e06a1a;font-weight:800}#qtrack .o.lock{opacity:.55}
+#qtrack .o b{font-variant-numeric:tabular-nums}
+#qtrack .rd{color:#1e7a2a;font-weight:800;margin-top:2px}
+#qtoast{position:absolute;left:50%;top:calc(60px + env(safe-area-inset-top,0px));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;z-index:31}
+#qtoast div{font:800 12.5px var(--ui);color:#fff;padding:4px 14px;border-radius:12px;background:rgba(16,20,34,.72);border:1px solid rgba(255,220,150,.35);text-shadow:0 1px 2px #000;animation:qtoast 2.6s ease forwards;white-space:nowrap}
+#qtoast div.obj{color:#c8f0a8}#qtoast div.new{color:#ffe08a}#qtoast div.ready{color:#9ae0ff}
+@keyframes qtoast{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
+#chat .quest{color:#ffd890}
+.qcard{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:5px 7px;margin-bottom:5px}
+.qcard.tr{border-color:#e0a040;box-shadow:0 0 0 1px #f0c070}
+.qcard .qh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.qcard .qs{font-size:11.5px;margin:1px 0 3px;line-height:1.35}
+.qcard .qn{font-variant-numeric:tabular-nums}
+.qcard .qr{font-size:11px;color:var(--gold);margin-top:3px}
+.qcard .qready{color:#1e7a2a;font-weight:800;margin-top:2px}
+@media (max-width:760px){#qtrack{top:calc(160px + env(safe-area-inset-top,0px));width:160px;font-size:10.5px}}`;
+  document.head.appendChild(st);
+  const tr = document.createElement('div'); tr.id = 'qtrack'; tr.className = 'rwin'; tr.hidden = true; tr.dataset.win = 'journal'; tr.title = 'Open the quest log';
+  $('hud').appendChild(tr);
+  const to = document.createElement('div'); to.id = 'qtoast'; $('game').appendChild(to);
+})();
+function questToast(msg, kind) {
+  const c = $('qtoast'); if (!c) return; const d = document.createElement('div'); d.className = kind || ''; d.textContent = msg; c.appendChild(d);
+  while (c.children.length > 4) c.removeChild(c.firstChild);
+  setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 2700);
+}
+let trackT = 0;
+function renderTracker(force) {
+  if (!force && time - trackT < 0.2) return; trackT = time;
+  const el = $('qtrack'), id = P.quests && P.quests.track;
+  if (!id || !P.quests.active[id]) { el.hidden = true; return; }
+  const q = QUESTS[id], ready = questReady(id), ti = questTurnIn(q);
+  const rows = questObjectives(id).map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
+  const html = `<div class="rtb">Quest</div><div class="rbd"><div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}</div>`;
+  if (cache.qtrack !== html) { cache.qtrack = html; el.innerHTML = html; }
+  el.hidden = false;
+}
+// Bounty boards have no mesh yet: draw a small notice board in the overlay (QUEST_UI.boards = false to disable).
+function drawBoardProp(o, sc) {
+  const gh = groundH(o.x, o.y), b = proj(o.x, o.y, gh), t = proj(o.x, o.y, gh + 1.7); if (b[2] > 1) return;
+  const hgt = b[1] - t[1], wd = hgt * 0.75, x = b[0], top = t[1];
+  if (!(hgt > 2) || t[2] > 1) return; // top behind the camera or projected upside down
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(x, b[1], Math.max(0, wd * 0.55), Math.max(0, wd * 0.16), 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#4a3220'; ctx.fillRect(x - wd * 0.42, top + hgt * 0.1, wd * 0.09, hgt * 0.9); ctx.fillRect(x + wd * 0.33, top + hgt * 0.1, wd * 0.09, hgt * 0.9);
+  ctx.fillStyle = '#7a5434'; ctx.fillRect(x - wd * 0.5, top, wd, hgt * 0.56); ctx.strokeStyle = '#3a2414'; ctx.lineWidth = Math.max(1, 1.5 * sc); ctx.strokeRect(x - wd * 0.5, top, wd, hgt * 0.56);
+  ctx.fillStyle = '#5a3a22'; ctx.fillRect(x - wd * 0.58, top - hgt * 0.06, wd * 1.16, hgt * 0.08);
+  const notes = [[-0.36, 0.08, '#efe6cc'], [-0.02, 0.12, '#e8dcc0'], [0.18, 0.05, '#f4ecd8'], [-0.22, 0.3, '#e4d4b0']];
+  for (const [nx, ny, c] of notes) { ctx.fillStyle = c; ctx.fillRect(x + wd * nx, top + hgt * ny, wd * 0.22, hgt * 0.2); ctx.fillStyle = '#8a1a1a'; ctx.fillRect(x + wd * (nx + 0.1), top + hgt * ny + 1, 2 * sc, 2 * sc); }
+}
+function drawQuestMarker(x, y, mark, kind, sc) {
+  const s = Math.max(1, 17 * sc), bob = Math.sin(time * 3.2) * 3 * sc;
+  const col = kind === 'daily' ? ['#bfe6ff', '#3a8ae0'] : kind === 'main' ? ['#fff4b0', '#f0a020'] : ['#fff0a0', '#e8b020'];
+  y += bob;
+  ctx.font = `900 ${Math.round(s * 1.5)}px ${typeof UIFONT !== 'undefined' ? UIFONT : 'sans-serif'}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, s * 1.2); g.addColorStop(0, rgba(col[1], 0.45)); g.addColorStop(1, rgba(col[1], 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, s * 1.2, 0, 7); ctx.fill();
+  ctx.lineJoin = 'round'; ctx.lineWidth = 5 * sc; ctx.strokeStyle = '#1a1008'; ctx.strokeText(mark, x, y);
+  const gr = ctx.createLinearGradient(0, y - s * 0.6, 0, y + s * 0.6); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]); ctx.fillStyle = gr; ctx.fillText(mark, x, y);
+  ctx.textBaseline = 'alphabetic';
+}
+function drawQuestOverlay() {
+  if (!started || !map || !P || typeof proj !== 'function' || typeof PPU === 'undefined') return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const sc = clamp(PPU / 34, 0.75, 1.5), boards = map.objs.filter(o => o.kind === 'board');
+  if (QUEST_UI.boards) for (const o of boards) {
+    drawBoardProp(o, sc);
+    if (typeof label === 'function') { const a = proj(o.x, o.y, groundH(o.x, o.y)); if (a[2] < 1) label(o.name, a[0], a[1] + 17 * sc, '#ffd8a8', 11.5); }
+  }
+  if (!QUEST_UI.markers) return;
+  for (const e of [...map.npcs, ...boards]) {
+    if (!(e._qmT > time - 0.25) || e._qmT > time) { e._qm = questMarkerInfo(e); e._qmT = time; } // re-evaluated 4x per second
+    const info = e._qm; if (!info) continue;
+    const hh = e.board ? 1.95 : headH(e) + 0.45, a = proj(e.x, e.y, groundH(e.x, e.y) + hh); if (a[2] > 1) continue;
+    drawQuestMarker(a[0], a[1] - 10 * sc, info.mark, info.kind, sc);
+  }
+}
+/* Second-class skill feedback drawn on the 2D overlay: ground zones and traps, song/oath auras, the Kyrie
+   bubble, spirit spheres, and status marks on monsters. Deliberately simple shapes; the graphics team can
+   replace any of it with meshes (data: zones[], P.buffs[*].aura, P.spheres, m.snare/slow/mark/dispel/lex). */
+function groundLoop(x, y, r, n) { const pts = []; for (let i = 0; i < n; i++) { const a = i / n * 6.2832, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; pts.push(proj(px, py, groundH(px, py) + 0.06)); } return pts; }
+function strokeLoop(pts, fill, stroke, lw, dash) {
+  if (pts.some(p => p[2] > 1)) return false;
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); ctx.setLineDash([]); }
+  return true;
+}
+function runeAt(x, y, h, txt, col, px) { const a = proj(x, y, groundH(x, y) + h); if (a[2] > 1) return; ctx.font = `${px}px 'Noto Sans Runic', 'Segoe UI Historic', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,6,4,.7)'; ctx.strokeText(txt, a[0], a[1]); ctx.fillStyle = col; ctx.fillText(txt, a[0], a[1]); ctx.textBaseline = 'alphabetic'; }
+function drawSkillOverlay() {
+  if (!started || !map || !P || typeof proj !== 'function' || typeof PPU === 'undefined') return;
+  const sc = clamp(PPU / 34, 0.75, 1.5);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  for (const z of zones) {
+    const life = z.trap ? 1 : Math.min(1, z.t / 0.2, (z.dur - z.t) / 0.3), pulse = 0.5 + 0.5 * Math.sin(time * 5 + z.x);
+    if (z.trap) {
+      const pts = groundLoop(z.x, z.y, 0.45, 10); strokeLoop(pts, rgba(z.col, 0.28), rgba(z.col, 0.9), 1.6 * sc, [3, 3]);
+      runeAt(z.x, z.y, 0.1, z.rune || '•', z.col, 13 * sc); continue;
+    }
+    const r = z.r * (z.kind === 'storm' ? 1 : 0.97 + 0.03 * pulse);
+    strokeLoop(groundLoop(z.x, z.y, r, 28), rgba(z.col, (z.ward ? 0.1 : 0.16) * life), rgba(z.col, 0.75 * life), (z.ward ? 1.6 : 2.2) * sc, z.ward ? [8, 6] : null);
+    if (z.kind === 'storm' || z.kind === 'quagmire') { const rot = time * (z.kind === 'storm' ? 2.4 : 0.4); for (let k = 1; k <= 2; k++) { const rr = r * k / 3; const pts = []; for (let i = 0; i < 14; i++) { const a = rot * (k % 2 ? 1 : -1) + i / 14 * 6.2832, px = z.x + Math.cos(a) * rr, py = z.y + Math.sin(a) * rr; pts.push(proj(px, py, groundH(px, py) + 0.08)); } strokeLoop(pts, null, rgba(z.col, 0.45 * life), 1.2 * sc, [6, 8]); } }
+    if (z.rune) runeAt(z.x, z.y, 0.15, z.rune, z.col, 22 * sc);
+  }
+  // Auras (songs, Oath of Tyr, Magic Rod) and the Kyrie bubble
+  for (const k in P.buffs) {
+    const au = P.buffs[k].aura; if (!au) continue;
+    if (au.bubble) { const a = proj(P.x, P.y, chestH(P)), rr = au.r * PPU; if (a[2] > 1) continue; const g = ctx.createRadialGradient(a[0], a[1], rr * 0.6, a[0], a[1], rr); g.addColorStop(0, rgba(au.col, 0)); g.addColorStop(0.85, rgba(au.col, 0.22)); g.addColorStop(1, rgba(au.col, 0.55)); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(a[0], a[1], rr, rr * 1.15, 0, 0, 7); ctx.fill(); continue; }
+    const rr = au.r * (0.94 + 0.06 * Math.sin(time * 4)); strokeLoop(groundLoop(P.x, P.y, rr, 24), rgba(au.col, 0.1), rgba(au.col, 0.7), 1.8 * sc, P.buffs[k].song ? [4, 5] : null);
+    if (P.buffs[k].song && Math.random() < 0.08) parts.push({ x: P.x + rand(-rr, rr), y: P.y + rand(-rr, rr), z: 4, vx: 0, vy: 0, vz: 35, life: 1.1, max: 1.1, col: au.col, size: 3, float: true });
+  }
+  // Spirit spheres orbit the monk
+  if (P.spheres > 0 && !P.dead) {
+    const gh = groundH(P.x, P.y), hh = typeof headH === 'function' ? headH(P) * 0.75 : 1.2;
+    for (let i = 0; i < P.spheres; i++) {
+      const a = time * 2.2 + i / P.spheres * 6.2832, q = proj(P.x + Math.cos(a) * 0.62, P.y + Math.sin(a) * 0.62, gh + hh + Math.sin(time * 3 + i) * 0.08); if (q[2] > 1) continue;
+      const rr = 5.5 * sc, g = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], rr * 2); g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, '#9fd0ff'); g.addColorStop(1, 'rgba(90,150,255,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q[0], q[1], rr * 2, 0, 7); ctx.fill();
+    }
+  }
+  // Monster status marks
+  for (const m of mobs) {
+    if (m.dead) continue;
+    if (m.snare > 0) strokeLoop(groundLoop(m.x, m.y, 0.55, 12), null, 'rgba(210,170,100,.9)', 2 * sc, [4, 3]);
+    if (m.slow > 0) strokeLoop(groundLoop(m.x, m.y, 0.6, 12), 'rgba(110,80,40,.35)', null, 0);
+    const tags = (m.mark > 0 ? 'ᛞ' : '') + (m.dispel > 0 ? 'ᚾ' : '') + (m.lex ? 'ᛚ' : '');
+    if (tags) runeAt(m.x, m.y, (typeof headH === 'function' ? headH(m) : 1.6) + 0.55, tags, m.lex ? '#fff2b8' : m.mark > 0 ? '#cfe07a' : '#c8a8ff', 15 * sc);
+  }
+}
+// Draw the quest overlay right after the world overlay each frame (same pattern as gfx-sheets' headH wrap).
+if (typeof render === 'function') {
+  const baseRender = render;
+  // eslint-disable-next-line no-global-assign
+  render = function (dt) { baseRender(dt); try { drawSkillOverlay(); } catch (e) { console.error(e); } try { drawQuestOverlay(); } catch (e) { console.error(e); } };
 }
 
 /* =========================================================
@@ -515,14 +673,16 @@ addEventListener('resize', () => { resize(); if (map) setScreenParts(); });
 /* =========================================================
    Save / load / boot
    ========================================================= */
-const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime'];
+const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests'];
 function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; return JSON.stringify(o); }
 function saveGame() { if (!started || !P) return; const s = serialize(); if (s) store('aom-save', s); }
 function loadSave() { const raw = store('aom-save'); if (!raw) return null; try { return JSON.parse(raw); } catch (e) { return null; } }
+let questMigrate = false;
 function applySave(o) {
   P = Object.assign(newPlayer(o.name, o.hair), o); uidc = Math.max(uidc, o.uidc || 1);
   P.flags = Object.assign({ shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {} }, P.flags);
   for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked']) P.flags[k] = P.flags[k] || {};
+  P.quests = questNorm(o.quests); questMigrate = !o.quests; // saves from before the quest system: story quests are caught up without rewards
   resetRuntime();
 }
 function startGame(fresh) {
@@ -533,6 +693,7 @@ function startGame(fresh) {
   if (m.t[Math.floor(y) * m.w + Math.floor(x)] !== 0) { x = P.lastWay.x; y = P.lastWay.y; }
   map = null; gotoMap(P.map, x, y);
   renderHotbar(); renderBuffs(); UI.dirty = true;
+  questRefresh({ silent: !fresh, noReward: questMigrate }); questMigrate = false;
   log(fresh ? 'You wake in the Ash with nothing but a knife and a shirt.' : `Welcome back, ${P.name}.`, 'sys');
   log(`Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
 }

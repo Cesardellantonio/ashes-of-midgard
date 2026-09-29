@@ -133,6 +133,78 @@
    "variant": "dagger"
   },
   {
+   "id": "knight_f.body",
+   "layer": "body",
+   "body": "knight_f",
+   "variant": null
+  },
+  {
+   "id": "knight_f.hair_long",
+   "layer": "hair",
+   "body": "knight_f",
+   "variant": "long"
+  },
+  {
+   "id": "knight_f.hair_spiky",
+   "layer": "hair",
+   "body": "knight_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "knight_f.weapon_spear",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "spear"
+  },
+  {
+   "id": "knight_f.weapon_sword",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "sword"
+  },
+  {
+   "id": "knight_f.weapon_twohand",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "twohand"
+  },
+  {
+   "id": "knight_m.body",
+   "layer": "body",
+   "body": "knight_m",
+   "variant": null
+  },
+  {
+   "id": "knight_m.hair_long",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "long"
+  },
+  {
+   "id": "knight_m.hair_spiky",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "knight_m.weapon_spear",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "spear"
+  },
+  {
+   "id": "knight_m.weapon_sword",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "sword"
+  },
+  {
+   "id": "knight_m.weapon_twohand",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "twohand"
+  },
+  {
    "id": "mage_f.body",
    "layer": "body",
    "body": "mage_f",
@@ -193,6 +265,66 @@
    "variant": "rod"
   },
   {
+   "id": "monk_f.body",
+   "layer": "body",
+   "body": "monk_f",
+   "variant": null
+  },
+  {
+   "id": "monk_f.hair_long",
+   "layer": "hair",
+   "body": "monk_f",
+   "variant": "long"
+  },
+  {
+   "id": "monk_f.hair_spiky",
+   "layer": "hair",
+   "body": "monk_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "monk_f.weapon_knuckle",
+   "layer": "weapon",
+   "body": "monk_f",
+   "variant": "knuckle"
+  },
+  {
+   "id": "monk_f.weapon_mace",
+   "layer": "weapon",
+   "body": "monk_f",
+   "variant": "mace"
+  },
+  {
+   "id": "monk_m.body",
+   "layer": "body",
+   "body": "monk_m",
+   "variant": null
+  },
+  {
+   "id": "monk_m.hair_long",
+   "layer": "hair",
+   "body": "monk_m",
+   "variant": "long"
+  },
+  {
+   "id": "monk_m.hair_spiky",
+   "layer": "hair",
+   "body": "monk_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "monk_m.weapon_knuckle",
+   "layer": "weapon",
+   "body": "monk_m",
+   "variant": "knuckle"
+  },
+  {
+   "id": "monk_m.weapon_mace",
+   "layer": "weapon",
+   "body": "monk_m",
+   "variant": "mace"
+  },
+  {
    "id": "novice_f.body",
    "layer": "body",
    "body": "novice_f",
@@ -239,6 +371,354 @@
    "layer": "weapon",
    "body": "novice_m",
    "variant": "dagger"
+  },
+  {
+   "id": "oathkeeper_f.body",
+   "layer": "body",
+   "body": "oathkeeper_f",
+   "variant": null
+  },
+  {
+   "id": "oathkeeper_f.hair_long",
+   "layer": "hair",
+   "body": "oathkeeper_f",
+   "variant": "long"
+  },
+  {
+   "id": "oathkeeper_f.hair_spiky",
+   "layer": "hair",
+   "body": "oathkeeper_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "oathkeeper_f.shield_tower",
+   "layer": "shield",
+   "body": "oathkeeper_f",
+   "variant": "tower"
+  },
+  {
+   "id": "oathkeeper_f.weapon_mace",
+   "layer": "weapon",
+   "body": "oathkeeper_f",
+   "variant": "mace"
+  },
+  {
+   "id": "oathkeeper_f.weapon_spear",
+   "layer": "weapon",
+   "body": "oathkeeper_f",
+   "variant": "spear"
+  },
+  {
+   "id": "oathkeeper_f.weapon_sword",
+   "layer": "weapon",
+   "body": "oathkeeper_f",
+   "variant": "sword"
+  },
+  {
+   "id": "oathkeeper_m.body",
+   "layer": "body",
+   "body": "oathkeeper_m",
+   "variant": null
+  },
+  {
+   "id": "oathkeeper_m.hair_long",
+   "layer": "hair",
+   "body": "oathkeeper_m",
+   "variant": "long"
+  },
+  {
+   "id": "oathkeeper_m.hair_spiky",
+   "layer": "hair",
+   "body": "oathkeeper_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "oathkeeper_m.shield_tower",
+   "layer": "shield",
+   "body": "oathkeeper_m",
+   "variant": "tower"
+  },
+  {
+   "id": "oathkeeper_m.weapon_mace",
+   "layer": "weapon",
+   "body": "oathkeeper_m",
+   "variant": "mace"
+  },
+  {
+   "id": "oathkeeper_m.weapon_spear",
+   "layer": "weapon",
+   "body": "oathkeeper_m",
+   "variant": "spear"
+  },
+  {
+   "id": "oathkeeper_m.weapon_sword",
+   "layer": "weapon",
+   "body": "oathkeeper_m",
+   "variant": "sword"
+  },
+  {
+   "id": "priest_f.body",
+   "layer": "body",
+   "body": "priest_f",
+   "variant": null
+  },
+  {
+   "id": "priest_f.hair_long",
+   "layer": "hair",
+   "body": "priest_f",
+   "variant": "long"
+  },
+  {
+   "id": "priest_f.hair_spiky",
+   "layer": "hair",
+   "body": "priest_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "priest_f.weapon_book",
+   "layer": "weapon",
+   "body": "priest_f",
+   "variant": "book"
+  },
+  {
+   "id": "priest_f.weapon_mace",
+   "layer": "weapon",
+   "body": "priest_f",
+   "variant": "mace"
+  },
+  {
+   "id": "priest_f.weapon_staff",
+   "layer": "weapon",
+   "body": "priest_f",
+   "variant": "staff"
+  },
+  {
+   "id": "priest_m.body",
+   "layer": "body",
+   "body": "priest_m",
+   "variant": null
+  },
+  {
+   "id": "priest_m.hair_long",
+   "layer": "hair",
+   "body": "priest_m",
+   "variant": "long"
+  },
+  {
+   "id": "priest_m.hair_spiky",
+   "layer": "hair",
+   "body": "priest_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "priest_m.weapon_book",
+   "layer": "weapon",
+   "body": "priest_m",
+   "variant": "book"
+  },
+  {
+   "id": "priest_m.weapon_mace",
+   "layer": "weapon",
+   "body": "priest_m",
+   "variant": "mace"
+  },
+  {
+   "id": "priest_m.weapon_staff",
+   "layer": "weapon",
+   "body": "priest_m",
+   "variant": "staff"
+  },
+  {
+   "id": "runecaster_f.body",
+   "layer": "body",
+   "body": "runecaster_f",
+   "variant": null
+  },
+  {
+   "id": "runecaster_f.hair_long",
+   "layer": "hair",
+   "body": "runecaster_f",
+   "variant": "long"
+  },
+  {
+   "id": "runecaster_f.hair_spiky",
+   "layer": "hair",
+   "body": "runecaster_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "runecaster_f.weapon_rod",
+   "layer": "weapon",
+   "body": "runecaster_f",
+   "variant": "rod"
+  },
+  {
+   "id": "runecaster_f.weapon_staff",
+   "layer": "weapon",
+   "body": "runecaster_f",
+   "variant": "staff"
+  },
+  {
+   "id": "runecaster_m.body",
+   "layer": "body",
+   "body": "runecaster_m",
+   "variant": null
+  },
+  {
+   "id": "runecaster_m.hair_long",
+   "layer": "hair",
+   "body": "runecaster_m",
+   "variant": "long"
+  },
+  {
+   "id": "runecaster_m.hair_spiky",
+   "layer": "hair",
+   "body": "runecaster_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "runecaster_m.weapon_rod",
+   "layer": "weapon",
+   "body": "runecaster_m",
+   "variant": "rod"
+  },
+  {
+   "id": "runecaster_m.weapon_staff",
+   "layer": "weapon",
+   "body": "runecaster_m",
+   "variant": "staff"
+  },
+  {
+   "id": "sage_f.body",
+   "layer": "body",
+   "body": "sage_f",
+   "variant": null
+  },
+  {
+   "id": "sage_f.hair_long",
+   "layer": "hair",
+   "body": "sage_f",
+   "variant": "long"
+  },
+  {
+   "id": "sage_f.hair_spiky",
+   "layer": "hair",
+   "body": "sage_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "sage_f.weapon_book",
+   "layer": "weapon",
+   "body": "sage_f",
+   "variant": "book"
+  },
+  {
+   "id": "sage_f.weapon_rod",
+   "layer": "weapon",
+   "body": "sage_f",
+   "variant": "rod"
+  },
+  {
+   "id": "sage_m.body",
+   "layer": "body",
+   "body": "sage_m",
+   "variant": null
+  },
+  {
+   "id": "sage_m.hair_long",
+   "layer": "hair",
+   "body": "sage_m",
+   "variant": "long"
+  },
+  {
+   "id": "sage_m.hair_spiky",
+   "layer": "hair",
+   "body": "sage_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "sage_m.weapon_book",
+   "layer": "weapon",
+   "body": "sage_m",
+   "variant": "book"
+  },
+  {
+   "id": "sage_m.weapon_rod",
+   "layer": "weapon",
+   "body": "sage_m",
+   "variant": "rod"
+  },
+  {
+   "id": "skald_f.body",
+   "layer": "body",
+   "body": "skald_f",
+   "variant": null
+  },
+  {
+   "id": "skald_f.hair_long",
+   "layer": "hair",
+   "body": "skald_f",
+   "variant": "long"
+  },
+  {
+   "id": "skald_f.hair_spiky",
+   "layer": "hair",
+   "body": "skald_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "skald_f.weapon_bow",
+   "layer": "weapon",
+   "body": "skald_f",
+   "variant": "bow"
+  },
+  {
+   "id": "skald_f.weapon_lute",
+   "layer": "weapon",
+   "body": "skald_f",
+   "variant": "lute"
+  },
+  {
+   "id": "skald_f.weapon_whip",
+   "layer": "weapon",
+   "body": "skald_f",
+   "variant": "whip"
+  },
+  {
+   "id": "skald_m.body",
+   "layer": "body",
+   "body": "skald_m",
+   "variant": null
+  },
+  {
+   "id": "skald_m.hair_long",
+   "layer": "hair",
+   "body": "skald_m",
+   "variant": "long"
+  },
+  {
+   "id": "skald_m.hair_spiky",
+   "layer": "hair",
+   "body": "skald_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "skald_m.weapon_bow",
+   "layer": "weapon",
+   "body": "skald_m",
+   "variant": "bow"
+  },
+  {
+   "id": "skald_m.weapon_lute",
+   "layer": "weapon",
+   "body": "skald_m",
+   "variant": "lute"
+  },
+  {
+   "id": "skald_m.weapon_whip",
+   "layer": "weapon",
+   "body": "skald_m",
+   "variant": "whip"
   },
   {
    "id": "swordsman_f.body",
@@ -323,6 +803,66 @@
    "layer": "weapon",
    "body": "swordsman_m",
    "variant": "sword"
+  },
+  {
+   "id": "wolfhunter_f.body",
+   "layer": "body",
+   "body": "wolfhunter_f",
+   "variant": null
+  },
+  {
+   "id": "wolfhunter_f.hair_long",
+   "layer": "hair",
+   "body": "wolfhunter_f",
+   "variant": "long"
+  },
+  {
+   "id": "wolfhunter_f.hair_spiky",
+   "layer": "hair",
+   "body": "wolfhunter_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "wolfhunter_f.weapon_bow",
+   "layer": "weapon",
+   "body": "wolfhunter_f",
+   "variant": "bow"
+  },
+  {
+   "id": "wolfhunter_f.weapon_dagger",
+   "layer": "weapon",
+   "body": "wolfhunter_f",
+   "variant": "dagger"
+  },
+  {
+   "id": "wolfhunter_m.body",
+   "layer": "body",
+   "body": "wolfhunter_m",
+   "variant": null
+  },
+  {
+   "id": "wolfhunter_m.hair_long",
+   "layer": "hair",
+   "body": "wolfhunter_m",
+   "variant": "long"
+  },
+  {
+   "id": "wolfhunter_m.hair_spiky",
+   "layer": "hair",
+   "body": "wolfhunter_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "wolfhunter_m.weapon_bow",
+   "layer": "weapon",
+   "body": "wolfhunter_m",
+   "variant": "bow"
+  },
+  {
+   "id": "wolfhunter_m.weapon_dagger",
+   "layer": "weapon",
+   "body": "wolfhunter_m",
+   "variant": "dagger"
   }
  ]
 }

@@ -23,7 +23,9 @@
    horizontal mirrors of SE, E, NE.
    ========================================================= */
 const SHEET_BASE = (typeof window !== 'undefined' && window.AOM_SPRITE_BASE) || 'assets/sprites/';
-const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json'];
+// Missing index files are harmless. The same sheet id may appear in several files (index.json also lists the
+// index_classes2b.json sheets): the first file in this list that names an id wins, whatever order the XHRs finish in.
+const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json'];
 const SHEETS = {
   byId: {},          // id -> load record (created on first request)
   entries: {},       // id -> { id, layer, body, variant } from the index files
@@ -70,26 +72,32 @@ function sheetEntry(s) {
   return { id, layer, body, variant: variant || null };
 }
 const sheetKey = (body, layer, variant) => body + '|' + layer + '|' + (variant || '');
+// First registration of an id (and of a body|layer|variant key) wins: duplicates are ignored, never loaded twice.
 function registerIndex(file, j) {
   SHEETS.indexFiles.push(file);
   for (const s of (j && Array.isArray(j.sheets) ? j.sheets : [])) {
-    const e = sheetEntry(s); if (!e || !e.body) continue;
-    SHEETS.entries[e.id] = e; SHEETS.byKey[sheetKey(e.body, e.layer, e.variant)] = e.id;
+    const e = sheetEntry(s); if (!e || !e.body || SHEETS.entries[e.id]) continue;
+    SHEETS.entries[e.id] = e; const k = sheetKey(e.body, e.layer, e.variant); if (!SHEETS.byKey[k]) SHEETS.byKey[k] = e.id;
   }
 }
 function loadIndexes() {
-  const fin = () => { if (--SHEETS.indexLeft > 0) return; SHEETS.indexReady = true; prefetchSheets(); };
-  for (const f of SHEET_INDEX_FILES) sheetXHR(SHEET_BASE + f, j => { registerIndex(f, j); fin(); }, fin);
+  const got = new Array(SHEET_INDEX_FILES.length).fill(null);
+  // register in list order once every file has answered (or failed), so the winner of a duplicate id is deterministic
+  const fin = () => { if (--SHEETS.indexLeft > 0) return; SHEET_INDEX_FILES.forEach((f, i) => { if (got[i]) registerIndex(f, got[i]); }); SHEETS.indexReady = true; prefetchSheets(); };
+  SHEET_INDEX_FILES.forEach((f, i) => sheetXHR(SHEET_BASE + f, j => { got[i] = j; fin(); }, fin));
 }
 // Top of the opaque pixels in the idle S frame -> visible height above the feet (px).
+let MEASURE_CV = null;
 function measureSheet(rec) {
   const j = rec.json, fallback = j.visibleH || Math.round(j.anchor[1] * 0.8);
   rec.visH = fallback;
   if (j.visibleH) return;
   try {
     const r = sheetRect(j, sheetHas(j, 'idle') ? 'idle' : Object.keys(j.actions)[0], 0, 0); if (!r) return;
-    const c = document.createElement('canvas'); c.width = r.w; c.height = r.h;
-    const g = c.getContext('2d'); g.drawImage(rec.tex.image, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    // willReadFrequently keeps this canvas in CPU memory: only the frame is copied and read back (no GPU upload of
+    // the whole sheet + GPU readback, which made this 29% of boot CPU). The art pipeline should ship visibleH.
+    const c = MEASURE_CV || (MEASURE_CV = document.createElement('canvas')); c.width = r.w; c.height = r.h;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.clearRect(0, 0, r.w, r.h); g.drawImage(rec.tex.image, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
     const px = g.getImageData(0, 0, r.w, r.h).data;
     for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (px[(y * r.w + x) * 4 + 3] > 127) { rec.visH = Math.max(8, j.anchor[1] - y); return; }
   } catch (e) { /* tainted canvas etc.: keep the fallback */ }
@@ -161,17 +169,18 @@ function prefetchSheets() {
 
 /* ---------- Frame math ---------- */
 function sheetHas(json, a) { return !!(json.actions && json.actions[a] && json.actions[a].frames > 0 && !(json._bad && json._bad[a])); }
-// Pixel rect of frame f of `action` in sheet direction index d (index into json.dirs).
-function sheetRect(json, action, d, f) {
+// Pixel rect of frame f of `action` in sheet direction index d (index into json.dirs). out: optional rect to fill.
+function sheetRect(json, action, d, f, out) {
   const a = json.actions[action]; if (!a) return null;
   const fw = json.frameW, fh = json.frameH, n = Math.max(1, a.frames | 0), nd = json.dirs.length;
   f = Math.max(0, Math.min(n - 1, f | 0)); d = Math.max(0, Math.min(nd - 1, d | 0));
+  const r = out || { x: 0, y: 0, w: 0, h: 0 }; r.w = fw; r.h = fh;
   if (json.layout === 'blocks' || json.layout === 'dir-blocks') {
     const bpr = json.layout === 'blocks' ? Math.max(1, json.blocksPerRow | 0 || nd) : nd, mf = json.maxFrames || n;
     const block = a.row * nd + d, bx = block % bpr, by = Math.floor(block / bpr);
-    return { x: (bx * mf + f) * fw, y: by * fh, w: fw, h: fh };
+    r.x = (bx * mf + f) * fw; r.y = by * fh; return r;
   }
-  return { x: f * fw, y: (a.row + d) * fh, w: fw, h: fh };
+  r.x = f * fw; r.y = (a.row + d) * fh; return r;
 }
 // Same rect as texture UVs (flipY: v=1 is the top of the image).
 function sheetUV(rect, texW, texH) { return { u0: rect.x / texW, u1: (rect.x + rect.w) / texW, v0: 1 - (rect.y + rect.h) / texH, v1: 1 - rect.y / texH }; }
@@ -187,22 +196,28 @@ function facingSector(fx, fy, yaw, prev) {
   if (prev !== undefined) { let da = a - prev * step; da = Math.atan2(Math.sin(da), Math.cos(da)); if (Math.abs(da) < step * 0.5 + 0.12) return prev; }
   let s = Math.round(a / step); if (s === -4) s = 4; return s;
 }
+// Returns a shared scratch object (read it before the next call).
+const SHEET_MIRROR = ['', 'SW', 'W', 'NW'], _DIR = { d: 0, flip: false, name: 'S' };
 function sectorToDir(json, s) {
   const name = SHEET_DIR8[Math.abs(s)], d = json.dirs.indexOf(name);
-  return { d: d < 0 ? 0 : d, flip: s < 0 && s > -4, name: s < 0 && s > -4 ? ['', 'SW', 'W', 'NW'][-s] : name };
+  _DIR.d = d < 0 ? 0 : d; _DIR.flip = s < 0 && s > -4; _DIR.name = s < 0 && s > -4 ? SHEET_MIRROR[-s] : name; return _DIR;
 }
-// Clamp/loop a frame index for an action; missing action -> idle.
+// Clamp/loop a frame index for an action; missing action -> idle. Returns a shared scratch object (read it at once).
+const _SF = { act: 'idle', f: 0 };
 function sheetFrame(json, act, f, phase) {
   if (!sheetHas(json, act)) { act = 'idle'; if (!sheetHas(json, 'idle')) return null; f = Math.floor(time * (json.actions.idle.fps || 6) + (phase || 0)); }
   const a = json.actions[act], n = a.frames | 0;
-  f = a.loop ? ((f % n) + n) % n : Math.max(0, Math.min(n - 1, f | 0));
-  return { act, f };
+  _SF.f = a.loop ? ((f % n) + n) % n : Math.max(0, Math.min(n - 1, f | 0)); _SF.act = act;
+  return _SF;
 }
+// Pose helpers (no per-call closures): frame count / fps of an action, frames since an action started.
+const actN = (A, a) => (A[a] ? A[a].frames : 1), actFps = (A, a) => (A[a] && A[a].fps) || 8;
+function actHeld(v, A, a) { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * actFps(A, a)); }
+const TINT_DODGE = [0.85, 0.9, 1], TINT_CHARGE = [1.0, 0.85, 0.5], TINT_FROZEN = [0.55, 0.8, 1];
 
 /* ---------- Player pose -> action/frame ---------- */
 function sheetPlayerPose(v, body) {
-  const A = body.actions, n = a => (A[a] ? A[a].frames : 1), fps = a => (A[a] && A[a].fps) || 8;
-  const held = a => { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * fps(a)); };
+  const A = body.actions, n = a => actN(A, a), fps = a => actFps(A, a), held = a => actHeld(v, A, a);
   let act = 'idle', f = 0, tint;
   // heavy swing: remember the charge so the release plays the heavy strike, not a light one
   if (P.charge >= 0) v.heavyArm = true;
@@ -215,8 +230,8 @@ function sheetPlayerPose(v, body) {
   const pk = time - (P.pickupAt === undefined ? -99 : P.pickupAt);
 
   if (P.dead) { act = 'dead'; f = held('dead'); }
-  else if (P.dodgeT > 0) { act = 'dodge'; f = Math.floor((1 - P.dodgeT / 0.34) * n('dodge')); tint = [0.85, 0.9, 1]; }
-  else if (P.charge >= 0) { act = 'heavy'; f = Math.min(1, Math.floor(P.charge / 0.8 * 2)); if (P.charge >= 0.8 && Math.floor(time * 12) % 2) tint = [1.0, 0.85, 0.5]; }
+  else if (P.dodgeT > 0) { act = 'dodge'; f = Math.floor((1 - P.dodgeT / 0.34) * n('dodge')); tint = TINT_DODGE; }
+  else if (P.charge >= 0) { act = 'heavy'; f = Math.min(1, Math.floor(P.charge / 0.8 * 2)); if (P.charge >= 0.8 && Math.floor(time * 12) % 2) tint = TINT_CHARGE; }
   else if (v.heavySwing) { act = 'heavy'; const k = n('heavy'), s0 = Math.min(2, k - 1); f = s0 + Math.floor(P.atkAnim * (k - s0)); }
   else if (P.blocking) { act = 'block'; f = held('block'); }
   else if (P.casting) { act = 'cast'; f = Math.floor(time * fps('cast')) % n('cast'); }
@@ -227,28 +242,28 @@ function sheetPlayerPose(v, body) {
   else if (P.moving) { act = 'walk'; f = Math.floor(P.walk * 1.26 * n('walk') / 6) % n('walk'); }
   else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = Math.floor(time * fps('stance')) % n('stance'); }
   else { act = 'idle'; f = Math.floor(time * fps('idle')) % n('idle'); }
-  const r = sheetFrame(body, act, f) || { act: 'idle', f: 0 };
-  if (v.act !== r.act) { v.act = r.act; v.actT = time; }
-  return { act: r.act, f: r.f, tint };
+  const r = sheetFrame(body, act, f), ra = r ? r.act : 'idle', rf = r ? r.f : 0;
+  if (v.act !== ra) { v.act = ra; v.actT = time; }
+  const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = ra; o.f = rf; o.tint = tint; return o;
 }
 
 /* ---------- Mob pose ---------- */
 function activeTele(m) { if (typeof teles === 'undefined') return null; for (const t of teles) if (t.m === m) return t; return null; }
+// Returns v.pose (reused per entity).
 function sheetMobPose(m, v, J) {
-  const A = J.actions, n = a => (A[a] ? A[a].frames : 1), fps = a => (A[a] && A[a].fps) || 8, ph = (m.id % 7) * 0.37;
-  const held = a => { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * fps(a)); };
-  let act, f, tint, opacity;
-  if (m.dead) { act = 'dead'; f = Math.floor((m.deathT || 0) * fps('dead')); }   // death: pixel dissolve (sprFrame), not a fade
-  else if (m.frozen > 0) { act = 'hurt'; f = 0; tint = [0.55, 0.8, 1]; }
-  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = held('hurt'); }   // hit: white flash + squash (sprFrame)
-  else if (m.atkAnim >= 0) { act = 'attack'; f = Math.floor(m.atkAnim * n('attack')); }
-  else if (m.leap) { act = 'walk'; f = Math.floor(time * fps('walk') * 1.5); }
-  else if (m.d.boss && activeTele(m)) { const t = activeTele(m); act = sheetHas(J, 'skill') ? 'skill' : 'attack'; f = Math.floor(clamp(t.t / t.dur, 0, 0.999) * n(act)); }
-  else if (m.moving) { act = 'walk'; f = Math.floor(m.walk * 1.26 * n('walk') / 6); }
-  else { act = 'idle'; f = Math.floor(time * fps('idle') + ph); }
+  const A = J.actions, ph = (m.id % 7) * 0.37;
+  let act, f, tint, opacity, t;
+  if (m.dead) { act = 'dead'; f = Math.floor((m.deathT || 0) * actFps(A, 'dead')); }   // death: pixel dissolve (sprFrame), not a fade
+  else if (m.frozen > 0) { act = 'hurt'; f = 0; tint = TINT_FROZEN; }
+  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = actHeld(v, A, 'hurt'); }   // hit: white flash + squash (sprFrame)
+  else if (m.atkAnim >= 0) { act = 'attack'; f = Math.floor(m.atkAnim * actN(A, 'attack')); }
+  else if (m.leap) { act = 'walk'; f = Math.floor(time * actFps(A, 'walk') * 1.5); }
+  else if (m.d.boss && (t = activeTele(m))) { act = sheetHas(J, 'skill') ? 'skill' : 'attack'; f = Math.floor(clamp(t.t / t.dur, 0, 0.999) * actN(A, act)); }
+  else if (m.moving) { act = 'walk'; f = Math.floor(m.walk * 1.26 * actN(A, 'walk') / 6); }
+  else { act = 'idle'; f = Math.floor(time * actFps(A, 'idle') + ph); }
   const r = sheetFrame(J, act, f, ph); if (!r) return null;
   if (v.act !== r.act) { v.act = r.act; v.actT = time; }
-  return { act: r.act, f: r.f, tint, opacity };
+  const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = r.act; o.f = r.f; o.tint = tint; o.opacity = opacity; return o;
 }
 
 /* ---------- Visual ---------- */
@@ -257,16 +272,24 @@ function sheetPlane(json) {
   // anchor (feet) at the origin: mirroring with scale.x = -1 flips around the feet
   return new THREE.PlaneGeometry(fw, fh).translate(fw / 2 - ax, ay - fh / 2, 0);
 }
+const layerOf = r => (r.entry && r.entry.layer) || r.json.layer || 'body';
 // recs: ready load records (draw order sorted by layer). o.xray: player x-ray silhouette. o.glow: glow colour.
-// o.noCast: no sun shadow (ghosts). Each layer gets a sun-facing shadow caster sharing its geometry (and so its frame UVs).
+// o.noCast: no sun shadow (ghosts).
+// o.batch (single-layer mob/NPC sheets): the layer is one instance of the sheet's shared InstancedMesh
+//   (sprBatch in gfx-render.js: one draw + one shadow draw per sheet, whatever the number of entities);
+//   frame UVs, tint, flash, rim, dissolve and the sun-facing caster are per-instance data. No meshes of its own.
+// Otherwise each layer gets its own mesh + a sun-facing shadow caster sharing its geometry (and so its frame UVs).
+// Contact blobs are instances of one shared mesh for every entity (placeBlob).
 function makeSheetVis(recs, o = {}) {
-  const v = { sheet: true, key: recs.map(r => r.id).join('|'), layers: [], meshes: [], swings: 0, lastAtk: -1, act: null, actT: 0, sector: undefined };
-  recs = recs.slice().sort((a, b) => LAYER_ORDER.indexOf(a.json.layer || (a.entry && a.entry.layer) || 'body') - LAYER_ORDER.indexOf(b.json.layer || (b.entry && b.entry.layer) || 'body'));
+  const v = { sheet: true, recs: recs.slice(), batched: !!o.batch, layers: [], meshes: [], swings: 0, lastAtk: -1, act: null, actT: 0, sector: undefined };
+  const sorted = recs.slice().sort((a, b) => LAYER_ORDER.indexOf(a.json.layer || (a.entry && a.entry.layer) || 'body') - LAYER_ORDER.indexOf(b.json.layer || (b.entry && b.entry.layer) || 'body'));
   // layers share one transform; creation order = draw order (same depth, LessEqual)
-  for (const rec of recs) {
-    const geo = sheetPlane(rec.json), layer = (rec.entry && rec.entry.layer) || rec.json.layer || 'body';
+  for (const rec of sorted) {
+    const layer = layerOf(rec), base = { id: rec.id, rec, layer, rk: -1, ry: -1, r: { x: 0, y: 0, w: 0, h: 0 }, uv: [0, 0, 1, 1], on: false, geo: null, mat: null, mesh: null, xray: null, caster: null };
+    if (o.batch) { v.layers.push(base); continue; }
+    const geo = sheetPlane(rec.json);
     const mat = fxSpriteMat(rec.tex, layer === 'hair'); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
-    const L = { id: rec.id, rec, layer, geo, uv0: geo.attributes.uv.array.slice(), mat, mesh, xray: null, rk: '', caster: null };
+    const L = Object.assign(base, { geo, uv0: geo.attributes.uv.array.slice(), mat, mesh });
     if (!o.noCast) { L.caster = makeCaster(geo, rec.tex); v.meshes.push(L.caster); }
     if (o.xray) {
       const xm = spriteMat(rec.tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
@@ -276,41 +299,59 @@ function makeSheetVis(recs, o = {}) {
     }
     v.layers.push(L); v.meshes.push(mesh);
   }
-  v.shadow = new THREE.Mesh(FLATPLANE, SHADOWMAT); v.shadow.renderOrder = -1; scene.add(v.shadow); v.meshes.push(v.shadow);
   if (o.glow) { v.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: new THREE.Color(o.glow), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); scene.add(v.glow); v.meshes.push(v.glow); }
-  v.dispose = () => { for (const m of v.meshes) disposeMesh(m); for (const L of v.layers) L.geo.dispose(); };
+  v.dispose = () => { for (const m of v.meshes) disposeMesh(m); for (const L of v.layers) if (L.geo) L.geo.dispose(); };
   return v;
 }
+// Select frame f of `act` (direction d) on a layer. The UV rect is recomputed only when the frame changes.
 function setLayerFrame(L, act, d, f) {
   const j = L.rec.json, r0 = sheetFrame(j, act, f);
-  if (!r0) { L.mesh.visible = false; return null; }
-  const r = sheetRect(j, r0.act, d, r0.f), k = r.x + ',' + r.y;
-  L.mesh.visible = true;
-  if (L.rk !== k) {
-    L.rk = k; const uv = sheetUV(r, L.rec.texW, L.rec.texH), a = L.geo.attributes.uv, s = a.array, o = L.uv0;
-    for (let i = 0; i < s.length; i += 2) { s[i] = uv.u0 + o[i] * (uv.u1 - uv.u0); s[i + 1] = uv.v0 + o[i + 1] * (uv.v1 - uv.v0); }
-    a.needsUpdate = true;
-    const u = L.mat.userData.u; if (u) u.uFrameV.value.set(uv.v0, uv.v1);
+  if (!r0) { L.on = false; if (L.mesh) L.mesh.visible = false; return null; }
+  const r = sheetRect(j, r0.act, d, r0.f, L.r);
+  L.on = true; if (L.mesh) L.mesh.visible = true;
+  if (L.rk !== r.x || L.ry !== r.y) {
+    L.rk = r.x; L.ry = r.y;
+    const tw = L.rec.texW, th = L.rec.texH, u0 = r.x / tw, u1 = (r.x + r.w) / tw, v0 = 1 - (r.y + r.h) / th, v1 = 1 - r.y / th;
+    L.uv[0] = u0; L.uv[1] = v0; L.uv[2] = u1; L.uv[3] = v1;
+    if (L.geo) {
+      const a = L.geo.attributes.uv, s = a.array, o = L.uv0;
+      for (let i = 0; i < s.length; i += 2) { s[i] = u0 + o[i] * (u1 - u0); s[i + 1] = v0 + o[i + 1] * (v1 - v0); }
+      a.needsUpdate = true;
+      const u = L.mat.userData.u; if (u) u.uFrameV.value.set(v0, v1);
+    }
   }
   return r;
 }
-// Place all layers of a sheet vis at entity e with look st (see sprFrame). Returns the first layer's rect.
+// Place all layers of a sheet vis at entity e with look st (see sprFrame).
+// Returns a shared scratch { rect (first layer's rect), gh, z }: read it before the next call.
+const _PL = { rect: null, gh: 0, z: 0 };
 function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
   const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU + st.zoff, sx = flip ? -1 : 1;
   let rect = null;
   for (const L of v.layers) {
     const r = setLayerFrame(L, act, d, f); if (!rect) rect = r;
+    if (v.batched) { if (r) sprInstance(L, e.x, gh + z, e.y, sx, st, flip); continue; }
     L.mesh.scale.set(sx * st.sx, st.sy / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
     if (L.layer === 'hair') applyHairRamp(L.mat, hairHex);
     sprApply(L.mat, st, flip);
     if (L.caster) { L.caster.visible = L.mesh.visible && st.cast && st.a > 0.3; if (L.caster.visible) { L.caster.scale.set(sx, CAST_H, 1); L.caster.position.set(e.x, gh + z, e.y); L.caster.rotation.y = SPRF.cyaw; } }
     if (L.xray) { L.xray.scale.copy(L.mesh.scale); L.xray.position.copy(L.mesh.position); L.xray.rotation.y = cam.yaw; L.xray.visible = L.mesh.visible && !P.dead; }
   }
-  return { rect, gh, z };
+  _PL.rect = rect; _PL.gh = gh; _PL.z = z; return _PL;
 }
+function sameRecs(a, b) { if (!a || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
 function setVis(e, recs, o) {
-  const key = recs.map(r => r.id).join('|');
-  let v = VIS.get(e); if (!v || v.key !== key) { if (v) disposeVis(v); v = makeSheetVis(recs, o); VIS.set(e, v); }
+  let v = VIS.get(e); if (!v || !v.sheet || !sameRecs(v.recs, recs)) { if (v) disposeVis(v); v = makeSheetVis(recs, o); VIS.set(e, v); }
+  v.seen = frameNo; return v;
+}
+// Single-sheet variant for mobs/NPCs: no per-frame array or options allocation.
+const _REC1 = [null];
+function setVis1(e, rec, glow, noCast) {
+  let v = VIS.get(e);
+  if (!v || !v.sheet || v.recs.length !== 1 || v.recs[0] !== rec) {
+    if (v) disposeVis(v); _REC1[0] = rec;
+    v = makeSheetVis(_REC1, { glow, noCast, batch: !noCast && sprBatchOn() }); VIS.set(e, v);
+  }
   v.seen = frameNo; return v;
 }
 
@@ -326,59 +367,66 @@ function playerSheetRecs() {
   return recs.filter(recReady);
 }
 function usingSheetPlayer() { return !!(P && playerSheetRecs()); }
+const PLAYER_VIS_OPT = { xray: true };
 // Called from syncEntities. Returns false when the procedural sprite should be used.
 function syncSheetPlayer() {
   const recs = playerSheetRecs(); if (!recs) { P.sheetH = 0; return false; }
-  const v = setVis(P, recs, { xray: true }); v.pRecs = recs;
+  const v = setVis(P, recs, PLAYER_VIS_OPT); v.pRecs = recs;
   const body = v.layers[0].rec.json;
   v.sector = facingSector(P.fx === undefined ? 1 : P.fx, P.fy || 0, cam.yaw, v.sector);
-  const dir = sectorToDir(body, v.sector), pose = sheetPlayerPose(v, body);
+  const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body);
   const st = sprFrame(v, P, { tint: pose.tint });
-  const pl = placeSheetVis(v, P, pose.act, dir.d, pose.f, dir.flip, st, P.hair);
+  const pl = placeSheetVis(v, P, pose.act, dd, pose.f, dflip, st, P.hair);
   placeBlob(v, P.x, pl.gh, P.y, 0.45, pl.z, true);
   P.sheetH = v.layers[0].rec.visH;
+  const dg = v.diag || (v.diag = { ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer) });
+  dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.d = dd; dg.flip = dflip; dg.sector = v.sector; dg.rect = pl.rect;
   sprMotion(v, P, st, P.sheetH / PXU);
-  v.diag = { act: pose.act, f: pose.f, dir: dir.name, d: dir.d, flip: dir.flip, sector: v.sector, rect: pl.rect, ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer) };
   return true;
 }
 
 /* ---------- Mobs ---------- */
+const _MOBO = { tint: undefined, opacity: undefined, ghost: false };
 function syncSheetMob(m) {
   if (!SHEETS.indexReady) return false;
   const rec = sheetRec(m.type, 'mob', null); if (!recReady(rec)) { m.sheetH = 0; return false; }
-  const d = m.d, ghost = isGhost(m), v = setVis(m, [rec], { glow: d.glow, noCast: ghost }), J = rec.json;
+  const d = m.d, ghost = isGhost(m), v = setVis1(m, rec, d.glow, ghost), J = rec.json;
   const pose = sheetMobPose(m, v, J); if (!pose) { m.sheetH = 0; disposeVis(v); VIS.delete(m); return false; }
   v.sector = facingSector(m.fx === undefined ? (m.dir || 1) : m.fx, m.fy || 0, cam.yaw, v.sector);
-  const dir = sectorToDir(J, v.sector), st = sprFrame(v, m, { tint: pose.tint, opacity: pose.opacity, ghost });
-  const pl = placeSheetVis(v, m, pose.act, dir.d, pose.f, dir.flip, st);
+  const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
+  _MOBO.tint = pose.tint; _MOBO.opacity = pose.opacity; _MOBO.ghost = ghost;
+  const st = sprFrame(v, m, _MOBO);
+  const pl = placeSheetVis(v, m, pose.act, dd, pose.f, dflip, st), gh = pl.gh, pz = pl.z, rect = pl.rect;
   const human = d.spr === 'human', s = human ? ((d.look && d.look.scale) || 1) : (d.size || 1);
   const shR = (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85)) * (ghost ? 0.8 : 1);
-  placeBlob(v, m.x, pl.gh, m.y, shR, pl.z, st.a > 0.3 && st.dis < 0.6);
+  placeBlob(v, m.x, gh, m.y, shR, pz, st.a > 0.3 && st.dis < 0.6);
   m.sheetH = rec.visH;
   const hu = rec.visH / PXU;
-  if (v.glow) { v.glow.position.set(m.x, pl.gh + pl.z + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
+  if (v.glow) { v.glow.position.set(m.x, gh + pz + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
   sprMotion(v, m, st, hu);
-  v.diag = { act: pose.act, f: pose.f, dir: dir.name, flip: dir.flip, rect: pl.rect, id: rec.id };
+  const dg = v.diag || (v.diag = { id: rec.id }); dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.flip = dflip; dg.rect = rect;
   return true;
 }
 
 /* ---------- NPCs ---------- */
+const _NPCO = {};
 function npcTalking(n) { return typeof talkNPC !== 'undefined' && talkNPC === n && typeof $ === 'function' && $('dialog') && !$('dialog').hidden; }
 function syncSheetNPC(n) {
   if (!SHEETS.indexReady) return false;
   const rec = sheetRec(n.id, 'npc', null); if (!recReady(rec)) { n.sheetH = 0; return false; }
-  const v = setVis(n, [rec], {}), J = rec.json, talk = npcTalking(n);
+  const v = setVis1(n, rec, undefined, false), J = rec.json, talk = npcTalking(n);
   let fx = n.fx === undefined ? n.dir : n.fx, fy = n.fy === undefined ? 0.4 : n.fy;
   if (talk && P) { const dx = P.x - n.x, dy = P.y - n.y, dd = Math.hypot(dx, dy); if (dd > 0.05) { fx = dx / dd; fy = dy / dd; } }
   v.sector = facingSector(fx, fy, cam.yaw, v.sector);
   const want = talk && sheetHas(J, 'talk') ? 'talk' : 'idle', A = J.actions[want] || {};
   const r = sheetFrame(J, want, Math.floor(time * (A.fps || 6) + n.x)); if (!r) { n.sheetH = 0; disposeVis(v); VIS.delete(n); return false; }
-  const dir = sectorToDir(J, v.sector);
-  const st = sprFrame(v, n, {});
-  const pl = placeSheetVis(v, n, r.act, dir.d, r.f, dir.flip, st);
+  const ract = r.act, rf = r.f;
+  const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
+  const st = sprFrame(v, n, _NPCO);
+  const pl = placeSheetVis(v, n, ract, dd, rf, dflip, st);
   placeBlob(v, n.x, pl.gh, n.y, 0.45 * Math.max(1, ((n.look && n.look.scale) || 1) * 0.8), pl.z, true);
   n.sheetH = rec.visH;
-  v.diag = { act: r.act, f: r.f, dir: dir.name, id: rec.id };
+  const dg = v.diag || (v.diag = { id: rec.id }); dg.act = ract; dg.f = rf; dg.dir = dname;
   return true;
 }
 

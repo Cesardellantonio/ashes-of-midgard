@@ -1,0 +1,65 @@
+{
+ "id": "mob_bog_crone",
+ "layer": "mob",
+ "body": "bog_crone",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 2,
+ "frameW": 320,
+ "frameH": 272,
+ "maxFrames": 6,
+ "anchor": [
+  160,
+  226
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "walk": {
+   "row": 1,
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  },
+  "attack": {
+   "row": 2,
+   "frames": 6,
+   "fps": 12,
+   "loop": false
+  },
+  "hurt": {
+   "row": 3,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "dead": {
+   "row": 4,
+   "frames": 3,
+   "fps": 6,
+   "loop": false
+  },
+  "skill": {
+   "row": 5,
+   "frames": 6,
+   "fps": 10,
+   "loop": false
+  }
+ },
+ "hit": {
+  "attack": 3,
+  "skill": 4
+ },
+ "scale": 2.3
+}

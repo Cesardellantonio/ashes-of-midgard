@@ -1,0 +1,748 @@
+{
+ "version": 1,
+ "units": "1 unit = 1 game tile; +Y up; origin = base centre on the ground (y=0); front faces +Z",
+ "conventions": {
+  "vertexColors": "COLOR_0 = baked soft AO / moss / foliage shading; multiply into base colour (material.vertexColors = true)",
+  "sway": "materials named 'leaves*' or 'cloth_*' are wind-driven; per-vertex weight in attribute _SWAY (three.js: geometry.attributes._sway), 0 = rigid, 1 = free",
+  "emissive": "materials named 'emissive_*' glow (emissiveFactor / emissiveTexture) -> bloom layer",
+  "alpha": "leaves / cloth_banner use alphaMode MASK (alphaTest 0.5), double sided",
+  "light": "optional [x, y, z] (glTF axes, model space) where the engine should place a flame/light"
+ },
+ "models": [
+  {
+   "id": "dng_banner",
+   "file": "dng_banner.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.95,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Tattered keep banner (cloth_banner, alpha MASK) on a pole; _SWAY grows toward the cloth's bottom edge.",
+   "tris": 184,
+   "bytes": 47292,
+   "materials": [
+    "stone_keep",
+    "timber",
+    "iron",
+    "cloth_banner"
+   ]
+  },
+  {
+   "id": "dng_bones",
+   "file": "dng_bones.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.31,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Bone pile: skull, long bones, ribs.",
+   "tris": 926,
+   "bytes": 42968,
+   "materials": [
+    "bone",
+    "shadow"
+   ]
+  },
+  {
+   "id": "dng_brazier",
+   "file": "dng_brazier.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.95,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Iron bowl brazier on a tripod; emissive_coals. Flame sprite point at y=1.05.",
+   "tris": 377,
+   "bytes": 47292,
+   "materials": [
+    "iron",
+    "emissive_coals"
+   ],
+   "light": [
+    0,
+    1.05,
+    0
+   ]
+  },
+  {
+   "id": "dng_chain",
+   "file": "dng_chain.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.4,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Hanging chain with manacle from a wall plate (plate at the tile's +Z-back edge: glTF z=-0.42). _SWAY grows downward (engine may swing it).",
+   "tris": 998,
+   "bytes": 47064,
+   "materials": [
+    "iron"
+   ],
+   "wallMount": true
+  },
+  {
+   "id": "dng_grave_a",
+   "file": "dng_grave_a.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.97,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Arched headstone with raised cross over a dirt mound.",
+   "tris": 164,
+   "bytes": 28244,
+   "materials": [
+    "stone_keep",
+    "dirt"
+   ]
+  },
+  {
+   "id": "dng_grave_b",
+   "file": "dng_grave_b.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.11,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Leaning ringed cross on a plinth, broken fragment, mound.",
+   "tris": 292,
+   "bytes": 41640,
+   "materials": [
+    "stone_keep",
+    "dirt"
+   ]
+  },
+  {
+   "id": "dng_pillar",
+   "file": "dng_pillar.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 3.18,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Keep pillar: stepped base, octagonal shaft with bands, square capital. 3.2 high like the current pillars (throne map may tint it).",
+   "tris": 314,
+   "bytes": 45876,
+   "materials": [
+    "stone_keep",
+    "iron"
+   ]
+  },
+  {
+   "id": "dng_rubble_a",
+   "file": "dng_rubble_a.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 0.55,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dungeon rubble heap (keep stone).",
+   "tris": 420,
+   "bytes": 49280,
+   "materials": [
+    "stone_keep"
+   ]
+  },
+  {
+   "id": "dng_rubble_b",
+   "file": "dng_rubble_b.glb",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.38,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Fallen keep blocks, a few chips.",
+   "tris": 314,
+   "bytes": 39800,
+   "materials": [
+    "stone_keep"
+   ]
+  },
+  {
+   "id": "dng_wall",
+   "file": "dng_wall.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tileable keep wall block, exactly 1x1 tile, 2.5 high; carved blocks on all 4 sides (courses line up across neighbours).  Replaces the flat ghwall boxes.",
+   "tris": 656,
+   "bytes": 75384,
+   "materials": [
+    "stone_keep"
+   ]
+  },
+  {
+   "id": "rock_field_a",
+   "file": "rock_field_a.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.6,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Mossy field boulder.",
+   "tris": 122,
+   "bytes": 21252,
+   "materials": [
+    "stone"
+   ]
+  },
+  {
+   "id": "rock_field_b",
+   "file": "rock_field_b.glb",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.28,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Flat mossy slab.",
+   "tris": 134,
+   "bytes": 21984,
+   "materials": [
+    "stone"
+   ]
+  },
+  {
+   "id": "rock_field_c",
+   "file": "rock_field_c.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.16,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Standing stone with a pebble.",
+   "tris": 176,
+   "bytes": 24352,
+   "materials": [
+    "stone"
+   ]
+  },
+  {
+   "id": "rock_field_d",
+   "file": "rock_field_d.glb",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.44,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Rock cluster (one boulder, two stones).",
+   "tris": 216,
+   "bytes": 27544,
+   "materials": [
+    "stone"
+   ]
+  },
+  {
+   "id": "ruin_column_fallen",
+   "file": "ruin_column_fallen.glb",
+   "footprint": [
+    3,
+    2
+   ],
+   "height": 1.06,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Fallen fluted column: base + stump, broken shaft, capital. Ivy/grass cards use material 'leaves'.",
+   "tris": 402,
+   "bytes": 55160,
+   "materials": [
+    "stone_ruin",
+    "leaves"
+   ]
+  },
+  {
+   "id": "ruin_wall_a",
+   "file": "ruin_wall_a.glb",
+   "footprint": [
+    3,
+    1
+   ],
+   "height": 2.32,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Broken wall, tall end stepping down (field ruins). Ivy/grass cards use material 'leaves'.",
+   "tris": 1240,
+   "bytes": 153520,
+   "materials": [
+    "stone_ruin",
+    "leaves"
+   ]
+  },
+  {
+   "id": "ruin_wall_b",
+   "file": "ruin_wall_b.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 1.75,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Ruined wall corner (L shape). Ivy/grass cards use material 'leaves'.",
+   "tris": 1230,
+   "bytes": 153196,
+   "materials": [
+    "stone_ruin",
+    "leaves"
+   ]
+  },
+  {
+   "id": "ruin_wall_c",
+   "file": "ruin_wall_c.glb",
+   "footprint": [
+    3,
+    1
+   ],
+   "height": 2.46,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Ruined archway, half the arch collapsed. Ivy/grass cards use material 'leaves'.",
+   "tris": 1284,
+   "bytes": 157748,
+   "materials": [
+    "stone_ruin",
+    "leaves"
+   ]
+  },
+  {
+   "id": "throne_basalt_rock",
+   "file": "throne_basalt_rock.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 1.43,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Cracked hexagonal basalt cluster with glowing cracks (emissive_basalt).",
+   "tris": 128,
+   "bytes": 52576,
+   "materials": [
+    "emissive_basalt"
+   ]
+  },
+  {
+   "id": "throne_obsidian_pillar",
+   "file": "throne_obsidian_pillar.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 3.45,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Obsidian crystal pillar with ember veins (emissive_obsidian).",
+   "tris": 136,
+   "bytes": 86976,
+   "materials": [
+    "basalt",
+    "emissive_obsidian"
+   ]
+  },
+  {
+   "id": "town_barrel",
+   "file": "town_barrel.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.76,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Oak barrel with iron hoops.",
+   "tris": 236,
+   "bytes": 32056,
+   "materials": [
+    "planks",
+    "iron"
+   ]
+  },
+  {
+   "id": "town_crates",
+   "file": "town_crates.glb",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 1.12,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Stack of three crates and a sack.",
+   "tris": 620,
+   "bytes": 93496,
+   "materials": [
+    "planks",
+    "timber",
+    "planks_painted"
+   ]
+  },
+  {
+   "id": "town_fence",
+   "file": "town_fence.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.85,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Fence segment, 1 tile along X; posts at x=+-0.5 so segments chain.",
+   "tris": 48,
+   "bytes": 20060,
+   "materials": [
+    "planks"
+   ]
+  },
+  {
+   "id": "town_house_big",
+   "file": "town_house_big.glb",
+   "footprint": [
+    6,
+    5
+   ],
+   "height": 6.13,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Two-storey timber-framed house, jettied upper floor, red tiled gable roof (ridge along X), chimney. Door side faces glTF +Z (toward the default camera).",
+   "tris": 4128,
+   "bytes": 371336,
+   "materials": [
+    "stone",
+    "plaster",
+    "timber",
+    "planks",
+    "iron",
+    "glass",
+    "planks_painted",
+    "painted",
+    "roof"
+   ]
+  },
+  {
+   "id": "town_house_small",
+   "file": "town_house_small.glb",
+   "footprint": [
+    4,
+    3
+   ],
+   "height": 4.05,
+   "castShadow": true,
+   "sway": false,
+   "notes": "One-storey timber-framed cottage, red tiled roof.",
+   "tris": 1562,
+   "bytes": 201708,
+   "materials": [
+    "stone",
+    "plaster",
+    "timber",
+    "planks",
+    "iron",
+    "glass",
+    "planks_painted",
+    "painted",
+    "roof"
+   ]
+  },
+  {
+   "id": "town_lamp_post",
+   "file": "town_lamp_post.glb",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.24,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Iron lamp post, hanging lantern with emissive_lamp glass (light source at x=0.46, y=1.9 in glTF coords).",
+   "tris": 358,
+   "bytes": 45468,
+   "materials": [
+    "stone",
+    "iron",
+    "emissive_lamp"
+   ],
+   "light": [
+    0.46,
+    1.9,
+    0.0
+   ]
+  },
+  {
+   "id": "town_market_stall",
+   "file": "town_market_stall.glb",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 2.25,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Market stall with striped awning (cloth_awning sways lightly via _SWAY), baskets of produce.",
+   "tris": 1090,
+   "bytes": 104396,
+   "materials": [
+    "timber",
+    "planks",
+    "cloth_awning",
+    "painted",
+    "iron"
+   ]
+  },
+  {
+   "id": "town_well",
+   "file": "town_well.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 2.89,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Stone well with windlass, bucket and tiled roof.",
+   "tris": 366,
+   "bytes": 102332,
+   "materials": [
+    "stone",
+    "water",
+    "timber",
+    "iron",
+    "planks_painted",
+    "planks",
+    "roof"
+   ]
+  },
+  {
+   "id": "tree_autumn_a",
+   "file": "tree_autumn_a.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.07,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Autumn broadleaf, orange/red (fields).",
+   "tris": 648,
+   "bytes": 83192,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_autumn_b",
+   "file": "tree_autumn_b.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.33,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Slender autumn tree (fields).",
+   "tris": 614,
+   "bytes": 79996,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_dead_a",
+   "file": "tree_dead_a.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.59,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dead ash tree, grey charred bark, ember tips (emissive_ember).",
+   "tris": 1357,
+   "bytes": 87624,
+   "materials": [
+    "bark_ash",
+    "emissive_ember"
+   ]
+  },
+  {
+   "id": "tree_dead_b",
+   "file": "tree_dead_b.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 2.23,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Small dead ash snag, ember tips.",
+   "tris": 515,
+   "bytes": 45684,
+   "materials": [
+    "bark_ash",
+    "emissive_ember"
+   ]
+  },
+  {
+   "id": "tree_green_a",
+   "file": "tree_green_a.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.6,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Round full broadleaf (town/fields).",
+   "tris": 780,
+   "bytes": 93208,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_green_b",
+   "file": "tree_green_b.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.58,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Tall oval broadleaf (town/fields).",
+   "tris": 654,
+   "bytes": 81936,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_green_c",
+   "file": "tree_green_c.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.15,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Low spreading broadleaf (town/fields).",
+   "tris": 714,
+   "bytes": 87004,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_oak_dark",
+   "file": "tree_oak_dark.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 4.87,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Dark gnarled oak (Withered Wood).",
+   "tris": 808,
+   "bytes": 93604,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_pine_a",
+   "file": "tree_pine_a.glb",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 5.26,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Dark fir, 5 tiers (Withered Wood).",
+   "tris": 401,
+   "bytes": 52224,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "tree_pine_b",
+   "file": "tree_pine_b.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.46,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Smaller dark fir (Withered Wood).",
+   "tris": 351,
+   "bytes": 49808,
+   "materials": [
+    "bark",
+    "leaves"
+   ]
+  },
+  {
+   "id": "waystone",
+   "file": "waystone.glb",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.25,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Runed obelisk on a round stone plinth.  emissive_rune = glyphs, channel ring and bar (bloom); flame sprite point at y=3.2.",
+   "tris": 1018,
+   "bytes": 107736,
+   "materials": [
+    "stone",
+    "emissive_rune",
+    "stone_rune"
+   ],
+   "light": [
+    0,
+    3.2,
+    0
+   ]
+  }
+ ]
+}

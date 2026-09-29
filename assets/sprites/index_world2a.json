@@ -1,0 +1,88 @@
+{
+ "sheets": [
+  {
+   "id": "mob_rime_poring",
+   "layer": "mob",
+   "body": "rime_poring",
+   "variant": null
+  },
+  {
+   "id": "mob_snow_wolf",
+   "layer": "mob",
+   "body": "snow_wolf",
+   "variant": null
+  },
+  {
+   "id": "mob_ice_wraith",
+   "layer": "mob",
+   "body": "ice_wraith",
+   "variant": null
+  },
+  {
+   "id": "mob_shell_knight",
+   "layer": "mob",
+   "body": "shell_knight",
+   "variant": null
+  },
+  {
+   "id": "mob_mire_leech",
+   "layer": "mob",
+   "body": "mire_leech",
+   "variant": null
+  },
+  {
+   "id": "mob_wisp",
+   "layer": "mob",
+   "body": "wisp",
+   "variant": null
+  },
+  {
+   "id": "mob_bog_toad",
+   "layer": "mob",
+   "body": "bog_toad",
+   "variant": null
+  },
+  {
+   "id": "mob_cave_bat",
+   "layer": "mob",
+   "body": "cave_bat",
+   "variant": null
+  },
+  {
+   "id": "mob_crystal_spider",
+   "layer": "mob",
+   "body": "crystal_spider",
+   "variant": null
+  },
+  {
+   "id": "mob_magma_slime",
+   "layer": "mob",
+   "body": "magma_slime",
+   "variant": null
+  },
+  {
+   "id": "mob_prism_poring",
+   "layer": "mob",
+   "body": "prism_poring",
+   "variant": null
+  },
+  {
+   "id": "mob_fenrir_whelp",
+   "layer": "mob",
+   "body": "fenrir_whelp",
+   "variant": null
+  },
+  {
+   "id": "mob_fafnir",
+   "layer": "mob",
+   "body": "fafnir",
+   "variant": null
+  },
+  {
+   "id": "mob_fenrir",
+   "layer": "mob",
+   "body": "fenrir",
+   "variant": null
+  }
+ ]
+}
