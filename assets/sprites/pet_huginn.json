@@ -1,0 +1,80 @@
+{
+ "id": "pet_huginn",
+ "layer": "pet",
+ "body": "huginn",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 96,
+ "frameH": 112,
+ "maxFrames": 6,
+ "anchor": [
+  48,
+  92
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "fly": {
+   "row": 1,
+   "frames": 6,
+   "fps": 12,
+   "loop": true
+  },
+  "attack": {
+   "row": 2,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "perch": {
+   "row": 3,
+   "frames": 2,
+   "fps": 2,
+   "loop": true
+  }
+ },
+ "hit": {
+  "attack": 3
+ },
+ "owner": "wolfhunter",
+ "perchOffset": {
+  "S": [
+   -19,
+   -36,
+   0
+  ],
+  "SE": [
+   -16,
+   -29,
+   1
+  ],
+  "E": [
+   -4,
+   -24,
+   1
+  ],
+  "NE": [
+   10,
+   -26,
+   1
+  ],
+  "N": [
+   19,
+   -32,
+   1
+  ]
+ },
+ "flyZ": 30.1
+}

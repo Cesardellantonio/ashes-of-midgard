@@ -72,7 +72,7 @@ function genMap(id) {
   if (d.layout) d.layout(m, { set, clearC, clearR, carve, rng, T, w, h, d });
   if (m.way) set(Math.floor(m.way.x), Math.floor(m.way.y), T.WAY);
   // 3. NPCs and bounty boards declared in data
-  for (const k in NPCS) { const n = NPCS[k]; if (n.map === id) m.npcs.push({ id: k, name: n.name, title: n.title, x: n.x, y: n.y, dir: n.dir || 1, look: n.look }); }
+  for (const k in NPCS) { const n = NPCS[k]; if (n.map === id && !n.show && !n.at) m.npcs.push({ id: k, name: n.name, title: n.title, x: n.x, y: n.y, dir: n.dir || 1, look: n.look }); } // `show` / `at` NPCs: npcSync()
   if (m.way) m.objs.push({ kind: 'way', x: m.way.x, y: m.way.y, name: 'Waystone' });
   for (const k in BOARDS) { const b = BOARDS[k]; if (b.map === id) m.objs.push({ kind: 'board', board: k, name: b.name, title: b.title, x: b.x, y: b.y }); }
   for (const wp of m.warps) set(wp.x, wp.y, 0);
@@ -202,13 +202,36 @@ function newPlayer(name, hair, gender, hairStyle) {
     hp: 1, sp: 1, zeny: 150, inv: [], equip: { weapon: null, shield: null, head: null, body: null, boots: null, acc: null },
     hot: [{ k: 'skill', id: 'first_aid' }, null, null, null, null, null, { k: 'item', id: 'fly_wing' }, { k: 'item', id: 'butterfly_wing' }, { k: 'item', id: 'red_potion' }],
     map: 'emberhold', x: 18.5, y: 22.5, lastWay: { map: 'emberhold', x: 18.5, y: 20.5 }, kindled: { emberhold: true },
-    flags: { shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {}, seen: { emberhold: true } }, lostZeny: null, uid: 1, playTime: 0, quests: questNewState(),
+    flags: { shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {}, seen: { emberhold: true }, kills: {}, cards: {}, rep: {}, deaths: 0 }, lostZeny: null, uid: 1, playTime: 0, quests: questNewState(),
+    titles: [], title: null, ach: {},   // round 4: earned titles (TITLES ids), the one shown under your name, achievements { id: day }
+    storage: [], mail: [],              // round 5: shared storage (any storage keeper), mailbox (rewards that did not fit in the bag)
   };
 }
+/* Dynamic NPCs (round 4). An NPCS entry with `show()` and/or `at()` -> [x, y] | null is placed and moved here
+   instead of by genMap: quest givers who appear with the story, escorts' home spots, Odin's new name. */
+function npcSync() {
+  if (!map || !P) return;
+  for (const k in NPCS) {
+    const D = NPCS[k]; if (!D.show && !D.at) continue;
+    let want = null; try { want = D.map === map.id && (!D.show || D.show()) ? (D.at ? D.at() : [D.x, D.y]) : null; } catch (e) { want = null; }
+    const n = map.npcs.find(e => e.id === k && !e.escort && !e.actor);
+    if (want && !n) map.npcs.push({ id: k, name: npcName(k), title: D.title, x: want[0], y: want[1], dir: D.dir || 1, look: D.look });
+    else if (!want && n) map.npcs.splice(map.npcs.indexOf(n), 1);
+    else if (want && n && (n.x !== want[0] || n.y !== want[1])) { n.x = want[0]; n.y = want[1]; n.path = null; }
+  }
+  for (const n of map.npcs) { const D = NPCS[n.id]; if (D && D.nameFn) { n.name = npcName(n.id); n.title = D.titleFn ? D.titleFn() : n.title; } }
+}
+function npcName(k) { const D = NPCS[k]; return D ? (D.nameFn ? D.nameFn() : D.name) : k; }
 function resetRuntime() {
   Object.assign(P, { stamina: 100, stamT: 0, iframes: 0, dodgeT: 0, blocking: false, blockStart: 0, combo: 0, comboT: 0, swingT: 0, queued: null, charge: -1, fx: 1, fy: 0.35, path: null, target: null, goal: null, atkCD: 0, castT: 0, castMax: 0, casting: null, pending: null, cd: {}, buffs: {}, spheres: 0, reviveCD: 0, dash: null, procCD: 0, dir: 1, walk: 0, moving: false, atkAnim: -1, dead: false, sitting: false, hurtT: 0, hpT: 0, spT: 0, potCD: 0, deadT: 0, kind: 'player' });
 }
 function refineAtk(t) { return t.lvl < 10 ? 2 : t.lvl < 20 ? 3 : 5; }
+// Base numbers of a piece of gear with its crafted quality (it.q, QUALITY in js/data/recipes.js) and refine level.
+function itemBase(it) {
+  const t = ITEMS[it.id], qm = it.q && QUALITY[it.q] ? QUALITY[it.q].mul : 1, r = it.refine || 0;
+  if (t.slot === 'weapon') return { atk: Math.round(t.atk * qm) + r * refineAtk(t), matk: Math.round((t.matk || 0) * qm) + (MAGICWEAPON.includes(t.wtype) ? r * 3 : 0), def: 0, mdef: 0 };
+  return { atk: 0, matk: 0, def: Math.round((t.def || 0) * qm) + r, mdef: Math.round((t.mdef || 0) * qm) };
+}
 function calcStats() {
   const b = { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0, atk: 0, matk: 0, def: 0, mdef: 0, hit: 0, flee: 0, crit: 0, aspd: 0, leech: 0, maxhp: 0, maxsp: 0, maxhpPct: 0, dmgRed: 0, move: 0 };
   const add = o => { if (o) for (const k in o) b[k] = (b[k] || 0) + o[k]; };
@@ -216,8 +239,9 @@ function calcStats() {
   for (const s of SLOTS) {
     const it = P.equip[s]; if (!it) continue; const t = ITEMS[it.id];
     add(t.bonus); for (const a of it.affixes || []) b[a.s] = (b[a.s] || 0) + a.v; for (const c of it.cards || []) add(ITEMS[c].bonus);
-    if (s === 'weapon') { wtype = t.wtype; watk = t.atk + (it.refine || 0) * refineAtk(t); wmatk = (t.matk || 0) + (MAGICWEAPON.includes(t.wtype) ? (it.refine || 0) * 3 : 0); }
-    else { def += (t.def || 0) + (it.refine || 0); mdef += t.mdef || 0; }
+    const ib = itemBase(it);
+    if (s === 'weapon') { wtype = t.wtype; watk = ib.atk; wmatk = ib.matk; }
+    else { def += ib.def; mdef += ib.mdef; }
   }
   let welem = 'neutral', endowAmp = 0, castCut = 0, cdCut = 0;
   for (const k in P.buffs) {
@@ -262,7 +286,7 @@ function makeItem(id, o = {}) {
   return it;
 }
 function rollEquip(ilvl) {
-  const pool = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= ilvl + 3);
+  const pool = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && !t.crafted && t.lvl <= ilvl + 3);
   const weights = pool.map(t => 1 / (1 + Math.abs(ilvl - t.lvl) * 0.25));
   let r = Math.random() * weights.reduce((a, b) => a + b, 0), t = pool[0];
   for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) { t = pool[i]; break; } }
@@ -278,6 +302,7 @@ function itemName(it) {
   const t = ITEMS[it.id]; if (t.type !== 'equip') return t.name;
   let n = it.name || t.name;
   if (it.rarity === 'magic' && it.affixes.length) { const a1 = AFFIXES.find(a => a.s === it.affixes[0].s); const a2 = it.affixes[1] && AFFIXES.find(a => a.s === it.affixes[1].s); n = (a1 ? a1.pre + ' ' : '') + t.name + (a2 ? ' ' + a2.suf : ''); }
+  if (it.q > 1 && QUALITY[it.q]) n = QUALITY[it.q].name + ' ' + n;
   if (it.cards && it.cards.length) n = n + ' ✦';
   if (it.refine) n = `+${it.refine} ${n}`;
   if (it.slotsN) n += ` [${it.slotsN}]`;
@@ -286,12 +311,44 @@ function itemName(it) {
 const rarityOf = it => { const t = ITEMS[it.id]; return t.type === 'equip' ? it.rarity : t.type === 'card' ? 'card' : t.type === 'key' ? 'key' : 'common'; };
 const stackable = id => ITEMS[id].type !== 'equip';
 function countItem(id) { let n = 0; for (const it of P.inv) if (it.id === id) n += it.qty || 1; return n; }
+// Stackables fill their existing stacks up to STACK_MAX (999), then open new ones. When the bag runs out of slots,
+// what did fit stays in the bag, `it.qty` keeps the rest and false is returned (callers drop or mail `it`).
 function addItem(it, quiet) {
-  if (stackable(it.id)) { const ex = P.inv.find(x => x.id === it.id); if (ex) { ex.qty += it.qty; UI.dirty = true; return true; } }
-  if (P.inv.length >= 48) { if (!quiet) log('Your bag is full.', 'warn'); return false; }
+  if (stackable(it.id)) {
+    let left = it.qty || 1;
+    for (const ex of P.inv) { if (left <= 0) break; if (ex.id === it.id && ex.qty < STACK_MAX) { const k = Math.min(left, STACK_MAX - ex.qty); ex.qty += k; left -= k; } }
+    while (left > 0) {
+      if (P.inv.length >= BAG_SLOTS) { it.qty = left; UI.dirty = true; if (!quiet) log('Your bag is full.', 'warn'); return false; }
+      const n = Math.min(left, STACK_MAX); left -= n;
+      if (!left) { it.qty = n; P.inv.push(it); } else P.inv.push({ uid: uidc++, id: it.id, qty: n });
+    }
+    UI.dirty = true; return true;
+  }
+  if (P.inv.length >= BAG_SLOTS) { if (!quiet) log('Your bag is full.', 'warn'); return false; }
   P.inv.push(it); UI.dirty = true; return true;
 }
-function takeItem(id, n = 1) { const ex = P.inv.find(x => x.id === id); if (!ex) return false; ex.qty -= n; if (ex.qty <= 0) P.inv.splice(P.inv.indexOf(ex), 1); UI.dirty = true; return true; }
+// Can n of this item go into the bag right now (existing stacks first)?
+function bagRoom(id, n = 1) {
+  if (!stackable(id)) return P.inv.length + n <= BAG_SLOTS;
+  let free = 0; for (const ex of P.inv) if (ex.id === id) free += STACK_MAX - ex.qty;
+  return n <= free + (BAG_SLOTS - P.inv.length) * STACK_MAX;
+}
+// Takes n across every stack of the item (the last stacks first). False when there is none.
+function takeItem(id, n = 1) {
+  if (!P.inv.some(x => x.id === id)) return false;
+  let left = n;
+  for (let i = P.inv.length - 1; i >= 0 && left > 0; i--) { const ex = P.inv[i]; if (ex.id !== id) continue; const k = Math.min(left, ex.qty || 1); ex.qty = (ex.qty || 1) - k; left -= k; if (ex.qty <= 0) P.inv.splice(i, 1); }
+  UI.dirty = true; return true;
+}
+// Removes n of an item: stacks, loose equipment in the bag, then equipped pieces (quest turn-ins, choices).
+function removeItems(id, n = 1) {
+  if (stackable(id)) { const c = Math.min(n, countItem(id)); if (c) takeItem(id, c); return c; }
+  let left = n;
+  for (let i = P.inv.length - 1; i >= 0 && left > 0; i--) if (P.inv[i].id === id) { P.inv.splice(i, 1); left--; }
+  for (const s of SLOTS) if (left > 0 && P.equip[s] && P.equip[s].id === id) { P.equip[s] = null; left--; calcStats(); }
+  UI.dirty = true; return n - left;
+}
+const hasItem = id => countItem(id) > 0 || SLOTS.some(s => P.equip[s] && P.equip[s].id === id);
 function findItem(uid) { for (const it of P.inv) if (it.uid === uid) return it; for (const s of SLOTS) if (P.equip[s] && P.equip[s].uid === uid) return P.equip[s]; return null; }
 function canEquip(it) {
   const t = ITEMS[it.id]; if (t.type !== 'equip') return 'That cannot be equipped.';
@@ -307,14 +364,15 @@ function equip(it) {
   if (TWOHANDED.includes(t.wtype) && P.equip.shield) { P.inv.push(P.equip.shield); P.equip.shield = null; log(`You sling your shield to use the ${WNAME[t.wtype].toLowerCase()}.`, 'sys'); }
   Sfx.equip(); calcStats();
 }
-function unequip(slot) { const it = P.equip[slot]; if (!it) return; if (P.inv.length >= 48) { log('Your bag is full.', 'warn'); return; } P.equip[slot] = null; P.inv.push(it); Sfx.equip(); calcStats(); }
+function unequip(slot) { const it = P.equip[slot]; if (!it) return; if (P.inv.length >= BAG_SLOTS) { log('Your bag is full.', 'warn'); return; } P.equip[slot] = null; P.inv.push(it); Sfx.equip(); calcStats(); }
 function useItem(it) {
   const t = ITEMS[it.id];
   if (t.type === 'equip') { equip(it); return; }
   if (t.type === 'card') { UI.socketCard = it.uid; openWin('inv'); UI.dirty = true; return; }
   if (t.type !== 'use' || P.dead) return;
   if (P.potCD > 0) return; P.potCD = 0.25;
-  if (t.heal) { if (P.hp >= S.maxhp) { log('You are already at full health.', 'sys'); return; } healP(randi(t.heal[0], t.heal[1])); burst(P.x, P.y, 26, '#ff6a6a', 8, 1.2); }
+  if (t.buff) { const B = t.buff; addBuff(B.id, B.name, B.icon || 'food', B.secs, B.bonus); if (t.heal) healP(randi(t.heal[0], t.heal[1])); floatText(P, B.name, 'info'); burst(P.x, P.y, 26, t.color || '#ffd070', 10, 1.4); log(`${t.name}: ${Object.entries(B.bonus).map(([k, v]) => bonusLine(k, v)).join(', ')} for ${Math.round(B.secs / 60)} min.`, 'sys'); }
+  else if (t.heal) { if (P.hp >= S.maxhp) { log('You are already at full health.', 'sys'); return; } healP(randi(t.heal[0], t.heal[1])); burst(P.x, P.y, 26, '#ff6a6a', 8, 1.2); }
   else if (t.sp) { if (P.sp >= S.maxsp) { log('Your SP is already full.', 'sys'); return; } const a = randi(t.sp[0], t.sp[1]); P.sp = Math.min(S.maxsp, P.sp + a); floatText(P, '+' + a, 'sp'); burst(P.x, P.y, 26, '#6a9aff', 8, 1.2); }
   else if (t.effect === 'full') { P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffc070'); }
   else if (t.effect === 'fly') { if (map.d.safe) { log('The Waystone’s pull is too strong here.', 'sys'); return; } const s = randomSpot(4); if (!s) return; P.x = s.x; P.y = s.y; stopAll(); snapCam(); Sfx.warp(); burst(P.x, P.y, 20, '#e8e0c8', 16, 2); }
@@ -329,6 +387,8 @@ function makeMob(type, x, y, o = {}) {
   const d = MOBS[type];
   return { kind: 'mob', type, d, x, y, hx: x, hy: y, hp: d.hp, maxhp: d.hp, state: 'idle', t: rand(0.5, 4), path: null, atkCD: 0, dir: 1, fx: Math.random() < 0.5 ? 1 : -1, fy: 0.3, walk: rand(0, 6), moving: false, anim: rand(0, 10), hitFlash: 0, frozen: 0, summoned: !!o.summoned, abil: {}, dead: false, deathT: 0, repath: 0, atkAnim: -1, id: uidc++ };
 }
+// A named variant (MOBS[key].variant): keeps the base type for its sprite sheet and card, uses the variant's data.
+function makeVariant(key, x, y) { const V = MOBS[key]; const m = makeMob(V.base, x, y); m.d = V; m.hp = m.maxhp = V.hp; m.variant = key; return m; }
 function randomSpot(minFromEntry = 8) {
   for (let i = 0; i < 400; i++) {
     const x = randi(2, map.w - 3), y = randi(2, map.h - 3);
@@ -359,12 +419,12 @@ const mobFlee = m => Math.floor((m.d.lvl * 1.4 + 5 + (m.d.flee || 0)) * (m.slow 
 const mobDef = m => m.d.def * (m.dispel > 0 ? 0.5 : 1), mobMdef = m => m.d.mdef * (m.dispel > 0 ? 0.5 : 1);
 const mobHitStat = m => m.d.lvl * 2 + 12;
 function aggro(m) {
-  if (m.dead) return;
+  if (m.dead || m.d.inert) return;
   if (m.state !== 'chase') { m.state = 'chase'; m.repath = 0; }
-  if (m.d.boss && !m.announced) announceBoss(m);
+  if ((m.d.boss || m.d.elite) && !m.announced) announceBoss(m);
 }
 function physHit(m, mul, o = {}) {
-  if (!m || m.dead) return;
+  if (!m || m.dead || m.d.inert) return;
   aggro(m);
   const crit = !o.sure && Math.random() * 100 < S.crit;
   if (!crit && !o.sure && !(m.mark > 0) && Math.random() * 100 >= hitChance(S.hit + (o.hit || 0), mobFlee(m), 100)) { floatText(m, 'Miss', 'miss'); Sfx.miss(); return; }
@@ -377,7 +437,7 @@ function physHit(m, mul, o = {}) {
   finishHit(m, dmg, crit, o);
 }
 function magicHit(m, mul, el, o = {}) {
-  if (!m || m.dead) return;
+  if (!m || m.dead || m.d.inert) return;
   aggro(m);
   let dmg = rand(S.matkMin, S.matkMax) * mul * elemMod(el, mobElem(m));
   if (o.undeadBonus && isUndeadish(m)) dmg *= 1 + o.undeadBonus;
@@ -388,7 +448,7 @@ function magicHit(m, mul, el, o = {}) {
 }
 // Flat damage that ignores DEF/MDEF but not elements (traps, the raven, Sanctuary, Oath of Tyr).
 function trueHit(m, dmg, el, o = {}) {
-  if (!m || m.dead) return;
+  if (!m || m.dead || m.d.inert) return;
   aggro(m); m.lastMagic = false;
   finishHit(m, dmg * elemMod(el || 'neutral', mobElem(m)), false, o);
 }
@@ -510,13 +570,16 @@ function killMob(m) {
   if (m.summoned) { b = Math.ceil(b * 0.3); j = Math.ceil(j * 0.3); }
   gainExp(b, j);
   for (const [id, ch] of d.drops || []) if (Math.random() < ch) dropItem(makeItem(id), m);
-  if (Math.random() < (d.boss ? 1 : 0.5)) dropZeny(d.lvl * randi(2, 6) + randi(1, 6) + (d.boss ? d.lvl * 60 : 0), m);
-  if (Math.random() < (d.boss ? 0.25 : 0.012)) dropItem(makeItem('c_' + m.type), m);
+  // Round 5 economy pass: zeny grows a little faster than linearly with level (see docs/CONTENT.md, economy table).
+  if (Math.random() < (d.boss ? 1 : 0.6)) dropZeny(Math.round((10 + d.lvl * 4 + d.lvl * d.lvl * 0.04) * rand(0.6, 1.4)) + (d.boss ? d.lvl * 60 : 0), m);
+  if (ITEMS['c_' + m.type] && Math.random() < (d.boss ? 0.25 : d.elite ? 0.1 : 0.012)) dropItem(makeItem('c_' + m.type), m);
   if (Math.random() < (d.boss ? 1 : 0.07)) dropItem(rollEquip(d.lvl), m);
   for (const qi of questDropsFor(m)) dropItem(makeItem(qi), m);
   burst(m.x, m.y, d.h * 0.5, d.col || (d.look && d.look.body) || '#888', 14, 2.2);
+  const K = P.flags.kills = P.flags.kills || {}; K[m.type] = (K[m.type] || 0) + 1; if (m.variant) K[m.variant] = (K[m.variant] || 0) + 1;
   if (d.boss) bossDefeated(m);
-  else if (!m.summoned) { const type = m.type, mid = map.id; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type); }); }
+  else if (d.elite) { if (bossShown === m) { $('bossbar').hidden = true; bossShown = null; } banner(d.name, 'has fallen', 'band'); Sfx.victory(); }
+  else if (!m.summoned && !m.variant) { const type = m.type, mid = map.id; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type); }); }
   questEvent('kill', m);
   if (P.target === m) P.target = null;
   Sfx.kill();
@@ -545,6 +608,7 @@ function pickup(d) {
   if (!addItem(d.item)) return;
   P.pickupAt = time; // sprite sheets play the "pickup" action
   const r = rarityOf(d.item);
+  if (r === 'card' && ITEMS[d.item.id].mob) { P.flags.cards = P.flags.cards || {}; P.flags.cards[ITEMS[d.item.id].mob] = true; }
   log(`You got ${itemName(d.item)}${d.item.qty > 1 ? ' ×' + d.item.qty : ''}.`, r === 'common' ? 'loot' : r);
   Sfx.pickup(); drops.splice(drops.indexOf(d), 1);
   questEvent('pickup', d.item.id);
@@ -622,7 +686,7 @@ function jobChange(cls) {
   for (const s of C.skills) P.skills[s] = P.skills[s] || 0;
   const gifts = [].concat(C.starter || [], C.gifts || []), got = [];
   for (const id of gifts) {
-    const it = makeItem(id); if (!addItem(it)) { dropItem(it, P); continue; } got.push(ITEMS[id].name);
+    const it = makeItem(id); if (!addItem(it, true)) { mailItem(it, 'Vidar'); continue; } got.push(ITEMS[id].name);
     // Equip the gift unless you already hold something better that the new class can still use.
     const t = ITEMS[id], cur = P.equip[t.slot], ct = cur && ITEMS[cur.id];
     const power = (tt, r) => tt.slot === 'weapon' ? tt.atk + (tt.matk || 0) + (r || 0) * refineAtk(tt) : (tt.def || 0) + (tt.mdef || 0) + (r || 0);
@@ -642,7 +706,7 @@ function announceBoss(m) {
   if (m.d.intro) log(m.d.intro, 'boss');
 }
 function bossDefeated(m) {
-  const f = P.flags; f.bosses[m.type] = true;
+  const f = P.flags; if (!m.variant) f.bosses[m.type] = true;
   $('bossbar').hidden = true; bossShown = null;
   for (const s of mobs) if (s.summoned && !s.dead) { s.dead = true; s.deathT = 0; burst(s.x, s.y, 10, '#555', 8, 1.5); }
   const from = t => t.unique && (t.boss === m.type || (t.bosses && t.bosses.includes(m.type)));
@@ -650,10 +714,11 @@ function bossDefeated(m) {
   const any = Object.values(ITEMS).filter(t => from(t) && t.boss === m.type);
   const u = (usable.length ? pick(usable) : pick(any)); if (u) dropItem(makeItem(u.id), m);
   dropItem(rollEquip(m.d.lvl + 4), m); dropItem(makeItem('ygg_ember'), m);
-  if (m.d.shard) { const sh = makeItem(m.d.shard); addItem(sh, true); f.shards[m.d.shard] = true; log(`You take the ${ITEMS[m.d.shard].name}.`, 'unique'); }
-  f.lore[m.type] = true; if (m.d.lore) f.lore[m.d.lore] = true;
+  if (m.d.shard) { const sh = makeItem(m.d.shard); giveItem(sh, 'the Shardbearer'); f.shards[m.d.shard] = true; log(`You take the ${ITEMS[m.d.shard].name}.`, 'unique'); }
+  if (!m.variant) f.lore[m.type] = true; if (m.d.lore) f.lore[m.d.lore] = true;
+  if (m.variant) { f.variants = f.variants || {}; f.variants[m.variant] = (f.variants[m.variant] || 0) + 1; }
   zones = zones.filter(z => !z.hostile);
-  if (m.type === 'ashen_king') { f.kingSlain = true; banner('MVP', 'The Ashen King is dead · The Heart of Yggdrasil stirs', 'mvp'); log('Behind the throne, something that was dead begins, very faintly, to glow.', 'boss'); log('Past the Heart, the broken Bifrost flickers awake.', 'boss'); }
+  if (m.type === 'ashen_king' && !m.variant) { f.kingSlain = true; banner('MVP', 'The Ashen King is dead · The Heart of Yggdrasil stirs', 'mvp'); log('Behind the throne, something that was dead begins, very faintly, to glow.', 'boss'); log('Past the Heart, the broken Bifrost flickers awake.', 'boss'); }
   else if (m.d.shard) banner('MVP', 'Shardbearer felled · ' + ITEMS[m.d.shard].name, 'mvp');
   else banner('MVP', `${m.d.name} felled`, 'mvp');
   if (m.d.outro) log(m.d.outro, 'boss');
@@ -717,7 +782,15 @@ function telegraph(x, y, r, dur, boom, m, a, grp) { const t = { x, y, r, t: 0, d
 /* =========================================================
    Effects
    ========================================================= */
-function burst(x, y, z, col, n, spd) { for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, s = rand(0.3, 1) * spd; parts.push({ x, y, z, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vz: rand(20, 90), life: rand(0.4, 0.9), max: 0.9, col, size: rand(1.5, 3.5) }); } }
+// Particles are pooled: update() swap-removes dead ones into PARTS_FREE and burst() reuses them (perf round 2).
+const PARTS_FREE = [];
+function burst(x, y, z, col, n, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.283, s = rand(0.3, 1) * spd, p = PARTS_FREE.pop() || {};
+    p.x = x; p.y = y; p.z = z; p.vx = Math.cos(a) * s; p.vy = Math.sin(a) * s; p.vz = rand(20, 90); p.life = rand(0.4, 0.9); p.max = 0.9; p.col = col; p.size = rand(1.5, 3.5); p.float = false;
+    parts.push(p);
+  }
+}
 function ring(x, y, r, col) { fxs.push({ k: 'ring', x, y, r, col, t: 0, dur: 0.45 }); }
 function pillar(e, col, big) { fxs.push({ k: 'pillar', e, col, t: 0, dur: big ? 1.4 : 0.9, big }); }
 function strike(x, y) { fxs.push({ k: 'strike', x, y, t: 0, dur: 0.22, seed: Math.random() * 1000 }); burst(x, y, 4, '#fff6a0', 10, 3); Sfx.zap(); }
@@ -964,6 +1037,7 @@ function warpLocked(wp) { const L = wp && wp.lock && WARP_LOCKS[wp.lock]; return
 function updateMob(m, dt) {
   if (m.dead) { m.deathT += dt; return; }
   m.anim += dt; if (m.hitFlash > 0) m.hitFlash -= dt;
+  if (m.d.inert) { m.moving = false; return; }
   if (m.atkAnim >= 0) { m.atkAnim += dt * 3; if (m.atkAnim > 1) m.atkAnim = -1; }
   if (m.snare > 0) m.snare -= dt; if (m.slow > 0) m.slow -= dt; if (m.dispel > 0) m.dispel -= dt; if (m.mark > 0) m.mark -= dt;
   if (m.frozen > 0) { m.frozen -= dt; m.moving = false; return; }
@@ -1017,7 +1091,8 @@ function update(dt) {
   time += dt;
   for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { timers.splice(i, 1); t.fn(); } }
   if (started) { updatePlayer(dt); updateZones(dt); questTick(dt); }
-  for (const m of mobs) updateMob(m, dt);
+  if (typeof CINE !== 'undefined' && CINE.active) { if (P) P.iframes = Math.max(P.iframes || 0, 0.3); } // scenes freeze the monsters and shield you
+  else for (const m of mobs) updateMob(m, dt);
   for (let i = mobs.length - 1; i >= 0; i--) if (mobs[i].dead && mobs[i].deathT > 0.8) mobs.splice(i, 1);
   for (let i = projs.length - 1; i >= 0; i--) {
     const p = projs[i]; p.t += dt;
@@ -1038,7 +1113,7 @@ function update(dt) {
     }
   }
   for (let i = drops.length - 1; i >= 0; i--) { const d = drops[i]; d.t += dt; if (d.t > 180 && !d.lost && !(d.item && rarityOf(d.item) === 'unique') && !(d.item && ITEMS[d.item.id].type === 'key')) drops.splice(i, 1); }
-  for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; if (p.life <= 0) { parts.splice(i, 1); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; if (!p.float) p.vz -= 160 * dt; if (p.z < 0) { p.z = 0; p.vz *= -0.3; p.vx *= 0.6; p.vy *= 0.6; } }
+  for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life -= dt; if (p.life <= 0) { parts[i] = parts[parts.length - 1]; parts.pop(); if (PARTS_FREE.length < 600) PARTS_FREE.push(p); continue; } p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; if (!p.float) p.vz -= 160 * dt; if (p.z < 0) { p.z = 0; p.vz *= -0.3; p.vx *= 0.6; p.vy *= 0.6; } }
   for (let i = fxs.length - 1; i >= 0; i--) { const f = fxs[i]; f.t += dt; if (f.t >= f.dur) fxs.splice(i, 1); }
   for (let i = floats.length - 1; i >= 0; i--) { const f = floats[i]; f.t += dt; if (f.t > (f.kind === 'skill' || f.kind === 'lvl' || f.kind === 'job' ? 1.3 : 0.95)) { floats.splice(i, 1); continue; } }
   if (started && time - lastSave > 30) { lastSave = time; saveGame(); }
@@ -1048,6 +1123,7 @@ function update(dt) {
    Death, maps, waystones
    ========================================================= */
 function die() {
+  P.flags.deaths = (P.flags.deaths || 0) + 1;
   P.dead = true; P.deadT = 0; P.casting = null; P.pending = null; P.target = null; P.path = null; P.goal = null; P.dash = null; P.spheres = 0;
   if (P.zeny > 0) {
     if (P.lostZeny) log(`The zeny you lost before is gone for good.`, 'bad');
@@ -1076,6 +1152,7 @@ function gotoMap(id, x, y, quiet) {
   if (P.lostZeny && P.lostZeny.map === id) drops.push({ kind: 'drop', zeny: P.lostZeny.zeny, lost: true, x: P.lostZeny.x, y: P.lostZeny.y, t: 0, id: uidc++ });
   $('bossbar').hidden = true; bossShown = null;
   const firstVisit = !P.flags.seen[id]; P.flags.seen[id] = true;
+  npcSync();
   enterWorld();
   if (first || !quiet) banner(map.d.name, map.d.sub);
   if (firstVisit && map.d.intro) log(map.d.intro, 'sys');
@@ -1103,3 +1180,270 @@ function rest() {
   saveGame(); closeWin('way');
 }
 
+/* =========================================================
+   Content round 5: mail, storage, crafting, enchanting, card removal, vendors, junk, sorting, travel by sea.
+   Data: js/data/recipes.js (RECIPES, VENDORS, ENCHANT_TIERS, CARD_REMOVAL, STORAGE_SLOTS, STACK_MAX ...).
+   Windows: js/ui.js (storage, craft, enchant, cardsage and the vendor tabs of the shop window).
+   Every function that rolls takes an optional rng (tests pass a fixed one).
+   ========================================================= */
+const RNG = () => Math.random();
+const zenyOk = n => { if (P.zeny >= n) return true; log(`You need ${fmt(n)} zeny.`, 'warn'); return false; };
+const itemLabel = it => itemName(it) + (it.qty > 1 ? ' ×' + it.qty : '');
+
+/* ---------- Mail: rewards that do not fit in the bag wait here (P.mail, saved) ---------- */
+function mailItem(it, from, quiet) {
+  P.mail = P.mail || [];
+  P.mail.push({ item: it, from: from || 'Midgard', day: questDay() });
+  if (!quiet) { log(`Your bag is full. ${itemLabel(it)} was sent to your mailbox: claim it from a storage keeper or at any Waystone.`, 'warn'); if (typeof questToast === 'function') questToast('Mail · ' + itemLabel(it), 'obj'); }
+  UI.dirty = true;
+}
+// Into the bag, else the mailbox. Returns true when it went into the bag.
+function giveItem(it, from, quiet) { if (addItem(it, true)) return true; mailItem(it, from, quiet); return false; }
+function mailClaim(i) {
+  const m = (P.mail || [])[i]; if (!m) return false;
+  const id = m.item.id, full = addItem(m.item, true);
+  if (!full) { log('Your bag is full.', 'warn'); UI.dirty = true; return false; }   // a partial claim leaves the rest in the mail
+  P.mail.splice(i, 1); log(`You take ${itemLabel(m.item)} from your mail.`, 'loot'); Sfx.pickup();
+  if (ITEMS[id].type === 'card' && ITEMS[id].mob) P.flags.cards[ITEMS[id].mob] = true;
+  questEvent('pickup', id); UI.dirty = true; return true;
+}
+function mailClaimAll() { let n = 0; while (P.mail && P.mail.length && mailClaim(0)) n++; return n; }
+
+/* ---------- Storage: 120 slots shared by every storage keeper (P.storage, saved) ---------- */
+const storageFind = uid => (P.storage || []).find(x => x.uid === uid) || null;
+function storageRoom(id, n = 1) {
+  if (!stackable(id)) return P.storage.length + 1 <= STORAGE_SLOTS;
+  let free = 0; for (const ex of P.storage) if (ex.id === id) free += STACK_MAX - ex.qty;
+  return n <= free + (STORAGE_SLOTS - P.storage.length) * STACK_MAX;
+}
+function storagePut(it) {   // no checks: callers check storageRoom first
+  if (!stackable(it.id)) { P.storage.push(it); return; }
+  let left = it.qty || 1;
+  for (const ex of P.storage) { if (left <= 0) break; if (ex.id === it.id && ex.qty < STACK_MAX) { const k = Math.min(left, STACK_MAX - ex.qty); ex.qty += k; left -= k; } }
+  while (left > 0) { const n = Math.min(left, STACK_MAX); left -= n; P.storage.push(left ? { uid: uidc++, id: it.id, qty: n } : Object.assign(it, { qty: n })); }
+}
+// Deposit n of a bag item (all of the stack when n is omitted). Costs storageFee() per deposit.
+function storageDeposit(uid, n, quiet) {
+  const it = P.inv.find(x => x.uid === uid); if (!it) return false;
+  const t = ITEMS[it.id]; if (t.type === 'key') { if (!quiet) log('Quest items stay with you.', 'warn'); return false; }
+  const q = stackable(it.id) ? clamp(n || it.qty, 1, it.qty) : 1;
+  if (!storageRoom(it.id, q)) { if (!quiet) log(`Your storage is full (${STORAGE_SLOTS} slots).`, 'warn'); return false; }
+  const fee = storageFee(); if (!zenyOk(fee)) return false;
+  P.zeny -= fee;
+  let moved = it;
+  if (stackable(it.id) && q < it.qty) { it.qty -= q; moved = { uid: uidc++, id: it.id, qty: q }; } else P.inv.splice(P.inv.indexOf(it), 1);
+  storagePut(moved);
+  for (let i = 0; i < 9; i++) { const h = P.hot[i]; if (h && h.k === 'item' && h.id === it.id && countItem(it.id) === 0) P.hot[i] = null; }
+  if (!quiet) log(`Stored ${itemName(moved)}${q > 1 ? ' ×' + q : ''} (${fmt(fee)}z).`, 'sys');
+  UI.dirty = true; return true;
+}
+function storageWithdraw(uid, n, quiet) {
+  const it = storageFind(uid); if (!it) return false;
+  const q = stackable(it.id) ? clamp(n || it.qty, 1, it.qty) : 1;
+  if (!bagRoom(it.id, q)) { if (!quiet) log('Your bag is full.', 'warn'); return false; }
+  const fee = storageFee(); if (!zenyOk(fee)) return false;
+  P.zeny -= fee;
+  let moved = it;
+  if (stackable(it.id) && q < it.qty) { it.qty -= q; moved = { uid: uidc++, id: it.id, qty: q }; } else P.storage.splice(P.storage.indexOf(it), 1);
+  addItem(moved, true); questEvent('pickup', it.id);
+  if (!quiet) log(`Took ${itemName(moved)}${q > 1 ? ' ×' + q : ''} from storage (${fmt(fee)}z).`, 'sys');
+  UI.dirty = true; return true;
+}
+// Deposit every material (one fee per stack), skipping what an active quest still needs.
+function storageDepositMats() { let n = 0; for (const it of P.inv.slice()) if (ITEMS[it.id].type === 'etc' && !questNeeds(it.id) && !it.lock) { if (!storageDeposit(it.uid, it.qty, true)) break; n++; } if (n) log(`Stored ${n} stack${n > 1 ? 's' : ''} of materials (${fmt(n * storageFee())}z).`, 'sys'); return n; }
+const storageTabOf = it => { const t = ITEMS[it.id]; return t.type === 'equip' ? 'equip' : t.type === 'use' ? 'use' : t.type === 'card' ? 'card' : 'etc'; };
+
+/* ---------- Crafting (Brokkr and Sindri; RECIPES in js/data/recipes.js) ---------- */
+const craftLv = () => (P && P.skills && P.skills.craftsmanship) || 0;
+const craftStation = () => UI.craftBy || 'brokkr';
+function craftChance(r) { return clamp(Math.round(r.base + (craftLv() - r.lvl) * 4 + S.dex * 0.2 + S.luk * 0.1), 5, 99); }
+// [Standard, Fine, Masterwork] % for crafted gear.
+function craftQualityOdds() { const L = craftLv(), mw = clamp(Math.round(3 + L * 1.5 + S.luk * 0.1), 0, 30), fine = clamp(Math.round(15 + L * 3 + S.dex * 0.15), 0, 60); return [100 - mw - fine, fine, mw]; }
+const craftHave = id => countItem(id);
+function craftMissing(r) { return r.mats.filter(([id, n]) => craftHave(id) < n).map(([id, n]) => [id, n, craftHave(id)]); }
+// Why this recipe cannot be made here and now (null = it can).
+function craftWhy(r, by) {
+  if (!r) return 'Unknown recipe.';
+  if (!craftLv()) return 'You have not learned Craftsmanship. Brokkr can teach you (The Smith’s Apprentice).';
+  if (by && !r.at.includes(by)) return `Only ${r.at.map(k => NPCS[k] ? NPCS[k].name : k).join(' or ')} can make this.`;
+  if (craftLv() < r.lvl) return `Needs Craftsmanship Lv ${r.lvl}.`;
+  const miss = craftMissing(r); if (miss.length) return 'Missing ' + miss.map(([id, n, h]) => `${ITEMS[id].name} ${h}/${n}`).join(', ') + '.';
+  if (P.zeny < r.fee) return `Needs ${fmt(r.fee)} zeny.`;
+  if (!bagRoom(r.out[0], r.out[1])) return 'Your bag is full.';
+  return null;
+}
+function craftXpGain(r) {
+  const L = craftLv(); if (L >= CRAFT_MAX) return;
+  P.flags.craftXp = (P.flags.craftXp || 0) + 1 + r.lvl * 2;
+  if (P.flags.craftXp >= CRAFT_XP(L)) { P.flags.craftXp -= CRAFT_XP(L); P.skills.craftsmanship = L + 1; floatText(P, 'Craftsmanship Up!', 'lvl'); log(`Your hands remember more. Craftsmanship Lv ${L + 1}.`, 'lvl'); Sfx.level(); }
+}
+// One attempt. Returns { ok, success, item, q } (ok = the attempt happened).
+function craft(id, by, rng = RNG) {
+  const r = RECIPES[id], why = craftWhy(r, by || craftStation());
+  if (why) { log(why, 'warn'); return { ok: false, why }; }
+  P.zeny -= r.fee; for (const [mid, n] of r.mats) takeItem(mid, n);
+  P.flags.crafted = (P.flags.crafted || 0) + 1;
+  const an = (map && map.objs.find(o => o.kind === 'anvil')) || P, t = ITEMS[r.out[0]];
+  if (rng() * 100 >= craftChance(r)) {
+    log(`The work cracks in the quench. ${r.name || t.name} is ruined, and the materials with it.`, 'bad'); Sfx.slam(); burst(an.x, an.y, 20, '#888', 18, 2.5);
+    UI.dirty = true; return { ok: true, success: false };
+  }
+  let it, q = 0;
+  if (t.type === 'equip') {
+    const o = craftQualityOdds(), roll = rng() * 100; q = roll < o[2] ? 3 : roll < o[2] + o[1] ? 2 : 1;
+    it = makeItem(t.id); it.q = q; it.maker = P.name; if (QUALITY[q].slot) it.slotsN = Math.min(2, it.slotsN + QUALITY[q].slot);
+  } else it = makeItem(t.id, { qty: r.out[1] });
+  P.flags.craftedOk = (P.flags.craftedOk || 0) + 1; if (q === 3) P.flags.masterworks = (P.flags.masterworks || 0) + 1;
+  giveItem(it, NPCS[by || craftStation()] ? NPCS[by || craftStation()].name : 'the forge');
+  log(`You made ${itemLabel(it)}.`, q === 3 ? 'unique' : q === 2 ? 'rare' : 'loot'); Sfx.level(); burst(an.x, an.y, 20, q === 3 ? '#ffb040' : '#ffd27a', 20, 2.5);
+  craftXpGain(r); questEvent('pickup', t.id);
+  UI.dirty = true; return { ok: true, success: true, item: it, q };
+}
+const recipesAt = by => Object.values(RECIPES).filter(r => r.at.includes(by));
+
+/* ---------- Enchanting (Thordis): reroll the random affixes of non-unique gear ---------- */
+function enchantWhy(it, useRare) {
+  if (!it) return 'Choose a piece of gear.';
+  const t = ITEMS[it.id]; if (t.type !== 'equip') return 'Only gear can be enchanted.';
+  if (t.unique) return 'Unique gear already has its own will. It will not take a new one.';
+  const T = enchantTier(it);
+  if (P.zeny < T.zeny) return `Needs ${fmt(T.zeny)} zeny.`;
+  const miss = T.mats.filter(([id, n]) => countItem(id) < n); if (miss.length) return 'Missing ' + miss.map(([id, n]) => `${ITEMS[id].name} ${countItem(id)}/${n}`).join(', ') + '.';
+  if (useRare && (!T.rare || countItem(T.rare[0]) < T.rare[1])) return T.rare ? `Missing ${ITEMS[T.rare[0]].name}.` : 'This tier takes no rare material.';
+  return null;
+}
+function enchantRoll(it, useRare, rng = RNG) {
+  const t = ITEMS[it.id], L = t.lvl, cands = AFFIXES.filter(a => a.slots.includes(t.slot)).slice();
+  const n = it.rarity === 'rare' ? 2 + (rng() < 0.5 ? 1 : 0) : it.rarity === 'magic' ? 1 + (rng() < 0.5 ? 1 : 0) : 1, out = [];
+  for (let i = 0; i < n && cands.length; i++) {
+    const a = cands.splice(Math.floor(rng() * cands.length), 1)[0]; let [lo, hi] = a.r(L); hi = Math.max(lo, hi);
+    if (useRare) lo = Math.ceil((lo + hi) / 2);
+    out.push({ s: a.s, v: lo + Math.floor(rng() * (hi - lo + 1)) });
+  }
+  return out;
+}
+function enchant(uid, useRare, rng = RNG) {
+  const it = findItem(uid), why = enchantWhy(it, useRare); if (why) { log(why, 'warn'); return null; }
+  const T = enchantTier(it); P.zeny -= T.zeny; for (const [id, n] of T.mats) takeItem(id, n); if (useRare) takeItem(T.rare[0], T.rare[1]);
+  const before = itemName(it);
+  it.affixes = enchantRoll(it, useRare, rng); if (it.rarity === 'common') it.rarity = 'magic';
+  P.flags.enchants = (P.flags.enchants || 0) + 1;
+  log(`Thordis sings over ${before}. It answers as ${itemName(it)}: ${it.affixes.map(a => bonusLine(a.s, a.v)).join(', ')}.`, 'magic'); Sfx.rare();
+  burst(P.x, P.y, 30, '#9a8aff', 18, 2); calcStats(); UI.dirty = true; return it.affixes;
+}
+
+/* ---------- Card removal (Old Grímr): RO odds, CARD_REMOVAL in js/data/recipes.js ---------- */
+function cardRemoveWhy(it, idx) {
+  if (!it || !it.cards || !it.cards[idx]) return 'There is no card there.';
+  const fee = cardRemovalFee(it, it.cards[idx]); if (P.zeny < fee) return `Needs ${fmt(fee)} zeny.`;
+  if (!bagRoom(it.cards[idx], 1) || P.inv.length >= BAG_SLOTS - 1) return 'Make room in your bag first (two free slots).';
+  return null;
+}
+// Returns 'success' | 'card' (the card broke) | 'item' (the item broke; its cards come back) | 'both' | null.
+function cardRemove(uid, idx, rng = RNG) {
+  const it = findItem(uid), why = cardRemoveWhy(it, idx); if (why) { log(why, 'warn'); return null; }
+  const cid = it.cards[idx], fee = cardRemovalFee(it, cid), C = CARD_REMOVAL; P.zeny -= fee;
+  const r = rng() * 100, out = r < C.success ? 'success' : r < C.success + C.cardBreaks ? 'card' : r < C.success + C.cardBreaks + C.itemBreaks ? 'item' : 'both';
+  it.cards.splice(idx, 1);
+  const name = itemName(it), cname = ITEMS[cid].name;
+  if (out === 'item' || out === 'both') {
+    for (const s of SLOTS) if (P.equip[s] === it) P.equip[s] = null;
+    const i = P.inv.indexOf(it); if (i >= 0) P.inv.splice(i, 1);
+    for (const c of it.cards) giveItem(makeItem(c), 'Old Grímr');
+  }
+  if (out === 'success' || out === 'item') giveItem(makeItem(cid), 'Old Grímr');
+  P.flags.cardsPulled = (P.flags.cardsPulled || 0) + 1;
+  const msg = { success: `Grímr teases ${cname} out of ${name} with a bone needle. Both are whole.`, card: `${cname} tears in half as it comes free. ${name} is unharmed.`, item: `${name} cracks down the middle, but ${cname} comes out whole.`, both: `Something snaps. ${cname} and ${name} are both ruined.` }[out];
+  log(msg, out === 'success' ? 'card' : 'bad'); out === 'success' ? Sfx.rare() : Sfx.slam();
+  calcStats(); UI.dirty = true; return out;
+}
+
+/* ---------- Vendors: unlimited supplies plus specials that restock every RESTOCK_SECS of play ---------- */
+function vendorStock(v) {
+  const all = P.flags.stock = P.flags.stock || {}, per = Math.floor(P.playTime / RESTOCK_SECS);
+  let st = all[v]; if (!st || st.per !== per) st = all[v] = { per, sold: {} };
+  return st;
+}
+const vendorSpecial = (v, id) => ((VENDORS[v] && VENDORS[v].specials) || []).find(s => s[0] === id) || null;
+function vendorLeft(v, id) { const sp = vendorSpecial(v, id); return sp ? Math.max(0, sp[1] - (vendorStock(v).sold[id] || 0)) : Infinity; }
+function vendorPrice(v, id) { const sp = vendorSpecial(v, id); return (sp && sp[2]) || ITEMS[id].price; }
+const vendorRestockIn = () => RESTOCK_SECS - (P.playTime % RESTOCK_SECS);
+function vendorSupplies(v) {
+  const V = VENDORS[v]; if (V && V.supplies) return V.supplies.filter(id => ITEMS[id]);
+  const sc = Object.keys(P.flags.shards).length;
+  return SMITH_SUPPLIES.concat(sc >= 1 ? ['yellow_potion'] : [], sc >= 2 ? ['white_potion'] : [], P.flags.gate && P.lvl >= 40 ? ['honey_mead'] : []);
+}
+function vendorBuy(v, id, n = 1) {
+  const t = ITEMS[id]; if (!t) return false; n = Math.max(1, n | 0);
+  const left = vendorLeft(v, id); if (left <= 0) { log('Sold out. New stock comes in ' + Math.ceil(vendorRestockIn() / 60) + ' min.', 'warn'); return false; }
+  n = Math.min(n, left); const cost = vendorPrice(v, id) * n;
+  if (P.zeny < cost) return false;
+  if (!bagRoom(id, t.type === 'equip' ? 1 : n)) { log('Your bag is full.', 'warn'); return false; }
+  if (t.type === 'equip') addItem(makeItem(id)); else addItem(makeItem(id, { qty: n }));
+  P.zeny -= cost; if (vendorSpecial(v, id)) { const st = vendorStock(v); st.sold[id] = (st.sold[id] || 0) + n; }
+  log(`Bought ${t.name}${n > 1 ? ' ×' + n : ''}.`, 'loot'); Sfx.coin(); questEvent('pickup', id); UI.dirty = true; return true;
+}
+
+/* ---------- Selling: prices, junk, sorting ---------- */
+// What a merchant pays. Equipment: half its price, more for magic/rare, refine and quality; materials: half price.
+function sellPrice(i) {
+  const t = ITEMS[i.id];
+  if (t.type === 'equip') return Math.floor((t.price || 1500) / 2 * (i.rarity === 'rare' ? 2 : i.rarity === 'magic' ? 1.4 : 1) * (i.q ? [1, 1, 1.25, 1.6][i.q] : 1) + (i.refine || 0) * (100 + t.lvl * 10));
+  if (t.type === 'card') return Math.floor((t.price || 40) / 2);
+  return Math.floor((t.price || 0) / 2);
+}
+const questNeeds = id => Object.keys(P.quests.active).some(q => QUESTS[q].obj.some(o => (o.type === 'collect' || o.type === 'deliver') && o.item === id));
+const usedInRecipes = id => Object.values(RECIPES).some(r => r.mats.some(m => m[0] === id));
+// A rough power score for comparing two pieces for the same slot.
+function itemScore(it) {
+  if (!it) return 0; const t = ITEMS[it.id], b = itemBase(it); let s = b.atk + b.matk + (b.def + b.mdef) * 4;
+  const add = o => { for (const k in o || {}) s += o[k] * (['str', 'agi', 'vit', 'int', 'dex', 'luk'].includes(k) ? 3 : k === 'maxhp' || k === 'maxsp' ? 0.05 : 1); };
+  add(t.bonus); for (const a of it.affixes || []) add({ [a.s]: a.v }); for (const c of it.cards || []) add(ITEMS[c].bonus);
+  return s;
+}
+const JUNK_DEFAULT = { mats: true, gear: true, magic: false, keepCraft: false };
+// Junk: never locked items, keys, cards, consumables, stones, rare materials, uniques, crafted, rare, refined or
+// carded gear, nor gear that would be an upgrade you can wear.
+function isJunk(it, o = JUNK_DEFAULT) {
+  if (it.lock) return false; const t = ITEMS[it.id];
+  if (t.type === 'etc') return !!o.mats && !t.stone && !t.rareMat && !questNeeds(it.id) && !(o.keepCraft && usedInRecipes(it.id));
+  if (t.type !== 'equip') return false;
+  if (t.unique || t.crafted || it.rarity === 'rare' || it.refine || (it.cards || []).length) return false;
+  if (it.rarity === 'magic' && !o.magic) return false; if (it.rarity === 'common' && !o.gear) return false;
+  const cur = P.equip[t.slot]; if (jobOk(t, P.cls) && P.lvl >= t.lvl && itemScore(it) > itemScore(cur)) return false;
+  return true;
+}
+function junkList(o) { return P.inv.filter(i => isJunk(i, o)); }
+function sellJunk(o) {
+  const js = junkList(o); let z = 0;
+  for (const it of js) { z += sellPrice(it) * (it.qty || 1); P.inv.splice(P.inv.indexOf(it), 1); }
+  P.zeny += z; if (js.length) { log(`Sold ${js.length} piece${js.length > 1 ? 's' : ''} of junk for ${fmt(z)} zeny.`, 'loot'); Sfx.coin(); }
+  UI.dirty = true; return { n: js.length, zeny: z };
+}
+// Sort the bag: consumables, materials, cards, gear (by slot, then level), quest items; partial stacks merged.
+function sortBag() {
+  const rank = { use: 0, etc: 1, card: 2, equip: 3, key: 4 }, rr = { unique: 0, rare: 1, magic: 2, common: 3 };
+  const merged = [], byId = {};
+  for (const it of P.inv) {
+    if (!stackable(it.id)) { merged.push(it); continue; }
+    let ex = byId[it.id]; let left = it.qty;
+    if (ex && ex.qty < STACK_MAX) { const k = Math.min(left, STACK_MAX - ex.qty); ex.qty += k; left -= k; }
+    if (left > 0) { it.qty = left; merged.push(it); byId[it.id] = it; }
+  }
+  merged.sort((a, b) => { const A = ITEMS[a.id], B = ITEMS[b.id]; return (rank[A.type] - rank[B.type]) || (A.type === 'equip' ? (SLOTS.indexOf(A.slot) - SLOTS.indexOf(B.slot)) || (B.lvl - A.lvl) || (rr[a.rarity] - rr[b.rarity]) : 0) || A.name.localeCompare(B.name) || ((b.qty || 1) - (a.qty || 1)); });
+  P.inv = merged; UI.dirty = true;
+}
+
+/* ---------- By sea: Captain Ormr (Skaldhaven) and Bolli (Mirewell, once he has his boat) ---------- */
+function sail(dest, by) {
+  const R = SHIP_ROUTES[dest]; if (!R) return false;
+  if (!zenyOk(R.fare)) return false;
+  P.zeny -= R.fare; Sfx.warp(); log(`${by || 'The captain'} takes your ${fmt(R.fare)} zeny and casts off. The ice creaks along the hull.`, 'sys');
+  closeWin('way'); gotoMap(dest, R.x, R.y); return true;
+}
+// Hallgerð's rooms: full heal and a Well Rested buff (a small zeny sink).
+function innRest() {
+  const fee = INN_FEE(P.lvl); if (!zenyOk(fee)) return false;
+  P.zeny -= fee; P.hp = S.maxhp; P.sp = S.maxsp; addBuff('rested', 'Well Rested', 'rested', 600, { maxhpPct: 5, maxsp: 40, luk: 2 }); P.hp = S.maxhp; P.sp = S.maxsp;
+  pillar(P, '#ffd8a0'); Sfx.heal(); log(`A warm bed above the Salt Hall (${fmt(fee)}z). You wake Well Rested.`, 'sys'); return true;
+}

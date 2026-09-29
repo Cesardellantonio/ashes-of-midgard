@@ -1,0 +1,46 @@
+{
+ "sheets": [
+  {
+   "id": "npc_ragna",
+   "layer": "npc",
+   "body": "ragna",
+   "variant": null
+  },
+  {
+   "id": "npc_hrafn",
+   "layer": "npc",
+   "body": "hrafn",
+   "variant": null
+  },
+  {
+   "id": "npc_eira",
+   "layer": "npc",
+   "body": "eira",
+   "variant": null
+  },
+  {
+   "id": "npc_bolli",
+   "layer": "npc",
+   "body": "bolli",
+   "variant": null
+  },
+  {
+   "id": "npc_sindri",
+   "layer": "npc",
+   "body": "sindri",
+   "variant": null
+  },
+  {
+   "id": "npc_nyr",
+   "layer": "npc",
+   "body": "nyr",
+   "variant": null
+  },
+  {
+   "id": "npc_heimdall",
+   "layer": "npc",
+   "body": "heimdall",
+   "variant": null
+  }
+ ]
+}

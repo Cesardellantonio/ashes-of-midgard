@@ -7,7 +7,7 @@
  "blocksPerRow": 5,
  "frameW": 96,
  "frameH": 112,
- "maxFrames": 4,
+ "maxFrames": 6,
  "anchor": [
   48,
   96
@@ -30,6 +30,12 @@
    "row": 1,
    "frames": 4,
    "fps": 6,
+   "loop": true
+  },
+  "walk": {
+   "row": 2,
+   "frames": 6,
+   "fps": 10,
    "loop": true
   }
  },

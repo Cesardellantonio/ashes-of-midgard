@@ -1,0 +1,37 @@
+{
+ "id": "npc_hel",
+ "layer": "npc",
+ "body": "hel",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 128,
+ "frameH": 144,
+ "maxFrames": 4,
+ "anchor": [
+  64,
+  128
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "talk": {
+   "row": 1,
+   "frames": 4,
+   "fps": 6,
+   "loop": true
+  }
+ },
+ "hit": {}
+}

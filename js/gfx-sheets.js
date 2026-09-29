@@ -10,7 +10,10 @@
    Users:
    - player: <cls>_<g> body -> hair -> shield -> weapon layers
    - mobs:   mob_<type> (layer "mob", body = MOBS key)
-   - NPCs:   npc_<id>   (layer "npc", body = npc id)
+   - NPCs:   npc_<id>   (layer "npc", body = npc id; `walk` while n.moving)
+   - headgear (contract v3): hg_<key> (layer "headgear", body = ITEMS[id].headgear), drawn at the body frame's
+     head anchor (anchors.head[action][dir][frame] = [x, y, rot, visible]) above the hair; `hideHair`
+     'all' hides the hair layer, 'top' clips it along the hat's `hairClip` line (same maths as art's hglib.py).
 
    JSON layouts:
    - "blocks": block = r*dirs.length + d; bx = block % blocksPerRow;
@@ -25,7 +28,7 @@
 const SHEET_BASE = (typeof window !== 'undefined' && window.AOM_SPRITE_BASE) || 'assets/sprites/';
 // Missing index files are harmless. The same sheet id may appear in several files (index.json also lists the
 // index_classes2b.json sheets): the first file in this list that names an id wins, whatever order the XHRs finish in.
-const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json'];
+const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json', 'index_npcs3.json', 'index_headgear.json'];
 const SHEETS = {
   byId: {},          // id -> load record (created on first request)
   entries: {},       // id -> { id, layer, body, variant } from the index files
@@ -34,7 +37,7 @@ const SHEETS = {
   loaded: [], failed: [], requests: 0,
 };
 const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
-const LAYER_ORDER = ['body', 'mob', 'npc', 'hair', 'shield', 'weapon'];
+const LAYER_ORDER = ['body', 'mob', 'npc', 'hair', 'headgear', 'shield', 'weapon'];
 const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace',
   spear: 'spear', twohand: 'twohand', staff: 'staff', book: 'book', lute: 'lute', whip: 'whip', knuckle: 'knuckle' };  // fist -> none
 
@@ -57,11 +60,11 @@ function sheetEntry(s) {
   if (!s || typeof s.id !== 'string') return null;
   const id = s.id; let layer = s.layer, body = s.body, variant = s.variant;
   if (!layer) {
-    if (/^mob_/.test(id)) layer = 'mob'; else if (/^npc_/.test(id)) layer = 'npc';
+    if (/^mob_/.test(id)) layer = 'mob'; else if (/^npc_/.test(id)) layer = 'npc'; else if (/^hg_/.test(id)) layer = 'headgear';
     else { const m = /(?:^|\.)(body|hair|weapon|shield)(?:_|$)/.exec(id); layer = m ? m[1] : 'body'; }
   }
   if (!body) {
-    if (layer === 'mob') body = id.replace(/^mob_/, ''); else if (layer === 'npc') body = id.replace(/^npc_/, '');
+    if (layer === 'mob') body = id.replace(/^mob_/, ''); else if (layer === 'npc') body = id.replace(/^npc_/, ''); else if (layer === 'headgear') body = id.replace(/^hg_/, '');
     else if (id.indexOf('.') > 0) body = id.slice(0, id.indexOf('.'));
   }
   if (variant === undefined || variant === '') {
@@ -151,8 +154,15 @@ function playerLayerWants() {
   const w = [[body, 'body', null], [body, 'hair', P.hairStyle === 'long' ? 'long' : 'spiky']];
   if (P.equip && P.equip.shield) w.push([body, 'shield', (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard']);   // shieldVariant: action.js (Oathkeeper -> 'tower')
   const wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null; if (wv) w.push([body, 'weapon', wv]);
+  const hk = playerHeadgearKey(); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
   return w;
 }
+// Visual key of the equipped head item (ITEMS[id].headgear, content round 4), or null.
+function playerHeadgearKey() {
+  const h = P && P.equip && P.equip.head, t = h && typeof ITEMS !== 'undefined' ? ITEMS[h.id] : null;
+  return (t && t.headgear) || null;
+}
+const hasHeadAnchors = j => !!(j && j.anchors && j.anchors.head);
 function prefetchSheets() {
   if (!SHEETS.indexReady) return;
   try {
@@ -219,7 +229,7 @@ function sheetFrame(json, act, f, phase) {
 // Pose helpers (no per-call closures): frame count / fps of an action, frames since an action started.
 const actN = (A, a) => (A[a] ? A[a].frames : 1), actFps = (A, a) => (A[a] && A[a].fps) || 8;
 function actHeld(v, A, a) { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * actFps(A, a)); }
-const TINT_DODGE = [0.85, 0.9, 1], TINT_CHARGE = [1.0, 0.85, 0.5], TINT_FROZEN = [0.55, 0.8, 1];
+const TINT_ONE = [1, 1, 1], TINT_DODGE = [0.85, 0.9, 1], TINT_CHARGE = [1.0, 0.85, 0.5], TINT_FROZEN = [0.55, 0.8, 1];
 
 /* ---------- Player pose -> action/frame ---------- */
 function sheetPlayerPose(v, body) {
@@ -291,16 +301,24 @@ function makeSheetVis(recs, o = {}) {
   const sorted = recs.slice().sort((a, b) => LAYER_ORDER.indexOf(a.json.layer || (a.entry && a.entry.layer) || 'body') - LAYER_ORDER.indexOf(b.json.layer || (b.entry && b.entry.layer) || 'body'));
   // layers share one transform; creation order = draw order (same depth, LessEqual)
   for (const rec of sorted) {
-    const layer = layerOf(rec), base = { id: rec.id, rec, layer, rk: -1, ry: -1, r: { x: 0, y: 0, w: 0, h: 0 }, uv: [0, 0, 1, 1], on: false, geo: null, mat: null, mesh: null, xray: null, caster: null };
+    const layer = layerOf(rec), base = { id: rec.id, rec, layer, rk: -1, ry: -1, r: { x: 0, y: 0, w: 0, h: 0 }, uv: [0, 0, 1, 1], on: false, geo: null, mat: null, mesh: null, xray: null, caster: null, fa: 'idle', ff: 0 };
     if (o.batch) { v.layers.push(base); continue; }
-    const geo = sheetPlane(rec.json);
-    const mat = fxSpriteMat(rec.tex, layer === 'hair'); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+    const hair = layer === 'hair', hat = layer === 'headgear';
+    // Headgear: the plane's 4 vertices are rewritten every frame (anchor offset + head roll), so its mesh keeps the
+    // body's transform (same sort depth as the other layers: creation order = draw order) and the sun caster and
+    // the x-ray, which share the geometry, follow the hat exactly.
+    const geo = hat ? new THREE.PlaneGeometry(1, 1) : sheetPlane(rec.json);
+    if (hat) geo.attributes.position.setUsage(THREE.DynamicDrawUsage);
+    const mat = fxSpriteMat(rec.tex, hair); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
     const L = Object.assign(base, { geo, uv0: geo.attributes.uv.array.slice(), mat, mesh });
-    if (!o.noCast) { L.caster = makeCaster(geo, rec.tex); v.meshes.push(L.caster); }
+    // hair: clip line uniform shared by the colour, x-ray and caster materials (hideHair 'top')
+    if (hair) L.clipU = mat.userData.u.uClip;
+    if (!o.noCast) { L.caster = makeCaster(geo, rec.tex); if (hair) hairClipPatch(L.caster.customDepthMaterial, L.clipU); v.meshes.push(L.caster); }
     if (o.xray) {
       const xm = spriteMat(rec.tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
         // stencil: each covered pixel is tinted once even where layers overlap
         stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+      if (hair) hairClipPatch(xm, L.clipU);
       L.xray = new THREE.Mesh(geo, xm); L.xray.renderOrder = 5; scene.add(L.xray); v.meshes.push(L.xray);
     }
     v.layers.push(L); v.meshes.push(mesh);
@@ -314,7 +332,7 @@ function setLayerFrame(L, act, d, f) {
   const j = L.rec.json, r0 = sheetFrame(j, act, f);
   if (!r0) { L.on = false; if (L.mesh) L.mesh.visible = false; return null; }
   const r = sheetRect(j, r0.act, d, r0.f, L.r);
-  L.on = true; if (L.mesh) L.mesh.visible = true;
+  L.fa = r0.act; L.ff = r0.f; L.on = true; if (L.mesh) L.mesh.visible = true;
   if (L.rk !== r.x || L.ry !== r.y) {
     L.rk = r.x; L.ry = r.y;
     const tw = L.rec.texW, th = L.rec.texH, u0 = r.x / tw, u1 = (r.x + r.w) / tw, v0 = 1 - (r.y + r.h) / th, v1 = 1 - r.y / th;
@@ -332,18 +350,67 @@ function setLayerFrame(L, act, d, f) {
 // Returns a shared scratch { rect (first layer's rect), gh, z }: read it before the next call.
 const _PL = { rect: null, gh: 0, z: 0 };
 function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
-  const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU + st.zoff, sx = flip ? -1 : 1;
-  let rect = null;
+  const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU + st.zoff, sx = flip ? -1 : 1, k = st.scl || 1;
+  let rect = null, body = null, hat = null, hair = null;
   for (const L of v.layers) {
-    const r = setLayerFrame(L, act, d, f); if (!rect) rect = r;
+    let r;
+    if (L.layer === 'headgear') { hat = L; r = body ? placeHat(L, body, v.sector) : null; if (!r) { L.on = false; L.mesh.visible = false; } }
+    else { r = setLayerFrame(L, act, d, f); if (!body) body = L; if (L.layer === 'hair') hair = L; }
+    if (!rect) rect = r;
     if (v.batched) { if (r) sprInstance(L, e.x, gh + z, e.y, sx, st, flip); continue; }
-    L.mesh.scale.set(sx * st.sx, st.sy / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
+    L.mesh.scale.set(sx * st.sx * k, st.sy * k / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
     if (L.layer === 'hair') applyHairRamp(L.mat, hairHex);
     sprApply(L.mat, st, flip);
-    if (L.caster) { L.caster.visible = L.mesh.visible && st.cast && st.a > 0.3; if (L.caster.visible) { L.caster.scale.set(sx, CAST_H, 1); L.caster.position.set(e.x, gh + z, e.y); L.caster.rotation.y = SPRF.cyaw; } }
+  }
+  if (hair && !v.batched) hatHair(hair, hat);
+  if (!v.batched) for (const L of v.layers) {
+    if (L.caster) { L.caster.visible = L.mesh.visible && st.cast && st.a > 0.3; if (L.caster.visible) { L.caster.scale.set(sx * k, CAST_H * k, 1); L.caster.position.set(e.x, gh + z, e.y); L.caster.rotation.y = SPRF.cyaw; } }
     if (L.xray) { L.xray.scale.copy(L.mesh.scale); L.xray.position.copy(L.mesh.position); L.xray.rotation.y = cam.yaw; L.xray.visible = L.mesh.visible && !P.dead; }
   }
   _PL.rect = rect; _PL.gh = gh; _PL.z = z; return _PL;
+}
+
+/* ---------- Headgear (contract v3) ----------
+   The hat frame (hat json dirs, unmirrored facing: mirroring the whole plane mirrors the composite, as art's
+   hglib.composite does) is placed so its `anchor` lands on the body frame's head anchor, rotated clockwise by
+   `rot` degrees about it. Vertices are in the body plane's local units (feet at the origin, y up); the mesh then
+   gets the body's scale (mirror, squash, 1/COSP stretch), so the hat shears exactly like the composited image. */
+function headAnchor(bodyL) {
+  const j = bodyL.rec.json, H = j.anchors && j.anchors.head, A = H && H[bodyL.fa], D = A && A[_hatD];
+  return D ? D[Math.max(0, Math.min(D.length - 1, bodyL.ff | 0))] : null;
+}
+let _hatD = 0;
+function placeHat(L, bodyL, sector) {
+  const bj = bodyL.rec.json, hj = L.rec.json;
+  _hatD = sectorToDir(bj, sector === undefined ? 0 : sector).d;                  // body facing (unmirrored)
+  const ha = headAnchor(bodyL); L.head = ha; if (!ha || !ha[3]) return null;
+  const hd = sectorToDir(hj, sector === undefined ? 0 : sector).d; L.hd = hd;
+  const r = setLayerFrame(L, 'idle', hd, 0); if (!r) return null;
+  const rot = ha[2] * Math.PI / 180, c = Math.cos(rot), s = Math.sin(rot);
+  const ax = hj.anchor[0], ay = hj.anchor[1], fw = hj.frameW, fh = hj.frameH;
+  const hx = ha[0] - bj.anchor[0], hy = bj.anchor[1] - ha[1];                    // head point, body px, y up
+  const pos = L.geo.attributes.position, a = pos.array;
+  // PlaneGeometry vertex order: TL, TR, BL, BR (uv0 keeps the matching 0/1 UVs)
+  for (let i = 0; i < 4; i++) {
+    const px = (i & 1 ? fw : 0) - ax, py = ay - (i & 2 ? fh : 0);                // hat px relative to its anchor, y up
+    a[i * 3] = (hx + px * c + py * s) / PXU; a[i * 3 + 1] = (hy - px * s + py * c) / PXU; a[i * 3 + 2] = 0;   // clockwise roll
+  }
+  pos.needsUpdate = true; L.geo.boundingSphere = null;
+  return r;
+}
+// hideHair: 'all' hides the hair layer; 'top' drops hair pixels beyond the hat's hairClip line (hglib.hair_clip_line),
+// expressed as a plane in the hair layer's atlas UVs: keep where dot(vec3(uv, 1), uClip) >= 0.
+function hatHair(hair, hat) {
+  const on = hat && hat.on && hat.head, hj = on ? hat.rec.json : null, mode = hj ? hj.hideHair || 'none' : 'none', U = hair.clipU;
+  if (mode === 'all') { hair.on = false; hair.mesh.visible = false; if (U) U.value.set(0, 0, 1); return; }
+  const clip = mode === 'top' && hj.hairClip ? hj.hairClip[hat.hd === undefined ? 0 : hat.hd] : undefined;
+  if (!U) return;
+  if (clip === undefined) { U.value.set(0, 0, 1); return; }
+  const ha = hat.head, rot = ha[2] * Math.PI / 180, dy = clip - hj.anchor[1];
+  const px = ha[0] - Math.sin(rot) * dy, py = ha[1] + Math.cos(rot) * dy, nx = -Math.sin(rot), ny = Math.cos(rot);   // frame px, y down
+  const tw = hair.rec.texW, th = hair.rec.texH, rx = hair.r.x, ry = hair.r.y;
+  // pixel x = u*tw - rx, pixel y = (1 - v)*th - ry
+  U.value.set(tw * nx, -th * ny, (-rx - px) * nx + (th - ry - py) * ny);
 }
 function sameRecs(a, b) { if (!a || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
 function setVis(e, recs, o) {
@@ -372,7 +439,8 @@ function playerSheetRecs() {
   const keep = () => { const v = VIS.get(P); return v && v.sheet && v.pRecs ? v.pRecs : null; };
   if (!recReady(recs[0])) return recPending(recs[0]) ? keep() : null;
   if (recs.some(recPending)) return keep();
-  return recs.filter(recReady);
+  const bj = recs[0].json;   // a hat needs the body's head anchors (contract v3); without them it is left off
+  return recs.filter(r => recReady(r) && (layerOf(r) !== 'headgear' || hasHeadAnchors(bj)));
 }
 function usingSheetPlayer() { return !!(P && playerSheetRecs()); }
 const PLAYER_VIS_OPT = { xray: true };
@@ -394,7 +462,19 @@ function syncSheetPlayer() {
 }
 
 /* ---------- Mobs ---------- */
-const _MOBO = { tint: undefined, opacity: undefined, ghost: false };
+const _MOBO = { tint: undefined, opacity: undefined, ghost: false, scl: 1 }, _MTINT = [1, 1, 1];
+/* Named variants (MOBS[key].variant) share the base's sheet: tint (d.tint, normalised so its brightest channel is 1,
+   in the working colour space) and size (d.scaleMul, else the variant/base size ratio). Both are per-instance data
+   in the sprite batch (iCol, instance matrix + caster size), so a named rare costs nothing extra. Cached on d. */
+function namedLook(d) {
+  if (d._nl !== undefined) return d._nl;
+  if (!d.variant || !d.base || typeof MOBS === 'undefined') return (d._nl = null);
+  const b = MOBS[d.base] || {}, sz = o => (o.look && o.look.scale) || o.size || 1;
+  let tint = null;
+  if (d.tint) { const c = new THREE.Color(d.tint), mx = Math.max(c.r, c.g, c.b, 1e-3); tint = [c.r / mx, c.g / mx, c.b / mx]; if (sprLinear()) tint = tint.map(v => Math.pow(v, 2.2)); }
+  const scl = d.scaleMul || Math.max(0.5, Math.min(2.5, sz(d) / sz(b)));
+  return (d._nl = { tint, scl, col: d.tint || d.glow || '#ffd070' });
+}
 function syncSheetMob(m) {
   if (!SHEETS.indexReady) return false;
   const rec = sheetRec(m.type, 'mob', null); if (!recReady(rec)) { m.sheetH = 0; return false; }
@@ -402,14 +482,16 @@ function syncSheetMob(m) {
   const pose = sheetMobPose(m, v, J); if (!pose) { m.sheetH = 0; disposeVis(v); VIS.delete(m); return false; }
   v.sector = facingSector(m.fx === undefined ? (m.dir || 1) : m.fx, m.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
-  _MOBO.tint = pose.tint; _MOBO.opacity = pose.opacity; _MOBO.ghost = ghost;
-  const st = sprFrame(v, m, _MOBO);
+  const nl = namedLook(d);
+  _MOBO.tint = pose.tint; _MOBO.opacity = pose.opacity; _MOBO.ghost = ghost; _MOBO.scl = nl ? nl.scl : 1;
+  if (nl && nl.tint) { const t = pose.tint || TINT_ONE; _MTINT[0] = nl.tint[0] * t[0]; _MTINT[1] = nl.tint[1] * t[1]; _MTINT[2] = nl.tint[2] * t[2]; _MOBO.tint = _MTINT; }
+  const st = sprFrame(v, m, _MOBO), k = st.scl;
   const pl = placeSheetVis(v, m, pose.act, dd, pose.f, dflip, st), gh = pl.gh, pz = pl.z, rect = pl.rect;
   const human = d.spr === 'human', s = human ? ((d.look && d.look.scale) || 1) : (d.size || 1);
-  const shR = (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85)) * (ghost ? 0.8 : 1);
+  const shR = (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85)) * (ghost ? 0.8 : 1) * (nl ? Math.sqrt(k) : 1);
   placeBlob(v, m.x, gh, m.y, shR, pz, st.a > 0.3 && st.dis < 0.6);
-  m.sheetH = rec.visH;
-  const hu = rec.visH / PXU;
+  m.sheetH = rec.visH * k;
+  const hu = rec.visH * k / PXU;
   if (v.glow) { v.glow.position.set(m.x, gh + pz + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
   sprMotion(v, m, st, hu);
   const dg = v.diag || (v.diag = { id: rec.id }); dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.flip = dflip; dg.rect = rect;
@@ -426,14 +508,18 @@ function syncSheetNPC(n) {
   let fx = n.fx === undefined ? n.dir : n.fx, fy = n.fy === undefined ? 0.4 : n.fy;
   if (talk && P) { const dx = P.x - n.x, dy = P.y - n.y, dd = Math.hypot(dx, dy); if (dd > 0.05) { fx = dx / dd; fy = dy / dd; } }
   v.sector = facingSector(fx, fy, cam.yaw, v.sector);
-  const want = talk && sheetHas(J, 'talk') ? 'talk' : 'idle', A = J.actions[want] || {};
-  const r = sheetFrame(J, want, Math.floor(time * (A.fps || 6) + n.x)); if (!r) { n.sheetH = 0; disposeVis(v); VIS.delete(n); return false; }
+  // escorted NPCs (n.moving, n.walk, n.fx/fy) play `walk` when the sheet has it (contract v3), else idle
+  const walk = !talk && n.moving && sheetHas(J, 'walk');
+  const want = talk && sheetHas(J, 'talk') ? 'talk' : walk ? 'walk' : 'idle', A = J.actions[want] || {};
+  const fr = walk ? Math.floor((n.walk || time * 6) * 1.26 * (A.frames || 6) / 6) : Math.floor(time * (A.fps || 6) + n.x);
+  const r = sheetFrame(J, want, fr); if (!r) { n.sheetH = 0; disposeVis(v); VIS.delete(n); return false; }
   const ract = r.act, rf = r.f;
   const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
   const st = sprFrame(v, n, _NPCO);
   const pl = placeSheetVis(v, n, ract, dd, rf, dflip, st);
   placeBlob(v, n.x, pl.gh, n.y, 0.45 * Math.max(1, ((n.look && n.look.scale) || 1) * 0.8), pl.z, true);
   n.sheetH = rec.visH;
+  if (walk) sprMotion(v, n, st, rec.visH / PXU);
   const dg = v.diag || (v.diag = { id: rec.id }); dg.act = ract; dg.f = rf; dg.dir = dname;
   return true;
 }

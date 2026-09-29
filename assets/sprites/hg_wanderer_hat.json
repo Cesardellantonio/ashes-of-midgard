@@ -1,0 +1,40 @@
+{
+ "id": "hg_wanderer_hat",
+ "layer": "headgear",
+ "body": "wanderer_hat",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 96,
+ "frameH": 96,
+ "maxFrames": 1,
+ "anchor": [
+  48,
+  40
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 1,
+   "fps": 1,
+   "loop": true
+  }
+ },
+ "hit": {},
+ "slot": "top",
+ "hideHair": "top",
+ "hairClip": [
+  48.3,
+  51.8,
+  55.3,
+  56.9,
+  56.9
+ ]
+}

@@ -219,3 +219,107 @@ function questItem(id, name, o) { ITEMS[id] = Object.assign({ id, name, type: 'k
 questItem('astrid_plush', 'Pip the Poring', { icon: 'plush', color: '#f29db2', desc: 'A stitched pink Poring with one button eye. It smells of smoke and of Astrid.' });
 questItem('brokkr_letter', 'Brokkr’s Letter', { icon: 'letter', color: '#d8c0a0', desc: 'Soot-stained, folded small. It says “SINDRI” on the outside in letters an inch tall.' });
 questItem('vidar_letter', 'Sealed Letter', { icon: 'letter', color: '#e8dcc0', desc: 'Vidar’s letter to Sigrun. The seal is an eye, closed.' });
+
+/* ---------- Content round 4: Act II, side quests, headgear ----------
+   `headgear` is the visual key for a head item (art/engine: render it on the player; see docs/CONTENT.md,
+   "Headgear"). Every head item carries one, so a renderer can draw any of them the same way. */
+const HEAD = (key, o) => Object.assign({ headgear: key }, o || {});
+// Existing head items get their visual keys too.
+Object.assign(ITEMS.bandana, { headgear: 'bandana' }); Object.assign(ITEMS.cap, { headgear: 'cap' }); Object.assign(ITEMS.circlet, { headgear: 'circlet' });
+Object.assign(ITEMS.helm, { headgear: 'helm' }); Object.assign(ITEMS.dvergr_helm, { headgear: 'dvergr_helm' }); Object.assign(ITEMS.rime_circlet, { headgear: 'rime_circlet' });
+Object.assign(ITEMS.aesir_helm, { headgear: 'aesir_helm' }); Object.assign(ITEMS.u_brood_hat, { headgear: 'brood_hat' }); Object.assign(ITEMS.u_gaunt_visage, { headgear: 'gaunt_visage' });
+Object.assign(ITEMS.u_crown, { headgear: 'cinder_crown' }); Object.assign(ITEMS.u_jarl_crown, { headgear: 'jarl_crown' });
+// Side-quest and story headgear (quest rewards and named-monster drops; unique, never sold by smiths)
+const UQ = (o) => U(Object.assign({ price: 2000 }, o));
+arm('straw_hat', 'Gunnar’s Straw Hat', 'head', 2, 0, 5, 0, 0, null, UQ(HEAD('straw_hat', { bonus: { luk: 1, maxhp: 40 }, lore: 'It kept the sun off a farmer for forty summers. The sun is ash now. It still keeps it off.' })));
+arm('poring_hat', 'Poring Hat', 'head', 2, 2, 8, 0, 1, null, UQ(HEAD('poring_hat', { bonus: { luk: 2, maxhp: 80 }, lore: 'The Poring King’s own crown-wearer. It is asleep. Please do not wake it.' })));
+arm('raven_feather', 'Raven Feather', 'head', 1, 3, 14, 0, 0, null, UQ(HEAD('raven_feather', { bonus: { dex: 2, hit: 6 }, lore: 'A black feather from one of Odin’s ravens, tucked behind the ear. It still thinks. Occasionally it remembers.' })));
+arm('greyback_hood', 'Greyback Hood', 'head', 4, 0, 18, 0, 1, null, UQ(HEAD('wolf_hood', { bonus: { agi: 2, crit: 3 }, lore: 'Old Greyback’s own pelt, ears and all. The ears still twitch when wolves are near.' })));
+arm('squire_plume', 'Squire’s Plumed Helm', 'head', 6, 2, 26, 0, 1, null, UQ(HEAD('squire_plume', { bonus: { vit: 3, maxhpPct: 3 }, lore: 'Einar polished it every morning for a knight who never once looked at it.' })));
+arm('shellback_helm', 'Shellback Helm', 'head', 9, 2, 36, 0, 1, null, UQ(HEAD('shell_helm', { bonus: { def: 2, dmgRed: 3 }, lore: 'A hermit shell that was once a Viking helm that was once a hermit shell. Mind the barnacles.' })));
+arm('boatman_hat', 'Boatman’s Hat', 'head', 5, 2, 38, 0, 1, null, UQ(HEAD('boatman_hat', { bonus: { str: 2, vit: 2 }, lore: 'Wide-brimmed, tarred, and stubborn. Bolli swears it floats.' })));
+arm('amethyst_diadem', 'Amethyst Diadem', 'head', 3, 9, 46, 0, 1, null, UQ(HEAD('amethyst_diadem', { bonus: { int: 4, matk: 15 }, lore: 'The Matriarch grew it on her own back, one facet a century.' })));
+arm('runehelm_str', 'Rune-Helm of the Arm', 'head', 11, 2, 48, 0, 1, null, UQ(HEAD('dvergr_runehelm', { bonus: { str: 4, atk: 12 }, lore: 'Sindri’s commission. The rune over the brow is ᚦ, for the hammer.' })));
+arm('runehelm_int', 'Rune-Helm of the Mind', 'head', 7, 8, 48, 0, 1, null, UQ(HEAD('dvergr_runehelm', { bonus: { int: 4, matk: 15 }, lore: 'Sindri’s commission. The rune over the brow is ᚨ, for the god who asks questions.' })));
+arm('runehelm_dex', 'Rune-Helm of the Eye', 'head', 9, 4, 48, 0, 1, null, UQ(HEAD('dvergr_runehelm', { bonus: { dex: 4, hit: 12 }, lore: 'Sindri’s commission. The rune over the brow is ᛊ, for the sun that is gone.' })));
+arm('valkyrie_circlet', 'Valkyrie Circlet', 'head', 4, 8, 50, 0, 1, null, UQ(HEAD('valkyrie_circlet', { bonus: { int: 2, maxsp: 90, mdef: 3 }, lore: 'Two small silver wings. Sigrun wore one like it, once, when there was somewhere to fly to.' })));
+arm('sprig_crown', 'Sprig of Yggdrasil', 'head', 5, 6, 50, 0, 1, null, UQ(HEAD('sprig_crown', { bonus: { vit: 3, maxhpPct: 6 }, lore: 'A living twig of the relit Tree, woven into a crown. It has two leaves. Eira says it will have three by spring.' })));
+arm('cinder_circlet', 'Circlet of Cold Cinders', 'head', 6, 5, 50, 0, 1, null, UQ(HEAD('cinder_circlet', { bonus: { str: 3, int: 3, atk: 10 }, lore: 'The Pretender’s circlet. The embers in it went out the moment it touched a brow the Ash obeys.' })));
+arm('wanderer_hat', 'Wanderer’s Hat', 'head', 4, 6, 52, 0, 1, null, UQ(HEAD('wanderer_hat', { bonus: { int: 3, dex: 3, hit: 10 }, lore: 'Broad-brimmed and grey, pulled low over one eye. He said he would not need it anymore. He was lying, a little.' })));
+arm('gleipnir_band', 'Band of Gleipnir', 'head', 8, 6, 55, 0, 1, null, UQ(HEAD('gleipnir_band', { bonus: { vit: 4, dmgRed: 5 }, lore: 'The last span of the ribbon, left over when the wolf was bound. It is lighter than silk and it will never break.' })));
+arm('wolf_ears', 'Ears of the Wolf', 'head', 5, 3, 55, 0, 1, null, UQ(HEAD('wolf_ears', { bonus: { agi: 4, crit: 8, move: 4 }, lore: 'Black, tufted, warm. Fenrir left them in your hands as he ran. You are fairly sure they were a joke.' })));
+// Accessories and named-monster uniques
+arm('pip_charm', 'Stitched Poring Charm', 'acc', 0, 2, 8, 0, 0, null, UQ({ bonus: { luk: 3, maxhp: 120 }, lore: 'Astrid sewed it from the Poring Hat’s lining and one of Pip’s spare buttons. It is lumpy. It is lucky.' }));
+arm('kari_knot', 'Kari’s Luck-Knot', 'acc', 0, 1, 28, 0, 0, null, UQ({ bonus: { luk: 2, flee: 6 }, lore: 'A fisherman’s knot, tied by a boy who swears it has never once come undone.' }));
+arm('wisp_lantern', 'Wisp in a Jar', 'acc', 0, 4, 38, 0, 0, null, UQ({ bonus: { int: 2, matk: 25 }, lore: 'It glows when you are sad. It glows quite a lot.' }));
+arm('u_garm_collar', 'Collar of Garmr', 'acc', 0, 3, 55, 0, 0, null, UQ({ bonus: { str: 4, vit: 4 }, lore: 'The hound of Helgrind wore it at the gate for ten thousand years. It still smells of the far side.' }));
+arm('u_sunfang', 'Sunfang Pendant', 'acc', 0, 2, 55, 0, 0, null, UQ({ bonus: { atk: 20, crit: 6 }, lore: 'Sköll’s milk-tooth. He chased the sun for ten thousand years, caught it once, and did not know what to do next.' }));
+arm('u_cinder_signet', 'Pretender’s Signet', 'acc', 0, 2, 48, 0, 0, null, UQ({ bonus: { str: 2, int: 2, dex: 2 }, lore: 'He wanted the crown so badly he had the ring made first.' }));
+// Crafting materials (rewards of the collection quests; Sindri’s commission consumes them)
+etc('star_iron', 'Star-Iron Ingot', 900, '#b8c4d8'); etc('rune_thread', 'Rune-Woven Thread', 800, '#c8a0e0'); etc('gold_leaf', 'Asgard Gold Leaf', 1100, '#f0c860');
+Object.assign(ITEMS.star_iron, { desc: 'A crafting material. Iron that fell from the sky before the sky burned. Sindri works it.' });
+Object.assign(ITEMS.rune_thread, { desc: 'A crafting material. Thread spun with a rune in every twist. Sindri uses it to bind leather to steel.' });
+Object.assign(ITEMS.gold_leaf, { desc: 'A crafting material. Beaten gold from the halls of Asgard, thin enough to read through.' });
+// Act II and side-quest key items
+questItem('imp_footfall', 'Footfall of a Cat', { icon: 'etc', color: '#e8e0f0', desc: 'Pip’s bell. It has never made a sound. That is the point.' });
+questItem('imp_beard', 'Beard of a Woman', { icon: 'etc', color: '#8a9a6a', desc: 'A braid of grey-green hair from a Marsh Hag’s chin. Eira insists it counts.' });
+questItem('imp_roots', 'Roots of a Mountain', { icon: 'etc', color: '#8a7a5a', desc: 'A knot of stone root from a golem’s chest. It is still growing, slowly, downward.' });
+questItem('imp_sinew', 'Sinews of a Bear', { icon: 'etc', color: '#c89a78', desc: 'Ragna’s father’s bowstring: bear-sinew, older than Rimeshore.' });
+questItem('imp_breath', 'Breath of a Fish', { icon: 'etc', color: '#9fd8ff', desc: 'A bubble of drowned air in a draugr’s lantern-glass. It does not rise.' });
+questItem('imp_spittle', 'Spittle of a Bird', { icon: 'etc', color: '#f0f0ff', desc: 'A harpy’s spit, crystallised. It is exactly as pleasant as it sounds.' });
+questItem('gleipnir_reforged', 'Gleipnir Reforged', { icon: 'shard', color: '#c8b8ff', desc: 'A ribbon as soft as silk, made of six things that do not exist. Two brothers forged it together. It cannot be broken by anything that is.' });
+questItem('gaunt_fragment', 'Fragment of Gaunt’s Blade', { icon: 'etc', color: '#8a8aa0', desc: 'A shard of Sir Gaunt’s greatsword. Tyr’s rune is still legible on one side.' });
+questItem('dead_nail', 'Dead Man’s Nail', { icon: 'etc', color: '#d8d0b8', desc: 'A fingernail from a drowned man. The draugr gather them for a ship.' });
+questItem('boat_nails', 'Brokkr’s Boat Nails', { icon: 'etc', color: '#8a8a90', desc: 'Two hundred clench-nails, still warm. “Tell him they are a loan.”' });
+questItem('old_sail', 'Hrafn’s Old Sail', { icon: 'etc', color: '#e0d8c0', desc: 'A patched woollen sail from before the sea froze. It smells of salt, which nothing does anymore.' });
+
+/* ---------- Content round 5: crafting, upgrade stones, rare materials, buff food ----------
+   Crafted gear (`crafted: true`) is never sold by smiths and never drops; it is made from RECIPES
+   (js/data/recipes.js) and rolls a fixed quality tier (it.q: 1 Standard, 2 Fine, 3 Masterwork; it.maker).
+   Buff consumables carry `buff: { id, name, secs, bonus }` (useItem in core.js); drinking another of the
+   same buff id refreshes it. Upgrade stones carry `stone: { chance }` (+% refine success) or
+   `stone: { ward: true }` (a failed refine loses one level instead of shattering the item). */
+// Rarer high-level materials: 1.5-2.5 % from every monster of their realm (and from its MVP).
+etc('frost_heart', 'Heart of Rime', 1500, '#7ac8ff'); etc('bog_pearl', 'Bog Pearl', 1700, '#c8e0a0');
+etc('deep_ember', 'Deep Ember', 2000, '#ff9a3a'); etc('star_glass', 'Starglass', 2600, '#e8f0ff');
+Object.assign(ITEMS.frost_heart, { rareMat: true, desc: 'A rare crafting material. A fist of sea ice that never melts; something in it still beats. From the creatures of Rimeshore.' });
+Object.assign(ITEMS.bog_pearl, { rareMat: true, desc: 'A rare crafting material. Grown in a toad’s throat over a century of black water. From the creatures of Mirewell.' });
+Object.assign(ITEMS.deep_ember, { rareMat: true, desc: 'A rare crafting material. A coal from the first forge of Nidavellir, still burning. From the creatures of the Deep.' });
+Object.assign(ITEMS.star_glass, { rareMat: true, desc: 'A rare crafting material. A splinter of the Bifrost, holding every colour at once. From the creatures of the ruins.' });
+// Upgrade stones
+function stone(id, name, price, color, st, desc) { ITEMS[id] = { id, name, type: 'etc', price, color, icon: 'stone', stone: st, desc }; }
+stone('ember_whetstone', 'Ember Whetstone', 2000, '#e8783a', { chance: 10 }, 'An upgrade stone. Rub it on the metal before refining: +10 % success for one refine. Consumed.');
+stone('dvergr_whetstone', 'Dvergr Whetstone', 6000, '#c8a860', { chance: 20 }, 'An upgrade stone of the Deep: +20 % success for one refine. Consumed.');
+stone('warding_stone', 'Warding Stone', 12000, '#9ad0ff', { ward: true }, 'An upgrade stone carved with a ward-rune. If the refine fails, the item loses one level instead of shattering. Consumed.');
+// Buff food and draughts (crafted, or bought in Skaldhaven)
+const buffUse = (id, name, price, color, icon, buff, desc, o) => use_(id, name, Object.assign({ price, icon, color, buff: Object.assign({ id: 'food_' + id, name }, buff), desc }, o || {}));
+buffUse('skald_ale', 'Skaldhaven Ale', 120, '#d8a040', 'mug', { secs: 180, bonus: { luk: 3, crit: 3 } }, 'Restores 60–80 HP. +3 LUK and +3 CRIT for 3 minutes. Hallgerð brews it with sea-salt and spite.', { heal: [60, 80] });
+buffUse('bear_stew', 'Bear Stew', 900, '#a8683a', 'bowl', { secs: 300, bonus: { vit: 5, maxhp: 300 } }, '+5 VIT and +300 Max HP for 5 minutes. There is no bear in it.');
+buffUse('berserk_draught', 'Berserker’s Draught', 2800, '#c83a2a', 'potion', { secs: 180, bonus: { aspd: 12, atk: 15 } }, '+12 % attack speed and +15 ATK for 3 minutes.');
+buffUse('runic_tonic', 'Runic Tonic', 2800, '#6a8aff', 'potion', { secs: 180, bonus: { matk: 30, int: 3 } }, '+30 MATK and +3 INT for 3 minutes.');
+buffUse('hawk_elixir', 'Hawk-Eye Elixir', 2800, '#e8d060', 'potion', { secs: 180, bonus: { hit: 20, crit: 8 } }, '+20 HIT and +8 CRIT for 3 minutes.');
+buffUse('stoneskin_salve', 'Stoneskin Salve', 3200, '#8a8680', 'bowl', { secs: 180, bonus: { def: 8, dmgRed: 5 } }, '+8 DEF and 5 % less damage taken for 3 minutes.');
+buffUse('valkyrie_mead', 'Valkyrie’s Mead', 9000, '#f0e0a0', 'mug', { secs: 300, bonus: { maxhpPct: 10, str: 4, agi: 4, dex: 4 } }, 'Restores 400–500 HP. +10 % Max HP and +4 STR, AGI and DEX for 5 minutes.', { heal: [400, 500] });
+// Crafted gear. Price is what it is worth to a merchant (sellPrice halves it); smiths never sell it.
+const CR = o => Object.assign({ crafted: true }, o);
+arm('cr_pelt_hood', 'Ashen Pelt Hood', 'head', 3, 1, 14, 2400, 1, null, CR(HEAD('pelt_hood', { bonus: { agi: 1, flee: 3 } })));
+arm('cr_hunter_boots', 'Hunter’s Boots', 'boots', 3, 0, 18, 3200, 1, null, CR({ bonus: { agi: 1, move: 4 } }));
+arm('cr_bone_mail', 'Bone-Lamellar', 'body', 9, 1, 22, 5600, 1, null, CR({ bonus: { vit: 2 } }));
+arm('cr_spirit_charm', 'Wraith-Glass Charm', 'acc', 0, 3, 24, 4800, 0, null, CR({ bonus: { int: 2, maxsp: 60 } }));
+weap('cr_ember_blade', 'Ember-Forged Blade', 'sword', 92, 0, 26, 8000, 1, CR({ bonus: { atk: 6, str: 1 } }));
+weap('cr_frost_spear', 'Rimefang Spear', 'spear', 150, 0, 36, 14000, 1, CR({ bonus: { agi: 2, crit: 4 } }));
+arm('cr_rime_cloak', 'Rimeweave Cloak', 'body', 9, 8, 36, 14000, 1, null, CR({ bonus: { int: 2, mdef: 2 } }));
+arm('cr_shellguard', 'Shellguard', 'shield', 9, 2, 38, 14000, 1, null, CR({ bonus: { vit: 2, maxhp: 300 } }));
+arm('cr_moss_treads', 'Troll-Moss Treads', 'boots', 6, 1, 42, 16000, 1, null, CR({ bonus: { vit: 2, move: 5 } }));
+arm('cr_wisp_lantern', 'Wisp-Lantern Charm', 'acc', 0, 4, 40, 18000, 0, null, CR({ bonus: { matk: 25, int: 2 } }));
+arm('cr_amethyst_circlet', 'Amethyst Circlet', 'head', 4, 6, 45, 22000, 1, null, CR(HEAD('amethyst_circlet', { bonus: { int: 3, luk: 2 } })));
+weap('cr_magma_hammer', 'Magma-Core Hammer', 'mace', 160, 30, 46, 28000, 1, CR({ bonus: { str: 3 } }));
+weap('cr_crystal_bow', 'Crystal-String Bow', 'bow', 150, 0, 46, 28000, 1, CR({ bonus: { dex: 3 } }));
+weap('cr_rune_rod', 'Rune-Graven Rod', 'rod', 58, 165, 46, 28000, 1, CR({ bonus: { int: 3 } }));
+arm('cr_harpy_mantle', 'Harpy-Feather Mantle', 'body', 12, 10, 52, 36000, 1, null, CR({ bonus: { agi: 3, flee: 10 } }));
+weap('cr_skybreaker', 'Skybreaker', 'twohand', 272, 0, 54, 52000, 1, CR({ bonus: { str: 4, crit: 5 } }));
+arm('cr_aesir_band', 'Band of the Aesir', 'acc', 0, 4, 55, 52000, 0, null, CR({ bonus: { str: 2, agi: 2, vit: 2, int: 2, dex: 2, luk: 2 } }));
+// The material quests' outputs are crafting materials now too.
+for (const id of ['star_iron', 'rune_thread', 'gold_leaf']) ITEMS[id].desc += ' It can be crafted.';
+// Every material says what it is for.
+for (const id in ITEMS) { const t = ITEMS[id]; if (t.type === 'etc' && !t.stone && t.desc === 'A material. Brokkr pays for these.') t.desc = 'A crafting material. Smiths buy it, and crafters use it (see the Crafting window at Brokkr or Sindri).'; }

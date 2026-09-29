@@ -1,0 +1,43 @@
+{
+ "id": "npc_gunnar",
+ "layer": "npc",
+ "body": "gunnar",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 96,
+ "frameH": 112,
+ "maxFrames": 6,
+ "anchor": [
+  48,
+  96
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "talk": {
+   "row": 1,
+   "frames": 4,
+   "fps": 6,
+   "loop": true
+  },
+  "walk": {
+   "row": 2,
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  }
+ },
+ "hit": {}
+}

@@ -1,0 +1,40 @@
+{
+ "sheets": [
+  {
+   "id": "npc_gunnar",
+   "layer": "npc",
+   "body": "gunnar",
+   "variant": null
+  },
+  {
+   "id": "npc_einar",
+   "layer": "npc",
+   "body": "einar",
+   "variant": null
+  },
+  {
+   "id": "npc_modgud",
+   "layer": "npc",
+   "body": "modgud",
+   "variant": null
+  },
+  {
+   "id": "npc_kari",
+   "layer": "npc",
+   "body": "kari",
+   "variant": null
+  },
+  {
+   "id": "npc_tofa",
+   "layer": "npc",
+   "body": "tofa",
+   "variant": null
+  },
+  {
+   "id": "npc_hel",
+   "layer": "npc",
+   "body": "hel",
+   "variant": null
+  }
+ ]
+}

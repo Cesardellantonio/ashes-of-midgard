@@ -1,0 +1,443 @@
+{
+ "size": [
+  256,
+  256
+ ],
+ "view": "bust, front 3/4 facing screen right",
+ "hairRecolor": "class .hair_* layers are neutral grey: multiply RGB by colour/0.72 (clamp), draw body then hair",
+ "npcs": {
+  "astrid": {
+   "neutral": "astrid_neutral.png",
+   "happy": "astrid_happy.png",
+   "sad": "astrid_sad.png",
+   "angry": "astrid_angry.png",
+   "surprised": "astrid_surprised.png"
+  },
+  "bolli": {
+   "neutral": "bolli_neutral.png",
+   "happy": "bolli_happy.png",
+   "sad": "bolli_sad.png",
+   "angry": "bolli_angry.png",
+   "surprised": "bolli_surprised.png"
+  },
+  "brokkr": {
+   "neutral": "brokkr_neutral.png",
+   "happy": "brokkr_happy.png",
+   "sad": "brokkr_sad.png",
+   "angry": "brokkr_angry.png",
+   "surprised": "brokkr_surprised.png"
+  },
+  "eira": {
+   "neutral": "eira_neutral.png",
+   "happy": "eira_happy.png",
+   "sad": "eira_sad.png",
+   "angry": "eira_angry.png",
+   "surprised": "eira_surprised.png"
+  },
+  "heimdall": {
+   "neutral": "heimdall_neutral.png",
+   "happy": "heimdall_happy.png",
+   "sad": "heimdall_sad.png",
+   "angry": "heimdall_angry.png",
+   "surprised": "heimdall_surprised.png"
+  },
+  "hrafn": {
+   "neutral": "hrafn_neutral.png",
+   "happy": "hrafn_happy.png",
+   "sad": "hrafn_sad.png",
+   "angry": "hrafn_angry.png",
+   "surprised": "hrafn_surprised.png"
+  },
+  "nyr": {
+   "neutral": "nyr_neutral.png",
+   "happy": "nyr_happy.png",
+   "sad": "nyr_sad.png",
+   "angry": "nyr_angry.png",
+   "surprised": "nyr_surprised.png"
+  },
+  "ragna": {
+   "neutral": "ragna_neutral.png",
+   "happy": "ragna_happy.png",
+   "sad": "ragna_sad.png",
+   "angry": "ragna_angry.png",
+   "surprised": "ragna_surprised.png"
+  },
+  "sigrun": {
+   "neutral": "sigrun_neutral.png",
+   "happy": "sigrun_happy.png",
+   "sad": "sigrun_sad.png",
+   "angry": "sigrun_angry.png",
+   "surprised": "sigrun_surprised.png"
+  },
+  "sindri": {
+   "neutral": "sindri_neutral.png",
+   "happy": "sindri_happy.png",
+   "sad": "sindri_sad.png",
+   "angry": "sindri_angry.png",
+   "surprised": "sindri_surprised.png"
+  },
+  "vidar": {
+   "neutral": "vidar_neutral.png",
+   "happy": "vidar_happy.png",
+   "sad": "vidar_sad.png",
+   "angry": "vidar_angry.png",
+   "surprised": "vidar_surprised.png"
+  },
+  "gunnar": {
+   "neutral": "gunnar_neutral.png",
+   "happy": "gunnar_happy.png",
+   "sad": "gunnar_sad.png",
+   "angry": "gunnar_angry.png",
+   "surprised": "gunnar_surprised.png"
+  },
+  "einar": {
+   "neutral": "einar_neutral.png",
+   "happy": "einar_happy.png",
+   "sad": "einar_sad.png",
+   "angry": "einar_angry.png",
+   "surprised": "einar_surprised.png"
+  },
+  "modgud": {
+   "neutral": "modgud_neutral.png",
+   "happy": "modgud_happy.png",
+   "sad": "modgud_sad.png",
+   "angry": "modgud_angry.png",
+   "surprised": "modgud_surprised.png"
+  },
+  "kari": {
+   "neutral": "kari_neutral.png",
+   "happy": "kari_happy.png",
+   "sad": "kari_sad.png",
+   "angry": "kari_angry.png",
+   "surprised": "kari_surprised.png"
+  },
+  "tofa": {
+   "neutral": "tofa_neutral.png",
+   "happy": "tofa_happy.png",
+   "sad": "tofa_sad.png",
+   "angry": "tofa_angry.png",
+   "surprised": "tofa_surprised.png"
+  },
+  "hel": {
+   "neutral": "hel_neutral.png",
+   "happy": "hel_happy.png",
+   "sad": "hel_sad.png",
+   "angry": "hel_angry.png",
+   "surprised": "hel_surprised.png"
+  }
+ },
+ "classes": {
+  "acolyte_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "acolyte_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "acolyte_f_neutral.body.png",
+     "hair_spiky": "acolyte_f_neutral.hair_spiky.png",
+     "hair_long": "acolyte_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "acolyte_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "acolyte_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "acolyte_m_neutral.body.png",
+     "hair_spiky": "acolyte_m_neutral.hair_spiky.png",
+     "hair_long": "acolyte_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "archer_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "archer_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "archer_f_neutral.body.png",
+     "hair_spiky": "archer_f_neutral.hair_spiky.png",
+     "hair_long": "archer_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "archer_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "archer_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "archer_m_neutral.body.png",
+     "hair_spiky": "archer_m_neutral.hair_spiky.png",
+     "hair_long": "archer_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "knight_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "knight_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "knight_f_neutral.body.png",
+     "hair_spiky": "knight_f_neutral.hair_spiky.png",
+     "hair_long": "knight_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "knight_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "knight_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "knight_m_neutral.body.png",
+     "hair_spiky": "knight_m_neutral.hair_spiky.png",
+     "hair_long": "knight_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "mage_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "mage_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "mage_f_neutral.body.png",
+     "hair_spiky": "mage_f_neutral.hair_spiky.png",
+     "hair_long": "mage_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "mage_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "mage_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "mage_m_neutral.body.png",
+     "hair_spiky": "mage_m_neutral.hair_spiky.png",
+     "hair_long": "mage_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "monk_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "monk_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "monk_f_neutral.body.png",
+     "hair_spiky": "monk_f_neutral.hair_spiky.png",
+     "hair_long": "monk_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "monk_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "monk_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "monk_m_neutral.body.png",
+     "hair_spiky": "monk_m_neutral.hair_spiky.png",
+     "hair_long": "monk_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "novice_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "novice_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "novice_f_neutral.body.png",
+     "hair_spiky": "novice_f_neutral.hair_spiky.png",
+     "hair_long": "novice_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "novice_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "novice_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "novice_m_neutral.body.png",
+     "hair_spiky": "novice_m_neutral.hair_spiky.png",
+     "hair_long": "novice_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "oathkeeper_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "oathkeeper_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "oathkeeper_f_neutral.body.png",
+     "hair_spiky": "oathkeeper_f_neutral.hair_spiky.png",
+     "hair_long": "oathkeeper_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "oathkeeper_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "oathkeeper_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "oathkeeper_m_neutral.body.png",
+     "hair_spiky": "oathkeeper_m_neutral.hair_spiky.png",
+     "hair_long": "oathkeeper_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "priest_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "priest_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "priest_f_neutral.body.png",
+     "hair_spiky": "priest_f_neutral.hair_spiky.png",
+     "hair_long": "priest_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "priest_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "priest_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "priest_m_neutral.body.png",
+     "hair_spiky": "priest_m_neutral.hair_spiky.png",
+     "hair_long": "priest_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "runecaster_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "runecaster_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "runecaster_f_neutral.body.png",
+     "hair_spiky": "runecaster_f_neutral.hair_spiky.png",
+     "hair_long": "runecaster_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "runecaster_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "runecaster_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "runecaster_m_neutral.body.png",
+     "hair_spiky": "runecaster_m_neutral.hair_spiky.png",
+     "hair_long": "runecaster_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "sage_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "sage_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "sage_f_neutral.body.png",
+     "hair_spiky": "sage_f_neutral.hair_spiky.png",
+     "hair_long": "sage_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "sage_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "sage_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "sage_m_neutral.body.png",
+     "hair_spiky": "sage_m_neutral.hair_spiky.png",
+     "hair_long": "sage_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "skald_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "skald_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "skald_f_neutral.body.png",
+     "hair_spiky": "skald_f_neutral.hair_spiky.png",
+     "hair_long": "skald_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "skald_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "skald_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "skald_m_neutral.body.png",
+     "hair_spiky": "skald_m_neutral.hair_spiky.png",
+     "hair_long": "skald_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "swordsman_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "swordsman_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "swordsman_f_neutral.body.png",
+     "hair_spiky": "swordsman_f_neutral.hair_spiky.png",
+     "hair_long": "swordsman_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "swordsman_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "swordsman_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "swordsman_m_neutral.body.png",
+     "hair_spiky": "swordsman_m_neutral.hair_spiky.png",
+     "hair_long": "swordsman_m_neutral.hair_long.png"
+    }
+   }
+  },
+  "wolfhunter_f": {
+   "hairDefault": "long",
+   "hairTint": "#caa04f",
+   "neutral": "wolfhunter_f_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "wolfhunter_f_neutral.body.png",
+     "hair_spiky": "wolfhunter_f_neutral.hair_spiky.png",
+     "hair_long": "wolfhunter_f_neutral.hair_long.png"
+    }
+   }
+  },
+  "wolfhunter_m": {
+   "hairDefault": "spiky",
+   "hairTint": "#a4532a",
+   "neutral": "wolfhunter_m_neutral.png",
+   "layers": {
+    "neutral": {
+     "body": "wolfhunter_m_neutral.body.png",
+     "hair_spiky": "wolfhunter_m_neutral.hair_spiky.png",
+     "hair_long": "wolfhunter_m_neutral.hair_long.png"
+    }
+   }
+  }
+ }
+}

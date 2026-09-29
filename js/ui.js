@@ -35,6 +35,9 @@ function iconURL(t) {
     case 'head': { g.fillStyle = '#8a7a64'; g.beginPath(); g.arc(32, 36, 20, Math.PI, 0); g.fill(); g.fillRect(10, 36, 44, 6); g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(12, 40, 40, 2); break; }
     case 'shield': { const gr = g.createLinearGradient(12, 0, 52, 0); gr.addColorStop(0, '#8a7a60'); gr.addColorStop(1, '#4a3e30'); g.fillStyle = gr; g.beginPath(); g.moveTo(12, 12); g.lineTo(52, 12); g.lineTo(50, 36); g.quadraticCurveTo(44, 52, 32, 58); g.quadraticCurveTo(20, 52, 14, 36); g.closePath(); g.fill(); g.strokeStyle = '#c0a060'; g.lineWidth = 2; g.stroke(); break; }
     case 'boots': { g.fillStyle = '#6a5040'; g.beginPath(); g.moveTo(18, 10); g.lineTo(34, 10); g.lineTo(34, 40); g.lineTo(52, 46); g.lineTo(52, 56); g.lineTo(16, 56); g.closePath(); g.fill(); g.fillStyle = '#3a2a20'; g.fillRect(16, 52, 36, 4); break; }
+    case 'stone': { g.fillStyle = shade(col, -0.45); g.beginPath(); g.moveTo(12, 40); g.lineTo(22, 16); g.lineTo(46, 12); g.lineTo(54, 34); g.lineTo(40, 54); g.lineTo(18, 52); g.closePath(); g.fill(); g.fillStyle = col; g.beginPath(); g.moveTo(22, 16); g.lineTo(46, 12); g.lineTo(54, 34); g.lineTo(34, 36); g.closePath(); g.fill(); g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.moveTo(24, 18); g.lineTo(40, 15); g.lineTo(32, 26); g.closePath(); g.fill(); g.font = "18px 'Noto Sans Runic', sans-serif"; g.fillStyle = 'rgba(20,10,0,.6)'; g.textAlign = 'center'; g.fillText('ᛟ', 34, 48); break; }
+    case 'bowl': { g.fillStyle = '#6a4a2a'; g.beginPath(); g.moveTo(8, 30); g.lineTo(56, 30); g.quadraticCurveTo(54, 54, 32, 56); g.quadraticCurveTo(10, 54, 8, 30); g.fill(); g.fillStyle = col; g.beginPath(); g.ellipse(32, 30, 23, 6, 0, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 2; for (let i = 0; i < 3; i++) { g.beginPath(); g.moveTo(22 + i * 10, 22); g.quadraticCurveTo(26 + i * 10, 16, 22 + i * 10, 10); g.stroke(); } break; }
+    case 'mug': { g.fillStyle = '#7a5232'; g.fillRect(14, 18, 30, 38); g.strokeStyle = '#7a5232'; g.lineWidth = 5; g.beginPath(); g.arc(46, 36, 9, -1.3, 1.3); g.stroke(); g.fillStyle = '#4a3020'; g.fillRect(14, 28, 30, 3); g.fillRect(14, 44, 30, 3); g.fillStyle = col; g.fillRect(16, 14, 26, 6); g.fillStyle = '#f4ecd8'; g.beginPath(); g.arc(20, 14, 6, 0, 7); g.arc(30, 12, 7, 0, 7); g.arc(39, 14, 5, 0, 7); g.fill(); break; }
     case 'acc': { g.strokeStyle = '#d8b050'; g.lineWidth = 5; g.beginPath(); g.arc(32, 36, 14, 0, 7); g.stroke(); g.fillStyle = '#9fd0ff'; g.beginPath(); g.arc(32, 20, 6, 0, 7); g.fill(); break; }
   }
   ICONCV[key] = c;
@@ -43,7 +46,7 @@ function iconURL(t) {
 const ICONCV = {};
 function iconCanvas(t) { iconURL(t); return ICONCV[t.icon + '|' + (t.color || '')]; }
 // Icons for buffs and debuffs that are not skills (the Bog Crone's hex).
-const BUFF_ICONS = { hex: { el: 'shadow', rune: 'ᚺ' } };
+const BUFF_ICONS = { hex: { el: 'shadow', rune: 'ᚺ' }, food: { el: 'fire', rune: 'ᚠ' }, rested: { el: 'holy', rune: 'ᛃ' } };
 function skillIcon(id) {
   const key = 'sk|' + id; if (iconCache[key]) return iconCache[key];
   const sk = SKILLS[id] || BUFF_ICONS[id] || { el: 'neutral', rune: '?' }; const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
@@ -71,6 +74,7 @@ function chg(k, a, b) { if (HUDA[k] === a && HUDB[k] === b) return false; HUDA[k
 let HOTEL = [], BUFFEL = [], tipT = -1, tipHTML = null;
 function renderHUD() {
   if (chg('name', P.name, P.cls)) { setText('pname', P.name); setText('pclass', CLASSES[P.cls].name); }
+  if (chg('title', P.title, 0)) { const t = P.title && TITLES[P.title]; setText('ptitle', t ? `« ${t} »` : ''); $('ptitle').hidden = !t; }
   const hp = Math.ceil(P.hp), sp = Math.floor(P.sp), mh = S.maxhp, ms = S.maxsp;
   setW('hpb', P.hp / mh * 100); const low = P.hp / mh < 0.25; if (chg('low', low, 0)) $('hpbar').classList.toggle('low', low);
   if (chg('hp', hp, mh)) setText('hpt', hp + ' / ' + mh);
@@ -145,6 +149,11 @@ const WIN = {
   shop: { title: 'Brokkr’s Forge', w: 420, pos: () => [W / 2 - 440, 90] },
   way: { title: 'Waystone', w: 320, pos: () => [W / 2 - 160, H / 2 - 190] },
   worldmap: { title: 'World Map', w: 640, pos: () => [W / 2 - 320, 60] },
+  // Content round 5: services
+  storage: { title: 'Storage', w: 560, pos: () => [W / 2 - 280, 60] },
+  craft: { title: 'Crafting', w: 560, pos: () => [W / 2 - 280, 60] },
+  enchant: { title: 'Seiðr Enchanting', w: 460, pos: () => [W / 2 - 230, 70] },
+  cardsage: { title: 'Card Removal', w: 440, pos: () => [W / 2 - 220, 70] },
 };
 function openWin(id) {
   let el = $('w-' + id);
@@ -158,7 +167,7 @@ function openWin(id) {
   }
   el.hidden = false; UI.open[id] = true; el.style.zIndex = ++UI.z; renderWin(id);
 }
-function closeWin(id) { const el = $('w-' + id); if (el) el.hidden = true; UI.open[id] = false; if (id === 'inv') UI.socketCard = null; if (id === 'shop') UI.refineArm = null; hideTip(); }
+function closeWin(id) { const el = $('w-' + id); if (el) el.hidden = true; UI.open[id] = false; if (id === 'inv') UI.socketCard = null; if (id === 'shop') { UI.refineArm = null; UI.junkArm = false; } if (id === 'cardsage') UI.cardArm = null; hideTip(); }
 function toggleWin(id) { UI.open[id] ? closeWin(id) : openWin(id); }
 function dragify(el) {
   const tb = el.querySelector('.tb');
@@ -195,8 +204,13 @@ const RENDER = {
         head = `<div class="banner-x">Insert <span class="r-card">${esc(ITEMS[card.id].name)}</span> into which item? This cannot be undone.</div><div class="list" style="margin-bottom:10px">${targets.length ? targets.map(i => `<div class="li"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}</span><button class="btn" data-act="socket:${i.uid}">Insert</button></div>`).join('') : '<div class="muted">No equipment with a free slot. Items with a [1] or [2] after the name have slots.</div>'}</div><button class="btn" data-act="socket-cancel">Cancel</button><div class="sec">Bag</div>`;
       }
     }
-    const cells = []; for (let i = 0; i < 48; i++) { const it = P.inv[i]; if (!it) { cells.push('<div class="cell empty"></div>'); continue; } const r = rarityOf(it); cells.push(`<button class="cell r-${r}" data-act="inv:${it.uid}" data-tip="item:${it.uid}" data-bind="item:${it.id}" aria-label="${esc(itemName(it))}"><img src="${iconURL(ITEMS[it.id])}" alt="">${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}</button>`); }
-    return head + `<div class="grid">${cells.join('')}</div><p class="muted" style="margin:8px 0 0;font-size:11.5px;line-height:1.4">Click to use or equip. Right-click to drop. Hover a potion and press 1–9 to put it on the hotbar.</p>`;
+    // Round 5: filter tabs (view only), sort (reorders the bag and merges stacks), bag count, lock marks, mail notice.
+    const tab = UI.invTab || 'all', shown = P.inv.filter(it => tab === 'all' || storageTabOf(it) === tab || (tab === 'etc' && ITEMS[it.id].type === 'key'));
+    const tabs = `<div class="tabs inv-tabs">${STORAGE_TABS.map(([k, l]) => `<button class="btn ${tab === k ? 'on' : ''}" data-act="invtab:${k}">${l}</button>`).join('')}<button class="btn" data-act="sortbag" title="Sort by kind, slot and level; merge stacks" style="margin-left:auto">Sort</button></div>`;
+    const cells = []; for (const it of shown) { const r = rarityOf(it); cells.push(`<button class="cell r-${r}" data-act="inv:${it.uid}" data-tip="item:${it.uid}" data-bind="item:${it.id}" aria-label="${esc(itemName(it))}"><img src="${iconURL(ITEMS[it.id])}" alt="">${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}${it.lock ? '<span class="lk">🔒</span>' : ''}</button>`); }
+    for (let i = tab === 'all' ? shown.length : 0; i < BAG_SLOTS && (tab === 'all' || i < BAG_SLOTS - P.inv.length); i++) cells.push('<div class="cell empty"></div>');
+    const mail = P.mail && P.mail.length ? `<div class="banner-x" style="margin:0 0 6px">You have ${P.mail.length} item${P.mail.length > 1 ? 's' : ''} in your mailbox. Claim ${P.mail.length > 1 ? 'them' : 'it'} at a storage keeper or any Waystone.</div>` : '';
+    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:6px"><span class="muted" style="font-size:11.5px">Bag ${P.inv.length}/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">Click to use or equip. Right-click to drop. Hover a potion and press 1–9 to put it on the hotbar. Hover gear to compare it with what you wear.</p>`;
   },
   equip() {
     const slots = SLOTS.map(s => { const it = P.equip[s]; return `<button class="eqs" data-act="uneq:${s}" ${it ? `data-tip="item:${it.uid}"` : ''}>${it ? `<img src="${iconURL(ITEMS[it.id])}" alt="">` : '<img alt="" style="opacity:0">'}<span><span class="sl">${SLOTNAME[s]}</span><span class="nm ${it ? 'r-' + it.rarity : 'muted'}">${it ? esc(itemName(it)) : 'Empty'}</span></span></button>`; }).join('');
@@ -214,6 +228,7 @@ const RENDER = {
     for (const c of chain) {
       const ids = CLASSES[c].skills.filter(id => !seen.has(id) && SKILLS[id] && (c === P.cls || P.skills[id] !== undefined)); ids.forEach(id => seen.add(id));
       if (c === 'novice' && P.cls !== 'novice') { if (!seen.has('first_aid')) ids.push('first_aid'); ids.splice(ids.indexOf('basic'), ids.includes('basic') ? 1 : 0); }
+      if (c === 'novice' && P.skills.craftsmanship !== undefined && !seen.has('craftsmanship')) { ids.push('craftsmanship'); seen.add('craftsmanship'); }
       if (!ids.length) continue;
       if (chain.length > 1) rows += `<div class="sec" style="margin-top:${c === chain[0] ? 0 : 10}px">${c === 'novice' ? 'Common' : CLASSES[c].name}${c === P.cls ? '' : ' <span class="muted" style="font-weight:400">· still learnable</span>'}</div>`;
       rows += ids.map(row).join('');
@@ -223,9 +238,10 @@ const RENDER = {
     return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}/${cap}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}${hint}<p class="muted" style="margin:8px 0 0;font-size:11.5px">Hover a learned skill and press 1–9 to bind it. Click its icon to use it. ${isAction() ? 'With the keyboard, enemy skills take the enemy in front of you (Tab locks one); ground skills land in front of you.' : 'Enemy skills target what is under the cursor, then your current target. Ground skills land at the cursor.'}</p>`;
   },
   journal() {
-    const tab = UI.jTab === 'chronicle' ? 'chronicle' : 'quests';
-    const tabs = `<div class="tabs"><button class="btn ${tab === 'quests' ? 'on' : ''}" data-act="jtab:quests">Quests</button><button class="btn ${tab === 'chronicle' ? 'on' : ''}" data-act="jtab:chronicle">Chronicle</button></div>`;
-    return tabs + (tab === 'quests' ? journalQuests() : journalChronicle());
+    const tab = UI.jTab === 'chronicle' || UI.jTab === 'ach' ? UI.jTab : 'quests';
+    const nA = ACHIEVEMENTS.filter(a => P.ach[a.id]).length;
+    const tabs = `<div class="tabs"><button class="btn ${tab === 'quests' ? 'on' : ''}" data-act="jtab:quests">Quests</button><button class="btn ${tab === 'chronicle' ? 'on' : ''}" data-act="jtab:chronicle">Chronicle</button><button class="btn ${tab === 'ach' ? 'on' : ''}" data-act="jtab:ach">Achievements ${nA}/${ACHIEVEMENTS.length}</button></div>`;
+    return tabs + (tab === 'quests' ? journalQuests() : tab === 'ach' ? journalAch() : journalChronicle());
   },
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
@@ -238,40 +254,53 @@ const RENDER = {
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
   },
+  // Every shop is a vendor (VENDORS in js/data/recipes.js): Brokkr, Sindri, Úlfar. Tabs depend on what it offers.
   shop() {
-    const tb = $('w-shop') && $('w-shop').querySelector('.tb span'); if (tb) tb.textContent = UI.shopBy === 'sindri' ? 'Sindri’s Deep Forge' : 'Brokkr’s Forge';
+    const v = VENDORS[UI.shopBy] ? UI.shopBy : 'brokkr', V = VENDORS[v];
+    const tb = $('w-shop') && $('w-shop').querySelector('.tb span'); if (tb) tb.textContent = V.title;
     const sc = Object.keys(P.flags.shards).length, cap = [10, 20, 30, 99][sc];
-    const tabs = `<div class="tabs"><button class="btn ${UI.shopMode === 'buy' ? 'on' : ''}" data-act="mode:buy">Buy</button><button class="btn ${UI.shopMode === 'sell' ? 'on' : ''}" data-act="mode:sell">Sell</button><button class="btn ${UI.shopMode === 'refine' ? 'on' : ''}" data-act="mode:refine">Refine</button><span style="margin-left:auto;align-self:center" class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
+    if (UI.shopMode === 'refine' && !V.refine) UI.shopMode = 'buy';
+    const tabs = `<div class="tabs"><button class="btn ${UI.shopMode === 'buy' ? 'on' : ''}" data-act="mode:buy">Buy</button><button class="btn ${UI.shopMode === 'sell' ? 'on' : ''}" data-act="mode:sell">Sell</button>${V.refine ? `<button class="btn ${UI.shopMode === 'refine' ? 'on' : ''}" data-act="mode:refine">Refine</button>` : ''}${V.craft ? `<button class="btn" data-act="craftopen:${v}">Craft ⚒</button>` : ''}<span style="margin-left:auto;align-self:center" class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
     if (UI.shopMode === 'buy') {
-      const sub = `<div class="tabs"><button class="btn ${UI.shopTab === 'supplies' ? 'on' : ''}" data-act="tab:supplies">Supplies</button><button class="btn ${UI.shopTab === 'weapons' ? 'on' : ''}" data-act="tab:weapons">Weapons</button><button class="btn ${UI.shopTab === 'armor' ? 'on' : ''}" data-act="tab:armor">Armor</button></div>`;
-      const pots = ['red_potion', 'orange_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple'].concat(sc >= 1 ? ['yellow_potion'] : [], sc >= 2 ? ['white_potion'] : [], P.flags.gate && P.lvl >= 40 ? ['honey_mead'] : []);
+      if (!V.gear) UI.shopTab = 'supplies';
+      const sub = V.gear ? `<div class="tabs"><button class="btn ${UI.shopTab === 'supplies' ? 'on' : ''}" data-act="tab:supplies">Supplies</button><button class="btn ${UI.shopTab === 'weapons' ? 'on' : ''}" data-act="tab:weapons">Weapons</button><button class="btn ${UI.shopTab === 'armor' ? 'on' : ''}" data-act="tab:armor">Armor</button></div>` : '';
       let ids;
       // Second-class gear only shows for second classes, and only up to 5 levels above your own.
       const t2 = CLASSES[P.cls].tier >= 2;
-      if (UI.shopTab === 'supplies') ids = pots;
-      // Round-3 gear (Lv 45+) only shows within 5 levels of your own, like second-class gear.
-      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && t.lvl <= cap && (t.lvl < 45 || t.lvl <= P.lvl + 5) && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
-      const rows = ids.map(id => { const t = ITEMS[id]; const ok = t.type !== 'equip' || jobOk(t, P.cls); const stack = t.type === 'use'; return `<div class="li ${ok ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}</span><span class="row"><span class="p">${fmt(t.price)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= t.price ? '' : 'disabled'}>Buy</button>${stack ? `<button class="btn" data-act="buy:${id}:10" ${P.zeny >= t.price * 10 ? '' : 'disabled'}>×10</button>` : ''}</span></div>`; }).join('');
-      const note = sc < 3 ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">“Bring me proof the Shardbearers can die and I’ll open the good racks.” Stock rises with each Rune-Shard.</p>` : '';
+      if (UI.shopTab === 'supplies') ids = vendorSupplies(v);
+      // Round-3 gear (Lv 45+) only shows within 5 levels of your own, like second-class gear. Crafted gear is never sold.
+      else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && !t.crafted && t.lvl <= cap && (t.lvl < 45 || t.lvl <= P.lvl + 5) && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
+      const row = (id, sp) => { const t = ITEMS[id], ok = t.type !== 'equip' || jobOk(t, P.cls), stack = t.type !== 'equip', pr = vendorPrice(v, id), left = sp ? vendorLeft(v, id) : Infinity, n10 = Math.min(10, left);
+        return `<div class="li ${ok && left > 0 ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}${sp ? ` <span class="muted">· ${left > 0 ? left + ' left' : 'sold out'}</span>` : ''}</span><span class="row"><span class="p">${fmt(pr)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= pr && left > 0 ? '' : 'disabled'}>Buy</button>${stack && n10 > 1 ? `<button class="btn" data-act="buy:${id}:${n10}" ${P.zeny >= pr * n10 ? '' : 'disabled'}>×${n10}</button>` : ''}</span></div>`; };
+      let rows = ids.map(id => row(id, false)).join('');
+      if (UI.shopTab === 'supplies' && V.specials && V.specials.length) rows += `<div class="sec">Limited stock <span class="muted" style="font-weight:400">· restocks in ${Math.ceil(vendorRestockIn() / 60)} min</span></div>` + V.specials.filter(sp => ITEMS[sp[0]]).map(sp => row(sp[0], true)).join('');
+      const note = v === 'brokkr' && sc < 3 && UI.shopTab !== 'supplies' ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">“Bring me proof the Shardbearers can die and I’ll open the good racks.” Stock rises with each Rune-Shard.</p>` : '';
       return tabs + sub + `<div class="list">${rows}</div>` + note;
     }
     if (UI.shopMode === 'sell') {
+      const J = UI.junk = UI.junk || Object.assign({}, JUNK_DEFAULT), js = junkList(J), jz = js.reduce((a, i) => a + sellPrice(i) * (i.qty || 1), 0);
+      const opt = (k, l) => `<button class="btn ${J[k] ? 'on' : ''}" data-act="junkopt:${k}">${J[k] ? '☑' : '☐'} ${l}</button>`;
+      const junk = `<div class="junk"><div class="row" style="gap:4px;flex-wrap:wrap">${opt('mats', 'Materials')}${opt('gear', 'Common gear')}${opt('magic', 'Magic gear')}${opt('keepCraft', 'Keep crafting materials')}</div>
+        <div class="row" style="margin-top:6px;justify-content:space-between"><span class="muted" style="font-size:11.5px">${js.length ? `${js.length} item${js.length > 1 ? 's' : ''}: ${esc(js.slice(0, 5).map(i => itemName(i)).join(', '))}${js.length > 5 ? '…' : ''}` : 'No junk in your bag.'}</span><button class="btn ${UI.junkArm ? 'warn' : ''}" data-act="selljunk" ${js.length ? '' : 'disabled'}>${UI.junkArm ? `Confirm: sell for ${fmt(jz)}z` : `Sell junk (${fmt(jz)}z)`}</button></div>
+        <p class="muted" style="margin:4px 0 0;font-size:11px">Never sold as junk: locked (🔒), quest-needed, cards, consumables, upgrade stones, rare materials, unique, rare, crafted, refined or carded gear, and gear that would be an upgrade for you.</p></div>`;
       const items = P.inv.filter(i => ITEMS[i.id].type !== 'key');
-      const matVal = P.inv.filter(i => ITEMS[i.id].type === 'etc').reduce((a, i) => a + Math.floor(ITEMS[i.id].price / 2) * i.qty, 0);
-      const rows = items.map(i => { const t = ITEMS[i.id]; const v = sellPrice(i); return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(t)}" alt=""><span class="r-${rarityOf(i)}">${esc(itemName(i))}${i.qty > 1 ? ' ×' + i.qty : ''}</span><span class="row"><span class="p">${fmt(v)}z</span><button class="btn" data-act="sell:${i.uid}">Sell</button>${i.qty > 1 ? `<button class="btn" data-act="sellall:${i.uid}">All</button>` : ''}</span></div>`; }).join('');
-      return tabs + `<div class="row" style="margin-bottom:8px"><button class="btn" data-act="sellmats" ${matVal ? '' : 'disabled'}>Sell all materials (${fmt(matVal)}z)</button></div><div class="list">${rows || '<div class="muted">Nothing to sell.</div>'}</div>`;
+      const rows = items.map(i => { const t = ITEMS[i.id]; const val = sellPrice(i); return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(t)}" alt=""><span class="r-${rarityOf(i)}">${esc(itemName(i))}${i.qty > 1 ? ' ×' + i.qty : ''}</span><span class="row"><span class="p">${fmt(val)}z</span><button class="btn lock ${i.lock ? 'on' : ''}" data-act="lock:${i.uid}" title="${i.lock ? 'Unlock' : 'Lock: never sold as junk or by accident'}">${i.lock ? '🔒' : '🔓'}</button><button class="btn" data-act="sell:${i.uid}" ${i.lock ? 'disabled' : ''}>Sell</button>${i.qty > 1 ? `<button class="btn" data-act="sellall:${i.uid}" ${i.lock ? 'disabled' : ''}>All</button>` : ''}</span></div>`; }).join('');
+      return tabs + junk + `<div class="list">${rows || '<div class="muted">Nothing to sell.</div>'}</div>`;
     }
     const eqs = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => ITEMS[i.id].slot !== 'acc');
+    // Upgrade stones: pick one to use on the next refine (whetstones add success, a warding stone prevents shattering).
+    const stones = [...new Set(P.inv.filter(i => ITEMS[i.id].stone).map(i => i.id))]; if (UI.refineStone && !countItem(UI.refineStone)) UI.refineStone = null;
+    const stoneBar = stones.length ? `<div class="row" style="gap:4px;margin:0 0 8px"><span class="muted">Stone:</span><button class="btn ${!UI.refineStone ? 'on' : ''}" data-act="rstone:">None</button>${stones.map(id => `<button class="btn ${UI.refineStone === id ? 'on' : ''}" data-act="rstone:${id}" data-tip="shop:${id}">${esc(ITEMS[id].name)} ×${countItem(id)}</button>`).join('')}</div>` : '<p class="muted" style="margin:0 0 6px;font-size:11.5px">Upgrade stones (crafted, or from the limited stock) raise the odds or stop a failed refine from shattering the item.</p>';
     const rows = eqs.map(i => {
-      const r = i.refine || 0, cost = refineCost(i), ch = refineChance(i), safe = ch >= 100, armed = UI.refineArm === i.uid;
-      const btn = r >= 10 ? '<span class="muted">Max</span>' : `<button class="btn ${safe ? '' : 'warn'}" data-act="refine:${i.uid}" ${P.zeny >= cost ? '' : 'disabled'}>${armed ? `Confirm, ${ch}%` : safe ? 'Refine' : `Refine (${ch}%)`}</button>`;
-      return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}<br><span class="muted" style="font-size:11px">${r >= 10 ? '' : `+${r} → +${r + 1} · ${fmt(cost)}z${safe ? ' · safe' : ' · fails shatter it'}`}</span></span>${btn}</div>`;
+      const r = i.refine || 0, cost = refineCost(i), ch = refineChanceWith(i, UI.refineStone), safe = ch >= 100, ward = UI.refineStone && ITEMS[UI.refineStone].stone.ward, armed = UI.refineArm === i.uid;
+      const btn = r >= 10 ? '<span class="muted">Max</span>' : `<button class="btn ${safe || ward ? '' : 'warn'}" data-act="refine:${i.uid}" ${P.zeny >= cost ? '' : 'disabled'}>${armed ? `Confirm, ${ch}%` : safe ? 'Refine' : `Refine (${ch}%)`}</button>`;
+      return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}<br><span class="muted" style="font-size:11px">${r >= 10 ? '' : `+${r} → +${r + 1} · ${fmt(cost)}z${safe ? ' · safe' : ward ? ' · a failure drops one level' : ' · fails shatter it'}`}</span></span>${btn}</div>`;
     }).join('');
-    return tabs + `<p class="muted" style="margin:0 0 8px;line-height:1.4">“Up to +4, nothing breaks. Past that the metal gets proud, and proud metal shatters.”</p><div class="list">${rows || '<div class="muted">No equipment to refine. Accessories cannot be refined.</div>'}</div>`;
+    return tabs + `<p class="muted" style="margin:0 0 8px;line-height:1.4">“Up to +4, nothing breaks. Past that the metal gets proud, and proud metal shatters.”</p>${stoneBar}<div class="list">${rows || '<div class="muted">No equipment to refine. Accessories cannot be refined.</div>'}</div>`;
   },
   way() {
     const list = travelList().filter(k => k !== map.id).map(k => travelButton(k)).join('');
-    return `<p class="muted" style="margin:0 0 8px;line-height:1.45">The ember inside is warm. Resting heals you and saves your progress, but everything you killed on this map will rise again.</p><button class="btn big" style="width:100%" data-act="rest">Rest</button><div class="sec">Travel to a kindled Waystone</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}<button class="btn" style="width:100%;margin-top:8px" data-act="worldmap">World Map <kbd>${winKey('worldmap')}</kbd></button>`;
+    return `<p class="muted" style="margin:0 0 8px;line-height:1.45">The ember inside is warm. Resting heals you and saves your progress, but everything you killed on this map will rise again.</p><button class="btn big" style="width:100%" data-act="rest">Rest</button><div class="sec">Travel to a kindled Waystone</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}<button class="btn" style="width:100%;margin-top:8px" data-act="worldmap">World Map <kbd>${winKey('worldmap')}</kbd></button>${mailHTML()}`;
   },
   // World Map: every realm, its level range and waystone, the roads between them; travel from a kindled Waystone.
   worldmap() {
@@ -311,9 +340,77 @@ function travelTo(k) {
   if (!atWaystone()) { log('You can only travel from a kindled Waystone.', 'warn'); return; }
   closeWin('way'); closeWin('worldmap'); Sfx.warp(); const m = genMap(k); gotoMap(k, m.way.x, m.way.y + 1.5);
 }
+/* ---------- Content round 5: service windows (storage, crafting, enchanting, card removal) ---------- */
+const matRow = (id, need) => { const h = countItem(id), ok = h >= need; return `<div class="mat ${ok ? 'ok' : 'no'}" data-tip="shop:${id}"><img src="${iconURL(ITEMS[id])}" alt=""><span>${esc(ITEMS[id].name)}</span><b>${fmt(h)}/${need}</b></div>`; };
+const miniCell = (it, act, tip) => `<button class="cell r-${rarityOf(it)}" data-act="${act}" data-tip="${tip}" aria-label="${esc(itemName(it))}"><img src="${iconURL(ITEMS[it.id])}" alt="">${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}${it.lock ? '<span class="lk">🔒</span>' : ''}</button>`;
+function mailHTML() {
+  if (!P.mail || !P.mail.length) return '';
+  return `<div class="sec">Mailbox (${P.mail.length}) <button class="btn" style="float:right;margin-top:-3px" data-act="mailall">Claim all</button></div><div class="list">${P.mail.map((m, i) => `<div class="li" data-tip="mail:${i}"><img src="${iconURL(ITEMS[m.item.id])}" alt=""><span class="r-${rarityOf(m.item)}">${esc(itemName(m.item))}${m.item.qty > 1 ? ' ×' + m.item.qty : ''} <span class="muted">· from ${esc(m.from)}</span></span><button class="btn" data-act="mail:${i}">Claim</button></div>`).join('')}</div>`;
+}
+Object.assign(RENDER, {
+  storage() {
+    const tab = UI.stTab || 'all', f = it => tab === 'all' || storageTabOf(it) === tab, fee = storageFee();
+    const tabs = `<div class="tabs">${STORAGE_TABS.map(([k, l]) => `<button class="btn ${tab === k ? 'on' : ''}" data-act="sttab:${k}">${l} <span class="muted">${k === 'all' ? P.storage.length : P.storage.filter(i => storageTabOf(i) === k).length}</span></button>`).join('')}</div>`;
+    const st = P.storage.filter(f), bag = P.inv.filter(i => f(i) && ITEMS[i.id].type !== 'key');
+    const sCells = st.map(it => miniCell(it, 'wd:' + it.uid, 'sitem:' + it.uid)).join('') + (tab === 'all' ? '<div class="cell empty"></div>'.repeat(Math.max(0, Math.min(16, STORAGE_SLOTS - P.storage.length))) : '');
+    const bCells = bag.map(it => miniCell(it, 'dp:' + it.uid, 'item:' + it.uid)).join('');
+    return `<p class="muted" style="margin:0 0 6px;line-height:1.4">“One chest, every town. What you leave with me, my sister keeps too.” Each deposit or withdrawal costs <b style="color:var(--gold)">${fmt(fee)}z</b>. Click an item to move its whole stack; Shift-click moves one.</p>${tabs}
+      <div class="sec">Storage <span class="muted" style="font-weight:400">${P.storage.length}/${STORAGE_SLOTS}</span></div><div class="grid st-grid">${sCells || '<span class="muted">Empty.</span>'}</div>
+      <div class="sec">Bag <span class="muted" style="font-weight:400">${P.inv.length}/${BAG_SLOTS}</span> <button class="btn" style="float:right;margin-top:-3px" data-act="dpmats">Deposit all materials</button></div><div class="grid">${bCells || '<span class="muted">Nothing here.</span>'}</div>${mailHTML()}
+      <div class="row" style="justify-content:flex-end;margin-top:6px"><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
+  },
+  craft() {
+    const by = craftStation(), L = craftLv(), tbs = $('w-craft') && $('w-craft').querySelector('.tb span'); if (tbs) tbs.textContent = `Crafting · ${NPCS[by] ? NPCS[by].name : ''}’s ${by === 'sindri' ? 'Deep Forge' : 'Forge'}`;
+    if (!L) return `<p class="lore">You do not know how to hold the tongs yet. <b>Craftsmanship</b> is a passive any path can learn: ask Brokkr in Emberhold for <i>The Smith’s Apprentice</i> (Base Lv 10).</p><div class="sec">What the smiths can make</div><div class="list">${recipesAt(by).slice(0, 8).map(r => `<div class="li off"><img src="${iconURL(ITEMS[r.out[0]])}" alt=""><span>${esc(r.name || ITEMS[r.out[0]].name)}</span><span class="muted">Lv ${r.lvl}</span></div>`).join('')}</div>`;
+    const cat = UI.craftCat || 'all', list = recipesAt(by).filter(r => cat === 'all' || r.cat === cat);
+    if (!UI.craftSel || !RECIPES[UI.craftSel] || !RECIPES[UI.craftSel].at.includes(by)) UI.craftSel = (list[0] || {}).id;
+    const xp = L >= CRAFT_MAX ? 'max' : `${P.flags.craftXp || 0}/${CRAFT_XP(L)} practice`;
+    const tabs = `<div class="tabs"><button class="btn ${cat === 'all' ? 'on' : ''}" data-act="ccat:all">All</button>${RECIPE_CATS.map(([k, l]) => `<button class="btn ${cat === k ? 'on' : ''}" data-act="ccat:${k}">${l}</button>`).join('')}</div>`;
+    const rows = list.map(r => { const why = craftWhy(r, by), t = ITEMS[r.out[0]]; return `<button class="li crow ${UI.craftSel === r.id ? 'sel' : ''} ${r.lvl > L ? 'off' : ''}" data-act="csel:${r.id}"><img src="${iconURL(t)}" alt=""><span>${esc(r.name || t.name)}${r.out[1] > 1 ? ' ×' + r.out[1] : ''}<br><span class="muted" style="font-size:10.5px">Lv ${r.lvl} · ${why ? (r.lvl > L ? 'locked' : 'missing materials') : craftChance(r) + '%'}</span></span><span class="${why ? 'muted' : 'ok'}">${why ? '·' : '✓'}</span></button>`; }).join('');
+    const r = RECIPES[UI.craftSel]; let det = '<p class="muted">Choose a recipe.</p>';
+    if (r) {
+      const t = ITEMS[r.out[0]], why = craftWhy(r, by), ch = craftChance(r);
+      const prev = { id: t.id, rarity: 'common', affixes: [], refine: 0, slotsN: t.slots || 0, cards: [], qty: r.out[1] };
+      let qual = '';
+      if (t.type === 'equip') {
+        const o = craftQualityOdds(), stat = q => { const b = itemBase(Object.assign({}, prev, { q })); return t.slot === 'weapon' ? `ATK ${b.atk}${b.matk ? ' · MATK ' + b.matk : ''}` : `DEF ${b.def} · MDEF ${b.mdef}`; };
+        qual = `<div class="sec">Quality</div>${[1, 2, 3].map(q => `<div class="drow"><span>${QUALITY[q].name} <span class="muted">${o[q - 1]}%</span></span><span>${stat(q)}${QUALITY[q].slot ? ' · +1 slot' : ''}</span></div>`).join('')}`;
+      }
+      det = `<div class="cprev">${itemTooltip(prev, true)}</div><div class="sec">Materials <span class="muted" style="font-weight:400">(used up even if the work fails)</span></div>${r.mats.map(([id, n]) => matRow(id, n)).join('')}
+        <div class="drow"><span>Fee</span><b style="color:${P.zeny >= r.fee ? 'var(--gold)' : 'var(--bad)'}">${fmt(r.fee)}z</b></div><div class="drow"><span>Craftsmanship</span><b style="color:${L >= r.lvl ? 'inherit' : 'var(--bad)'}">Lv ${r.lvl} (yours ${L})</b></div><div class="drow"><span>Success</span><b>${ch}%</b></div>${qual}
+        ${why ? `<p class="tt-bad" style="margin:6px 0 0">${esc(why)}</p>` : ''}<div class="row" style="margin-top:8px"><button class="btn big" data-act="craft:${r.id}:1" ${why ? 'disabled' : ''}>Craft</button><button class="btn" data-act="craft:${r.id}:5" ${why ? 'disabled' : ''}>×5</button></div>`;
+    }
+    return `<div class="row" style="justify-content:space-between;margin-bottom:6px"><span>Craftsmanship <b>Lv ${L}/${CRAFT_MAX}</b> <span class="muted">· ${xp}</span></span><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>${tabs}<div class="craft"><div class="list clist">${rows || '<div class="muted">Nothing here.</div>'}</div><div class="cdet">${det}</div></div><p class="muted" style="margin:6px 0 0;font-size:11px">Success grows with Craftsmanship (practice or skill points), DEX and LUK. Gear comes out Standard, Fine (+10 %) or Masterwork (+20 % and an extra slot).</p>`;
+  },
+  enchant() {
+    const gear = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => !ITEMS[i.id].unique);
+    if (!gear.some(i => i.uid === UI.enchSel)) UI.enchSel = gear[0] ? gear[0].uid : null;
+    const list = gear.map(i => `<button class="li crow ${UI.enchSel === i.uid ? 'sel' : ''}" data-act="esel:${i.uid}" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}${SLOTS.some(s => P.equip[s] === i) ? ' <span class="muted">(worn)</span>' : ''}</span><span class="muted">Lv ${ITEMS[i.id].lvl}</span></button>`).join('');
+    const it = findItem(UI.enchSel); let det = '';
+    if (it) {
+      const t = ITEMS[it.id], T = enchantTier(it), rare = !!UI.enchRare && !!T.rare, why = enchantWhy(it, rare);
+      const pool = AFFIXES.filter(a => a.slots.includes(t.slot)).map(a => { let [lo, hi] = a.r(t.lvl); hi = Math.max(lo, hi); if (rare) lo = Math.ceil((lo + hi) / 2); return `${STATLABEL[a.s] || a.s} ${lo}–${hi}`; }).join(' · ');
+      const n = it.rarity === 'rare' ? '2–3' : it.rarity === 'magic' ? '1–2' : '1 (it becomes magic)';
+      det = `<div class="sec">Now</div><div>${it.affixes.length ? it.affixes.map(a => `<div class="tt-b">${bonusLine(a.s, a.v)}</div>`).join('') : '<span class="muted">No enchantments.</span>'}</div>
+        <div class="sec">Reroll</div><p class="muted" style="margin:0 0 4px;font-size:11.5px">${n} new affix${it.rarity === 'rare' ? 'es' : ''} from: ${esc(pool)}</p>${T.mats.map(([id, k]) => matRow(id, k)).join('')}
+        ${T.rare ? `<button class="btn ${rare ? 'on' : ''}" data-act="erare" style="margin:4px 0">${rare ? '☑' : '☐'} Offer ${esc(ITEMS[T.rare[0]].name)} (${countItem(T.rare[0])}): upper half of every range</button>` : ''}
+        <div class="drow"><span>Fee</span><b style="color:${P.zeny >= T.zeny ? 'var(--gold)' : 'var(--bad)'}">${fmt(T.zeny)}z</b></div>${why ? `<p class="tt-bad" style="margin:4px 0 0">${esc(why)}</p>` : ''}
+        <button class="btn big" style="margin-top:6px" data-act="enchant:${it.uid}" ${why ? 'disabled' : ''}>Reroll enchantments</button>`;
+    }
+    return `<p class="muted" style="margin:0 0 6px;line-height:1.4">“Seiðr does not add. It asks the metal what else it could have been.” Rerolls every random affix on non-unique gear. The old ones are lost.</p><div class="craft"><div class="list clist">${list || '<div class="muted">No gear that can be enchanted.</div>'}</div><div class="cdet">${det}</div></div><div class="row" style="justify-content:flex-end;margin-top:6px"><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
+  },
+  cardsage() {
+    const C = CARD_REMOVAL, gear = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => (i.cards || []).length);
+    const rows = gear.map(i => i.cards.map((c, k) => { const fee = cardRemovalFee(i, c), arm = UI.cardArm === i.uid + ':' + k, why = cardRemoveWhy(i, k);
+      return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[c])}" alt=""><span><span class="r-card">${esc(ITEMS[c].name)}</span><br><span class="muted" style="font-size:11px">in ${esc(itemName(i))} · ${fmt(fee)}z</span></span><button class="btn ${arm ? 'warn' : ''}" data-act="cardrm:${i.uid}:${k}" ${why ? `disabled title="${esc(why)}"` : ''}>${arm ? 'Confirm' : 'Remove'}</button></div>`; }).join('')).join('');
+    return `<p class="muted" style="margin:0 0 6px;line-height:1.45">“Cards go in easy. Coming out, they remember they were a monster.” The fee is paid whatever happens.</p>
+      <div class="odds"><span class="good">Both whole ${C.success}%</span><span>Card breaks ${C.cardBreaks}%</span><span>Item breaks ${C.itemBreaks}% <span class="muted">(its cards come back)</span></span><span class="bad">Both lost ${C.bothBreak}%</span></div>
+      <div class="list" style="margin-top:6px">${rows || '<div class="muted">None of your gear holds a card.</div>'}</div><div class="row" style="justify-content:flex-end;margin-top:6px"><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
+  },
+});
 function journalQuests() {
-  const QA = P.quests.active, kinds = [['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties']];
-  const objRows = id => questObjectives(id).map(o => `<div class="obj ${o.done ? 'done' : o.open ? 'now' : ''}"><span class="m">${o.done ? '✓' : o.open ? '▸' : '·'}</span><span>${esc(o.text)}${o.counted ? ` <b class="qn">${o.cur}/${o.max}</b>` : ''}</span></div>`).join('');
+  const QA = P.quests.active, kinds = [['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties'], ['weekly', 'Weekly hunt']];
+  const objRows = id => questObjectives(id).map(o => `<div class="obj ${o.done ? 'done' : o.open ? 'now' : ''}"><span class="m">${o.done ? '✓' : o.open ? '▸' : '·'}</span><span>${esc(o.text)}${o.counted ? ` <b class="qn">${o.cur}/${o.max}</b>` : ''}${o.live ? ` <i class="muted">${esc(o.live)}</i>` : ''}</span></div>`).join('');
   let h = '';
   for (const [k, label] of kinds) {
     const ids = Object.keys(QA).filter(id => QUESTS[id].kind === k); if (!ids.length) continue;
@@ -342,21 +439,39 @@ function journalQuests() {
     const by = {}; for (const id of avail) { const g = QUESTS[id].giver; (by[g] = by[g] || []).push(id); }
     h += `<div class="sec">Available</div>` + Object.keys(by).map(g => `<div class="obj"><span class="m" style="color:#d08a10">!</span><span><b>${esc(questGiverName(g).replace(/^the /, 'The '))}</b>: ${by[g].map(id => esc(QUESTS[id].name)).join(', ')}</span></div>`).join('');
   }
-  const done = Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind !== 'daily');
+  const done = Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind !== 'daily' && QUESTS[id].kind !== 'weekly');
   const side = done.filter(id => QUESTS[id].kind === 'side').length, total = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'side').length;
   h += `<div class="sec">Completed</div><p class="muted" style="margin:0;line-height:1.5">${done.length ? done.map(id => esc(QUESTS[id].name)).join(' · ') : 'Nothing yet.'}</p><p class="muted" style="font-size:11.5px;margin:6px 0 0">Side quests ${side}/${total} · Bounties claimed ${Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind === 'daily').reduce((a, id) => a + P.quests.done[id].n, 0)}</p>`;
   return h;
 }
 function journalChronicle() {
-  const main = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'main');
-  let nowSet = false;
-  const rows = main.map(id => { const st = questStatus(id), d = st === 'done'; let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } const t = QUESTS[id].obj.map(o => objText(o)).join('; '); return `<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${esc(QUESTS[id].name)} <span class="muted">· ${esc(t)}</span></span></div>`; }).join('');
+  // Story quests in order; a branch quest (q.branch) only shows for the ending you chose. Act II gets its own heading.
+  const main = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'main' && (!QUESTS[id].branch || QUESTS[id].branch === P.flags.ending || P.quests.done[id]));
+  let nowSet = false, act = 1;
+  const rows = main.map(id => { const q = QUESTS[id], st = questStatus(id), d = st === 'done'; let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } const t = q.obj.map(o => objText(o)).join('; '); const head = (q.act || 1) !== act ? `<div class="sec">Act ${act = q.act || 1}${q.act === 2 ? ' · The Wolf and the Gate' : ''}</div>` : ''; return `${head}<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${esc(q.name)} <span class="muted">· ${esc(t)}</span></span></div>`; }).join('');
   const lore = Object.keys(LORE).filter(k => P.flags.lore[k]).map(k => `<p class="lore"><b>${LORE[k][0]}</b>${LORE[k][1]}</p>`).join('');
   const pt = Math.floor(P.playTime / 60);
   const path = classChain(P.cls).map(c => CLASSES[c].name).join(' → ');
   return `<div class="sec">Path</div><p class="muted" style="margin:0 0 4px">${esc(path)}</p>${rows}<div class="sec">Chronicle</div>${lore}<p class="muted" style="font-size:11.5px;margin:6px 0 0">Time in the Ash: ${Math.floor(pt / 60)}h ${pt % 60}m</p>`;
 }
-const sellPrice = i => { const t = ITEMS[i.id]; if (t.type === 'equip') return Math.floor((t.price || 1500) / 2 * (i.rarity === 'rare' ? 2.5 : i.rarity === 'magic' ? 1.5 : 1) + (i.refine || 0) * 150); return Math.floor(t.price / 2); };
+// Journal: achievements, titles and standing (round 4).
+function journalAch() {
+  const t = P.titles || [];
+  let h = `<div class="sec">Title</div><div class="row" style="flex-wrap:wrap;gap:4px"><button class="btn ${!P.title ? 'on' : ''}" data-act="title:">None</button>${t.map(id => `<button class="btn ${P.title === id ? 'on' : ''}" data-act="title:${id}">${esc(TITLES[id])}</button>`).join('')}</div>`;
+  if (!t.length) h += '<p class="muted" style="margin:4px 0 0;font-size:11.5px">Titles come from achievements and from the story. The one you choose is shown under your name.</p>';
+  const reps = Object.keys(REP_NAMES).filter(f => repOf(f));
+  if (reps.length) h += `<div class="sec">Standing</div>` + reps.map(f => `<div class="drow"><span>${esc(REP_NAMES[f].replace(/^the /, 'The '))}</span><b>${repOf(f) > 0 ? '+' : ''}${repOf(f)} · ${repOf(f) >= 5 ? 'Kin' : repOf(f) >= 3 ? 'Trusted' : repOf(f) >= 1 ? 'Friendly' : 'Wary'}</b></div>`).join('');
+  const cats = [...new Set(ACHIEVEMENTS.map(a => a.cat))];
+  for (const c of cats) {
+    h += `<div class="sec">${esc(c)}</div>`;
+    for (const a of ACHIEVEMENTS.filter(x => x.cat === c)) {
+      const got = !!P.ach[a.id], pr = got ? null : achProgress(a);
+      h += `<div class="obj ${got ? 'done' : ''}" style="${got ? '' : 'opacity:.85'}"><span class="m">${got ? '★' : '☆'}</span><span><b>${esc(a.name)}</b> <span class="muted">· ${esc(a.desc)}${a.title && TITLES[a.title] ? ` · title “${esc(TITLES[a.title])}”` : ''}</span>${pr ? ` <b class="qn">${fmt(Math.min(pr[0], pr[1]))}/${fmt(pr[1])}</b>` : ''}</span></div>`;
+    }
+  }
+  return h;
+}
+// sellPrice(item) lives in js/core.js (round 5 economy pass).
 const refineCost = i => Math.round((200 + ITEMS[i.id].lvl * 40) * ((i.refine || 0) + 1));
 const refineChance = i => [100, 100, 100, 100, 60, 50, 40, 30, 20, 10][i.refine || 0];
 
@@ -364,22 +479,43 @@ function itemTooltip(it, fromShop) {
   const t = ITEMS[it.id], r = fromShop ? (t.unique ? 'unique' : t.type === 'card' ? 'card' : 'common') : rarityOf(it);
   let h = `<div class="tt-name r-${r}">${esc(fromShop ? t.name : itemName(it))}</div>`;
   if (t.type === 'equip') {
-    h += `<div class="tt-sub">${it.name && !fromShop ? t.name + ' · ' : ''}${t.slot === 'weapon' ? WNAME[t.wtype] : SLOTNAME[t.slot]}${r !== 'common' ? ' · ' + r : ''}</div>`;
-    if (t.slot === 'weapon') h += `<div class="tt-l">ATK ${t.atk + ((it.refine || 0) * refineAtk(t))}${t.matk ? ` · MATK ${t.matk}` : ''}</div>`;
-    else if (t.def || t.mdef) h += `<div class="tt-l">${t.def ? `DEF ${t.def + (it.refine || 0)}` : ''}${t.def && t.mdef ? ' · ' : ''}${t.mdef ? `MDEF ${t.mdef}` : ''}</div>`;
+    const ib = itemBase(it);
+    h += `<div class="tt-sub">${it.name && !fromShop ? t.name + ' · ' : ''}${t.slot === 'weapon' ? WNAME[t.wtype] : SLOTNAME[t.slot]}${r !== 'common' ? ' · ' + r : ''}${t.crafted ? ' · crafted' : ''}</div>`;
+    if (t.slot === 'weapon') h += `<div class="tt-l">ATK ${ib.atk}${ib.matk ? ` · MATK ${ib.matk}` : ''}</div>`;
+    else if (t.def || t.mdef) h += `<div class="tt-l">${t.def ? `DEF ${ib.def}` : ''}${t.def && t.mdef ? ' · ' : ''}${t.mdef ? `MDEF ${ib.mdef}` : ''}</div>`;
+    if (it.q && QUALITY[it.q] && !fromShop) h += `<div class="tt-u">${QUALITY[it.q].name}${it.q > 1 ? ` (+${Math.round((QUALITY[it.q].mul - 1) * 100)} % base)` : ''}${it.maker ? ` · made by ${esc(it.maker)}` : ''}</div>`;
     for (const k in (t.bonus || {})) h += `<div class="${t.unique ? 'tt-u' : 'tt-l'}">${bonusLine(k, t.bonus[k])}</div>`;
     if (!fromShop) { for (const a of it.affixes || []) h += `<div class="tt-b">${bonusLine(a.s, a.v)}</div>`; for (const c of it.cards || []) h += `<div class="tt-c">✦ ${ITEMS[c].name}: ${Object.entries(ITEMS[c].bonus).map(([k, v]) => bonusLine(k, v)).join(', ')}</div>`; }
-    const sN = fromShop ? t.slots : it.slotsN; if (sN) h += `<div class="tt-l">Slots ${'◆'.repeat((it.cards || []).length)}${'◇'.repeat(sN - (it.cards || []).length)}</div>`;
+    const sN = fromShop ? t.slots : it.slotsN; if (sN) h += `<div class="tt-l">Slots ${'◆'.repeat(fromShop ? 0 : (it.cards || []).length)}${'◇'.repeat(sN - (fromShop ? 0 : (it.cards || []).length))}</div>`;
     h += `<div class="${P.lvl < t.lvl ? 'tt-bad' : 'muted'}">Requires Lv ${t.lvl}</div>`;
     h += `<div class="${jobOk(t, P.cls) ? 'muted' : 'tt-bad'}">${t.jobs === ALLJ || t.jobs.length === ALLJ.length ? 'All paths' : t.jobs.map(j => CLASSES[j].name).join(', ')}</div>`;
     if (t.lore) h += `<div class="tt-lore">${esc(t.lore)}</div>`;
+    h += compareHTML(it, fromShop);
   } else {
-    h += `<div class="tt-sub">${t.quest ? 'Quest item' : { use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type]}</div>`;
+    h += `<div class="tt-sub">${t.quest ? 'Quest item' : t.stone ? 'Upgrade stone' : t.rareMat ? 'Rare material' : { use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type]}</div>`;
     if (t.type === 'card') h += `<div class="tt-c">${Object.entries(t.bonus).map(([k, v]) => bonusLine(k, v)).join('<br>')}</div>`;
     if (t.desc) h += `<div class="tt-l" style="margin-top:3px">${esc(t.desc)}</div>`;
+    if (t.type === 'etc' && !t.stone) { const n = Object.values(RECIPES).filter(rr => rr.mats.some(m => m[0] === it.id)).length; if (n) h += `<div class="muted">Used in ${n} recipe${n > 1 ? 's' : ''}.</div>`; }
+    if (!fromShop && countItem(it.id) > (it.qty || 1)) h += `<div class="muted">${fmt(countItem(it.id))} in your bag</div>`;
   }
-  if (!fromShop && t.type !== 'key') h += `<div class="tt-p">Sells for ${fmt(sellPrice(it))}z</div>`;
+  if (!fromShop && it.lock) h += '<div class="muted">🔒 Locked: never sold as junk</div>';
+  if (!fromShop && t.type !== 'key') h += `<div class="tt-p">Sells for ${fmt(sellPrice(it))}z${it.qty > 1 ? ` each · ${fmt(sellPrice(it) * it.qty)}z all` : ''}</div>`;
   return h;
+}
+// Compared with what you wear in that slot (round 5): every number that would change if you swapped.
+function itemStatsMap(it) {
+  const o = {}; if (!it) return o; const t = ITEMS[it.id], b = itemBase(it), add = (k, v) => { if (v) o[k] = (o[k] || 0) + v; };
+  add('atk', b.atk); add('matk', b.matk); add('def', b.def); add('mdef', b.mdef);
+  for (const k in t.bonus || {}) add(k, t.bonus[k]); for (const a of it.affixes || []) add(a.s, a.v); for (const c of it.cards || []) for (const k in ITEMS[c].bonus) add(k, ITEMS[c].bonus[k]);
+  return o;
+}
+function compareHTML(it, fromShop) {
+  const t = ITEMS[it.id], cur = P.equip[t.slot]; if (cur === it || (!fromShop && SLOTS.some(sl => P.equip[sl] === it))) return '';
+  const probe = fromShop ? { id: it.id, rarity: 'common', affixes: [], refine: 0, cards: [] } : it;
+  const A = itemStatsMap(probe), B = itemStatsMap(cur), keys = [...new Set([...Object.keys(A), ...Object.keys(B)])], rows = [];
+  for (const k of keys) { const d = (A[k] || 0) - (B[k] || 0); if (!d) continue; rows.push(`<span class="${d > 0 ? 'cmp-up' : 'cmp-dn'}">${d > 0 ? '▲' : '▼'} ${bonusLine(k, Math.abs(d)).replace(/^\+/, d > 0 ? '+' : '−')}</span>`); }
+  const head = cur ? `vs. ${esc(itemName(cur))}` : `vs. empty ${SLOTNAME[t.slot].toLowerCase()} slot`;
+  return `<div class="tt-cmp"><div class="muted">${head}</div>${rows.length ? rows.join('<br>') : '<span class="muted">No difference.</span>'}</div>`;
 }
 // Extra lines for special buffs (the engine fields documented at addBuff in js/core.js).
 function buffLines(b) {
@@ -409,6 +545,8 @@ function hideTip() { $('tooltip').hidden = true; }
 function tipFor(key) {
   const [k, v] = key.split(/:(.+)/);
   if (k === 'item') { const it = findItem(+v); return it ? itemTooltip(it) : null; }
+  if (k === 'sitem') { const it = storageFind(+v); return it ? itemTooltip(it) : null; }
+  if (k === 'mail') { const m = P.mail && P.mail[+v]; return m ? itemTooltip(m.item) : null; }
   if (k === 'shop') return itemTooltip({ id: v }, true);
   if (k === 'skill') return skillTooltip(v);
   if (k === 'wm') { const d = MAPDEFS[v]; if (!d) return null; const ms = [...new Set(d.spawns.map(s => s[0]))].map(id => MOBS[id].name); return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${esc(d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : d.sub)}${P.flags.seen[v] && ms.length ? '<br>' + esc(ms.join(', ')) : ''}${P.flags.seen[v] && d.boss && MOBS[d.boss] ? `<br>MVP: ${esc(MOBS[d.boss].name)}${P.flags.bosses[d.boss] ? ' (slain)' : ''}` : ''}</div><div class="muted">${P.kindled[v] ? 'Waystone kindled' : genMap(v).way ? 'Waystone not kindled' : ''}</div>`; }
@@ -428,12 +566,33 @@ function handleAct(act, e) {
     case 'socket-cancel': UI.socketCard = null; break;
     case 'mode': UI.shopMode = b; UI.refineArm = null; break;
     case 'tab': UI.shopTab = b; break;
-    case 'buy': { const t = ITEMS[b], n = +c || 1; if (P.zeny < t.price * n) break; if (t.type === 'equip') { if (!addItem(makeItem(b))) break; } else if (!addItem(makeItem(b, { qty: n }))) break; P.zeny -= t.price * n; log(`Bought ${t.name}${n > 1 ? ' ×' + n : ''}.`, 'loot'); Sfx.coin(); break; }
-    case 'sell': case 'sellall': { const it = findItem(+b); if (!it || P.inv.indexOf(it) < 0) break; const n = a === 'sellall' ? it.qty : 1; const v = sellPrice(it) * (it.qty ? n : 1); P.zeny += v; if (it.qty) takeItem(it.id, n); else P.inv.splice(P.inv.indexOf(it), 1); for (let i = 0; i < 9; i++) { const h = P.hot[i]; if (h && h.k === 'item' && h.id === it.id && countItem(it.id) === 0 && ITEMS[it.id].type === 'etc') P.hot[i] = null; } Sfx.coin(); break; }
-    case 'sellmats': { let v = 0; P.inv = P.inv.filter(i => { if (ITEMS[i.id].type === 'etc') { v += Math.floor(ITEMS[i.id].price / 2) * i.qty; return false; } return true; }); P.zeny += v; log(`Sold materials for ${fmt(v)} zeny.`, 'loot'); Sfx.coin(); break; }
-    case 'refine': { const it = findItem(+b); if (!it) break; const ch = refineChance(it); if (ch < 100 && UI.refineArm !== it.uid) { UI.refineArm = it.uid; break; } UI.refineArm = null; doRefine(it); break; }
+    case 'buy': vendorBuy(VENDORS[UI.shopBy] ? UI.shopBy : 'brokkr', b, +c || 1); break;
+    case 'sell': case 'sellall': { const it = findItem(+b); if (!it || P.inv.indexOf(it) < 0 || it.lock) break; const n = a === 'sellall' ? it.qty : 1; const v = sellPrice(it) * (it.qty ? n : 1); P.zeny += v; if (it.qty) takeItem(it.id, n); else P.inv.splice(P.inv.indexOf(it), 1); for (let i = 0; i < 9; i++) { const h = P.hot[i]; if (h && h.k === 'item' && h.id === it.id && countItem(it.id) === 0 && ITEMS[it.id].type === 'etc') P.hot[i] = null; } Sfx.coin(); break; }
+    case 'sellmats': sellJunk({ mats: true }); break;
+    case 'selljunk': if (UI.junkArm) { UI.junkArm = false; sellJunk(UI.junk || JUNK_DEFAULT); } else UI.junkArm = true; break;
+    case 'junkopt': { UI.junk = UI.junk || Object.assign({}, JUNK_DEFAULT); UI.junk[b] = !UI.junk[b]; UI.junkArm = false; break; }
+    case 'lock': { const it = findItem(+b) || storageFind(+b); if (it) { it.lock = !it.lock || undefined; if (!it.lock) delete it.lock; } UI.junkArm = false; break; }
+    case 'invtab': UI.invTab = b; break;
+    case 'sortbag': sortBag(); break;
+    case 'rstone': UI.refineStone = b || null; UI.refineArm = null; break;
+    case 'craftopen': UI.craftBy = b; openWin('craft'); break;
+    case 'ccat': UI.craftCat = b; break;
+    case 'csel': UI.craftSel = b; break;
+    case 'craft': { const n = +c || 1; for (let i = 0; i < n; i++) { if (craftWhy(RECIPES[b], craftStation())) { if (!i) craft(b, craftStation()); break; } craft(b, craftStation()); } break; }
+    case 'sttab': UI.stTab = b; break;
+    case 'dp': storageDeposit(+b, e && e.shiftKey ? 1 : 0); break;
+    case 'wd': storageWithdraw(+b, e && e.shiftKey ? 1 : 0); break;
+    case 'dpmats': storageDepositMats(); break;
+    case 'mail': mailClaim(+b); break;
+    case 'mailall': mailClaimAll(); break;
+    case 'esel': UI.enchSel = +b; break;
+    case 'erare': UI.enchRare = !UI.enchRare; break;
+    case 'enchant': enchant(+b, !!UI.enchRare && !!enchantTier(findItem(+b) || { id: 'knife' }).rare); break;
+    case 'cardrm': { const k = b + ':' + c; if (UI.cardArm !== k) { UI.cardArm = k; break; } UI.cardArm = null; cardRemove(+b, +c); break; }
+    case 'refine': { const it = findItem(+b); if (!it) break; const ch = refineChanceWith(it, UI.refineStone); if (ch < 100 && UI.refineArm !== it.uid) { UI.refineArm = it.uid; break; } UI.refineArm = null; doRefine(it, UI.refineStone); break; }
     case 'rest': rest(); break;
     case 'jtab': UI.jTab = b; UI.abandonArm = null; break;
+    case 'title': P.title = b && (P.titles || []).includes(b) ? b : null; break;
     case 'qtrack': P.quests.track = P.quests.track === b ? null : b; break;
     case 'qabandon': if (UI.abandonArm === b) { UI.abandonArm = null; questAbandon(b); } else UI.abandonArm = b; break;
     case 'travel': travelTo(b); break;
@@ -444,11 +603,15 @@ function handleAct(act, e) {
   }
   UI.dirty = true;
 }
-function doRefine(it) {
+// Upgrade stones (round 5): stone.chance adds to the odds; stone.ward turns a shattering failure into -1 refine.
+function refineChanceWith(it, stoneId) { const st = stoneId && countItem(stoneId) && ITEMS[stoneId].stone; return Math.min(100, refineChance(it) + (st && st.chance || 0)); }
+function doRefine(it, stoneId) {
   const cost = refineCost(it); if (P.zeny < cost || (it.refine || 0) >= 10) return;
-  P.zeny -= cost; const ch = refineChance(it);
+  const st = stoneId && countItem(stoneId) && refineChance(it) < 100 ? ITEMS[stoneId].stone : null;   // stones are only spent where a refine can fail
+  P.zeny -= cost; const ch = refineChanceWith(it, st ? stoneId : null); if (st) { takeItem(stoneId, 1); log(`You work the ${ITEMS[stoneId].name} into the metal.`, 'sys'); }
   const an = map.objs.find(o => o.kind === 'anvil') || P, smith = UI.shopBy === 'sindri' ? 'Sindri' : 'Brokkr';
   if (Math.random() * 100 < ch) { it.refine = (it.refine || 0) + 1; log(`${smith}’s hammer rings true. ${itemName(it)}.`, 'lvl'); Sfx.level(); burst(an.x, an.y, 20, '#ffd27a', 20, 2.5); }
+  else if (st && st.ward) { it.refine = Math.max(0, (it.refine || 0) - 1); log(`The ward-rune flares and takes the blow. ${itemName(it)} survives, one level weaker.`, 'warn'); Sfx.slam(); burst(an.x, an.y, 20, '#9ad0ff', 20, 2.5); }
   else {
     const name = itemName(it);
     for (const s of SLOTS) if (P.equip[s] === it) P.equip[s] = null;
@@ -475,8 +638,12 @@ async function say(name, pages) { for (let i = 0; i < pages.length; i++) { const
 // NPC definitions, dialog scripts (talkSigrun, talkVidar...) and LORE live in js/data/npcs.js.
 let talkNPC = null; // NPC whose dialog is open (sprite sheets play "talk")
 async function talkTo(n) {
+  if (CINE.busy) return;
   talkNPC = n;
   try {
+    if (n.escort) { const D = NPCS[n.id] || {}; await say(n.name, [D.escortLine || 'Lead on. I am right behind you.']); return; }
+    const beat = storyBeatFor(n.id);
+    if (beat) { await playBeat(beat, n); return; }
     const def = NPCS[n.id] || {};
     if (!(def.urgent && def.urgent())) {
       questEvent('talk', n.id);
@@ -493,14 +660,78 @@ function ending(kind) {
     ash: ['The Age of Ash', 'You lift the Crown of Cinders out of the ash. It is warm, and it fits.', 'The Heart goes quiet under your hand. The fire does not end, but it no longer spreads without asking. Midgard will not grow again. It will obey.', 'In Emberhold, Sigrun lets the Waystone go out. She does not say anything. She does not have to.'] }[kind];
   el.innerHTML = `<div class="e-in"><h2>${A[0]}</h2>${A.slice(1).map(p => `<p>${p}</p>`).join('')}<p class="muted" style="font-size:13px;margin-top:22px">${esc(P.name)} · ${CLASSES[P.cls].name} · Base Lv ${P.lvl} · ${Math.floor(P.playTime / 60)} minutes in the Ash</p><button class="btn big" id="bEnd" style="margin-top:12px">Continue wandering</button></div>`;
   if (kind === 'ash' && !P.inv.some(i => i.id === 'u_crown') && !(P.equip.head && P.equip.head.id === 'u_crown')) addItem(makeItem('u_crown'), true);
-  $('bEnd').onclick = () => { el.hidden = true; log(kind === 'embers' ? 'The Tree breathes. The Ash is still out there, and so are you.' : 'The crown sits warm on your brow. The Ash is yours now.', 'lvl'); };
+  $('bEnd').onclick = () => { el.hidden = true; log(kind === 'embers' ? 'The Tree breathes. The Ash is still out there, and so are you.' : 'The crown sits warm on your brow. The Ash is yours now.', 'lvl'); log('But the dead are still getting up. Past the Heart, on the broken Bifrost, something is still howling.', 'quest'); questRefresh(); };
   Sfx.victory();
+}
+
+// Act II epilogue: the fate of the wolf, told through the age you chose at the Heart.
+function epilogueAct2(fate) {
+  const el = $('ending'); el.hidden = false; const emb = P.flags.ending !== 'ash';
+  const T = fate === 'bound' ? ['The Wolf Bound', 'Gleipnir closes around the wolf like a held breath. It is lighter than silk and it will never break, because nothing it is made of exists.', emb ? 'Heimdall stays at his post. Below him the relit Tree grows another root toward the broken bridge, and some mornings the wolf watches it, and does not howl.' : (P.flags.court === 'rest' ? 'The Ash keeps its distance from the island, because you told it to. The wolf does not seem to mind the quiet.' : 'The dead of the Cinder Court stand guard on the island in their ranks. They answer to you. So, now, does the chain.'), 'In Emberhold the old man with one eye sleeps through a whole night for the first time since the end of the world.']
+    : ['The Wolf Freed', 'You cut the last of Hel’s stitches, and Fenrir stands up out of his borrowed body as something that was never quite a wolf. He looks at you for a long time. Then he runs.', 'He runs up the sky, past the broken bridge, to where the dead sun hangs, and he eats it, because that is what he was made for. The dark lasts one breath.', emb ? 'Then a new sun rises, small and young and fierce, and the relit Tree turns every leaf it has toward her.' : 'Then a new sun rises, pale and obedient. The Ash turns its face to her because you tell it to.'];
+  el.innerHTML = `<div class="e-in"><h2>${T[0]}</h2>${T.slice(1).map(p => `<p>${p}</p>`).join('')}<p class="muted" style="font-size:13px;margin-top:22px">Act II complete · ${esc(P.name)} · ${CLASSES[P.cls].name} · Base Lv ${P.lvl}${P.title && TITLES[P.title] ? ' · ' + esc(TITLES[P.title]) : ''}</p><button class="btn big" id="bEnd2" style="margin-top:12px">Continue wandering</button></div>`;
+  $('bEnd2').onclick = () => { el.hidden = true; log('The saga is sung. The Ash is still out there, and so are you. The echoes of old foes gather at the Hunter’s Board in Emberhold every week.', 'lvl'); };
+  Sfx.victory();
+}
+
+/* =========================================================
+   Cinematic scenes (round 4). Scenes are async scripts in SCENES (js/data/npcs.js); quests start them through
+   `scene` objectives and STORY_TALK beats. While one plays: letterbox bars, the camera frames the speaker and
+   the player (read-only use of `cam` through the updateCamera wrapper below), monsters freeze and you cannot be hit.
+     line(who, pages, zoom)   who = NPC id (on this map), an actor, or { x, y, name } ; ask(who, html, options)
+     actor(id, x, y, o)       a temporary NPC for the scene (NPCS[id].look); o.keep leaves it on the map
+     cineFocus(target, zoom)  frame any { x, y }
+   ========================================================= */
+const CINE = { active: false, busy: false, focus: null, zoom: 0.82, base: null, actors: [] };
+function cineStart() { CINE.active = true; if (CINE.base === null) CINE.base = cam.dist; $('game').classList.add('cine'); }
+function cineEnd() {
+  CINE.active = false; CINE.focus = null;
+  for (const a of CINE.actors) if (!a.keep && map) { const i = map.npcs.indexOf(a); if (i >= 0) map.npcs.splice(i, 1); }
+  CINE.actors = []; $('game').classList.remove('cine'); talkNPC = null;
+}
+function cineFocus(t, zoom) { CINE.focus = t || null; CINE.zoom = zoom || 0.82; }
+function speakerOf(who) { if (!who) return null; if (typeof who === 'object') return who; return (map && (CINE.actors.find(n => n.id === who) || map.npcs.find(n => n.id === who && !n.escort))) || null; }
+function speakerName(who) { if (typeof who === 'object') return who.dname || who.name || ''; const D = NPCS[who]; return D ? (D.dnameFn ? D.dnameFn() : D.dname || npcName(who)) : who; }
+async function line(who, pages, zoom) { const e = speakerOf(who); if (e) { cineFocus(e, zoom); talkNPC = e; } await say(speakerName(who), [].concat(pages)); talkNPC = null; }
+async function ask(who, html, opts) { const e = speakerOf(who); if (e) { cineFocus(e); talkNPC = e; } const r = await dialog(speakerName(who), html, opts); $('dialog').hidden = true; talkNPC = null; return r; }
+function actor(id, x, y, o = {}) {
+  const D = NPCS[id] || {}, s = map ? nearestOpen(x, y, 3) : null;
+  const a = { id, name: o.name || npcName(id), title: D.title, x: s ? s.x + 0.5 : x, y: s ? s.y + 0.5 : y, dir: o.dir || 1, look: o.look || D.look, actor: true, keep: !!o.keep };
+  if (map) map.npcs.push(a); CINE.actors.push(a); burst(a.x, a.y, 20, o.col || '#fff2b8', 16, 2); pillar({ x: a.x, y: a.y, kind: 'fx' }, o.col || '#fff2b8'); return a;
+}
+// Resolves true when the scene played (false when another scene is already running).
+async function playScene(sc, ctx = {}) {
+  if (CINE.busy) return false;
+  const fn = typeof sc === 'function' ? sc : SCENES[sc]; if (!fn) { console.error('Unknown scene ' + sc); return false; }
+  CINE.busy = true; cineStart(); P.path = null; P.target = null; P.pending = null;
+  try { await fn(ctx); } catch (e) { console.error(e); } finally { $('dialog').hidden = true; cineEnd(); CINE.busy = false; UI.dirty = true; }
+  return true;
+}
+// Letterbox bars, eased in and out, drawn on the 2D overlay (so screenshots show them too).
+function drawCineBars(dt) {
+  const want = CINE.active ? 1 : 0; CINE.bar = (CINE.bar || 0) + (want - (CINE.bar || 0)) * Math.min(1, (dt || 0.016) * 7);
+  if (CINE.bar < 0.01) return;
+  const h = Math.round(H * 0.085 * CINE.bar); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, h); ctx.fillRect(0, H - h, W, h);
+}
+// Camera: while a scene has a focus, updateCamera (js/gfx-world.js) follows a point between you and the speaker instead
+// of you, and the distance eases in; afterwards it eases back. Nothing in the graphics files is changed.
+if (typeof updateCamera === 'function') {
+  const baseCam = updateCamera;
+  // eslint-disable-next-line no-global-assign
+  updateCamera = function (dt) {
+    const f = CINE.active && CINE.focus, back = !CINE.active && CINE.base !== null;
+    if (!f && !back && !CINE.active) return baseCam(dt);
+    if (CINE.base !== null) { const want = CINE.active ? CINE.base * CINE.zoom : CINE.base, k = 1 - Math.pow(0.05, dt || 0.016); cam.dist += (want - cam.dist) * k; if (back && Math.abs(cam.dist - CINE.base) < 0.05) { cam.dist = CINE.base; CINE.base = null; } }
+    if (!f || !P) return baseCam(dt);
+    const px = P.x, py = P.y; P.x = px + (f.x - px) * 0.65; P.y = py + (f.y - py) * 0.65;
+    try { baseCam(dt); } finally { P.x = px; P.y = py; }
+  };
 }
 
 /* =========================================================
    UI: quests (tracker, toasts, NPC markers)
    ========================================================= */
-const QUEST_UI = { markers: true, boards: true }; // the renderer may set these false once it draws them itself
+const QUEST_UI = { markers: true, boards: true, boardLabels: true, helgate: true }; // the renderer may set these false once it draws them itself
 (function questStyles() {
   const st = document.createElement('style');
   st.textContent = `
@@ -523,7 +754,31 @@ const QUEST_UI = { markers: true, boards: true }; // the renderer may set these 
 .qcard .qn{font-variant-numeric:tabular-nums}
 .qcard .qr{font-size:11px;color:var(--gold);margin-top:3px}
 .qcard .qready{color:#1e7a2a;font-weight:800;margin-top:2px}
-@media (max-width:760px){#qtrack{top:calc(160px + env(safe-area-inset-top,0px));width:160px;font-size:10.5px}}`;
+@media (max-width:760px){#qtrack{top:calc(160px + env(safe-area-inset-top,0px));width:160px;font-size:10.5px}}
+#game.cine #qtrack,#game.cine #tip,#game.cine #hotbar,#game.cine #buffs{opacity:0;transition:opacity .3s}
+#w-inv .lk,#w-storage .lk{position:absolute;left:1px;top:0;font-size:9px}
+.tabs .btn.on .muted{color:#dfe8ff}
+.inv-tabs{flex-wrap:wrap}.inv-tabs .btn{padding:2px 6px;font-size:10.5px}
+.st-grid{max-height:236px;overflow:auto}
+.craft{display:grid;grid-template-columns:minmax(170px,44%) 1fr;gap:8px;align-items:start}
+.clist{max-height:340px;overflow:auto;padding-right:2px}
+.crow{width:100%;text-align:left;font:12px var(--ui);color:var(--ink);cursor:pointer}
+.crow.sel{border-color:#e0a040;box-shadow:0 0 0 1px #f0c070;background:#fffaf0}
+.crow .ok{color:var(--good);font-weight:800}
+.cdet{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:6px 8px;min-height:120px}
+.cprev{border-bottom:1px solid #d4dbe8;padding-bottom:4px;margin-bottom:2px;font-size:11.5px;line-height:1.4}
+.mat{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:center;height:24px}
+.mat img{width:20px;height:20px}.mat.ok b{color:var(--good)}.mat.no b{color:var(--bad)}
+.odds{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:5px 7px}
+.odds .good{color:var(--good);font-weight:800}.odds .bad{color:var(--bad)}
+.junk{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:6px 7px;margin-bottom:8px}
+.junk .btn{font-size:10.5px;padding:2px 6px}
+.btn.lock{padding:2px 4px;font-size:10px}
+.tt-cmp{margin-top:5px;padding-top:4px;border-top:1px dashed #c4cde0}
+.cmp-up{color:var(--good);font-weight:700}.cmp-dn{color:var(--bad);font-weight:700}
+@media (max-width:760px){.craft{grid-template-columns:1fr}.clist{max-height:180px}}
+#ptitle{display:block;font-size:10.5px;font-weight:700;color:#b07d00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pnc{display:flex;flex-direction:column;min-width:0}`;
   document.head.appendChild(st);
   const tr = document.createElement('div'); tr.id = 'qtrack'; tr.className = 'rwin'; tr.hidden = true; tr.dataset.win = 'journal'; tr.title = 'Open the quest log';
   $('hud').appendChild(tr);
@@ -540,14 +795,21 @@ function renderTracker(force) {
   const el = $('qtrack'), id = P.quests && P.quests.track;
   if (!id || !P.quests.active[id]) { el.hidden = true; return; }
   const q = QUESTS[id], ready = questReady(id), ti = questTurnIn(q);
-  const rows = questObjectives(id).map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
+  const rows = questObjectives(id).map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}${o.live ? ` <i style="color:#b0402a">${esc(o.live)}</i>` : ''}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
   const html = `<div class="rtb">Quest</div><div class="rbd"><div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}</div>`;
   if (cache.qtrack !== html) { cache.qtrack = html; el.innerHTML = html; }
   el.hidden = false;
 }
+/* Per-frame overlay helpers (perf round 2): projected points come from a ring of reused arrays (pj), ground loops
+   reuse one point list, quest markers and sphere glows are pre-rendered canvases. proj(x, y, z, out) fills `out`
+   when gfx-world.js supports it and returns a fresh array otherwise; both work. */
+const PJ_RING = []; let PJ_I = 0;
+function pj(x, y, z) { const o = PJ_RING[PJ_I] || (PJ_RING[PJ_I] = [0, 0, 0]); PJ_I = (PJ_I + 1) & 63; return proj(x, y, z, o); }
+const GL_PTS = [], QMARK_CACHE = {}, SPHERE_GLOW = {};
+function sphereGlow(r) { let c = SPHERE_GLOW[r]; if (c) return c; c = document.createElement('canvas'); c.width = c.height = r * 2; const g = c.getContext('2d'), gr = g.createRadialGradient(r, r, 0, r, r, r); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.3, '#9fd0ff'); gr.addColorStop(1, 'rgba(90,150,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(r, r, r, 0, 7); g.fill(); c.r = r; return (SPHERE_GLOW[r] = c); }
 // Bounty boards have no mesh yet: draw a small notice board in the overlay (QUEST_UI.boards = false to disable).
 function drawBoardProp(o, sc) {
-  const gh = groundH(o.x, o.y), b = proj(o.x, o.y, gh), t = proj(o.x, o.y, gh + 1.7); if (b[2] > 1) return;
+  const gh = groundH(o.x, o.y), b = pj(o.x, o.y, gh), t = pj(o.x, o.y, gh + 1.7); if (b[2] > 1) return;
   const hgt = b[1] - t[1], wd = hgt * 0.75, x = b[0], top = t[1];
   if (!(hgt > 2) || t[2] > 1) return; // top behind the camera or projected upside down
   ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(x, b[1], Math.max(0, wd * 0.55), Math.max(0, wd * 0.16), 0, 0, 7); ctx.fill();
@@ -558,42 +820,73 @@ function drawBoardProp(o, sc) {
   for (const [nx, ny, c] of notes) { ctx.fillStyle = c; ctx.fillRect(x + wd * nx, top + hgt * ny, wd * 0.22, hgt * 0.2); ctx.fillStyle = '#8a1a1a'; ctx.fillRect(x + wd * (nx + 0.1), top + hgt * ny + 1, 2 * sc, 2 * sc); }
 }
 function drawQuestMarker(x, y, mark, kind, sc) {
-  const s = Math.max(1, 17 * sc), bob = Math.sin(time * 3.2) * 3 * sc;
-  const col = kind === 'daily' ? ['#bfe6ff', '#3a8ae0'] : kind === 'main' ? ['#fff4b0', '#f0a020'] : ['#fff0a0', '#e8b020'];
-  y += bob;
-  ctx.font = `900 ${Math.round(s * 1.5)}px ${typeof UIFONT !== 'undefined' ? UIFONT : 'sans-serif'}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const g = ctx.createRadialGradient(x, y, 0, x, y, s * 1.2); g.addColorStop(0, rgba(col[1], 0.45)); g.addColorStop(1, rgba(col[1], 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, s * 1.2, 0, 7); ctx.fill();
-  ctx.lineJoin = 'round'; ctx.lineWidth = 5 * sc; ctx.strokeStyle = '#1a1008'; ctx.strokeText(mark, x, y);
-  const gr = ctx.createLinearGradient(0, y - s * 0.6, 0, y + s * 0.6); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]); ctx.fillStyle = gr; ctx.fillText(mark, x, y);
-  ctx.textBaseline = 'alphabetic';
+  const s = Math.max(1, Math.round(17 * sc)), bob = Math.sin(time * 3.2) * 3 * sc;
+  const key = mark + '|' + kind + '|' + s; let c = QMARK_CACHE[key];
+  if (!c) {   // pre-rendered once per (mark, kind, size): no gradients or text layout per frame
+    const col = kind === 'daily' ? ['#bfe6ff', '#3a8ae0'] : kind === 'weekly' ? ['#f0d0ff', '#9a4ae0'] : kind === 'main' ? ['#fff4b0', '#f0a020'] : ['#fff0a0', '#e8b020'];
+    const D = Math.ceil(s * 3), h = D / 2, sc2 = s / 17; c = document.createElement('canvas'); c.width = c.height = D * DPR; const g = c.getContext('2d'); g.scale(DPR, DPR);
+    g.font = `900 ${Math.round(s * 1.5)}px ${typeof UIFONT !== 'undefined' ? UIFONT : 'sans-serif'}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const rg = g.createRadialGradient(h, h, 0, h, h, s * 1.2); rg.addColorStop(0, rgba(col[1], 0.45)); rg.addColorStop(1, rgba(col[1], 0)); g.fillStyle = rg; g.beginPath(); g.arc(h, h, s * 1.2, 0, 7); g.fill();
+    g.lineJoin = 'round'; g.lineWidth = 5 * sc2; g.strokeStyle = '#1a1008'; g.strokeText(mark, h, h);
+    const gr = g.createLinearGradient(0, h - s * 0.6, 0, h + s * 0.6); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]); g.fillStyle = gr; g.fillText(mark, h, h);
+    c.half = h; QMARK_CACHE[key] = c;
+  }
+  ctx.drawImage(c, x - c.half, y + bob - c.half, c.half * 2, c.half * 2);
 }
 function drawQuestOverlay() {
   if (!started || !map || !P || typeof proj !== 'function' || typeof PPU === 'undefined') return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const sc = clamp(PPU / 34, 0.75, 1.5), boards = map.objs.filter(o => o.kind === 'board');
-  if (QUEST_UI.boards) for (const o of boards) {
-    drawBoardProp(o, sc);
-    if (typeof label === 'function') { const a = proj(o.x, o.y, groundH(o.x, o.y)); if (a[2] < 1) label(o.name, a[0], a[1] + 17 * sc, '#ffd8a8', 11.5); }
+  // The placeholder board prop goes when the renderer draws its own (QUEST_UI.boards = false); the name label stays
+  // unless QUEST_UI.boardLabels = false.
+  for (const o of boards) {
+    if (QUEST_UI.boards) drawBoardProp(o, sc);
+    if (QUEST_UI.boardLabels !== false && typeof label === 'function') { const a = pj(o.x, o.y, groundH(o.x, o.y)); if (a[2] < 1) label(o.name, a[0], a[1] + 17 * sc, '#ffd8a8', 11.5); }
   }
+  drawQuestSpots(sc);
   if (!QUEST_UI.markers) return;
   for (const e of [...map.npcs, ...boards]) {
+    if (e.actor || e.escort) continue; // scene actors and escorted NPCs carry no quest marks
     if (!(e._qmT > time - 0.25) || e._qmT > time) { e._qm = questMarkerInfo(e); e._qmT = time; } // re-evaluated 4x per second
     const info = e._qm; if (!info) continue;
-    const hh = e.board ? 1.95 : headH(e) + 0.45, a = proj(e.x, e.y, groundH(e.x, e.y) + hh); if (a[2] > 1) continue;
+    const hh = e.board ? 1.95 : headH(e) + 0.45, a = pj(e.x, e.y, groundH(e.x, e.y) + hh); if (a[2] > 1) continue;
     drawQuestMarker(a[0], a[1] - 10 * sc, info.mark, info.kind, sc);
   }
+}
+// Round 4: investigation spots (a bobbing "?" and a glint), hunt / defence / destination rings, Hel's gate (no mesh yet:
+// QUEST_UI.helgate = false once the renderer draws `helgate` objects), and your title under your feet.
+function drawQuestSpots(sc) {
+  for (const s of questSpots()) {
+    const gh = groundH(s.x, s.y), pulse = 0.5 + 0.5 * Math.sin(time * 3 + s.x);
+    if (s.kind === 'inspect') {
+      const a = pj(s.x, s.y, gh + 1.1 + Math.sin(time * 2.6 + s.y) * 0.12); if (a[2] > 1) continue;
+      strokeLoop(groundLoop(s.x, s.y, 0.55, 14), rgba('#ffe8a0', 0.12 + 0.1 * pulse), rgba('#ffe8a0', 0.7), 1.5 * sc, [3, 4]);
+      drawQuestMarker(a[0], a[1], '?', 'side', sc * 0.75);
+      if (Math.random() < 0.08) parts.push({ x: s.x + rand(-0.3, 0.3), y: s.y + rand(-0.3, 0.3), z: 4, vx: 0, vy: 0, vz: 30, life: 0.9, max: 0.9, col: '#fff2b8', size: 2.5, float: true });
+    } else if (s.kind === 'escort' || s.kind === 'reach' || s.kind === 'scene') strokeLoop(groundLoop(s.x, s.y, 1.2 + 0.1 * pulse, 20), rgba('#9ae0ff', 0.08), rgba('#9ae0ff', 0.55), 1.6 * sc, [6, 6]);
+    else if (s.kind === 'waves' || s.kind === 'survive') strokeLoop(groundLoop(s.x, s.y, 2.2, 28), rgba('#ff9a5a', 0.06), rgba('#ffb070', 0.5 + 0.2 * pulse), 1.8 * sc, [8, 6]);
+  }
+  if (QUEST_UI.helgate) for (const o of map.objs) if (o.kind === 'helgate') {
+    const open = !!(P.flags.act2 && !P.flags.gateShut), r = open ? 1.5 : 1.1, rot = time * (open ? 0.8 : 0.2);
+    strokeLoop(groundLoop(o.x, o.y, r, 30), rgba('#3a1a3a', 0.45), rgba(open ? '#7aff9a' : '#8a7a9a', 0.7), 2.2 * sc, [5, 4]);
+    const pts = []; for (let i = 0; i < 16; i++) { const a = rot + i / 16 * 6.2832, rr = r * (0.35 + 0.3 * ((i % 2))); const px = o.x + Math.cos(a) * rr, py = o.y + Math.sin(a) * rr; pts.push(pj(px, py, groundH(px, py) + 0.05)); }
+    strokeLoop(pts, null, rgba(open ? '#b0ffc0' : '#a898b8', 0.45), 1.2 * sc, [2, 5]);
+    if (open && Math.random() < 0.25) parts.push({ x: o.x + rand(-r, r) * 0.6, y: o.y + rand(-r, r) * 0.6, z: 2, vx: 0, vy: 0, vz: rand(18, 40), life: 1.2, max: 1.2, col: '#8aff9a', size: 3, float: true });
+    runeAt(o.x, o.y, 0.1, 'ᚺ', open ? '#b0ffc0' : '#a898b8', 20 * sc);
+  }
+  if (P.title && TITLES[P.title] && !P.dead && typeof label === 'function') { const a = pj(P.x, P.y, groundH(P.x, P.y)); if (a[2] < 1) label('« ' + TITLES[P.title] + ' »', a[0], a[1] + 16 * sc, '#ffd070', 10.5); }
 }
 /* Second-class skill feedback drawn on the 2D overlay: ground zones and traps, song/oath auras, the Kyrie
    bubble, spirit spheres, and status marks on monsters. Deliberately simple shapes; the graphics team can
    replace any of it with meshes (data: zones[], P.buffs[*].aura, P.spheres, m.snare/slow/mark/dispel/lex). */
-function groundLoop(x, y, r, n) { const pts = []; for (let i = 0; i < n; i++) { const a = i / n * 6.2832, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; pts.push(proj(px, py, groundH(px, py) + 0.06)); } return pts; }
+function groundLoop(x, y, r, n) { const pts = GL_PTS; pts.length = 0; for (let i = 0; i < n; i++) { const a = i / n * 6.2832, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; pts.push(pj(px, py, groundH(px, py) + 0.06)); } return pts; }
 function strokeLoop(pts, fill, stroke, lw, dash) {
   if (pts.some(p => p[2] > 1)) return false;
   ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
   if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.setLineDash(dash || []); ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); ctx.setLineDash([]); }
   return true;
 }
-function runeAt(x, y, h, txt, col, px) { const a = proj(x, y, groundH(x, y) + h); if (a[2] > 1) return; ctx.font = `${px}px 'Noto Sans Runic', 'Segoe UI Historic', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,6,4,.7)'; ctx.strokeText(txt, a[0], a[1]); ctx.fillStyle = col; ctx.fillText(txt, a[0], a[1]); ctx.textBaseline = 'alphabetic'; }
+function runeAt(x, y, h, txt, col, px) { const a = pj(x, y, groundH(x, y) + h); if (a[2] > 1) return; ctx.font = `${px}px 'Noto Sans Runic', 'Segoe UI Historic', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,6,4,.7)'; ctx.strokeText(txt, a[0], a[1]); ctx.fillStyle = col; ctx.fillText(txt, a[0], a[1]); ctx.textBaseline = 'alphabetic'; }
 function drawSkillOverlay() {
   if (!started || !map || !P || typeof proj !== 'function' || typeof PPU === 'undefined') return;
   const sc = clamp(PPU / 34, 0.75, 1.5);
@@ -614,14 +907,14 @@ function drawSkillOverlay() {
     }
     const r = z.r * (z.kind === 'storm' ? 1 : 0.97 + 0.03 * pulse);
     strokeLoop(groundLoop(z.x, z.y, r, 28), rgba(z.col, (z.ward ? 0.1 : 0.16) * life), rgba(z.col, 0.75 * life), (z.ward ? 1.6 : 2.2) * sc, z.ward ? [8, 6] : null);
-    if (z.kind === 'storm' || z.kind === 'quagmire') { const rot = time * (z.kind === 'storm' ? 2.4 : 0.4); for (let k = 1; k <= 2; k++) { const rr = r * k / 3; const pts = []; for (let i = 0; i < 14; i++) { const a = rot * (k % 2 ? 1 : -1) + i / 14 * 6.2832, px = z.x + Math.cos(a) * rr, py = z.y + Math.sin(a) * rr; pts.push(proj(px, py, groundH(px, py) + 0.08)); } strokeLoop(pts, null, rgba(z.col, 0.45 * life), 1.2 * sc, [6, 8]); } }
+    if (z.kind === 'storm' || z.kind === 'quagmire') { const rot = time * (z.kind === 'storm' ? 2.4 : 0.4); for (let k = 1; k <= 2; k++) { const rr = r * k / 3; const pts = []; for (let i = 0; i < 14; i++) { const a = rot * (k % 2 ? 1 : -1) + i / 14 * 6.2832, px = z.x + Math.cos(a) * rr, py = z.y + Math.sin(a) * rr; pts.push(pj(px, py, groundH(px, py) + 0.08)); } strokeLoop(pts, null, rgba(z.col, 0.45 * life), 1.2 * sc, [6, 8]); } }
     if (z.rune) runeAt(z.x, z.y, 0.15, z.rune, z.col, 22 * sc);
   }
   // Boss cones and rolling lines: the circle telegraphs are drawn by the renderer; add the exact outline once per cast.
   const shapes = new Set();
   for (const t of teles) if (t.shape && (t.shape.kind === 'cone' || t.shape.kind === 'lines') && !t.m.dead) shapes.add(t.grp);
   for (const g of shapes) {
-    const s = g.shape, gp = (x, y) => proj(x, y, groundH(x, y) + 0.07), k = 0.5 + 0.5 * Math.sin(time * 14);
+    const s = g.shape, gp = (x, y) => pj(x, y, groundH(x, y) + 0.07), k = 0.5 + 0.5 * Math.sin(time * 14);
     if (s.kind === 'cone') {
       const pts = [gp(s.x, s.y)]; for (let i = 0; i <= 12; i++) { const a = s.ang - s.half + 2 * s.half * i / 12; pts.push(gp(s.x + Math.cos(a) * s.len, s.y + Math.sin(a) * s.len)); }
       strokeLoop(pts, `rgba(255,90,30,${0.1 + 0.05 * k})`, `rgba(255,190,90,${0.6 + 0.3 * k})`, 2 * sc, [7, 5]);
@@ -635,7 +928,7 @@ function drawSkillOverlay() {
   // Auras (songs, Oath of Tyr, Magic Rod) and the Kyrie bubble
   for (const k in P.buffs) {
     const au = P.buffs[k].aura; if (!au) continue;
-    if (au.bubble) { const a = proj(P.x, P.y, chestH(P)), rr = au.r * PPU; if (a[2] > 1) continue; const g = ctx.createRadialGradient(a[0], a[1], rr * 0.6, a[0], a[1], rr); g.addColorStop(0, rgba(au.col, 0)); g.addColorStop(0.85, rgba(au.col, 0.22)); g.addColorStop(1, rgba(au.col, 0.55)); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(a[0], a[1], rr, rr * 1.15, 0, 0, 7); ctx.fill(); continue; }
+    if (au.bubble) { const a = pj(P.x, P.y, chestH(P)), rr = au.r * PPU; if (a[2] > 1) continue; const g = ctx.createRadialGradient(a[0], a[1], rr * 0.6, a[0], a[1], rr); g.addColorStop(0, rgba(au.col, 0)); g.addColorStop(0.85, rgba(au.col, 0.22)); g.addColorStop(1, rgba(au.col, 0.55)); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(a[0], a[1], rr, rr * 1.15, 0, 0, 7); ctx.fill(); continue; }
     const rr = au.r * (0.94 + 0.06 * Math.sin(time * 4)); strokeLoop(groundLoop(P.x, P.y, rr, 24), rgba(au.col, 0.1), rgba(au.col, 0.7), 1.8 * sc, P.buffs[k].song ? [4, 5] : null);
     if (P.buffs[k].song && Math.random() < 0.08) parts.push({ x: P.x + rand(-rr, rr), y: P.y + rand(-rr, rr), z: 4, vx: 0, vy: 0, vz: 35, life: 1.1, max: 1.1, col: au.col, size: 3, float: true });
   }
@@ -643,8 +936,8 @@ function drawSkillOverlay() {
   if (P.spheres > 0 && !P.dead) {
     const gh = groundH(P.x, P.y), hh = typeof headH === 'function' ? headH(P) * 0.75 : 1.2;
     for (let i = 0; i < P.spheres; i++) {
-      const a = time * 2.2 + i / P.spheres * 6.2832, q = proj(P.x + Math.cos(a) * 0.62, P.y + Math.sin(a) * 0.62, gh + hh + Math.sin(time * 3 + i) * 0.08); if (q[2] > 1) continue;
-      const rr = 5.5 * sc, g = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], rr * 2); g.addColorStop(0, '#ffffff'); g.addColorStop(0.3, '#9fd0ff'); g.addColorStop(1, 'rgba(90,150,255,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q[0], q[1], rr * 2, 0, 7); ctx.fill();
+      const a = time * 2.2 + i / P.spheres * 6.2832, q = pj(P.x + Math.cos(a) * 0.62, P.y + Math.sin(a) * 0.62, gh + hh + Math.sin(time * 3 + i) * 0.08); if (q[2] > 1) continue;
+      const rr = 5.5 * sc, gc = sphereGlow(Math.round(rr * 2)); ctx.drawImage(gc, q[0] - gc.r, q[1] - gc.r, gc.r * 2, gc.r * 2);
     }
   }
   // Monster status marks
@@ -660,7 +953,7 @@ function drawSkillOverlay() {
 if (typeof render === 'function') {
   const baseRender = render;
   // eslint-disable-next-line no-global-assign
-  render = function (dt) { baseRender(dt); try { drawSkillOverlay(); } catch (e) { console.error(e); } try { drawQuestOverlay(); } catch (e) { console.error(e); } };
+  render = function (dt) { baseRender(dt); try { drawSkillOverlay(); } catch (e) { console.error(e); } try { drawQuestOverlay(); } catch (e) { console.error(e); } try { drawCineBars(dt); } catch (e) { console.error(e); } };
 }
 
 /* =========================================================
@@ -743,7 +1036,7 @@ addEventListener('resize', () => { resize(); if (map) setScreenParts(); });
 /* =========================================================
    Save / load / boot
    ========================================================= */
-const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests'];
+const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests', 'titles', 'title', 'ach', 'storage', 'mail'];
 function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; return JSON.stringify(o); }
 function saveGame() { if (!started || !P) return; const s = serialize(); if (s) store('aom-save', s); }
 function loadSave() { const raw = store('aom-save'); if (!raw) return null; try { return JSON.parse(raw); } catch (e) { return null; } }
@@ -754,6 +1047,19 @@ function applySave(o) {
   for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked', 'seen']) P.flags[k] = P.flags[k] || {};
   for (const k in P.kindled || {}) P.flags.seen[k] = true; if (P.map) P.flags.seen[P.map] = true; // saves from before the World Map
   P.quests = questNorm(o.quests); questMigrate = !o.quests; // saves from before the quest system: story quests are caught up without rewards
+  // Round 4: titles, achievements, counters and standing. Older saves start empty; cards you already own count.
+  for (const k of ['kills', 'cards', 'rep', 'variants']) P.flags[k] = P.flags[k] && typeof P.flags[k] === 'object' ? P.flags[k] : {};
+  P.flags.deaths = +P.flags.deaths || 0;
+  P.titles = Array.isArray(o.titles) ? o.titles.filter(t => TITLES[t]) : [];
+  P.title = P.titles.includes(o.title) ? o.title : null;
+  P.ach = o.ach && typeof o.ach === 'object' ? o.ach : {};
+  for (const it of P.inv) if (ITEMS[it.id] && ITEMS[it.id].type === 'card' && ITEMS[it.id].mob) P.flags.cards[ITEMS[it.id].mob] = true;
+  for (const it of [...P.inv, ...SLOTS.map(sl => P.equip[sl])]) for (const c of (it && it.cards) || []) if (ITEMS[c] && ITEMS[c].mob) P.flags.cards[ITEMS[c].mob] = true;
+  // Round 5: storage and mailbox (older saves start empty); stacks bigger than STACK_MAX are split where there is room.
+  P.storage = Array.isArray(o.storage) ? o.storage.filter(it => it && ITEMS[it.id]) : [];
+  P.mail = Array.isArray(o.mail) ? o.mail.filter(m => m && m.item && ITEMS[m.item.id]) : [];
+  P.inv = P.inv.filter(it => it && ITEMS[it.id]);
+  for (const list of [P.inv, P.storage]) for (let i = 0; i < list.length; i++) { const it = list[i]; if (stackable(it.id) && it.qty > STACK_MAX && list.length < (list === P.inv ? BAG_SLOTS : STORAGE_SLOTS)) { list.push({ uid: uidc++, id: it.id, qty: it.qty - STACK_MAX }); it.qty = STACK_MAX; } }
   resetRuntime();
 }
 function startGame(fresh) {
@@ -765,6 +1071,7 @@ function startGame(fresh) {
   map = null; gotoMap(P.map, x, y);
   renderHotbar(); renderBuffs(); UI.dirty = true;
   questRefresh({ silent: !fresh, noReward: questMigrate }); questMigrate = false;
+  achTick(0, true); // achievements already earned in an older save are granted quietly
   log(fresh ? 'You wake in the Ash with nothing but a knife and a shirt.' : `Welcome back, ${P.name}.`, 'sys');
   log(`Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
 }
@@ -833,9 +1140,17 @@ function drawMinimapExtras() {
   g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.lineWidth = 1.5;
   if (map.way) { const x = X(map.way.x), y = Y(map.way.y), r = 5; g.fillStyle = P.kindled[map.id] ? '#ffb050' : '#8a8078'; g.strokeStyle = '#1a1008'; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.stroke(); }
   for (const wp of map.warps) if (wp.lock && wp.lock !== 'gate' && warpLocked(wp)) { g.fillStyle = '#b03020'; g.strokeStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(X(wp.x + 0.5), Y(wp.y + 0.5), 4, 0, 7); g.fill(); g.stroke(); }
+  for (const q of questSpots()) { const x = X(q.x), y = Y(q.y); g.fillStyle = q.kind === 'inspect' ? '#ffe070' : q.kind === 'waves' || q.kind === 'hunt' ? '#ff8a4a' : '#8ad8ff'; g.strokeStyle = '#1a1008'; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); g.stroke(); }
+  for (const m of mobs) if (!m.dead && m.variant) { g.fillStyle = '#ff4a2a'; g.strokeStyle = '#1a0806'; g.beginPath(); g.arc(X(m.x), Y(m.y), 4, 0, 7); g.fill(); g.stroke(); }
   if (map.d.boss && map.bossPos && !P.flags.bosses[map.d.boss] && P.flags.seen[map.id]) { g.strokeStyle = 'rgba(255,122,42,.8)'; g.setLineDash([3, 3]); g.beginPath(); g.arc(X(map.bossPos.x), Y(map.bossPos.y), 7 * s / 2 + 4, 0, 7); g.stroke(); g.setLineDash([]); }
   g.restore();
 }
+// Title line under the name in the HUD (index.html is not ours; add it at load).
+(function titleLine() {
+  const nm = $('pname'); if (!nm || $('ptitle')) return;
+  const col = document.createElement('span'); col.className = 'pnc'; nm.parentNode.insertBefore(col, nm); col.appendChild(nm);
+  const t = document.createElement('span'); t.id = 'ptitle'; t.hidden = true; col.appendChild(t);
+})();
 // World Map button in the HUD menu (index.html is not ours; add it at load).
 (function worldMapButton() {
   const menu = document.querySelector('#info .menu'); if (!menu || menu.querySelector('[data-win="worldmap"]')) return;

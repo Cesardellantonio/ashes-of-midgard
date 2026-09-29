@@ -282,7 +282,7 @@ const POST = (() => {
     const atmo = S.atmo && dtex && (aoOn || vol);
     if (atmo) {
       const P11 = camera.projectionMatrix.elements[5];
-      AU.uAO.value.set(Q.aoRadius || 0.85, (R.ao === undefined ? 1 : R.ao) * 0.55, 0.5 * P11, 1 / camera.aspect);
+      AU.uAO.value.set(Q.aoRadius || 0.85, (R.ao === undefined ? 1 : R.ao) * 0.85, 0.5 * P11, 1 / camera.aspect);
       if (vol) {
         AU.tShadow.value = world.shadow.tex; AU.uShadowM.value.copy(world.shadow.mat); AU.uCamPos.value.copy(camera.position);
         AU.uVol.value.set(vol.dens, vol.top || 4, (cam.th || 0) - 0.6, vol.bias || 0.0015); AU.uVolN.value.set(vol.scale || 0.06, (vol.wind || [0.02, 0.01])[0], (vol.wind || [0.02, 0.01])[1], vol.noise === undefined ? 0.6 : vol.noise);

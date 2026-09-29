@@ -1,0 +1,33 @@
+{
+ "id": "hg_cinder_crown",
+ "layer": "headgear",
+ "body": "cinder_crown",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 96,
+ "frameH": 96,
+ "maxFrames": 1,
+ "anchor": [
+  48,
+  40
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 1,
+   "fps": 1,
+   "loop": true
+  }
+ },
+ "hit": {},
+ "slot": "top",
+ "hideHair": "none"
+}

@@ -73,8 +73,12 @@ function freeAt(x, y) { const r = 0.26; return !blocked(x - r, y - r) && !blocke
 function stepMove(dx, dy) { if (freeAt(P.x + dx, P.y)) P.x += dx; if (freeAt(P.x, P.y + dy)) P.y += dy; }
 
 /* ---------- Gamepad (Xbox layout) ---------- */
+// Gamepads are only polled once one has connected (no getGamepads() call or array copy per tick before that).
+let PAD_SEEN = false;
+addEventListener('gamepadconnected', () => { PAD_SEEN = true; });
 function pollPad(dt) {
-  const gp = navigator.getGamepads ? [...navigator.getGamepads()].find(g => g && g.connected) : null;
+  let gp = null;
+  if (PAD_SEEN && navigator.getGamepads) { const l = navigator.getGamepads(); for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } }
   if (!gp) { CTRL.pad = null; return; }
   const dz = v => Math.abs(v) < 0.2 ? 0 : v;
   CTRL.pad = { x: dz(gp.axes[0] || 0), y: dz(gp.axes[1] || 0) };
@@ -86,7 +90,7 @@ function pollPad(dt) {
     if (down(0)) actInteract(); if (down(12)) useHot(0); if (down(15)) useHot(1); if (down(13)) useHot(2); if (down(14)) useHot(3);
     if (down(9)) toggleWin('status'); if (down(8)) toggleWin('inv');
   } else if (!$('dialog').hidden && down(0)) { const btn = $('dopts').querySelector('button'); if (btn) btn.click(); }
-  CTRL.padPrev = gp.buttons.map(x => x.pressed);
+  const pp = CTRL.padPrev; pp.length = gp.buttons.length; for (let i = 0; i < gp.buttons.length; i++) pp[i] = gp.buttons[i].pressed;
 }
 
 /* ---------- Targeting ---------- */

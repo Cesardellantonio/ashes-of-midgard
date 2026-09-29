@@ -192,6 +192,8 @@ const MAPDEFS = {
       clearR(40, 8, 42, 10);
       m.braziers.push({ x: 40.3, y: 8.2 });
       m.warps.push({ x: 42, y: 9, to: 'nidavellir', tx: 32.5, ty: 4.5, label: 'Nidavellir Deep' });
+      // Round 4: Helgrind, Hel's gate, in the north wall behind Gaunt's throne (OBJ_TALK.helgate; no mesh yet, drawn by the quest overlay)
+      m.objs.push({ kind: 'helgate', x: 30.5, y: 3.6, name: 'Helgrind' });
     } },
   throne: { name: 'Throne of Cinders', sub: 'Where the Roots Burned', lv: [40, 48], world: [80, 120], w: 30, h: 30, seed: 67, gen: 'arena', ground: ['#3a2622', '#402a24', '#35221e', '#46302a'], void: '#120604', dark: 0.5, part: 'ember', spawns: [], boss: 'ashen_king',
     look: { floor: 'rock', g1: [72, 40, 32], g2: [112, 64, 46], grain: 20, rock: 0x5a3a30, tint: [1, 0.9, 0.82], fog: 0x3a150c, fogN: 40, fogF: 100, hemi: [0xffb890, 0x401810, 0.58], sun: [0xff9a60, 0.45], torch: 0.9, lava: true },
@@ -221,7 +223,7 @@ Object.assign(MAPDEFS, {
     ground: ['#c8d0da', '#d4dce4', '#bcc6d2', '#dde4ea'], void: '#0a0e14', dark: 0.42, part: 'snow',
     look: { floor: 'snow', g1: [190, 200, 214], g2: [232, 238, 246], path: [52, 60, 74], ash: [64, 62, 70], ashAmt: 0.22, grain: 12, flowers: 0, trees: ['forest', 'forest2', 'dead'],
       rock: 0x6e7888, tint: [0.92, 0.96, 1.05], fog: 0xc6d4e2, fogN: 50, fogF: 130, hemi: [0xe4eeff, 0x56647a, 0.62], sun: [0xeef4ff, 0.26], torch: 0 },
-    render: { sky: [0x6d93c6, 0xdce8f2], fog: [0xc6d4e2, 36, 150], exposure: 0.86, sun: [0xeef2ff, 0.78, [-0.6, 0.85, 0.35]], hemi: [0xdfeaff, 0x5a6a80, 0.46],
+    render: { mist: { col: 0xdce8f4, k: 1, amb: 0.2, lit: 1.0, amt: 0.35, h: 0.5, max: 0.2, scale: 0.05, wind: [0.06, 0.02], scatter: 0.2 }, vol: { col: 0xe8f2ff, k: 0.35, dens: 0.05, ext: 1, top: 5, scale: 0.05, wind: [0.03, 0.01], noise: 0.8 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x6d93c6, 0xdce8f2], fog: [0xc6d4e2, 36, 150], exposure: 0.86, sun: [0xeef2ff, 0.78, [-0.6, 0.85, 0.35]], hemi: [0xdfeaff, 0x5a6a80, 0.46],
       bloom: [1.2, 0.55], grade: { lift: [0.01, 0.014, 0.032], gamma: [1, 1, 0.98], gain: [0.98, 1.0, 1.05], sat: 0.94, contrast: 1.06, shadowTint: [-0.01, 0.0, 0.03], highTint: [0.0, 0.006, 0.014] },
       vignette: 0.3, particles: 'snow', lt: { amb: [0.62, 0.68, 0.8], sun: [0.4, 0.42, 0.46] },
       water: { color: 0x1d3c56, deep: 0x0b1a2a, foam: 0xeaf4ff, level: -0.45, ice: 0xcfe6f6 },
@@ -278,6 +280,8 @@ Object.assign(MAPDEFS, {
         else if (t === T.WATER && rng() < 0.02) L.decor('rimeshore_ice_floe', 'rock_field_b', x + 0.5, y + 0.5, rng() * 6.28, 0.8 + rng() * 0.6, { dy: 0.7 });
         else if (t === T.FLOOR && s === 0 && m.deco[y * w + x] !== 6 && rng() < 0.014) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' });
       }
+      // Round 5: the north road to Skaldhaven (carved last, so nothing above changes)
+      carve(20, 30, 20, 2, 1); m.warps.push({ x: 20, y: 1, to: 'skaldhaven', tx: 14.5, ty: 36.5, label: 'Skaldhaven' });
     } },
 
   /* ---------- Mirewell: black bog south of the Ashen Fields ---------- */
@@ -285,7 +289,7 @@ Object.assign(MAPDEFS, {
     ground: ['#3a4028', '#40462c', '#343a24', '#464c30'], void: '#070906', dark: 0.62, part: 'spores',
     look: { floor: 'mud', g1: [54, 62, 36], g2: [90, 98, 56], path: [16, 20, 14], ash: [38, 42, 30], ashAmt: 0.3, grain: 20, flowers: 0.03, trees: ['dead', 'forest2', 'dead'],
       rock: 0x5e6252, tint: [0.9, 0.96, 0.86], fog: 0x66755a, fogN: 38, fogF: 105, hemi: [0xc8d8b0, 0x283020, 0.58], sun: [0xe8e4b8, 0.22], torch: 0 },
-    render: { sky: [0x3a4a3a, 0x7a8a66], fog: [0x66755a, 28, 110], exposure: 0.9, sun: [0xe6e0b0, 0.6, [-0.5, 1.0, 0.4]], hemi: [0xb8cca0, 0x28301e, 0.4],
+    render: { mist: { col: 0x9aae88, k: 1, amb: 0.1, lit: 1.2, amt: 0.75, h: 0.8, max: 0.4, scale: 0.05, wind: [0.02, 0.01], scatter: 0.35 }, hfog: { col: 0x6a7a58, k: 0.4, amt: 0.2, h: 0.6, max: 0.25 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x3a4a3a, 0x7a8a66], fog: [0x66755a, 28, 110], exposure: 0.9, sun: [0xe6e0b0, 0.6, [-0.5, 1.0, 0.4]], hemi: [0xb8cca0, 0x28301e, 0.4],
       bloom: [1.15, 0.65], grade: { lift: [0.006, 0.016, 0.006], gamma: [1, 1.02, 1], gain: [1.0, 1.03, 0.92], sat: 0.95, contrast: 1.08, shadowTint: [-0.006, 0.01, 0.0], highTint: [0.012, 0.016, -0.01] },
       vignette: 0.42, particles: 'spores', lt: { amb: [0.5, 0.58, 0.46], sun: [0.42, 0.4, 0.28] },
       water: { color: 0x141a12, deep: 0x050805, foam: 0x5a6a44, level: -0.4, murky: true },
@@ -334,7 +338,7 @@ Object.assign(MAPDEFS, {
       for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
         const t = L.at(x, y), s = m.surf[y * w + x];
         if (t === T.FLOOR && s !== SURF.BRIDGE && L.near(x, y, T.WATER) && rng() < 0.25) L.decor(rng() < 0.6 ? 'mirewell_reeds_a' : 'mirewell_reeds_b', null, x + 0.2 + rng() * 0.6, y + 0.2 + rng() * 0.6, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' });
-        else if (t === T.WATER && rng() < 0.05) L.decor('mirewell_lily_pads', null, x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.4, { dy: 0.75 });
+        else if (t === T.WATER && rng() < 0.05) L.decor('mirewell_lily_pads', null, x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.4, { dy: 0.42 });
         else if (t === T.FLOOR && s === SURF.BRIDGE) {   // rotting boardwalk planks along the trail (deck top 0.34: sink it to the walking height)
           const ns = (m.surf[(y - 1) * w + x] === SURF.BRIDGE) + (m.surf[(y + 1) * w + x] === SURF.BRIDGE), ew = (m.surf[y * w + x - 1] === SURF.BRIDGE) + (m.surf[y * w + x + 1] === SURF.BRIDGE);
           L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, ns >= ew ? 0 : 1.571, 1, { dy: -0.32, on: 'open' });
@@ -348,7 +352,7 @@ Object.assign(MAPDEFS, {
   nidavellir: { name: 'Nidavellir Deep', sub: 'Base Lv 40 – 50', lv: [40, 50], world: [560, 370], w: 64, h: 64, seed: 151, gen: 'dungeon',
     ground: ['#3a3430', '#403834', '#35302c', '#463e38'], wall: ['#5e544c', '#463e38', '#2e2824'], void: '#060504', dark: 0.82, part: 'ember',
     look: { floor: 'carved', g1: [86, 74, 66], g2: [122, 108, 94], path: [52, 30, 22], grain: 16, rock: 0x6a5e56, tint: [0.96, 0.9, 0.84], fog: 0x140e0a, fogN: 35, fogF: 88, hemi: [0xa89888, 0x1a1410, 0.5], sun: [0xffc890, 0.12], torch: 1.7 },
-    render: { sky: [0x080605, 0x1e140e], fog: [0x140e0a, 30, 86], exposure: 1.08, sun: [0xffc890, 0.3, [-0.45, 1.2, 0.35]], hemi: [0x9a8a7a, 0x201812, 0.44],
+    render: { mist: { col: 0x8a6a5a, k: 1, amb: 0.04, lit: 1.5, amt: 0.45, h: 0.5, max: 0.3, scale: 0.06, wind: [0.015, 0.01], scatter: 0.5 }, hfog: { col: 0xff6a2a, k: 0.3, amt: 0.15, h: 0.3, max: 0.25 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x080605, 0x1e140e], fog: [0x140e0a, 30, 86], exposure: 1.08, sun: [0xffc890, 0.3, [-0.45, 1.2, 0.35]], hemi: [0x9a8a7a, 0x201812, 0.44],
       bloom: [1.1, 0.8], grade: { lift: [0.02, 0.012, 0.006], gamma: [0.98, 1, 1.02], gain: [1.05, 0.99, 0.92], sat: 1.04, contrast: 1.1, shadowTint: [0.004, 0.0, 0.012], highTint: [0.026, 0.012, -0.012] },
       vignette: 0.5, particles: 'embers', lt: { amb: [0.5, 0.44, 0.4], sun: [0.08, 0.06, 0.05] }, torch: [0xffa860, 1.4, 9],
       lava: true, lights: { brazier: [0xff8a38, 2.6, 7.5], way: [0xffa048, 3.0, 10], warp: [0x7ab8ff, 2.2, 7], crystal: [0xb07aff, 1.6, 5.5], lava: [0xff6a1a, 1.8, 6] } },
@@ -424,7 +428,7 @@ Object.assign(MAPDEFS, {
     ground: ['#d8cfe0', '#e0d8e8', '#cfc6da', '#e6dfee'], void: '#b8b0d8', dark: 0.3, part: 'motes',
     look: { floor: 'cloud', g1: [214, 208, 234], g2: [246, 243, 252], path: [206, 180, 120], ash: [196, 190, 226], ashAmt: 0.1, grain: 10, flowers: 0, trees: ['dead', 'dead', 'dead'],
       rock: 0xd8c8a0, tint: [1.04, 1.0, 1.06], fog: 0xd4cced, fogN: 55, fogF: 150, hemi: [0xfff4e8, 0x8a80b0, 0.72], sun: [0xfff0d0, 0.3], torch: 0 },
-    render: { sky: [0x6a7ad8, 0xf2d8ee], fog: [0xd4cced, 40, 170], exposure: 0.86, sun: [0xfff0d0, 0.9, [-0.5, 1.1, 0.25]], hemi: [0xfff4ff, 0x9a90c8, 0.5],
+    render: { mist: { col: 0xf0e8ff, k: 1, amb: 0.25, lit: 1.0, amt: 0.25, h: 0.4, max: 0.15, scale: 0.04, wind: [0.05, 0.02], scatter: 0.2 }, vol: { col: 0xfff0c8, k: 0.4, dens: 0.06, ext: 1, top: 6, scale: 0.05, wind: [0.02, 0.008], noise: 0.8 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x6a7ad8, 0xf2d8ee], fog: [0xd4cced, 40, 170], exposure: 0.86, sun: [0xfff0d0, 0.9, [-0.5, 1.1, 0.25]], hemi: [0xfff4ff, 0x9a90c8, 0.5],
       bloom: [1.05, 0.75], grade: { lift: [0.02, 0.014, 0.03], gamma: [1, 1, 1], gain: [1.03, 1.0, 1.02], sat: 1.1, contrast: 1.04, shadowTint: [0.0, -0.004, 0.03], highTint: [0.02, 0.012, 0.0] },
       vignette: 0.24, particles: 'motes', lt: { amb: [0.72, 0.68, 0.8], sun: [0.44, 0.4, 0.34] },
       void: { color: 0xe8e0f4, clouds: 0xfaf4ff, depth: -4.5, rainbow: true },
@@ -486,7 +490,64 @@ Object.assign(MAPDEFS, {
       }
     } },
 });
+/* ---------- Content round 5: Skaldhaven, the harbour town on the Rimeshore coast ----------
+   A safe town (no spawns) north of Rimeshore: the Salt Hall tavern with its bounty board, the storage keeper, the
+   card-picker and the seiðkona, a chandler's market and three piers where Captain Ormr's longship docks. Decor uses the
+   town_* and rimeshore_* models (drawn from m.decor, so no renderer code is needed); houses are town plots (m.houses). */
+MAPDEFS.skaldhaven = { name: 'Skaldhaven', sub: 'Harbour of the Frozen Coast', lv: null, world: [560, 140], w: 48, h: 40, seed: 211, gen: 'town', safe: true,
+  ground: ['#c8d0da', '#d4dce4', '#bcc6d2', '#dde4ea'], void: '#0a0e14', dark: 0.36, part: 'snow', spawns: [],
+  intro: 'Skaldhaven: the one harbour on the frozen coast that still keeps a fire in every window. Traders, skalds and deserters drink in the Salt Hall.',
+  look: { floor: 'snow', g1: [196, 204, 216], g2: [234, 238, 246], path: [150, 142, 130], ash: [64, 62, 70], ashAmt: 0.1, grain: 12, flowers: 0, cobble: true, trees: ['forest', 'forest2'],
+    rock: 0x6e7888, tint: [0.95, 0.97, 1.04], fog: 0xc6d4e2, fogN: 55, fogF: 140, hemi: [0xe8eeff, 0x5a647a, 0.64], sun: [0xf4f0ff, 0.3], torch: 0.4 },
+  render: { mist: { col: 0xe0eaf4, k: 1, amb: 0.2, lit: 1.2, amt: 0.28, h: 0.45, max: 0.16, scale: 0.05, wind: [0.05, 0.018], scatter: 0.25 }, vol: { col: 0xfff0d8, k: 0.3, dens: 0.04, ext: 1, top: 5, scale: 0.05, wind: [0.02, 0.008], noise: 0.8 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x7196c8, 0xe2ecf4], fog: [0xc8d6e4, 40, 150], exposure: 0.9, sun: [0xfff2e0, 0.82, [-0.55, 0.9, 0.4]], hemi: [0xe4ecff, 0x5e6a7e, 0.48],
+    bloom: [1.15, 0.6], grade: { lift: [0.012, 0.012, 0.028], gamma: [1, 1, 0.98], gain: [1.0, 0.99, 1.03], sat: 0.96, contrast: 1.06, shadowTint: [-0.008, 0.0, 0.026], highTint: [0.012, 0.006, 0.0] },
+    vignette: 0.26, particles: 'snow', lt: { amb: [0.64, 0.68, 0.78], sun: [0.44, 0.42, 0.42] },
+    water: { color: 0x1d3c56, deep: 0x0b1a2a, foam: 0xeaf4ff, level: -0.45, ice: 0xcfe6f6 },
+    lights: { brazier: [0xff9a48, 1.1, 6.5], way: [0xffa048, 1.4, 9], warp: [0x6aa8ff, 1.0, 5.5] } },
+  props: {
+    tree: propList([['rimeshore_pine_a', 3, 'tree_pine_a'], ['rimeshore_pine_b', 3, 'tree_pine_b']]),
+    rock: propList([['rimeshore_ice_rock_a', 2, 'rock_field_a'], ['rimeshore_ice_rock_b', 1, 'rock_field_d']]),
+    ice: propList([['rimeshore_ice_rock_c', 2, 'rock_field_c']]),
+  },
+  layout(m, K) {
+    const { set, clearR, rng, w, h } = K, L = LK(m, K), SHORE = 31;
+    m.entry = { x: 14, y: 36 }; m.way = { x: 15.5, y: 19.5 };
+    // 1. the harbour: sea east of the shore (the town wall stops at the water), piers, a sand strip
+    for (let y = 0; y < h; y++) for (let x = SHORE; x < w; x++) set(x, y, T.WATER);
+    for (let y = 1; y < h - 1; y++) for (let x = SHORE - 3; x < SHORE; x++) L.surf(x, y, SURF.SAND);
+    const piers = [[9, 41], [19, 44], [29, 39]];
+    for (const [py, px1] of piers) for (let x = SHORE - 1; x <= px1; x++) for (const y of [py, py + 1]) { set(x, y, T.FLOOR); L.surf(x, y, SURF.BRIDGE); }
+    // 2. houses (plots) and the plaza; the Salt Hall is the big house in the north-west
+    m.houses = []; const house = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, T.RUIN); m.houses.push({ x0, y0, x1, y1 }); };
+    house(4, 3, 9, 7); house(19, 3, 24, 7); house(3, 26, 6, 28); house(21, 27, 24, 29); house(2, 13, 5, 15); house(25, 12, 28, 14); house(9, 30, 12, 32);
+    // cobbles: the plaza, the south gate street, the harbour street, the north lane
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < SHORE; x++) { const inPlaza = Math.hypot(x + 0.5 - 15.5, y + 0.5 - 19.5) < 6.2; if (inPlaza || (Math.abs(x - 14.5) <= 1.2 && y > 19) || (Math.abs(y - 19.5) <= 1.2 && x > 15) || (Math.abs(x - 14.5) <= 1.2 && y > 8 && y < 19) || (Math.abs(y - 9.5) <= 1 && x > 4 && x < 27)) m.deco[y * w + x] = 5; }
+    // 3. the south gate to Rimeshore
+    clearR(13, h - 3, 15, h - 1); m.warps.push({ x: 14, y: h - 2, to: 'rimeshore', tx: 20.5, ty: 3.5, label: 'Rimeshore' });
+    // 4. pines and rocks along the town wall (kept off the streets)
+    for (let i = 0; i < 26; i++) { const x = 1 + ((rng() * (SHORE - 5)) | 0), y = 1 + ((rng() * (h - 3)) | 0); if ((x < 3 || y < 3 || y > h - 4 || x > SHORE - 6) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && m.surf[y * w + x] === 0 && !(x >= 12 && x <= 16 && y >= h - 5)) set(x, y, rng() < 0.75 ? T.TREE : T.ROCK); }
+    m.braziers.push({ x: 12.0, y: 16.2 }, { x: 19.0, y: 16.2 }, { x: 12.0, y: 22.8 }, { x: 29.6, y: 17.8 }, { x: 29.6, y: 21.4 }, { x: 12.4, y: 35.6 }, { x: 16.6, y: 35.6 });
+    // ---- decor ----
+    L.decor('town_well', 'town_well', 10.5, 21.0, 0, 1, { fp: L.footprint(10, 20, 11, 21) });
+    for (const [sx, sy] of [[18.5, 24.0], [21.5, 24.0]]) L.decor('town_market_stall', 'town_market_stall', sx, sy, Math.PI, 1, { fp: L.footprint(Math.floor(sx) - 1, Math.floor(sy), Math.floor(sx), Math.floor(sy)) });
+    L.decor('rimeshore_fishing_hut', 'town_house_small', 27.5, 32.5, -1.571, 1, { fp: L.footprint(26, 31, 28, 33), light: [0xffb060, 0.9, 5] });
+    L.decor('rimeshore_drying_rack', 'town_fence', 25.2, 35.4, 0.1, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 28.2, 28.6, 1.4, 1, { on: 'open' });
+    L.decor('signpost', 'signpost', 16.6, 34.4, 0.3, 1, { on: 'open' });
+    for (const [lx, ly] of [[13.1, 12.6], [16.1, 12.6], [22.6, 18.1], [26.6, 21.1], [13.1, 27.6], [16.1, 31.6], [8.2, 9.9], [20.4, 10.9], [30.3, 11.2], [30.3, 31.2]]) L.decor('town_lamp_post', 'town_lamp_post', lx, ly, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
+    for (const [bx, by, k] of [[10.6, 7.9, 'town_barrel'], [11.3, 8.2, 'town_barrel'], [3.4, 9.0, 'town_crates'], [29.2, 8.2, 'town_barrel'], [28.6, 11.6, 'town_crates'], [29.3, 23.2, 'town_crates'], [28.4, 26.6, 'town_barrel'], [25.4, 8.4, 'town_crates'], [7.2, 29.8, 'town_barrel'], [26.2, 25.6, 'town_barrel']])
+      L.decor(k === 'town_barrel' ? 'rimeshore_barrel' : 'rimeshore_crate', k, bx, by, rng() * 6.28, k === 'town_barrel' ? 0.95 : 0.85, { on: 'open' });
+    for (let x = 2; x <= 5; x++) L.decor('town_fence', 'town_fence', x + 0.5, 11.9, 0, 1, { on: 'open' });
+    for (let y = 24; y <= 36; y += 1) if (!(y >= 28 && y <= 31)) L.decor('town_fence', 'town_fence', SHORE - 3.1, y + 0.5, 1.571, 1, { on: 'open' });
+    // boardwalk planks on every pier, longships moored beside them, floes further out
+    for (let y = 0; y < h; y++) for (let x = SHORE - 1; x < w; x++) if (m.surf[y * w + x] === SURF.BRIDGE) L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, 1.571, 1, { dy: -0.32 });
+    L.decor('rimeshore_longship', 'ruin_column_fallen', 38.0, 16.6, 1.571, 1, { dy: 0.75 });
+    L.decor('rimeshore_longship', 'ruin_column_fallen', 36.5, 26.6, -1.571, 0.9, { dy: 0.75 });
+    L.decor('rimeshore_longship', 'ruin_column_fallen', 36.0, 12.4, 1.52, 0.85, { dy: 0.75 });
+    L.decor('rimeshore_longship_prow', 'rock_field_c', 43.4, 34.0, 0.4, 1, { dy: 0.5 });
+    for (let i = 0; i < 12; i++) { const x = SHORE + 3 + rng() * (w - SHORE - 4), y = 1 + rng() * (h - 2); if (L.at(x | 0, y | 0) === T.WATER && !piers.some(([py]) => Math.abs(y - py - 0.5) < 3)) L.decor('rimeshore_ice_floe', 'rock_field_b', x, y, rng() * 6.28, 0.7 + rng() * 0.6, { dy: 0.7 }); }
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < SHORE - 1; x++) if (L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && m.surf[y * w + x] === 0 && rng() < 0.03) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' });
+  } };
 // Map order in the travel lists and the world map: story order.
-const MAP_ORDER = ['emberhold', 'ashen_fields', 'withered_wood', 'gloamheim', 'rimeshore', 'mirewell', 'nidavellir', 'throne', 'bifrost'];
+const MAP_ORDER = ['emberhold', 'ashen_fields', 'withered_wood', 'gloamheim', 'rimeshore', 'skaldhaven', 'mirewell', 'nidavellir', 'throne', 'bifrost'];
 // js/gfx-world.js reads render.trees for T.TREE tiles: point it at the map's tree list.
 for (const k in MAPDEFS) { const d = MAPDEFS[k]; if (d.render && d.props && d.props.tree && !d.render.trees) d.render.trees = d.props.tree; }

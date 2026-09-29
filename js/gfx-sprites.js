@@ -94,7 +94,28 @@ function paintHead(o, hy, back, anim) {
   if (o.headgear === 'poring') { G.fillStyle = '#f59ab0'; G.beginPath(); G.ellipse(0, hy - 13, 8, 6.5, 0, 0, 7); G.fill(); G.fillStyle = '#fff'; G.fillRect(-4, hy - 17, 3, 2); G.fillStyle = '#2a1a1a'; G.fillRect(1, hy - 14, 1.5, 2); G.fillRect(4.5, hy - 14, 1.5, 2); }
   else if (o.headgear === 'crown') { G.fillStyle = '#f0b040'; G.beginPath(); G.moveTo(-8, hy - 8); G.lineTo(-8, hy - 17); G.lineTo(-4, hy - 12); G.lineTo(0, hy - 19); G.lineTo(4, hy - 12); G.lineTo(8, hy - 17); G.lineTo(8, hy - 8); G.fill(); G.fillStyle = '#e04040'; G.fillRect(-1, hy - 12, 2.5, 2.5); }
   else if (o.headgear === 'helm') { G.fillStyle = '#9a9aa8'; G.beginPath(); G.arc(0, hy - 2, R + 1.5, Math.PI, 0); G.fill(); G.fillStyle = '#c8c8d4'; G.fillRect(-1, hy - 17, 3, 6); }
-  else if (o.headgear === 'cap') { G.fillStyle = '#7a6a54'; G.beginPath(); G.arc(0, hy - 2, R + 1, Math.PI, 0); G.fill(); if (!back) G.fillRect(4, hy - 3, 11, 2.5); }
+  else if (o.headgear === 'cap') { G.fillStyle = o.hgCol || '#7a6a54'; G.beginPath(); G.arc(0, hy - 2, R + 1, Math.PI, 0); G.fill(); if (!back) G.fillRect(4, hy - 3, 11, 2.5); }
+  else if (o.headgear === 'band') { G.fillStyle = o.hgCol || '#b03a2a'; G.fillRect(-R - 1, hy - 7, 2 * R + 3, 3.5); if (back) { G.fillRect(-R - 5, hy - 6, 5, 2); G.fillRect(-R - 4, hy - 3, 4, 2); } }
+  else if (o.headgear === 'circlet') { G.fillStyle = o.hgCol || '#e8c050'; G.fillRect(-R, hy - 8, 2 * R + 2, 2.2); if (!back) { G.fillStyle = o.hgGem || '#7ad0ff'; G.fillRect(3, hy - 10, 3, 3); } if (o.hgWings) { G.fillStyle = '#e8ecf4'; for (const sg of [-1, 1]) { G.beginPath(); G.moveTo(sg * (R - 1), hy - 7); G.lineTo(sg * (R + 7), hy - 16); G.lineTo(sg * (R + 3), hy - 6); G.fill(); } } }
+  else if (o.headgear === 'brim') { G.fillStyle = shade(o.hgCol || '#c8a860', -0.15); G.beginPath(); G.ellipse(0, hy - 6, R + 8, 4, 0, 0, 7); G.fill(); G.fillStyle = o.hgCol || '#c8a860'; G.beginPath(); G.ellipse(0, hy - 10, R - 2, 7, 0, Math.PI, 0); G.fill(); G.fillRect(-R + 2, hy - 10, 2 * R - 4, 4); }
+  else if (o.headgear === 'ears') { G.fillStyle = o.hgCol || '#2a2a30'; for (const sg of [-1, 1]) { G.beginPath(); G.moveTo(sg * 3, hy - R + 1); G.lineTo(sg * 9, hy - R - 11); G.lineTo(sg * 11, hy - R + 3); G.fill(); } if (o.hgHood) { G.beginPath(); G.arc(0, hy - 2, R + 1.5, Math.PI, 0); G.fill(); } }
+  else if (o.headgear === 'feather') { G.strokeStyle = o.hgCol || '#1a1a22'; G.lineWidth = 3; G.beginPath(); G.moveTo(-R + 2, hy - 2); G.quadraticCurveTo(-R - 6, hy - 12, -R - 4, hy - 22); G.stroke(); }
+}
+/* Procedural fallback look of ITEMS[id].headgear keys (the sheet renderer draws hg_<key> sheets instead). */
+const HG_LOOK = {
+  poring_hat: { hg: 'poring' }, brood_hat: { hg: 'poring' }, cinder_crown: { hg: 'crown' }, jarl_crown: { hg: 'crown' },
+  helm: { hg: 'helm' }, dvergr_helm: { hg: 'helm' }, aesir_helm: { hg: 'helm' }, gaunt_visage: { hg: 'helm' }, squire_plume: { hg: 'helm' },
+  shell_helm: { hg: 'helm' }, dvergr_runehelm: { hg: 'helm' }, cap: { hg: 'cap' },
+  bandana: { hg: 'band', col: '#b03a2a' }, gleipnir_band: { hg: 'band', col: '#e8e4f4' },
+  circlet: { hg: 'circlet' }, rime_circlet: { hg: 'circlet', col: '#cfe6ff', gem: '#9fd8ff' }, cinder_circlet: { hg: 'circlet', col: '#5a4a44', gem: '#ff7a2a' },
+  amethyst_diadem: { hg: 'circlet', col: '#d8d0e8', gem: '#b070f0' }, valkyrie_circlet: { hg: 'circlet', col: '#d8dce8', gem: '#ffffff', wings: true },
+  sprig_crown: { hg: 'circlet', col: '#6a8a3a', gem: '#8ae05a' },
+  straw_hat: { hg: 'brim', col: '#d8b860' }, boatman_hat: { hg: 'brim', col: '#3a3430' }, wanderer_hat: { hg: 'brim', col: '#6a6a70' },
+  wolf_hood: { hg: 'ears', col: '#8a867e', hood: true }, wolf_ears: { hg: 'ears', col: '#22222a' }, raven_feather: { hg: 'feather' },
+};
+function headgearLook(itemId) {
+  const t = itemId && typeof ITEMS !== 'undefined' ? ITEMS[itemId] : null; if (!t) return null;
+  const L = HG_LOOK[t.headgear]; return L || { hg: 'cap' };
 }
 function paintWeapon(w, col, atk) {
   col = col || '#c8ccd6';
@@ -214,11 +235,12 @@ function buildFrames(key, spr, look, s, hPx) {
   for (const a in ANIMS) { F[a] = []; for (let i = 0; i < ANIMS[a]; i++) F[a].push({ f: make(a, i, ANIMS[a], false), b: human ? make(a, i, ANIMS[a], true) : null }); }
   return (FRAMES[key] = F);
 }
-function framesForMob(m) { const d = m.d; const human = d.spr === 'human'; const s = human ? (d.look.scale || 1) : (d.size || 1); return buildFrames('mob:' + m.type, d.spr, human ? d.look : { col: d.col, eye: d.eye, crown: d.crown, spots: d.spots }, s, d.h); }
+// Named variants (m.variant) keep m.type = base but have their own look/size: cache their frames separately.
+function framesForMob(m) { const d = m.d; const human = d.spr === 'human'; const s = human ? (d.look.scale || 1) : (d.size || 1); return buildFrames('mob:' + (m.variant || m.type), d.spr, human ? d.look : { col: d.col, eye: d.eye, crown: d.crown, spots: d.spots }, s, d.h); }
 function framesForNPC(n) { return buildFrames('npc:' + n.id, 'human', n.look, n.look.scale || 1, 58 * (n.look.scale || 1)); }
 function framesForPlayer() { const lk = playerLook(); const key = 'pl:' + JSON.stringify(lk); return buildFrames(key, 'human', lk, 1, 58); }
 function playerLook() {
-  const C = CLASSES[P.cls].look, head = P.equip.head ? P.equip.head.id : null;
+  const C = CLASSES[P.cls].look, head = P.equip.head ? P.equip.head.id : null, hg = headgearLook(head);
   return Object.assign({ skin: '#f7d8bf', hair: P.hair, head: 'human', weapon: S.wtype === 'fist' ? 'none' : S.wtype, wcol: S.wtype === 'bow' ? '#7a4e28' : '#c8ccd6', shield: !!P.equip.shield,
-    headgear: head === 'u_brood_hat' ? 'poring' : head === 'u_crown' ? 'crown' : (head === 'helm' || head === 'u_gaunt_visage') ? 'helm' : head ? 'cap' : null }, C, { hat: head ? null : C.hat });
+    headgear: hg ? hg.hg : null, hgCol: hg && hg.col, hgGem: hg && hg.gem, hgWings: !!(hg && hg.wings), hgHood: !!(hg && hg.hood) }, C, { hat: head ? null : C.hat });
 }

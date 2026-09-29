@@ -109,3 +109,56 @@ const mobExp = d => Math.round((4 * Math.pow(d.lvl, 2.1) + 6) * (d.expMul || 1))
 const expNeed = l => Math.floor(20 * Math.pow(l, 2.2)) + 10;
 const jexpNeed = l => Math.floor(12 * Math.pow(l, 2.1)) + 10;
 const MAXLV = 60;
+
+/* ---------- Content round 4: named variants ----------
+   variant(key, base, overrides) copies a monster and marks it { base, variant: true }. A variant is spawned by a
+   quest's `hunt` objective (js/quests.js), never by a map's spawns. In play the monster keeps m.type = base (so it
+   uses the base's sprite sheet mob_<base> and card) and m.variant = key; m.d is the variant's data (name, stats,
+   drops, abilities). `elite: true` shows the boss bar without the MVP rules; `boss: true` variants (the echoes,
+   Garmr, Fenrir Risen) use the MVP rules but never set P.flags.bosses. `tint` / `scaleMul` are hints for the
+   renderer (not read yet; see docs/CONTENT.md, hooks). `inert: true` monsters never move, attack or take damage. */
+function variant(key, base, o) {
+  const b = MOBS[base], look = b.look ? Object.assign({}, b.look, o.look || {}) : undefined;
+  const d = Object.assign({}, b, { shard: undefined, lore: undefined, phase2: undefined, phase2Sub: undefined, outro: undefined, intro: undefined }, o, { base, variant: true, id: key });
+  if (look) d.look = look;
+  const hb = { blob: 30, grub: 18, hare: 32, wolf: 30, human: 58, ghost: 46, tree: 62, shroom: 32 }[d.spr];
+  d.h = hb * (d.look && d.look.scale ? d.look.scale : (d.size || 1));
+  MOBS[key] = d; return d;
+}
+// Rare hunts (side quests): elites with a guaranteed unique drop
+variant('poring_king', 'blight_poring', { name: 'The Poring King', title: 'Wearer of the Poring Hat', lvl: 11, hp: 2600, atk: [30, 42], def: 6, mdef: 8, elite: true, aggro: true, sight: 6, size: 1.9, crown: true, col: '#ffb0c8', tint: '#ffd0e0', scaleMul: 1.9, expMul: 6,
+  drops: [['poring_hat', 1], ['jellopy', 1], ['orange_potion', .6]], intro: 'A Poring the size of a hay cart, wearing a smaller Poring as a hat. Both of them look at you.' });
+variant('old_greyback', 'ash_wolf', { name: 'Old Greyback', title: 'The Wolf Who Came Back', lvl: 22, hp: 11000, atk: [66, 86], def: 16, elite: true, size: 1.6, col: '#b8b4ae', tint: '#c8c4be', scaleMul: 1.6, expMul: 6,
+  abil: [{ id: 'leap', cd: 8, r: 2, mul: 1.5, delay: 1.1 }], drops: [['greyback_hood', 1], ['wolf_pelt', 1], ['wolf_claw', 1]],
+  intro: 'He is older than Hati’s pack and scarred from ear to tail. He has been killed twice. He came back both times.' });
+variant('shellback', 'shell_knight', { name: 'Old Shellback', title: 'Oldest on the Lagoon', lvl: 40, hp: 34000, atk: [150, 190], def: 55, elite: true, size: 3, col: '#a8663a', tint: '#d8a070', scaleMul: 1.4, expMul: 6,
+  abil: [{ id: 'slam', cd: 7, r: 2.8, mul: 1.5, delay: 1.2 }], drops: [['shellback_helm', 1], ['hermit_shell', 1], ['rime_essence', 1]],
+  intro: 'The helm on its back belonged to a jarl’s grandfather. It has worn three since.' });
+variant('amethyst_matriarch', 'crystal_spider', { name: 'The Amethyst Matriarch', title: 'Mother of the Galleries', lvl: 48, hp: 52000, atk: [175, 220], def: 40, elite: true, size: 3, col: '#8a5aba', tint: '#c090ff', scaleMul: 1.4, expMul: 6,
+  abil: [{ id: 'rain', cd: 9, n: 4, r: 1.4, mul: 1.2, delay: 1.3 }, { id: 'summon', cd: 16, mob: 'crystal_spider', n: 2, max: 3, shout: 'Children!' }], drops: [['amethyst_diadem', 1], ['amethyst', 1]],
+  intro: 'The crystals on her back ring like a struck bell when she moves. She has been growing them for a thousand years.' });
+variant('skoll', 'fenrir_whelp', { name: 'Sköll', title: 'The Sun-Chaser', lvl: 60, hp: 110000, atk: [250, 310], def: 40, elite: true, size: 1.9, col: '#3a2a20', eye: '#ffd04a', glow: '#ffb040', tint: '#ffcf80', scaleMul: 1.9, expMul: 8,
+  abil: [{ id: 'leap', cd: 7, r: 2.2, mul: 1.7, delay: 1.0 }, { id: 'breath', cd: 10, len: 6, arc: 0.45, rays: 3, mul: 1.8, delay: 1.2, col: '#ffb040', shout: 'The sun!' }],
+  drops: [['u_sunfang', 1], ['gleipnir_link', 1], ['honey_mead', 1]],
+  intro: 'Hati’s brother. He chased the sun across the sky for ten thousand years, and when it burned he went on running in circles, looking for it.' });
+// Act II story monsters
+variant('cinder_pretender', 'cinder_thrall', { name: 'The Cinder Pretender', title: 'Who Would Be King', lvl: 50, hp: 60000, atk: [190, 240], def: 36, mdef: 30, boss: true, look: { scale: 1.6, head: 'horned' }, tint: '#ff9a50', expMul: 8,
+  abil: [{ id: 'slam', cd: 6, r: 2.6, mul: 1.5, delay: 1.0 }, { id: 'rain', cd: 9, n: 5, r: 1.6, mul: 1.3, delay: 1.4 }, { id: 'summon', cd: 18, mob: 'cinder_thrall', n: 2, max: 3, shout: 'Kneel to ME!' }],
+  drops: [['u_cinder_signet', 1], ['cinder_ash', 1], ['cinder_circlet', 1]],
+  intro: '“The crown was meant for one of US.” The thrall has hammered a circlet out of the King’s broken throne. “Take it off, corpse, or I take it off with your head.”' });
+variant('garmr', 'snow_wolf', { name: 'Garmr', title: 'Hound of Helgrind', lvl: 58, hp: 120000, atk: [255, 320], def: 42, mdef: 30, elem: 'undead', race: 'undead', boss: true, size: 2.3, col: '#6a2a2a', eye: '#ff3a2a', glow: '#ff5a3a', tint: '#ff8a7a', scaleMul: 2.1, expMul: 10,
+  abil: [{ id: 'leap', cd: 7, r: 2.2, mul: 1.8, delay: 1.0 }, { id: 'breath', cd: 9, len: 6.5, arc: 0.5, rays: 3, mul: 2.0, delay: 1.2, col: '#ff5a3a', shout: 'GRRRH!' }, { id: 'summon', cd: 18, mob: 'skeleton_soldier', n: 2, max: 4, shout: 'The dead!' }],
+  drops: [['u_garm_collar', 1], ['bone_shard', 1]],
+  intro: 'Chest bloody, chain broken, the hound that bays at the gate of the dead. It has been waiting for someone living to come close enough.' });
+variant('fenrir_risen', 'fenrir', { name: 'Fenrir Risen', title: 'Hel’s Brother, Sent Back', lvl: 60, hp: 300000, atk: [300, 380], mdef: 50, boss: true, glow: '#7aff9a', tint: '#9affb0', expMul: 18,
+  phase2: 'Fenrir’s borrowed body splits along its seams, and grave-light pours out. Hel is holding him together by hand now.', phase2Sub: 'Hel holds him together',
+  drops: [['gleipnir_link', 1], ['aesir_core', 1]],
+  intro: '“You killed me.” Fenrir’s new flesh is grey and cold, sewn from a thousand drowned men. “My sister sewed me back together. She says you may keep the needle.”' });
+variant('fenrir_spent', 'fenrir', { name: 'Fenrir', title: 'Fallen', lvl: 60, hp: 1, abil: [], inert: true, boss: false, aggro: false, drops: [], expMul: 0 });
+// Weekly MVP hunt: echoes of the fallen MVPs, raised again by Hel's open gate (Lv 58-60)
+const ECHO = (key, base, name, o) => variant(key, base, Object.assign({ name, title: 'An Echo from Hel’s Gate', lvl: 60, boss: true, tint: '#9affd0', expMul: 12, drops: [['honey_mead', 1], ['ygg_ember', .5]] }, o));
+ECHO('echo_hati', 'hati', 'Echo of Hati', { hp: 140000, atk: [250, 320], def: 40, mdef: 35, intro: 'The Moon-Eater, stitched back together with grave-light. The moon in his throat has gone green.' });
+ECHO('echo_gaunt', 'sir_gaunt', 'Echo of Sir Gaunt', { hp: 170000, atk: [260, 330], def: 50, mdef: 35, intro: '“Tyr’s gate is open,” the empty armour says. “I failed. I will fail again, forever, unless you stop me.”' });
+ECHO('echo_jarl', 'drowned_jarl', 'Echo of the Drowned Jarl', { hp: 190000, atk: [260, 330], def: 45, mdef: 35, intro: 'The Jarl rows up out of the ice again, and his crew rows with him. None of them are breathing.' });
+ECHO('echo_crone', 'bog_crone', 'Echo of the Bog Crone', { hp: 200000, atk: [265, 335], def: 45, mdef: 45, intro: '“Soup’s gone cold, dear.” The cauldron walks out of the bog, dripping. “Let’s warm it up.”' });
+ECHO('echo_fafnir', 'fafnir', 'Echo of Fafnir', { hp: 220000, atk: [270, 345], def: 55, mdef: 40, intro: 'The hoard stirs. Fafnir’s bones rise out of it, gold still stuck between the ribs.' });

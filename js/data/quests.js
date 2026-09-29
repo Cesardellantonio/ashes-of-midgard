@@ -33,6 +33,16 @@
      { type: 'survive', map, x, y, r, secs, wave: { mobs: [..], every, n, max } }  hold a spot; waves attack; dying resets
      { type: 'level', lvl } / { type: 'level', jlvl }     reach a base / job level
      { type: 'cond', text, check: () => bool, prog: () => [cur, max] }        anything else
+   Round 4 (see js/quests.js for details):
+     { type: 'scene', scene, npc } | { type: 'scene', scene, map, x, y, r }   a cinematic scene (SCENES in npcs.js)
+     { type: 'inspect', map, spots: [{ x, y, name, text }], r, place }       investigate spots, each with its pages
+     { type: 'escort', npc, map, from: [x, y], to: [x, y], r, place, hp, dmg } bring an NPC somewhere alive
+     { type: 'waves', map, x, y, r, place, waves: [[[mob, n]..]..], limit }  timed defence waves
+     { type: 'hunt', mob: variantKey, map, x, y, place }                     a named monster appears; kill it
+   More quest fields: act (2 = Act II, Chronicle heading), branch ('embers' | 'ash': only that ending sees it),
+   choices: [{ label, need(), reward, take, done }] (picked at turn-in; done[id].c keeps the index),
+   take: [[id, n]] (removed on turn-in, equipment too), req.rep: { faction: n }, reward.rep / reward.title /
+   reward.flag, repeat: 'weekly' (with BOARDS[id].period = 'week'), kind: 'weekly'.
    ========================================================= */
 const QUESTS = {};
 function quest(id, o) { QUESTS[id] = Object.assign({ id, kind: 'side', obj: [] }, o); }
@@ -295,7 +305,8 @@ quest('heimdall_horn', { giver: 'heimdall', name: 'Gjallarhorn', area: 'Bifrost 
   done: ['<i>Heimdall touches the horn with one finger, very gently.</i> Still there. Still whole. So are you. Take this; it was a friend’s.'],
   obj: [{ type: 'survive', map: 'bifrost', x: 31.5, y: 14.5, r: 5, secs: 60, place: 'Gjallarhorn’s stand', wave: { mobs: ['sky_harpy', 'fenrir_whelp'], every: 9, n: 2, max: 5 } }],
   reward: { exp: 300000, jexp: 220000, zeny: 25000, items: P => [[P.st.int >= P.st.str ? 'aesir_brooch' : 'aesir_ring', 1]] } });
-quest('vidar_fenrir', { giver: 'vidar', turnIn: 'vidar', name: 'The Silent God’s Duty', area: 'Bifrost Ruins', req: { lvl: 50, quests: ['main_9'] },
+// Round 4: once Act II begins (act2_1), the wolf is part of the main story instead; saves that already hold this quest keep it.
+quest('vidar_fenrir', { giver: 'vidar', turnIn: 'vidar', name: 'The Silent God’s Duty', area: 'Bifrost Ruins', req: { lvl: 50, quests: ['main_9'], test: () => !P.quests.active.act2_1 && !P.quests.done.act2_1 },
   summary: 'Vidar was fated to kill Fenrir at the end of the world. He asks you to do it instead.',
   offer: ['<i>Vidar is quiet for a long time.</i> You have been to the bridge. You heard him.', 'I was born to kill that wolf. The Norns wrote it. My father died in his jaws, and I tore them apart. That was the story. Then the story burned, and the wolf did not.', 'I am old, and I am tired, and if I go up there the story will finish itself the way it always meant to. You are not in the story. Go and break it for me.'],
   progress: 'Fenrir, on the chained island at the far end of the Bifrost Ruins.',
@@ -372,6 +383,25 @@ trial('monk', { area: 'Withered Wood · Gloamheim Keep',
   seq: true,
   obj: [{ type: 'kill', mob: 'rotwood_kobold', n: 10 }, { type: 'survive', map: 'gloamheim', x: 30.5, y: 52.5, r: 5, secs: 45, place: 'the gate hall of Gloamheim', wave: { mobs: ['skeleton_soldier', 'wraith'], every: 9, n: 2, max: 5 } }] });
 
+/* ---------- Content round 5: crafting and Skaldhaven ---------- */
+// Craftsmanship (a passive any path can learn): Brokkr teaches it, Sindri raises it.
+quest('brokkr_apprentice', { giver: 'brokkr', name: 'The Smith’s Apprentice', area: 'Emberhold', req: { lvl: 10, test: () => !!P.flags.talked.brokkr },
+  summary: 'Brokkr will teach you to work a forge if you bring him something to practise on.',
+  offer: ['You keep bringing me the Ash’s leftovers to sell. Ever wondered what I do with them? Half of it goes in the still, half in the forge.', 'Bring me six Jellopy and three Grey Clovers and I’ll show you how a Red Potion is made. After that you can use my anvil whenever you like, and Sindri’s too if he lets you. I’ll charge you for the coal.'],
+  progress: 'Six Jellopy, three Clovers. Porings and hares. It is not hard. That is the point.',
+  done: ['Now watch. Heat, not fire. Stir, do not whip. There. That is a potion, and you made it.', 'That is <b>Craftsmanship</b>. Use the <i>Craft</i> tab at my forge. You get better by doing it, or by thinking hard about it (skill points). DEX steadies the hand, LUK does the rest.'],
+  obj: [{ type: 'collect', item: 'jellopy', n: 6 }, { type: 'collect', item: 'clover', n: 3 }],
+  reward: { exp: 900, jexp: 700, items: [['red_potion', 10]] },
+  onComplete() { P.skills.craftsmanship = Math.max(1, P.skills.craftsmanship || 0); P.flags.craftXp = P.flags.craftXp || 0; log('You learned Craftsmanship (Lv 1). The Crafting window opens from the Craft tab at Brokkr’s or Sindri’s forge.', 'lvl'); } });
+quest('sindri_masterclass', { giver: 'sindri', name: 'A Dwarf’s Standard', area: 'Nidavellir Deep', req: { lvl: 40, quests: ['brokkr_apprentice'], test: () => !!P.flags.talked.sindri },
+  summary: 'Sindri will judge your work by a dwarf’s standard. Craft five things and bring him ore.',
+  offer: ['My brother taught you? <i>He sniffs.</i> Then you know how to make soup with a hammer. Let me see what else your hands can do.', 'Make five things, anything, at any forge. Then bring me five Dvergr Ore and two Magma Cores and I will show you what a forge is for.'],
+  progress: 'Five pieces of work, five ore, two cores. I can wait. I have waited since the fire went out.',
+  done: ['<i>He turns your work over in his hands for a long time.</i> Hm. Not bad for a surface-dweller.', 'Here: a Dvergr Whetstone. Rub it into the metal before a refine. And you will find your hands know a little more than they did this morning.'],
+  obj: [{ type: 'cond', text: 'Craft five things at a forge', check: () => (P.flags.craftedOk || 0) >= 5, prog: () => [Math.min(5, P.flags.craftedOk || 0), 5] }, { type: 'collect', item: 'dvergr_ore', n: 5 }, { type: 'collect', item: 'magma_core', n: 2 }],
+  reward: { exp: 90000, jexp: 70000, items: [['dvergr_whetstone', 1]], rep: { dvergar: 1 }, title: 'forge_friend' },
+  onComplete() { P.skills.craftsmanship = Math.min(CRAFT_MAX, (P.skills.craftsmanship || 1) + 1); log(`Craftsmanship Lv ${P.skills.craftsmanship}.`, 'lvl'); } });
+
 /* ---------- Daily bounty boards ---------- */
 // A board offers `perDay` quests from its pool, picked by the local date. Each can be done once a day.
 const BOARDS = {
@@ -380,10 +410,11 @@ const BOARDS = {
   keep_board: { name: 'Bounty Board', title: 'Gloamheim', map: 'gloamheim', x: 32.5, y: 52.5, perDay: 2, pool: [] },
   deep_board: { name: 'Bounty Board', title: 'Nidavellir Deep', map: 'nidavellir', x: 9.5, y: 30.5, perDay: 2, pool: [] },
   bifrost_board: { name: 'Bounty Board', title: 'Bifrost Ruins', map: 'bifrost', x: 7.5, y: 49.5, perDay: 2, pool: [] },
+  skald_board: { name: 'Bounty Board', title: 'Skaldhaven', map: 'skaldhaven', x: 13.0, y: 8.6, perDay: 2, pool: [] },   // round 5: the Salt Hall's board
 };
 function bounty(id, board, name, o) {
   // Collect bounties are priced from the ordinary monsters that drop the item (an MVP's guaranteed drop would inflate them).
-  const ob = o.obj[0], mobsOf = ob.type === 'kill' ? [].concat(ob.mob) : Object.keys(MOBS).filter(k => !MOBS[k].boss && (MOBS[k].drops || []).some(d => d[0] === ob.item));
+  const ob = o.obj[0], mobsOf = ob.type === 'kill' ? [].concat(ob.mob) : Object.keys(MOBS).filter(k => !MOBS[k].boss && !MOBS[k].variant && (MOBS[k].drops || []).some(d => d[0] === ob.item));
   const avg = mobsOf.reduce((a, k) => a + mobExp(MOBS[k]), 0) / Math.max(1, mobsOf.length), lvl = Math.max(...mobsOf.map(k => MOBS[k].lvl));
   const exp = Math.round(avg * ob.n * (ob.type === 'kill' ? 0.6 : 1.1) / 10) * 10;
   quest(id, Object.assign({ kind: 'daily', repeat: 'daily', giver: board, name, area: BOARDS[board].title, req: { lvl: Math.max(1, lvl - 4) },
@@ -413,3 +444,403 @@ bounty('bb_harpies', 'bifrost_board', 'Bounty: Sky Harpies', { summary: 'Harpies
 bounty('bb_cores_aesir', 'bifrost_board', 'Bounty: Aesir Rune Cores', { summary: 'Heimdall wants the sentinels’ cores back, to relight the bridge one rune at a time.', obj: [{ type: 'collect', item: 'aesir_core', n: 5 }] });
 bounty('bb_shades', 'bifrost_board', 'Bounty: Valkyrie Shades', { summary: 'Let the fallen Valkyries finish their last ride.', obj: [{ type: 'kill', mob: 'valkyrie_shade', n: 10 }] });
 bounty('bb_whelps', 'bifrost_board', 'Bounty: Fenrir Whelps', { summary: 'The pack grows every night. Cull it.', obj: [{ type: 'kill', mob: 'fenrir_whelp', n: 10 }] });
+
+/* =========================================================
+   Content round 4 · Act II: The Wolf and the Gate
+   Starts once the Age is chosen at the Heart (main_8) and Heimdall has been found (main_9). Twelve story quests;
+   act2_7e / act2_7a is the branch (Age of Embers / Age of Ash). Scenes live in SCENES (js/data/npcs.js).
+   ========================================================= */
+const A2 = (id, o) => quest(id, Object.assign({ kind: 'main', act: 2, auto: true, giver: null, turnIn: null }, o));
+A2('act2_1', { name: 'Embers and Ashes', area: 'Emberhold', req: { quests: ['main_8', 'main_9'] },
+  summary: 'The King is dead and the Age is chosen, but the dead still rise. Sigrun wants to talk.',
+  onAccept() { P.flags.act2 = P.flags.act2 || 1; },
+  obj: [{ type: 'scene', npc: 'sigrun', scene: 'a2_sigrun', text: 'Speak with Sigrun at the Waystone in Emberhold' }],
+  reward: { exp: 150000, jexp: 100000 } });
+A2('act2_2', { name: 'What the Watchman Hears', area: 'Bifrost Ruins · Gloamheim Keep', req: { quests: ['act2_1'] }, seq: true,
+  summary: 'Heimdall hears a chain thinning and a door creaking open under Gloamheim.',
+  obj: [{ type: 'scene', npc: 'heimdall', scene: 'a2_heimdall', text: 'Ask Heimdall what he hears (Bifrost Ruins)' },
+    { type: 'inspect', map: 'gloamheim', place: 'Sir Gaunt’s hall', r: 2, spots: [
+      { x: 30.5, y: 9.5, name: 'The Empty Throne', text: ['<i>Gaunt’s throne is only a slab of stone now. It faces north: not toward the door you came in by, but toward the blank wall behind it.</i>', '<i>He was not guarding the keep from the world. He was guarding the world from the keep.</i>'] },
+      { x: 29.5, y: 25.5, name: 'The Open Graves', text: ['<i>The graves in the lower hall are open, and every one of them was dug from the inside. The earth is heaped toward the north, as if everything that climbed out went the same way.</i>'] },
+      { x: 30.5, y: 4.5, name: 'The North Wall', text: ['<i>Behind where the throne stood, the stones are cold enough to burn. Something breathes behind them. Very slowly. Very far down.</i>', '<i>Someone has carved a single rune into the wall at knee height, over and over, until the stone is worn smooth: ᛏ, Tyr’s rune. An oath, repeated.</i>'] }] }],
+  reward: { exp: 200000, jexp: 140000, items: [['honey_mead', 3]] } });
+A2('act2_3', { name: 'The Gate-Maiden', area: 'Gloamheim Keep', req: { quests: ['act2_2'] }, seq: true,
+  summary: 'A maiden guards the crack behind Gaunt’s throne. Hel’s gate is opening, and the dead are pushing.',
+  obj: [{ type: 'scene', npc: 'modgud', scene: 'a2_modgud', text: 'Speak with the woman at the north wall of Gaunt’s hall' },
+    { type: 'waves', map: 'gloamheim', x: 30.5, y: 7.5, r: 7, place: 'Helgrind', limit: 55, gap: 4,
+      waves: [[['draugr_fisher', 3], ['ice_wraith', 2]], [['dwarf_revenant', 3], ['draugr_fisher', 2]], [['valkyrie_shade', 2], ['dwarf_revenant', 2], ['ice_wraith', 1]]] },
+    { type: 'scene', npc: 'modgud', scene: 'a2_modgud2', text: 'Speak with Móðguðr' }],
+  reward: { exp: 250000, jexp: 170000, items: [['white_potion', 10]], lore: 'modgud' } });
+A2('act2_4', { name: 'The Bridge Under the Forge', area: 'Nidavellir Deep', req: { quests: ['act2_3'] }, seq: true,
+  summary: 'Hel’s road runs under the Deep Forge. Sindri knows what he built his fire on.',
+  obj: [{ type: 'scene', npc: 'sindri', scene: 'a2_sindri', text: 'Ask Sindri what the Deep Forge stands on' },
+    { type: 'kill', mob: 'dwarf_revenant', n: 10, label: 'Revenants walking to Hel', text: 'Stop the revenants walking to Hel’s call' },
+    { type: 'scene', map: 'nidavellir', x: 32.5, y: 30.5, r: 2.2, scene: 'a2_hel_voice', place: 'Gjallarbrú, the stone bridge over the lava', text: 'Stand on Gjallarbrú, the stone bridge over the lava' }],
+  reward: { exp: 250000, jexp: 170000, lore: 'hel' } });
+A2('act2_5', { name: 'Six Impossible Things', area: 'All of Midgard', req: { quests: ['act2_4'] }, turnIn: 'sindri',
+  summary: 'Gleipnir can be forged again from six things that do not exist. Find them and bring them to Sindri.',
+  progress: 'Six things. I told you they were a nightmare.',
+  done: ['Six. All six. <i>Sindri lays them on the anvil, and they do not quite touch it.</i>', 'Now I need a second pair of hands, and there is only one pair in nine realms that has done this before. My brother’s.'],
+  obj: [{ type: 'collect', item: 'imp_footfall', n: 1, text: 'The footfall of a cat (Astrid in Emberhold may know)' },
+    { type: 'collect', item: 'imp_beard', n: 1, text: 'The beard of a woman (the Marsh Hags of Mirewell)' },
+    { type: 'collect', item: 'imp_roots', n: 1, text: 'The roots of a mountain (the Stone Golems of the Deep)' },
+    { type: 'collect', item: 'imp_sinew', n: 1, text: 'The sinews of a bear (ask Ragna in Rimeshore)' },
+    { type: 'collect', item: 'imp_breath', n: 1, text: 'The breath of a fish (the Draugr Fishers of Rimeshore)' },
+    { type: 'collect', item: 'imp_spittle', n: 1, text: 'The spittle of a bird (the Sky Harpies of the Bifrost)' }],
+  drops: [{ mob: 'marsh_hag', item: 'imp_beard', chance: 0.3 }, { mob: 'stone_golem', item: 'imp_roots', chance: 0.3 }, { mob: 'draugr_fisher', item: 'imp_breath', chance: 0.3 }, { mob: 'sky_harpy', item: 'imp_spittle', chance: 0.3 }],
+  reward: { exp: 300000, jexp: 200000, zeny: 30000 } });
+A2('act2_6', { name: 'Two Hammers', area: 'Emberhold · Nidavellir Deep', req: { quests: ['act2_5'] }, seq: true,
+  summary: 'Gleipnir was made by two brothers. It will take both of them to make it again.',
+  obj: [{ type: 'scene', npc: 'brokkr', scene: 'a2_brokkr', text: 'Ask Brokkr to come down to the Deep Forge' },
+    { type: 'scene', npc: 'sindri', scene: 'a2_forge', text: 'Watch the brothers forge Gleipnir (Nidavellir Deep)' }],
+  reward: { exp: 300000, jexp: 200000, lore: 'gleipnir' } });
+A2('act2_7e', { name: 'The First Green Root', branch: 'embers', area: 'Mirewell', req: { quests: ['act2_6'], test: () => P.flags.ending === 'embers' }, seq: true,
+  summary: 'The relit Tree has sent a root up through the old healer’s well in Mirewell. The mire’s dead want it gone.',
+  obj: [{ type: 'scene', npc: 'eira', scene: 'a2_root', text: 'Speak with Eira in Mirewell' },
+    { type: 'waves', map: 'mirewell', x: 30.5, y: 19.5, r: 7, place: 'the green root', limit: 55, gap: 4,
+      waves: [[['marsh_hag', 2], ['wisp', 2]], [['mire_troll', 2], ['mire_leech', 2]], [['marsh_hag', 2], ['mire_troll', 1], ['wisp', 2]]] },
+    { type: 'scene', npc: 'eira', scene: 'a2_root2', text: 'Return to Eira' }],
+  reward: { exp: 300000, jexp: 200000, items: [['sprig_crown', 1]] } });
+A2('act2_7a', { name: 'The Cinder Court', branch: 'ash', area: 'Throne of Cinders', req: { quests: ['act2_6'], test: () => P.flags.ending === 'ash' }, seq: true,
+  summary: 'The Ash obeys its new ruler. The King’s old court kneels at the Throne of Cinders, all but one.',
+  obj: [{ type: 'scene', map: 'throne', x: 15.5, y: 16.5, r: 5, scene: 'a2_crown', place: 'the Throne of Cinders', text: 'Hold court at the Throne of Cinders' },
+    { type: 'hunt', mob: 'cinder_pretender', map: 'throne', x: 15.5, y: 10.5, place: 'the foot of the throne' },
+    { type: 'scene', map: 'throne', x: 15.5, y: 8.5, r: 6, scene: 'a2_court', place: 'the broken throne', text: 'Command the Cinder Court' }],
+  reward: { exp: 300000, jexp: 200000, items: [['cinder_circlet', 1]] } });
+A2('act2_8', { name: 'The Wolf at the End of the World', area: 'Bifrost Ruins', req: { test: () => !!(P.quests.done.act2_7e || P.quests.done.act2_7a) }, seq: true,
+  summary: 'Gleipnir is down to its last strands. Heimdall says the wolf must fall before it breaks.',
+  obj: [{ type: 'scene', npc: 'heimdall', scene: 'a2_wolf', text: 'Bring the reforged Gleipnir to Heimdall' },
+    { type: 'boss', mob: 'fenrir', text: 'Slay Fenrir on his island in the Bifrost Ruins' }],
+  reward: { exp: 400000, jexp: 260000, items: [['ygg_ember', 1]] } });
+A2('act2_9', { name: 'The One-Eyed Wanderer', area: 'Bifrost · Emberhold · Ashen Fields', req: { quests: ['act2_8'] }, seq: true,
+  summary: 'Fenrir’s soul fell to Hel, and Hel is sewing him back together. The old man in Emberhold knows more than he says.',
+  obj: [{ type: 'scene', npc: 'heimdall', scene: 'a2_hel_took', text: 'Ask Heimdall where the wolf went' },
+    { type: 'scene', npc: 'vidar', scene: 'a2_odin', text: 'Confront Vidar in Emberhold' },
+    { type: 'scene', map: 'ashen_fields', x: 40.5, y: 32.5, r: 3, scene: 'a2_well', place: 'the burned crossroads shrine', text: 'Walk with him to the burned shrine in the Ashen Fields' }],
+  reward: { exp: 300000, jexp: 200000, items: [['wanderer_hat', 1]], title: 'odins_confidant', lore: 'odin' } });
+A2('act2_10', { name: 'Hel’s Due', area: 'Gloamheim Keep', req: { quests: ['act2_9'] }, seq: true,
+  summary: 'Hel is sewing her brother a new body at Helgrind. Go and see her.',
+  obj: [{ type: 'scene', map: 'gloamheim', x: 30.5, y: 7.5, r: 3.5, scene: 'a2_hel', place: 'Helgrind, behind Gaunt’s throne', text: 'Go to Helgrind, behind Gaunt’s throne' },
+    { type: 'hunt', mob: 'garmr', map: 'gloamheim', x: 30.5, y: 9.5, place: 'Helgrind' },
+    { type: 'scene', npc: 'modgud', scene: 'a2_modgud3', text: 'Speak with Móðguðr' }],
+  reward: { exp: 400000, jexp: 260000, lore: 'garmr' } });
+A2('act2_11', { name: 'Gjallarhorn', area: 'Bifrost Ruins', req: { quests: ['act2_10'] }, seq: true,
+  summary: 'Fenrir climbs the roots toward the Bifrost in a body of nails and drowned men. Heimdall has a horn.',
+  obj: [{ type: 'scene', npc: 'heimdall', scene: 'a2_horn', text: 'Return to Heimdall' },
+    { type: 'hunt', mob: 'fenrir_risen', map: 'bifrost', x: 50.5, y: 10.5, place: 'Fenrir’s island' }],
+  reward: { exp: 500000, jexp: 320000 } });
+A2('act2_12', { name: 'Bind or Free', area: 'Bifrost Ruins', req: { quests: ['act2_11'] },
+  summary: 'The wolf is down, and he cannot die. Bind him with Gleipnir, or set him free.',
+  obj: [{ type: 'scene', map: 'bifrost', x: 50.5, y: 11.5, r: 6, scene: 'a2_choice', place: 'Fenrir’s island', text: 'Decide the wolf’s fate on his island' }],
+  onComplete() { grantTitle(P.flags.fenrirFate === 'freed' ? 'wolf_friend' : 'wolfbinder'); },
+  reward: { exp: 800000, jexp: 500000, zeny: 100000, items: P => [[P.flags.fenrirFate === 'freed' ? 'wolf_ears' : 'gleipnir_band', 1], ['ygg_ember', 3]] } });
+// Story beats that are not quest objectives: an NPC plays a scene while `when()` is true (checked in talkTo).
+// Skaldhaven's board (round 5): the harbour's troubles on the Rimeshore coast.
+bounty('bb_draugr', 'skald_board', 'Bounty: Draugr on the Piers', { summary: 'Draugr fishers keep climbing the piers at night. Send them back down.', obj: [{ type: 'kill', mob: 'draugr_fisher', n: 10 }] });
+bounty('bb_snowwolves', 'skald_board', 'Bounty: Snow Wolves', { summary: 'The wolves took two of Úlfar’s goats. He wants an apology in pelts.', obj: [{ type: 'kill', mob: 'snow_wolf', n: 12 }] });
+bounty('bb_shells', 'skald_board', 'Bounty: Hermit Shells', { summary: 'Hallgerð roofs the Salt Hall with hermit shells. The roof leaks.', obj: [{ type: 'collect', item: 'hermit_shell', n: 5 }] });
+bounty('bb_wraiths', 'skald_board', 'Bounty: Ice Wraiths', { summary: 'Ice wraiths drift in with the fog and freeze the rigging. Break them.', obj: [{ type: 'kill', mob: 'ice_wraith', n: 8 }] });
+bounty('bb_manes', 'skald_board', 'Bounty: Frosted Manes', { summary: 'Thordis needs frosted manes for her loom. Do not ask what she weaves.', obj: [{ type: 'collect', item: 'frost_mane', n: 6 }] });
+
+const STORY_TALK = [
+  { npc: 'astrid', scene: 'a2_footfall', when: () => !!P.quests.active.act2_5 && !countItem('imp_footfall') },
+  { npc: 'ragna', scene: 'a2_sinew', when: () => !!P.quests.active.act2_5 && !countItem('imp_sinew') },
+];
+
+/* =========================================================
+   Content round 4 · Side quests across every realm
+   Kinds of work: escort (gunnar_escort, hrafn_kari, tofa_escort), fetch chains (bolli_boat, sindri_commission),
+   investigation (sigrun_cairns, eira_garden, sigrun_sisters), timed defence (wood_watch, ragna_icefish),
+   named hunts with a unique drop (astrid_poring_king, wood_greyback, rime_shellback, deep_matriarch, vidar_skoll),
+   collection for crafting materials (keep_grave_goods, nyr_tally, heimdall_gold), choices with consequences
+   (astrid_poring_king, squire_sword, hrafn_nails, bolli_wisp, sindri_commission) and the weekly MVP hunt.
+   ========================================================= */
+// ---- Ashen Fields / Emberhold ----
+quest('gunnar_escort', { giver: 'gunnar', name: 'The Last Farmer', area: 'Ashen Fields', req: { lvl: 6, quests: ['main_1'] },
+  summary: 'Old Gunnar has been hiding at the burned shrine for a year. Walk him to the fields Waystone alive.',
+  offer: ['<i>An old man with a pitchfork is sitting behind the shrine’s broken wall, very still, the way you sit when things are looking for you.</i>', 'I farmed these fields forty years. Now my own scarecrows hunt me through the rows. I made them well. That was my mistake.', 'The Waystone by the west road is warm, they say. I can’t get there on my own. My knees are sixty and the husks are not. Walk with me? Keep them off me?'],
+  progress: 'Walk slow. Keep the husks off him. The Waystone is by the west road.',
+  done: ['<i>Gunnar puts both hands flat on the Waystone and leaves them there.</i> Warm. It’s warm. I had forgotten warm.', 'Here. I had it on my head the whole way, and I think it’s the only reason they missed me. Straw hides a man from straw men.'],
+  obj: [{ type: 'escort', npc: 'gunnar', map: 'ashen_fields', from: [39.5, 34.5], to: [9.5, 31.5], r: 3, place: 'the fields Waystone', hp: 100, dmg: 4, speed: 3.4 }],
+  reward: { exp: 2500, jexp: 1800, zeny: 600, items: [['straw_hat', 1]], rep: { emberhold: 1 } } });
+quest('astrid_poring_king', { giver: 'astrid', name: 'The Poring King', area: 'Ashen Fields', req: { lvl: 8, quests: ['astrid_clovers'] },
+  summary: 'Astrid swears there is a Poring as big as a cart in the south-east of the fields, wearing a smaller Poring as a hat.',
+  offer: ['There’s a KING. A Poring king! In the south-east of the fields, by the dead orchard. He’s as big as a cart and he wears another Poring on his head like a hat and they both look at you.', 'Nobody believes me. Sigrun said “that’s nice, dear”. Can you go and see? And if he’s real… can I have the hat? Pip needs a friend.'],
+  progress: 'The south-east of the fields. A Poring as big as a cart. Wearing a Poring.',
+  done: ['He was REAL? <i>Astrid bounces on her toes.</i> I KNEW it. Did he have the hat? Did you get the hat?'],
+  obj: [{ type: 'hunt', mob: 'poring_king', map: 'ashen_fields', x: 50.5, y: 50.5, place: 'the dead orchard' }],
+  choicePrompt: 'Astrid is looking at the Poring Hat with enormous eyes.',
+  choices: [
+    { label: 'Give Astrid the Poring Hat', need: () => hasItem('poring_hat'), take: [['poring_hat', 1]], reward: { exp: 3000, jexp: 2200, items: [['pip_charm', 1]], rep: { emberhold: 2 }, title: 'pips_hero' },
+      done: ['<i>Astrid puts the Poring Hat on Pip. Pip is now mostly hat.</i> He LOVES it. Wait here. Don’t move.', '<i>She comes back an hour later with a lumpy stitched charm.</i> I made you this out of the lining. It’s lucky. I tested it. I found a button.'] },
+    { label: 'Keep the hat (it is very comfortable)', reward: { exp: 3000, jexp: 2200, zeny: 800 },
+      done: ['<i>Astrid looks at the hat, then at you, then at the hat.</i> …It does suit you. Pip says you can keep it. Pip is being very brave about it.'] }] });
+// ---- Withered Wood ----
+quest('sigrun_cairns', { giver: 'sigrun', name: 'The Hunters’ Cairns', area: 'Withered Wood', req: { lvl: 14, quests: ['sigrun_wolves'] },
+  summary: 'Sigrun asks you to visit the three hunters’ cairns in the Withered Wood and tell her what is on them.',
+  offer: ['Before the fire, the hunters of the Wood buried their dead under cairns and left a raven feather on each stone. I used to carry those hunters home.', 'There are three cairns still standing, I think. In the north of the Wood, in the east, and in the south. Go and look at them for me. Tell me if the feathers are still there.'],
+  progress: 'Three cairns in the Withered Wood: north, east and south.',
+  done: ['The feathers are still there. <i>Sigrun closes her eyes.</i> Odin’s ravens brought them, every one. He never missed a hunter. He never missed anyone, back then.', 'Keep this one. It came off the last cairn in the wind while I was carrying the man under it. I never knew what to do with it.'],
+  obj: [{ type: 'inspect', map: 'withered_wood', place: 'the hunters’ cairns', r: 2, spots: [
+    { x: 20.5, y: 12.5, name: 'The North Cairn', text: ['<i>A heap of grey stones, knee-high. A black feather is wedged between the top two, glossy as if it fell yesterday.</i>', '<i>Scratched into the base: “Arn. He tracked the moon-wolf three days and came home.”</i>'] },
+    { x: 44.5, y: 40.5, name: 'The East Cairn', text: ['<i>Half the stones have been scattered by something heavy. The feather is still there, pinned under the one stone nobody could move.</i>', '<i>“Hild. She hunted with her daughter. Only one of them came home, and it was not Hild.”</i>'] },
+    { x: 26.5, y: 52.5, name: 'The South Cairn', text: ['<i>The smallest cairn. The feather on this one is white.</i>', '<i>“Unnamed. A traveller. We did not know her, so we gave her the white feather, the one for the ones the ravens find first.”</i>'] }] }],
+  reward: { exp: 5000, jexp: 3600, items: [['raven_feather', 1]], rep: { emberhold: 1 }, lore: 'wood_cairns' } });
+quest('wood_greyback', { giver: 'wood_board', name: 'Wanted: Old Greyback', area: 'Withered Wood', req: { lvl: 18 },
+  summary: 'WANTED: the old grey wolf that has been killed twice and came back both times. Last seen in the heart of the Wood.',
+  offer: ['<i>A poster, nailed through the middle of a wolf’s ear.</i> WANTED: OLD GREYBACK. Killed twice (by Arn, by Hild). Came back twice. Seen in the heart of the Wood, among the stumps. Bring proof. Keep the pelt, we don’t want it.'],
+  progress: 'Old Greyback, in the heart of the Withered Wood among the stumps.',
+  done: ['<i>Someone has scrawled underneath the poster: “Third time lucky.” You tear it down.</i>'],
+  obj: [{ type: 'hunt', mob: 'old_greyback', map: 'withered_wood', x: 30.5, y: 44.5, place: 'the heart of the Wood' }],
+  reward: { exp: 7000, jexp: 5000, zeny: 2500, items: [['orange_potion', 10]] } });
+quest('wood_watch', { giver: 'wood_board', name: 'Night Watch at the Waystone', area: 'Withered Wood', req: { lvl: 16 },
+  summary: 'The Wood Waystone is attacked every night. Hold it through three waves, each in less than a minute.',
+  offer: ['<i>A notice in Sigrun’s neat hand.</i> The Waystone in the Withered Wood is attacked every night now: wolves first, then kobolds, then the willows walk. Whoever holds it through a whole night will be paid from the Emberhold chest. Do not let a wave linger. The stone weakens while they are on it.'],
+  progress: 'Stand by the Withered Wood Waystone. Clear each wave within 50 seconds.',
+  done: ['<i>A second notice has been pinned beside the first, in the same hand:</i> Thank you. Payment is under the stone. The stone says thank you too.'],
+  obj: [{ type: 'waves', map: 'withered_wood', x: 7.5, y: 36.5, r: 6, place: 'the Wood Waystone', limit: 50, gap: 4,
+    waves: [[['ash_wolf', 3]], [['rotwood_kobold', 2], ['kobold_archer', 2]], [['thorn_willow', 2], ['ash_wolf', 2], ['mourning_spore', 2]]] }],
+  reward: { exp: 6500, jexp: 4800, zeny: 2000, items: [['orange_potion', 8], ['fly_wing', 5]] } });
+// ---- Gloamheim Keep ----
+quest('squire_sword', { giver: 'einar', name: 'The Squire’s Last Errand', area: 'Gloamheim Keep', req: { lvl: 26 },
+  summary: 'Sir Gaunt’s ghost squire wants the pieces of his lord’s broken blade. The Rust Knights carry them.',
+  offer: ['My lord broke his sword on the day he broke his oath. The Rust Knights took the pieces. They were his men. They think if they carry them long enough he will come back and need them.', 'Please. Four pieces. I would like to lay it out properly, the way a squire should. Then I think I can stop polishing.'],
+  progress: 'Four fragments of Gaunt’s blade, from the Rust Knights of the inner halls.',
+  done: ['<i>Einar fits the four fragments together on the floor. They do not quite meet. Tyr’s rune runs across the break.</i>', 'He meant well. Didn’t he? At the start? <i>He looks up at you.</i> I would like to know what you think. Then I will know what to do with it.'],
+  drops: [{ mob: 'rust_knight', item: 'gaunt_fragment', chance: 0.3 }],
+  obj: [{ type: 'collect', item: 'gaunt_fragment', n: 4 }],
+  choicePrompt: 'The broken sword lies between you. Einar is waiting.',
+  choices: [
+    { label: '“He meant well. Lay it to rest with him.”', reward: { exp: 26000, jexp: 19000, items: [['squire_plume', 1]], rep: { dead: 2 }, lore: 'einar' },
+      done: ['<i>Einar lays the blade out, points to the north wall, and kneels beside it.</i> Thank you. That is what I hoped. <i>He is getting fainter.</i> You should have my helm. I polished it every day. It was always a little too big for me.', '<i>When you look up, the squire is gone, and the helm is in your hands.</i>'] },
+    { label: '“Good steel should not lie in the dark. Let Brokkr reforge it.”', reward: { exp: 26000, jexp: 19000, items: classWeapon(BROKKR_T2, 5), rep: { dvergar: 1 } },
+      done: ['<i>Einar is quiet for a long moment.</i> My lord hated waste. <i>He almost smiles.</i> Take it to the smith. Tell him it was Gaunt’s. He will know what that means.', '<i>Brokkr works through the night and sends the blade back up the road with a note: “Five times. The rune was still in it.”</i>'] }] });
+quest('keep_grave_goods', { giver: 'keep_board', name: 'Grave Goods', area: 'Gloamheim Keep', req: { lvl: 24 },
+  summary: 'Sindri’s old contact in the keep pays in star-iron for bone and ectoplasm, for reasons he does not explain.',
+  offer: ['<i>A neat dwarven hand:</i> WANTED. Bone shards (12) and ectoplasm (6), for a forge far below. Payment in star-iron, which is worth more than you think. Leave them at this board. Do not ask.'],
+  progress: 'Twelve Bone Shards and six Ectoplasm.',
+  done: ['<i>You leave the bundle at the board. When you look back, it is gone, and two dull ingots sit in its place, warm as bread.</i>'],
+  obj: [{ type: 'collect', item: 'bone_shard', n: 12 }, { type: 'collect', item: 'ectoplasm', n: 6 }],
+  reward: { exp: 20000, jexp: 15000, items: [['star_iron', 2]] } });
+// ---- Rimeshore ----
+quest('ragna_icefish', { giver: 'ragna', name: 'The Fishing Hole', area: 'Rimeshore', req: { lvl: 33, quests: ['ragna_wolves'] },
+  summary: 'Ragna’s fishers need the lagoon hole held while they haul the nets. Three waves, no time to waste.',
+  offer: ['We cut a new hole on the lagoon ice, where the fish still run. Every time we haul, the shore wakes up and comes for us.', 'Hold the hole while the fishers work. Three pushes, and they come fast. If you let one sit on the ice too long, the ice breaks under all of us.'],
+  progress: 'The fishing hole on the south lagoon. Three waves, each cleared within fifty seconds.',
+  done: ['A full net. <i>Ragna grins and throws you a fish, which is frozen solid.</i> Eat it later. And take this. Eira spins it from wisp-light and sends it to me for mending; I never mend anything.'],
+  obj: [{ type: 'waves', map: 'rimeshore', x: 40.5, y: 50.5, r: 6, place: 'the fishing hole', limit: 50, gap: 4,
+    waves: [[['snow_wolf', 3]], [['shell_knight', 1], ['rime_poring', 3]], [['draugr_fisher', 2], ['ice_wraith', 2]]] }],
+  reward: { exp: 90000, jexp: 65000, items: [['rune_thread', 2], ['honey_mead', 2]], rep: { rimeshore: 1 } } });
+quest('hrafn_kari', { giver: 'hrafn', name: 'Kari on the Ice', area: 'Rimeshore', req: { lvl: 30, test: () => !!P.flags.talked.ragna },
+  summary: 'Hrafn’s grandson went salvaging at the beached longships. Bring him home before the wolves find him.',
+  offer: ['My grandson Kari went out to the wrecks on the beach this morning. Salvage, he said. There is nothing to salvage. He wanted to see the Jarl’s ships.', 'Bring him back. He will say he can walk on his own. He cannot. Not past the wolves.'],
+  progress: 'Kari is at the beached longships north-east of the camp. Walk him home.',
+  done: ['<i>Hrafn cuffs Kari round the ear and then holds on to him for a long time.</i>', 'Here. The boy made it for you on the way back, he says. A luck-knot. I taught him that knot. It has never come undone.'],
+  obj: [{ type: 'escort', npc: 'kari', map: 'rimeshore', from: [45.5, 26.5], to: [8.5, 33.5], r: 3.5, place: 'the camp', hp: 100, dmg: 5, speed: 3.8 }],
+  reward: { exp: 70000, jexp: 50000, items: [['kari_knot', 1]], rep: { rimeshore: 1 } } });
+quest('rime_shellback', { giver: 'ragna', name: 'Old Shellback', area: 'Rimeshore', req: { lvl: 36, rep: { rimeshore: 1 } },
+  summary: 'The oldest shell knight on the lagoon wears Ragna’s great-grandfather’s helm. She wants it back.',
+  offer: ['You have been a friend to this shore, so I will tell you something I tell nobody. The biggest shell knight on the south lagoon wears my great-grandfather’s helm. Old Shellback, the fishers call it.', 'I have wanted that helm back since I was eight. I could never get near it. You could.'],
+  progress: 'Old Shellback, on the south lagoon ice.',
+  done: ['<i>Ragna turns the shell-crusted helm over in her hands.</i> It is mostly crab now. <i>She laughs.</i> Keep it. Great-grandfather would have liked the crab.'],
+  obj: [{ type: 'hunt', mob: 'shellback', map: 'rimeshore', x: 38.5, y: 55.5, place: 'the south lagoon' }],
+  reward: { exp: 110000, jexp: 80000, zeny: 12000, rep: { rimeshore: 1 } } });
+quest('hrafn_nails', { giver: 'hrafn', name: 'Nails for Naglfar', area: 'Rimeshore', req: { lvl: 34, test: () => !!P.flags.talked.ragna },
+  summary: 'The draugr are collecting dead men’s nails for a ship. Hrafn wants to know what to do about it.',
+  offer: ['You know why the draugr fish the cracks? Not for fish. For nails. Dead men’s nails. They pull them off the drowned and carry them north in their nets.', 'Naglfar, the ship of the dead, is built of them. The more nails, the bigger the ship. Bring me ten. Then we will decide what to do with them.'],
+  progress: 'Ten Dead Man’s Nails from the Draugr Fishers.',
+  done: ['<i>Hrafn tips the nails into a bowl. They clink like teeth.</i> Ten planks Naglfar will not have. Now. We could burn them, the old way, and sing over them. Or a dwarf I know would pay well for them. Dead men’s nails make very hard iron.'],
+  drops: [{ mob: 'draugr_fisher', item: 'dead_nail', chance: 0.35 }],
+  obj: [{ type: 'collect', item: 'dead_nail', n: 10 }],
+  choicePrompt: 'Hrafn holds the bowl of nails over the fire.',
+  choices: [
+    { label: 'Burn them and sing over them', reward: { exp: 80000, jexp: 60000, zeny: 5000, rep: { rimeshore: 2 }, lore: 'naglfar' },
+      done: ['<i>Hrafn tips them into the fire and sings. The camp comes out to listen. By the end, everyone is singing, badly, and the nails are ash.</i>'] },
+    { label: 'Send them to Sindri for iron', reward: { exp: 80000, jexp: 60000, items: [['star_iron', 3]], rep: { dvergar: 1 } },
+      done: ['<i>Hrafn shrugs.</i> Iron is iron. <i>A week later a crate arrives from the Deep with three dull ingots in it and a note: “Hardest iron I ever worked. Do not ask me to do it twice.”</i>'] }] });
+// ---- Mirewell ----
+quest('bolli_boat', { giver: 'bolli', name: 'A Boat for the Boatman', area: 'Mirewell · Emberhold · Rimeshore', req: { lvl: 38, test: () => !!P.flags.talked.eira }, seq: true,
+  summary: 'Bolli wants to build a boat. He needs caulking moss, nails from Brokkr and Hrafn’s old sail.',
+  offer: ['A boatman with no boat is just a man standing next to water. I’m going to build one.', 'I need troll moss to caulk the seams: six handfuls. Then nails; the only smith who still makes boat nails is Brokkr, up in Emberhold. And a sail. Old Hrafn in Rimeshore had one, before the sea froze. He never throws anything away.'],
+  progress: 'Troll moss, Brokkr’s nails, Hrafn’s sail. In that order, or Bolli frets.',
+  done: ['<i>Bolli lays everything out on the boardwalk and walks around it three times.</i> A boat. There’s a boat in there. I can see it.', 'Here: my hat. I won’t need it till the boat’s done, and that’ll be a year. It floats. Mostly.'],
+  obj: [{ type: 'collect', item: 'troll_moss', n: 6 },
+    { type: 'talk', npc: 'brokkr', gives: [['boat_nails', 1]], text: 'Ask Brokkr in Emberhold for boat nails' },
+    { type: 'talk', npc: 'hrafn', gives: [['old_sail', 1]], text: 'Ask old Hrafn in Rimeshore for his sail' }],
+  take: [['boat_nails', 1], ['old_sail', 1]],
+  reward: { exp: 120000, jexp: 85000, items: [['boatman_hat', 1]], rep: { mirewell: 1 } } });
+quest('eira_garden', { giver: 'eira', name: 'The Crone’s Garden', area: 'Mirewell', req: { lvl: 40, quests: ['eira_crone'] },
+  summary: 'Now that the Crone is gone, Eira wants to know what she was, before. Search her old places.',
+  offer: ['I have hated her for so long I have forgotten what she was like before. That frightens me more than she did.', 'Her hut is on stilts in the west. Her garden was on the dry ground east of the crossing. And she drew water at the old healer’s well south of the camp. Go and look. Tell me what you find.'],
+  progress: 'The Crone’s hut in the west, her old garden in the east, and the healer’s well.',
+  done: ['<i>Eira reads the list of children’s names for a long time.</i> My name is on it. And Ragna’s. She delivered us both.', 'I think I will plant her garden again. Thank you. That was not easy to hear, and I needed to hear it.'],
+  obj: [{ type: 'inspect', map: 'mirewell', place: 'the Crone’s old places', r: 2, spots: [
+    { x: 15.5, y: 34.5, name: 'The Hut on Stilts', text: ['<i>Inside the hut, under the reek of the cauldron, there is a shelf of small clay jars, each labelled in a careful hand: “for coughs”, “for teeth”, “for grief (weak)”, “for grief (strong)”.</i>'] },
+    { x: 46.5, y: 22.5, name: 'The Old Garden', text: ['<i>Gone to weeds and black water, but you can still see the rows: feverfew, yarrow, woundwort. Someone laid them out to be walked between, with a bench at the end to rest on.</i>'] },
+    { x: 33.5, y: 18.5, name: 'The Healer’s Well', text: ['<i>Tucked into a niche in the well-stones is an oilcloth packet. Inside is a list of names, hundreds of them, each with a date. At the top of the page: “Children I brought into the world. God keep every one.”</i>'] }] }],
+  reward: { exp: 130000, jexp: 95000, items: [['white_potion', 10]], rep: { mirewell: 1 }, lore: 'crone_garden' } });
+quest('bolli_wisp', { giver: 'bolli', name: 'The Wisp That Hums', area: 'Mirewell', req: { lvl: 39, test: () => !!P.flags.talked.eira },
+  summary: 'A small wisp follows Bolli everywhere, humming his daughter’s lullaby. It is fading. Feed it wisp-flame.',
+  offer: ['See that light by my shoulder? It’s been following me since the Crone boiled my boat. It hums. <i>He clears his throat.</i> It hums the song I used to sing my daughter.', 'It’s fading. The other wisps have flame to spare. Three of their flames might keep it going. After that… I don’t know what’s kind.'],
+  progress: 'Three Wisp Flames for the little wisp.',
+  done: ['<i>The little wisp drinks the flames and glows so bright you can see the boardwalk end to end. The humming gets louder.</i>', 'It’s strong now. Strong enough to go wherever wisps go. Or strong enough to stay. <i>Bolli won’t look at you.</i> You decide. I can’t.'],
+  obj: [{ type: 'collect', item: 'wisp_flame', n: 3 }],
+  choicePrompt: 'The wisp hovers between you and Bolli, humming.',
+  choices: [
+    { label: 'Let it go', reward: { exp: 90000, jexp: 65000, zeny: 8000, rep: { mirewell: 2 } },
+      done: ['<i>You open your hands. The wisp circles Bolli’s head once, twice, and then drifts out over the black water, humming, and goes out like a candle at bedtime.</i>', '<i>Bolli sits down on the planks and does not say anything for a long time. Then:</i> Thank you. That was the right thing. I hate that it was the right thing.'] },
+    { label: 'Keep it safe in a jar', reward: { exp: 90000, jexp: 65000, items: [['wisp_lantern', 1]] },
+      done: ['<i>You coax the wisp into an old mead jar. It settles on the bottom and hums, contentedly, like a cat.</i>', '<i>Bolli taps the glass.</i> Look after her. She likes it when you’re sad. She glows more. Don’t be sad on purpose.'] }] });
+// ---- Nidavellir Deep ----
+quest('tofa_escort', { giver: 'sindri', name: 'Lost in the Shafts', area: 'Nidavellir Deep', req: { lvl: 44, test: () => !!P.flags.talked.sindri },
+  summary: 'Tófa, the last dwarf child in the Deep, went into the old mine shafts. Bring her back to the forge.',
+  offer: ['Tófa went down the old shafts again. South-west, where the rails run. She says the rock sings to her. It does. It sings “come closer”.', 'She is the last child of the Deep. Bring her back to my forge. Carry her if you must. She will bite.'],
+  progress: 'Tófa is in the old mine shafts to the south-west. Walk her back to Sindri’s forge.',
+  done: ['<i>Sindri picks Tófa up by the back of her tunic, looks at her, and puts her down again.</i> Rock sings, does it. <i>He sighs.</i> Her grandmother said the same. She was right, too.', 'Thank you. The Deep owes you. Take this, and my word: my forge is yours.'],
+  obj: [{ type: 'escort', npc: 'tofa', map: 'nidavellir', from: [11.5, 52.5], to: [26.5, 28.5], r: 3, place: 'Sindri’s forge', hp: 120, dmg: 7, speed: 3.6 }],
+  reward: { exp: 160000, jexp: 115000, zeny: 12000, items: [['white_potion', 10]], rep: { dvergar: 2 } } });
+quest('deep_matriarch', { giver: 'deep_board', name: 'Wanted: The Amethyst Matriarch', area: 'Nidavellir Deep', req: { lvl: 46 },
+  summary: 'WANTED: the mother of all crystal spiders, in the galleries north-east of the forge.',
+  offer: ['<i>A poster held on by a crystal shard.</i> WANTED: THE AMETHYST MATRIARCH. Mother of the galleries. Size of a cart. Crystals worth a king’s ransom on her back. She has eaten three prospectors this year. Signed, the prospectors’ widows.'],
+  progress: 'The Amethyst Matriarch, in the crystal galleries north-east of the forge.',
+  done: ['<i>You tear down the poster. Behind it, someone has pinned a pressed flower and the words: “thank you”.</i>'],
+  obj: [{ type: 'hunt', mob: 'amethyst_matriarch', map: 'nidavellir', x: 53.5, y: 11.5, place: 'the crystal galleries' }],
+  reward: { exp: 170000, jexp: 120000, zeny: 20000, items: [['white_potion', 8]] } });
+quest('nyr_tally', { giver: 'nyr', name: 'Nýr’s Tally', area: 'Nidavellir Deep', req: { lvl: 42 },
+  summary: 'Nýr still keeps the mine’s tally. The shift is short on bat wings and rune stones.',
+  offer: ['Tally’s short. Tally’s always short. Eight bat wings for the lamp-oil, six rune stones for the golems’ heads. We don’t make golems any more, but the tally doesn’t know that.', 'Bring them and I’ll pay you in thread. The rune-thread the ghost-weavers spin down the south shaft. And a bit of star-iron. Don’t tell Sindri I had it.'],
+  progress: 'Eight Bat Wings and six Rune Stones.',
+  done: ['<i>Nýr marks the tally with a finger that leaves a faint glowing line.</i> Square. First time in four hundred years the tally’s square. Here.'],
+  obj: [{ type: 'collect', item: 'bat_wing', n: 8 }, { type: 'collect', item: 'rune_stone', n: 6 }],
+  reward: { exp: 140000, jexp: 100000, items: [['rune_thread', 2], ['star_iron', 1]] } });
+quest('sindri_commission', { giver: 'sindri', name: 'A Helm Worth the Name', area: 'Nidavellir Deep', req: { lvl: 45, quests: ['sindri_forge'] },
+  summary: 'Sindri will forge you a rune-helm from star-iron, rune-thread and Asgard gold, if you can bring them.',
+  offer: ['That thing on your head. Is it a helm, or is it a pot you lost a fight with? <i>He sniffs.</i> I can do better.', 'Three star-iron ingots for the shell, three lengths of rune-thread for the lining, and two sheets of Asgard gold leaf for the runes. The iron comes from the keep and the shore, the thread from the Deep and the ice, the gold from the watchman’s bridge.'],
+  progress: 'Three Star-Iron Ingots, three Rune-Woven Thread, two Asgard Gold Leaf.',
+  done: ['<i>Sindri turns the metal over in the forge-light.</i> Good. Now: what is the helm for? A helm is for something. The arm, the mind, or the eye. Choose, and I will cut the rune.'],
+  obj: [{ type: 'collect', item: 'star_iron', n: 3 }, { type: 'collect', item: 'rune_thread', n: 3 }, { type: 'collect', item: 'gold_leaf', n: 2 }],
+  choicePrompt: 'Which rune shall Sindri cut over the brow?',
+  choices: [
+    { label: 'ᚦ The arm (STR)', reward: { exp: 150000, jexp: 110000, items: [['runehelm_str', 1]], rep: { dvergar: 1 } }, done: ['ᚦ, for the hammer. <i>Clang.</i> There. Hit things with it. Not with the helm. With your arm.'] },
+    { label: 'ᚨ The mind (INT)', reward: { exp: 150000, jexp: 110000, items: [['runehelm_int', 1]], rep: { dvergar: 1 } }, done: ['ᚨ, for the god who asks questions. <i>Clang.</i> He will want it back, when he sees it. Tell him no.'] },
+    { label: 'ᛊ The eye (DEX)', reward: { exp: 150000, jexp: 110000, items: [['runehelm_dex', 1]], rep: { dvergar: 1 } }, done: ['ᛊ, for the sun that is gone. <i>Clang.</i> Aim true. Somebody should.'] }] });
+// ---- Bifrost Ruins ----
+quest('sigrun_sisters', { giver: 'sigrun', name: 'Names of the Fallen', area: 'Bifrost Ruins', req: { lvl: 50, quests: ['main_9'] },
+  summary: 'Sigrun’s sisters fell on the Bifrost. Their statues stand at the Valkyries’ rest. Read their names aloud.',
+  offer: ['My sisters rode out on the last day. Hrist, Mist, Skögul, Göndul. They chose the slain, and then they were chosen.', 'Their statues stand on the Bifrost, on the island the Valkyries used to rest on. I cannot go. I would not come back. Will you stand at each one and say her name? Out loud. Someone should.'],
+  progress: 'The four statues at the Valkyries’ rest, east of the Rune Plaza.',
+  done: ['<i>Sigrun listens to you say the four names, and says them back, one by one, and on the last one her voice breaks and she lets it.</i>', 'Thank you. This was Göndul’s. She would want it worn by someone who still goes places.'],
+  obj: [{ type: 'inspect', map: 'bifrost', place: 'the Valkyries’ rest', r: 2.2, spots: [
+    { x: 50.5, y: 30.5, name: 'Hrist', text: ['<i>A tall statue with a broken spear. At its foot, carved small: “Hrist, the Shaker. She laughed in battle. It annoyed everyone.”</i>', '<i>You say her name aloud. The wind over the bridge drops for a moment.</i>'] },
+    { x: 55.5, y: 30.5, name: 'Mist', text: ['<i>A slender figure, face veiled. “Mist, the Cloud. Nobody ever saw her coming, and she liked it that way.”</i>', '<i>You say her name. A little cloud passes over the statue, and away.</i>'] },
+    { x: 50.5, y: 35.5, name: 'Skögul', text: ['<i>A Valkyrie leaning on a shield, her head bowed. “Skögul, the Battle. She chose the slain for longer than any of us, and she never once chose wrong.”</i>', '<i>You say her name. Somewhere below the clouds, something rings like a struck shield.</i>'] },
+    { x: 55.5, y: 35.5, name: 'Göndul', text: ['<i>The smallest statue, with two silver wings still bright on her helm. “Göndul, the Wand-Wielder. The youngest. Sigrun’s favourite, though she would never say.”</i>', '<i>You say her name. One of the silver wings comes loose in your hand, as if it had been waiting.</i>'] }] }],
+  reward: { exp: 250000, jexp: 180000, items: [['valkyrie_circlet', 1]], rep: { emberhold: 1 }, lore: 'valkyries' } });
+quest('vidar_skoll', { giver: 'vidar', name: 'Sköll, the Sun-Chaser', area: 'Bifrost Ruins', req: { lvl: 55, quests: ['main_9'] },
+  summary: 'Hati had a brother who chased the sun. He runs in circles on the Rune Plaza, looking for it.',
+  offer: ['You killed Hati. Good. He had a brother, Sköll, who chased the sun as Hati chased the moon. When the sky burned he caught it, and it went out in his mouth.', 'He runs in circles on the Rune Plaza now, looking for it. Put him out of his misery. I owe the wolves that much. More than that, but that much.'],
+  progress: 'Sköll, on the Rune Plaza in the middle of the Bifrost Ruins.',
+  done: ['<i>The old man turns Sköll’s milk-tooth over in his fingers.</i> He was the gentler of the two. Did you know that? He would bring the sun back to the horizon every evening like a dog with a stick.', 'Keep the tooth. Wear it. Someone should remember him kindly.'],
+  obj: [{ type: 'hunt', mob: 'skoll', map: 'bifrost', x: 33.5, y: 40.5, place: 'the Rune Plaza' }],
+  reward: { exp: 380000, jexp: 260000, zeny: 30000, lore: 'sun_wolves' } });
+quest('heimdall_gold', { giver: 'heimdall', name: 'Gold of Asgard', area: 'Bifrost Ruins', req: { lvl: 50, test: () => !!P.flags.talked.heimdall },
+  summary: 'Heimdall can beat Asgard gold into leaf again, if you bring prism shards and rune cores to heat the old forge.',
+  offer: ['The halls here were roofed in gold leaf once. I can still beat it, if the old forge on the landing is fed: prism shards for the light and rune cores for the heat.', 'Eight shards, four cores. I will keep what I need for the bridge and give you the rest. Gold leaf is useful to smiths, I am told. I have never had a smith.'],
+  progress: 'Eight Prism Shards and four Aesir Rune Cores.',
+  done: ['<i>Heimdall beats the gold on his shield with the pommel of his sword, very gently, for a very long time.</i> There. Thin enough to read through. Go and find a smith who deserves it.'],
+  obj: [{ type: 'collect', item: 'prism_shard', n: 8 }, { type: 'collect', item: 'aesir_core', n: 4 }],
+  reward: { exp: 220000, jexp: 160000, items: [['gold_leaf', 3], ['honey_mead', 3]] } });
+
+/* ---------- The weekly MVP hunt ----------
+   The Hunter’s Board in Emberhold posts one echo a week (weeks start Monday) once Act II has begun. Echoes are Lv 60
+   variants of the fallen MVPs, raised again by Hel’s open gate; each appears in its old lair and drops its original’s
+   uniques (bossDefeated picks by the base type). */
+BOARDS.hunt_board = { name: 'Hunter’s Board', title: 'Weekly MVP', map: 'emberhold', x: 24.5, y: 21.5, perDay: 1, period: 'week', pool: [] };
+function weekly(id, mob, map, x, y, place, base) {
+  quest(id, { kind: 'weekly', repeat: 'weekly', giver: 'hunt_board', name: `Weekly Hunt: ${MOBS[mob].name}`, area: MAPDEFS[map].name,
+    req: { lvl: 55, quests: ['main_7'], test: () => !!(P.flags.act2 || P.quests.done.act2_1) },   // Hel's gate is open: Act II has begun
+    summary: `Hel’s open gate has raised an echo of ${MOBS[base].name}. It waits in the old lair: ${place}.`,
+    offer: [`<i>A black-bordered notice, fresh this week.</i> ECHO SIGHTED: ${MOBS[mob].name.toUpperCase()}, ${place}. It is stronger than the one you remember. It remembers you. Bounty paid once a week.`],
+    progress: `${MOBS[mob].name}, ${place} (${MAPDEFS[map].name}).`,
+    done: ['<i>You pin the echo’s mark to the board. Someone has already chalked a tally beside your name.</i>'],
+    obj: [{ type: 'hunt', mob, map, x, y, place }],
+    reward: { exp: 600000, jexp: 400000, zeny: 60000, items: [['honey_mead', 5], ['star_iron', 1], ['gold_leaf', 1]] } });
+  BOARDS.hunt_board.pool.push(id);
+}
+weekly('weekly_hati', 'echo_hati', 'withered_wood', 48.5, 48.5, 'the moon-wolf’s den', 'hati');
+weekly('weekly_gaunt', 'echo_gaunt', 'gloamheim', 30.5, 9.5, 'Gaunt’s hall', 'sir_gaunt');
+weekly('weekly_jarl', 'echo_jarl', 'rimeshore', 51.5, 11.5, 'the frozen sea-cave', 'drowned_jarl');
+weekly('weekly_crone', 'echo_crone', 'mirewell', 32.5, 53.5, 'the Crone’s island', 'bog_crone');
+weekly('weekly_fafnir', 'echo_fafnir', 'nidavellir', 51.5, 52.5, 'the hoard cave', 'fafnir');
+
+/* =========================================================
+   Titles and achievements (round 4). Engine: grantTitle / achTick in js/quests.js; UI: Journal → Achievements.
+   A title is shown under your name in the HUD and under your feet in the world. Achievement fields:
+   { id, cat, name, desc, check: () => bool, prog: () => [cur, max], title }. Ids are save data (P.ach).
+   ========================================================= */
+const TITLES = {
+  wanderer: 'Wanderer of Nine Roads', keeper: 'Keeper of Embers', shardbearer: 'Shardbearer', kingslayer: 'Kingslayer', mvp_hunter: 'MVP Hunter',
+  reaper: 'Reaper of Midgard', collector: 'Card Collector', bounty_hunter: 'Bounty Hunter', echo_hunter: 'Echo-Hunter', saga: 'Saga-Worthy',
+  ember_bearer: 'Ember-Bearer', ash_crowned: 'Ash-Crowned', odins_confidant: 'Odin’s Confidant', gate_warden: 'Warden of Helgrind',
+  wolfbinder: 'Wolfbinder', wolf_friend: 'Wolf-Friend', pips_hero: 'Pip’s Hero', shield_kin: 'Shield-Kin of Rimeshore', mire_friend: 'Friend of the Mire',
+  dvergar_friend: 'Dvergar-Friend', ghost_speaker: 'Who Speaks for the Dead', refused: 'Refused Again', hatter: 'Hatter of Midgard',
+  forge_friend: 'Forge-Friend', master_smith: 'Master Smith', hoarder: 'Keeper of Hoards',   // round 5
+};
+const killsOf = f => { let n = 0; const K = P.flags.kills || {}; for (const k in K) if (MOBS[k] && !MOBS[k].variant && f(MOBS[k], k)) n += K[k]; return n; };
+const allKills = () => killsOf(() => true);
+const MVP_KEYS = ['blight_mother', 'hati', 'sir_gaunt', 'ashen_king', 'drowned_jarl', 'bog_crone', 'fafnir', 'fenrir'];
+const NAMED_KEYS = ['poring_king', 'old_greyback', 'shellback', 'amethyst_matriarch', 'skoll'];
+const QUEST_HATS = ['straw_hat', 'poring_hat', 'raven_feather', 'greyback_hood', 'squire_plume', 'shellback_helm', 'boatman_hat', 'amethyst_diadem', 'runehelm_str', 'runehelm_int', 'runehelm_dex', 'valkyrie_circlet', 'sprig_crown', 'cinder_circlet', 'wanderer_hat', 'gleipnir_band', 'wolf_ears'];
+const wayMaps = () => MAP_ORDER.filter(k => MAPDEFS[k] && genMap(k).way);
+// Side quests anyone can finish: not the second-class trials (one path each) and not the pre-Act II Fenrir quest.
+const sideIds = () => Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'side' && !QUESTS[id].trial && (id !== 'vidar_fenrir' || P.quests.done[id]));
+const cardsOfMap = k => { const d = MAPDEFS[k], s = new Set(d.spawns.map(x => x[0])); if (d.boss) s.add(d.boss); return [...s].filter(m => ITEMS['c_' + m]); };
+const nCards = () => Object.keys(P.flags.cards || {}).length;
+const ach = (cat, id, name, desc, check, prog, title) => ({ cat, id, name, desc, check, prog, title });
+const cnt = (n, f) => [() => f() >= n, () => [f(), n]];
+const ACHIEVEMENTS = [
+  ach('Combat', 'first_blood', 'First Blood', 'Defeat a monster.', ...cnt(1, allKills)),
+  ach('Combat', 'kills_100', 'Ash-Walker', 'Defeat 100 monsters.', ...cnt(100, allKills)),
+  ach('Combat', 'kills_1000', 'Reaper of Midgard', 'Defeat 1,000 monsters.', ...cnt(1000, allKills), 'reaper'),
+  ach('Combat', 'porings', 'Poring Popper', 'Defeat 50 Porings of any kind.', ...cnt(50, () => killsOf((d, k) => /poring/.test(k)))),
+  ach('Combat', 'wolves', 'Wolf-Bane', 'Defeat 100 wolves: ash, snow or Fenrir’s whelps.', ...cnt(100, () => killsOf((d, k) => ['ash_wolf', 'snow_wolf', 'fenrir_whelp'].includes(k)))),
+  ach('Combat', 'undead', 'Undertaker', 'Lay 200 undead to rest.', ...cnt(200, () => killsOf(d => d.race === 'undead'))),
+  ach('Combat', 'named', 'Named and Numbered', 'Defeat all five named monsters of the side quests.', ...cnt(5, () => NAMED_KEYS.filter(k => (P.flags.kills || {})[k]).length)),
+  ach('Bosses', 'shards', 'Shardbearer', 'Take all three Rune-Shards.', ...cnt(3, () => Object.keys(P.flags.shards).length), 'shardbearer'),
+  ach('Bosses', 'king', 'Kingslayer', 'Slay the Ashen King.', () => !!P.flags.bosses.ashen_king, null, 'kingslayer'),
+  ach('Bosses', 'mvps', 'MVP Hunter', 'Defeat all eight MVPs of Midgard.', ...cnt(8, () => MVP_KEYS.filter(k => P.flags.bosses[k]).length), 'mvp_hunter'),
+  ach('Bosses', 'echoes', 'Echo-Hunter', 'Complete the weekly MVP hunt three times.', ...cnt(3, () => Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'weekly').reduce((a, id) => a + ((P.quests.done[id] && P.quests.done[id].n) || 0), 0)), 'echo_hunter'),
+  ach('Exploration', 'all_maps', 'Wanderer of Nine Roads', 'Set foot in every realm on the World Map.', ...cnt(MAP_ORDER.length, () => MAP_ORDER.filter(k => P.flags.seen[k]).length), 'wanderer'),
+  ach('Exploration', 'all_ways', 'Keeper of Embers', 'Kindle every Waystone in Midgard.', () => wayMaps().every(k => P.kindled[k]), () => [wayMaps().filter(k => P.kindled[k]).length, wayMaps().length], 'keeper'),
+  ach('Cards', 'cards_10', 'Card Sharp', 'Find 10 different monster cards.', ...cnt(10, nCards)),
+  ach('Cards', 'cards_30', 'Card Collector', 'Find 30 different monster cards.', ...cnt(30, nCards), 'collector'),
+  ...MAP_ORDER.filter(k => MAPDEFS[k] && MAPDEFS[k].spawns.length).map(k => ach('Cards', 'cards_' + k, `Cards of ${MAPDEFS[k].name}`, `Find every card of ${MAPDEFS[k].name}, its MVP’s included.`, () => cardsOfMap(k).every(m => P.flags.cards && P.flags.cards[m]), () => [cardsOfMap(k).filter(m => P.flags.cards && P.flags.cards[m]).length, cardsOfMap(k).length])),
+  ach('Story', 'age_embers', 'The Age of Embers', 'Relight the Tree at its Heart.', () => P.flags.ending === 'embers', null, 'ember_bearer'),
+  ach('Story', 'age_ash', 'The Age of Ash', 'Take the Crown of Cinders.', () => P.flags.ending === 'ash', null, 'ash_crowned'),
+  ach('Story', 'odin', 'The Wanderer Unmasked', 'Learn who Vidar really is.', () => !!P.flags.odin),
+  ach('Story', 'gate', 'Helgrind Shut', 'Silence Garmr and see the gate-maiden’s lantern lit.', () => !!P.flags.gateShut, null, 'gate_warden'),
+  ach('Story', 'bound', 'The Wolf Bound', 'Bind Fenrir with the reforged Gleipnir.', () => P.flags.fenrirFate === 'bound'),
+  ach('Story', 'freed', 'The Wolf Freed', 'Cut Hel’s stitches and set Fenrir free.', () => P.flags.fenrirFate === 'freed'),
+  ach('Quests', 'side_10', 'Helping Hand', 'Complete 10 side quests.', ...cnt(10, () => sideIds().filter(id => P.quests.done[id]).length)),
+  ach('Quests', 'side_all', 'Saga-Worthy', 'Complete every side quest in Midgard.', () => sideIds().every(id => P.quests.done[id]), () => [sideIds().filter(id => P.quests.done[id]).length, sideIds().length], 'saga'),
+  ach('Quests', 'bounties', 'Bounty Hunter', 'Claim 25 daily bounties.', ...cnt(25, () => Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'daily').reduce((a, id) => a + ((P.quests.done[id] && P.quests.done[id].n) || 0), 0)), 'bounty_hunter'),
+  ach('Quests', 'hats', 'Hatter of Midgard', 'Own five of the quest headgear at once.', ...cnt(5, () => QUEST_HATS.filter(hasItem).length), 'hatter'),
+  ach('Standing', 'rep_rime', 'Shield-Kin', 'Reach +3 standing with Rimeshore.', ...cnt(3, () => repOf('rimeshore')), 'shield_kin'),
+  ach('Standing', 'rep_mire', 'Friend of the Mire', 'Reach +3 standing with Mirewell.', ...cnt(3, () => repOf('mirewell')), 'mire_friend'),
+  ach('Standing', 'rep_dvergar', 'Dvergar-Friend', 'Reach +3 standing with the Dvergar.', ...cnt(3, () => repOf('dvergar')), 'dvergar_friend'),
+  ach('Standing', 'rep_dead', 'Who Speaks for the Dead', 'Earn the trust of the restless dead.', ...cnt(2, () => repOf('dead')), 'ghost_speaker'),
+  // Round 5: crafting and services
+  ach('Crafting', 'craft_1', 'First Work', 'Craft something at a forge.', ...cnt(1, () => P.flags.craftedOk || 0)),
+  ach('Crafting', 'craft_50', 'Busy Hands', 'Craft 50 things.', ...cnt(50, () => P.flags.craftedOk || 0)),
+  ach('Crafting', 'masterwork', 'Masterwork', 'Craft a piece of Masterwork gear.', ...cnt(1, () => P.flags.masterworks || 0), 'master_smith'),
+  ach('Crafting', 'enchant_5', 'Seiðr-Touched', 'Have Thordis reroll five enchantments.', ...cnt(5, () => P.flags.enchants || 0)),
+  ach('Crafting', 'hoard', 'Keeper of Hoards', 'Keep 60 stacks in storage.', ...cnt(60, () => (P.storage || []).length), 'hoarder'),
+  ach('Other', 'lv60', 'Tree-Tall', 'Reach Base Level 60.', ...cnt(60, () => P.lvl)),
+  ach('Other', 'refine7', 'Proud Metal', 'Own a piece of gear refined to +7 or more.', () => [...P.inv, ...SLOTS.map(s => P.equip[s])].some(i => i && (i.refine || 0) >= 7)),
+  ach('Other', 'zeny', 'Andvari’s Envy', 'Carry 1,000,000 zeny.', ...cnt(1000000, () => P.zeny)),
+  ach('Other', 'deaths', 'Refused Again', 'Die ten times. The Tree keeps sending you back.', ...cnt(10, () => P.flags.deaths || 0), 'refused'),
+];
+
+/* Round 5: js/data/recipes.js (crafting, vendors, services) loads right after this file. index.html does not list it
+   yet (not ours to edit); while it does not, this parser-time document.write inserts it before js/core.js runs. */
+if (typeof RECIPES === 'undefined' && typeof document !== 'undefined' && document.readyState === 'loading' && !document.querySelector('script[src$="js/data/recipes.js"]')) document.write('<script src="js/data/recipes.js"><\/script>');

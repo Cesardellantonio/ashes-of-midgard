@@ -1,0 +1,160 @@
+{
+ "sheets": [
+  {
+   "id": "hg_aesir_helm",
+   "layer": "headgear",
+   "body": "aesir_helm",
+   "variant": null
+  },
+  {
+   "id": "hg_amethyst_diadem",
+   "layer": "headgear",
+   "body": "amethyst_diadem",
+   "variant": null
+  },
+  {
+   "id": "hg_bandana",
+   "layer": "headgear",
+   "body": "bandana",
+   "variant": null
+  },
+  {
+   "id": "hg_boatman_hat",
+   "layer": "headgear",
+   "body": "boatman_hat",
+   "variant": null
+  },
+  {
+   "id": "hg_brood_hat",
+   "layer": "headgear",
+   "body": "brood_hat",
+   "variant": null
+  },
+  {
+   "id": "hg_cap",
+   "layer": "headgear",
+   "body": "cap",
+   "variant": null
+  },
+  {
+   "id": "hg_cinder_circlet",
+   "layer": "headgear",
+   "body": "cinder_circlet",
+   "variant": null
+  },
+  {
+   "id": "hg_cinder_crown",
+   "layer": "headgear",
+   "body": "cinder_crown",
+   "variant": null
+  },
+  {
+   "id": "hg_circlet",
+   "layer": "headgear",
+   "body": "circlet",
+   "variant": null
+  },
+  {
+   "id": "hg_dvergr_helm",
+   "layer": "headgear",
+   "body": "dvergr_helm",
+   "variant": null
+  },
+  {
+   "id": "hg_dvergr_runehelm",
+   "layer": "headgear",
+   "body": "dvergr_runehelm",
+   "variant": null
+  },
+  {
+   "id": "hg_gaunt_visage",
+   "layer": "headgear",
+   "body": "gaunt_visage",
+   "variant": null
+  },
+  {
+   "id": "hg_gleipnir_band",
+   "layer": "headgear",
+   "body": "gleipnir_band",
+   "variant": null
+  },
+  {
+   "id": "hg_helm",
+   "layer": "headgear",
+   "body": "helm",
+   "variant": null
+  },
+  {
+   "id": "hg_jarl_crown",
+   "layer": "headgear",
+   "body": "jarl_crown",
+   "variant": null
+  },
+  {
+   "id": "hg_poring_hat",
+   "layer": "headgear",
+   "body": "poring_hat",
+   "variant": null
+  },
+  {
+   "id": "hg_raven_feather",
+   "layer": "headgear",
+   "body": "raven_feather",
+   "variant": null
+  },
+  {
+   "id": "hg_rime_circlet",
+   "layer": "headgear",
+   "body": "rime_circlet",
+   "variant": null
+  },
+  {
+   "id": "hg_shell_helm",
+   "layer": "headgear",
+   "body": "shell_helm",
+   "variant": null
+  },
+  {
+   "id": "hg_sprig_crown",
+   "layer": "headgear",
+   "body": "sprig_crown",
+   "variant": null
+  },
+  {
+   "id": "hg_squire_plume",
+   "layer": "headgear",
+   "body": "squire_plume",
+   "variant": null
+  },
+  {
+   "id": "hg_straw_hat",
+   "layer": "headgear",
+   "body": "straw_hat",
+   "variant": null
+  },
+  {
+   "id": "hg_valkyrie_circlet",
+   "layer": "headgear",
+   "body": "valkyrie_circlet",
+   "variant": null
+  },
+  {
+   "id": "hg_wanderer_hat",
+   "layer": "headgear",
+   "body": "wanderer_hat",
+   "variant": null
+  },
+  {
+   "id": "hg_wolf_ears",
+   "layer": "headgear",
+   "body": "wolf_ears",
+   "variant": null
+  },
+  {
+   "id": "hg_wolf_hood",
+   "layer": "headgear",
+   "body": "wolf_hood",
+   "variant": null
+  }
+ ]
+}

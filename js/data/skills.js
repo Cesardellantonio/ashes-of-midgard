@@ -20,6 +20,9 @@ const ELCOL = { neutral: '#a89a88', fire: '#e0582a', water: '#4aa0e0', wind: '#d
 function healAmt(lv) { return Math.max(1, Math.floor((P.lvl + S.int) / 8)) * (4 + 8 * lv); }
 const SKILLS = {
   basic: { name: 'Basic Skill', max: 9, passive: true, rune: 'ᛗ', el: 'neutral', desc: () => 'What every Unkindled must learn again. Lv 3 lets you sit (X) to recover twice as fast. Lv 9 is required to take a job.' },
+  // Round 5: a passive any path can learn from Brokkr's quest (The Smith's Apprentice). Raised by crafting practice
+  // (P.flags.craftXp, craftXpGain in core.js) or with skill points. Read by craftChance / craftQualityOdds.
+  craftsmanship: { name: 'Craftsmanship', max: 10, passive: true, rune: 'ᚷ', el: 'fire', desc: lv => `The smith's craft. Lv ${lv}: +${lv * 4} % success over a recipe's level, Fine gear ${15 + lv * 3} % and Masterwork ${Math.round(3 + lv * 1.5)} % (before DEX and LUK). Unlocks recipes up to Lv ${lv}. Rises with practice at the forge.` },
   first_aid: { name: 'First Aid', max: 1, rune: 'ᛒ', el: 'holy', tgt: 'self', sp: () => 3, cd: 1, desc: () => 'Bind your wounds. Restores 5 HP plus 3% of Max HP.', use() { healP(5 + S.maxhp * 0.03); } },
   sword_mastery: { name: 'Sword Mastery', max: 10, passive: true, rune: 'ᛏ', el: 'neutral', desc: lv => `+${lv * 4} ATK while wielding a dagger or sword.` },
   bash: { name: 'Bash', max: 10, rune: 'ᚦ', el: 'neutral', tgt: 'enemy', range: 'weapon', sp: lv => lv < 6 ? 8 : 15, cd: 0.35, desc: lv => `A crushing blow for ${100 + 30 * lv}% ATK with +${lv * 5} HIT.`,

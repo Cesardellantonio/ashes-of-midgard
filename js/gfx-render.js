@@ -31,7 +31,7 @@ const SHADOWMAT = new THREE.MeshBasicMaterial({ map: TEX.shadow, transparent: tr
 const CASTMAT = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, transparent: true, side: THREE.DoubleSide });
 const VIS = new Map(), DV = new Map();
 let frameNo = 0;
-function clearVis() { for (const v of VIS.values()) disposeVis(v); VIS.clear(); for (const v of DV.values()) for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.clear(); if (typeof PFX !== 'undefined') PFX.clear(); }
+function clearVis() { for (const v of VIS.values()) disposeVis(v); VIS.clear(); for (const v of DV.values()) for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.clear(); if (typeof PFX !== 'undefined') PFX.clear(); if (typeof VFX !== 'undefined') VFX.clear(); }
 function disposeMesh(m) { scene.remove(m); if (m.material !== SHADOWMAT && m.material !== CASTMAT) m.material.dispose(); if (m.customDepthMaterial) m.customDepthMaterial.dispose(); }
 function disposeVis(v) { if (v.dispose) return v.dispose(); for (const m of v.meshes) disposeMesh(m); }
 
@@ -56,7 +56,7 @@ function sprMapSet(mat, tex) {
 const SPR_HEAD = `
 uniform vec4 uFlash; uniform vec3 uRim; uniform vec2 uRimDir; uniform vec2 uFrameV; uniform float uDissolve; uniform float uFade; uniform vec2 uTexSize;
 #ifdef SPR_HAIR
-uniform vec4 uHK; uniform vec3 uH0; uniform vec3 uH1; uniform vec3 uH2; uniform vec3 uH3;
+uniform vec4 uHK; uniform vec3 uH0; uniform vec3 uH1; uniform vec3 uH2; uniform vec3 uH3; uniform vec3 uClip;
 #endif
 float sprHash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 `;
@@ -75,6 +75,9 @@ diffuseColor *= texelColor;
 `;
 const SPR_TEST = `
 if ( sprA < 0.5 ) discard;
+#ifdef SPR_HAIR
+if ( dot(vec3(vUv, 1.0), uClip) < 0.0 ) discard;   // headgear hideHair 'top' (gfx-sheets.js hatHair)
+#endif
 float sprV = clamp((vUv.y - uFrameV.x) / max(1e-5, uFrameV.y - uFrameV.x), 0.0, 1.0);
 float sprEdge = 0.0;
 if ( uDissolve > 0.0 ) {
@@ -113,9 +116,15 @@ function spriteMat(tex, o = {}) { return new THREE.MeshBasicMaterial(Object.assi
 // Lit, rim-lit, flashable, dissolvable sprite material. hair: true adds the palette ramp.
 function fxSpriteMat(tex, hair) {
   const m = spriteMat(null); m.userData.u = sprUniforms(); m.onBeforeCompile = SPR_OBC;
-  if (hair) { m.defines = { SPR_HAIR: '' }; Object.assign(m.userData.u, { uHK: { value: new THREE.Vector4() }, uH0: { value: new THREE.Color() }, uH1: { value: new THREE.Color() }, uH2: { value: new THREE.Color() }, uH3: { value: new THREE.Color() } }); }
+  if (hair) { m.defines = { SPR_HAIR: '' }; Object.assign(m.userData.u, { uHK: { value: new THREE.Vector4() }, uH0: { value: new THREE.Color() }, uH1: { value: new THREE.Color() }, uH2: { value: new THREE.Color() }, uH3: { value: new THREE.Color() }, uClip: { value: new THREE.Vector3(0, 0, 1) } }); }
   sprMapSet(m, tex); return m;
 }
+// The same hair clip on a plain sprite / depth material (hair x-ray and sun caster): discard where dot(uv, clip) < 0.
+function HAIRCLIP_OBC(sh) {
+  sh.uniforms.uClip = this.userData.clipU;
+  sh.fragmentShader = 'uniform vec3 uClip;\n' + sh.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\nif ( dot(vec3(vUv, 1.0), uClip) < 0.0 ) discard;');
+}
+function hairClipPatch(mat, clipU) { mat.userData.clipU = clipU; mat.onBeforeCompile = HAIRCLIP_OBC; mat.needsUpdate = true; return mat; }
 
 /* ---------- Hair palette ramp ----------
    Hair sheets are painted in neutral grey (outline 64, shade 126, lit 184 = 0.72, highlight 228).
@@ -200,14 +209,14 @@ function sprRim(e, st) {
   const k = Math.min(1, bw) / bw * 0.85; st.rim[0] = Math.min(0.8, st.rim[0] * k); st.rim[1] = Math.min(0.8, st.rim[1] * k); st.rim[2] = Math.min(0.8, st.rim[2] * k);
 }
 const FLASH_WHITE = [1, 0.97, 0.9], FLASH_HURT = [1, 0.32, 0.26];
-function newSprState() { return { col: [1, 1, 1], a: 1, sx: 1, sy: 1, zoff: 0, rim: [0, 0, 0], rdx: 0, rdy: 0, flash: [1, 1, 1, 0], dis: 0, fade: 0, cast: true, ghost: false }; }
-// Compute the look of entity e this frame. o: { tint, opacity, ghost }
+function newSprState() { return { col: [1, 1, 1], a: 1, sx: 1, sy: 1, scl: 1, zoff: 0, rim: [0, 0, 0], rdx: 0, rdy: 0, flash: [1, 1, 1, 0], dis: 0, fade: 0, cast: true, ghost: false }; }
+// Compute the look of entity e this frame. o: { tint, opacity, ghost, scl (uniform size multiplier: named monsters) }
 function sprFrame(v, e, o) {
   const st = v.st || (v.st = newSprState());
   const lt = sprLight(v, e.x, e.y), useLT = typeof lightTint === 'function';
   const base = o.tint || (useLT ? null : map.d.look.tint) || [1, 1, 1];
   st.col[0] = Math.min(1.8, base[0] * lt.r); st.col[1] = Math.min(1.8, base[1] * lt.g); st.col[2] = Math.min(1.8, base[2] * lt.b);
-  st.a = o.opacity === undefined ? 1 : o.opacity; st.ghost = !!o.ghost; st.fade = 0; st.zoff = 0; st.dis = 0; st.cast = SPRF.shadows && !o.ghost;
+  st.a = o.opacity === undefined ? 1 : o.opacity; st.ghost = !!o.ghost; st.scl = o.scl || 1; st.fade = 0; st.zoff = 0; st.dis = 0; st.cast = SPRF.shadows && !o.ghost;
   sprRim(e, st);
   // hit flash + squash (mobs: hitFlash; player: hurtT)
   let fl = 0, fc = FLASH_WHITE;
@@ -336,13 +345,13 @@ function SPR_OBC_I(sh) {
     .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );', SPR_OUT);
 }
 // Sun-shadow caster pass of a sprite batch: same UV rect, but its own transform (faces the sun, unstretched):
-// iCast = (x, y, z, mirror sign; 0 = no shadow -> degenerate quad). uCastCS = cos/sin of the caster yaw.
+// iCast = (x, y, z, mirror sign x size; 0 = no shadow -> degenerate quad). uCastCS = cos/sin of the caster yaw.
 const CASTU = { uCastCS: { value: new THREE.Vector2(1, 0) }, uCastH: { value: CAST_H } };
 function CAST_OBC_I(sh) {
   Object.assign(sh.uniforms, CASTU);
   sh.vertexShader = 'attribute vec4 iUV; attribute vec4 iCast; uniform vec2 uCastCS; uniform float uCastH;\n' + sh.vertexShader
     .replace('#include <uv_vertex>', IUV_VERTEX)
-    .replace('#include <project_vertex>', `vec4 mvPosition = vec4( iCast.w * transformed.x * uCastCS.x + transformed.z * uCastCS.y + iCast.x, transformed.y * uCastH + iCast.y,
+    .replace('#include <project_vertex>', `vec4 mvPosition = vec4( iCast.w * transformed.x * uCastCS.x + transformed.z * uCastCS.y + iCast.x, transformed.y * uCastH * abs(iCast.w) + iCast.y,
       -iCast.w * transformed.x * uCastCS.y + transformed.z * uCastCS.x + iCast.z, 1.0 );
     mvPosition = modelViewMatrix * mvPosition; gl_Position = projectionMatrix * mvPosition;`);
 }
@@ -356,13 +365,14 @@ function sprBatch(rec) {
 // One instance of layer L (see placeSheetVis): same transform, UVs and look as the per-entity mesh path.
 function sprInstance(L, x, y, z, sx, st, flip) {
   const B = sprBatch(L.rec), i = ibPush(B), o = i * 4, A = B.A, uv = L.uv, ts = B.mat.userData.u.uTexSize.value;
-  ibMat(B, i, x, y, z, SPRF.cy, SPRF.sy, sx * st.sx, st.sy / COSP, 1);
+  const k = st.scl;
+  ibMat(B, i, x, y, z, SPRF.cy, SPRF.sy, sx * st.sx * k, st.sy * k / COSP, 1);
   let a = A.iUV; a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
   a = A.iCol; a[o] = st.col[0]; a[o + 1] = st.col[1]; a[o + 2] = st.col[2]; a[o + 3] = st.a;
   a = A.iFlash; a[o] = st.flash[0]; a[o + 1] = st.flash[1]; a[o + 2] = st.flash[2]; a[o + 3] = st.flash[3];
   a = A.iRim; a[o] = st.rim[0]; a[o + 1] = st.rim[1]; a[o + 2] = st.rim[2]; a[o + 3] = st.dis;
   a = A.iMisc; a[o] = st.rdx * (flip ? -1 : 1) / ts.x; a[o + 1] = st.rdy / ts.y; a[o + 2] = st.fade; a[o + 3] = 0;
-  a = A.iCast; if (st.cast && st.a > 0.3) { a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = sx; } else a[o] = a[o + 1] = a[o + 2] = a[o + 3] = 0;
+  a = A.iCast; if (st.cast && st.a > 0.3) { a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = sx * k; } else a[o] = a[o + 1] = a[o + 2] = a[o + 3] = 0;
 }
 // Contact blob under a sprite (one shared batch): smaller and fainter when real shadows are on.
 const BLOBS = ibNew({ geo: () => FLATPLANE.clone(), mat: SHADOWMAT, attrs: {}, order: -1.5, cap: 64 });
@@ -518,7 +528,7 @@ function syncEntities() {
   ibReset();
   const sh = typeof syncSheetMob === 'function';
   for (const m of mobs) if (!(sh && syncSheetMob(m))) syncSprite(m, framesForMob(m), mobPose(m));
-  for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
+  for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), n.moving ? { anim: 'walk', i: Math.floor((n.walk || time * 6) * 1.26) % 6 } : { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
   if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
   VIS.forEach(visSweep);
@@ -557,7 +567,7 @@ const PFX = (() => {
     const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 2; scene.add(pts);
     return { geo, mat, pts, pos, col, size, list: [], free: [], N };
   }
-  const A = sys(true, THREE.NormalBlending, 400), B = sys(false, THREE.AdditiveBlending, 500), C = sys(false, THREE.NormalBlending, 300);
+  const A = sys(true, THREE.NormalBlending, 400), B = sys(false, THREE.AdditiveBlending, 500), C = sys(false, THREE.NormalBlending, 300), D = sys(true, THREE.AdditiveBlending, 600);
   const cap = () => { const q = gfxQ(); return q === 'low' ? 0.35 : q === 'medium' ? 0.7 : 1; };
   // Particles are pooled per system (no per-spawn / per-frame objects); colours are plain numbers: c0..c2 and, when
   // lerp is set, the end colour d0..d2. The random draws happen in the same order as before, full or not.
@@ -610,8 +620,12 @@ const PFX = (() => {
   }
   return {
     dust, ember, wisp,
-    update(dt) { step(A, dt); step(B, dt); step(C, dt); },
-    clear() { for (const S of [A, B, C]) { for (const p of S.list) S.free.push(p); S.list.length = 0; S.geo.setDrawRange(0, 0); } },
+    // VFX particles (colours in sRGB 0..1, may exceed 1 for hot cores): soft = round additive glow, else square
+    // additive pixels; emitDark = square normal-blend (mud, dark wisps, feathers).
+    emit(soft, x, y, z, vx, vy, vz, g, drag, max, c0, c1, c2, a0, s0, s1, wob) { add(soft ? D : B, x, y, z, vx, vy, vz, g, drag, max, c0, c1, c2, false, 0, 0, 0, a0, s0, s1, wob); },
+    emitDark(x, y, z, vx, vy, vz, g, drag, max, c0, c1, c2, a0, s0, s1, wob) { add(C, x, y, z, vx, vy, vz, g, drag, max, c0, c1, c2, false, 0, 0, 0, a0, s0, s1, wob); },
+    update(dt) { step(A, dt); step(B, dt); step(C, dt); step(D, dt); },
+    clear() { for (const S of [A, B, C, D]) { for (const p of S.list) S.free.push(p); S.list.length = 0; S.geo.setDrawRange(0, 0); } },
   };
 })();
 
@@ -725,7 +739,7 @@ const STENCIL_ONCE = bit => ({ stencilWrite: true, stencilRef: bit, stencilFuncM
 const _tc = new THREE.Color(), _tc2 = new THREE.Color(), _castCol = new THREE.Color();
 function dvSweep(v, k) { if (v.seen !== frameNo) { for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.delete(k); } }
 function syncDecals() {
-  for (const t of teles) syncDecal(t, () => {
+  for (const t of teles) if (!(t.shape && (t.shape.kind === 'cone' || t.shape.kind === 'lines') && VFX.enabled)) syncDecal(t, () => {   // cones / lines: exact shapes in VFX
     const base = decalMesh(FXT.disc, 0x000000, 0.3, false, STENCIL_ONCE(2)); base.renderOrder = -3;
     const grow = decalMesh(FXT.fill, 0x000000, 0.8, true, STENCIL_ONCE(4)); grow.renderOrder = -2;
     const rune = decalMesh(FXT.rune, 0x000000, 1, true);
@@ -769,6 +783,658 @@ function syncTargetRing() {
     lock.visible = mode === 'lock'; if (lock.visible) { wcol('#ffb0c0', lock.material.color); lock.rotation.y = -time * 1.6; lock.scale.setScalar(s * 0.92 * pop); lock.material.opacity = 0.85; }
   });
 }
+/* =========================================================
+   Skill, status and quest VFX in 3D (graphics round 4)
+
+   Reads the runtime state every frame, so content never calls it:
+     zones[]            ground zones (storm, vermilion, quagmire, sanctuary, magnus, ward), traps, enemy hexes
+     teles[].shape      exact cone / lines telegraphs for breath and wave (the circles of those groups are skipped
+                        by syncDecals)
+     P.buffs[*].aura    songs, Oath of Tyr, Magic Rod, the Kyrie bubble
+     P.spheres          monk spirit spheres
+     projs[]            magic bolts, Huginn (a pixel raven), the thrown spear, flicked spheres (arrows stay 2D)
+     fxs[]              'strike' (3D lightning) and 'pillar' (3D light column); ring/mark stay decals
+     mobs[]             snare / slow / frozen / stun / mark / dispel / lex, named-variant and MVP auras
+     questSpots()       quest beacons (light pillar + '?' rune, destination and defence rings)
+   Everything is drawn by 5 dynamic quad batches (ground additive, ground normal, billboard additive, billboard
+   normal, pixel sprites) + the pooled PFX particles + at most a few fresnel spheres (Kyrie, Norn ward): a frame with
+   no active effect issues no draw at all. Textures: one 2048² atlas painted once on first use (64 cells of 256 px:
+   shapes + procedural Elder Futhark runes, no font needed) and a small nearest-filtered pixel atlas.
+   API for one-off effects (content may call them, nothing requires it):
+     VFX.zone({ x, y, r, col, kind, rune, dur })  a transient ground zone look (same kinds as zones[])
+     VFX.cone({ x, y, ang, half, len, col, dur }) VFX.lines({ x, y, ang, n, spread, len, w, col, dur })
+     VFX.bolt(x0, y0, h0, x1, y1, h1, col)        VFX.beam(x, y, col, big)
+     VFX.enabled = false turns the 3D layer off (A/B); QUEST_UI.skills / QUEST_UI.spots are set false so the 2D
+     placeholders in js/ui.js can stand down.
+   ========================================================= */
+const VFX = (() => {
+  const V = { enabled: true, ready: false, t: 0, extra: [] };
+  /* ---------- colour helpers (cached, no per-frame strings) ---------- */
+  const COLC = new Map();
+  function lc(hex) {   // hex -> [r, g, b] in the working space (linear when the pipeline is)
+    let c = COLC.get(hex); const lin = sprLinear();
+    if (!c || c.lin !== lin) { const t = new THREE.Color(hex); if (lin) t.convertSRGBToLinear(); c = [t.r, t.g, t.b]; c.lin = lin; COLC.set(hex, c); }
+    return c;
+  }
+  const RGBC = new Map();
+  function srgb(hex) { let c = RGBC.get(hex); if (!c) { const h = hex2rgb(hex); c = [h[0] / 255, h[1] / 255, h[2] / 255]; RGBC.set(hex, c); } return c; }   // for PFX (it linearises itself)
+
+  /* ---------- atlas ---------- */
+  const AS = 2048, CS = 256, CN = 8, CELL = {};
+  let atlas = null, pix = null, cellN = 0;
+  const UVC = [];
+  function cellUV(i) { let u = UVC[i]; if (!u) { const cx = i % CN, cy = Math.floor(i / CN), p = 3; u = UVC[i] = [(cx * CS + p) / AS, 1 - ((cy + 1) * CS - p) / AS, ((cx + 1) * CS - p) / AS, 1 - (cy * CS + p) / AS]; } return u; }
+  // Elder Futhark (and a few Younger) runes as strokes in a 0..1 box (x right, y down): crisp at any size, no font.
+  const RUNES = {
+    'ᚠ': [[.35, 0, .35, 1], [.35, .3, .75, .05], [.35, .55, .75, .3]], 'ᚢ': [[.3, 1, .3, 0, .7, .35, .7, 1]], 'ᚦ': [[.35, 0, .35, 1], [.35, .25, .72, .5, .35, .75]],
+    'ᚨ': [[.35, 0, .35, 1], [.35, .08, .72, .33], [.35, .35, .72, .6]], 'ᚱ': [[.3, 1, .3, 0, .7, .25, .3, .5, .72, 1]], 'ᚲ': [[.68, .12, .3, .5, .68, .88]],
+    'ᚴ': [[.4, 0, .4, 1], [.4, .35, .75, .05]], 'ᚷ': [[.2, .1, .8, .9], [.8, .1, .2, .9]], 'ᚹ': [[.35, 1, .35, 0, .7, .22, .35, .45]],
+    'ᚺ': [[.28, 0, .28, 1], [.72, 0, .72, 1], [.28, .35, .72, .62]], 'ᚾ': [[.5, 0, .5, 1], [.28, .35, .72, .62]], 'ᛁ': [[.5, 0, .5, 1]],
+    'ᛃ': [[.46, .08, .2, .34, .46, .6], [.54, .4, .8, .66, .54, .92]], 'ᛇ': [[.5, 0, .5, 1], [.5, 0, .76, .2], [.5, 1, .24, .8]],
+    'ᛉ': [[.5, .1, .5, 1], [.5, .45, .2, .1], [.5, .45, .8, .1]], 'ᛊ': [[.7, .05, .3, .38, .7, .62, .3, .95]], 'ᛋ': [[.72, .05, .3, .4, .7, .6, .28, .95]],
+    'ᛏ': [[.5, 0, .5, 1], [.2, .3, .5, 0, .8, .3]], 'ᛒ': [[.3, 0, .3, 1], [.3, 0, .7, .25, .3, .5, .7, .75, .3, 1]], 'ᛖ': [[.24, 1, .24, 0, .5, .3, .76, 0, .76, 1]],
+    'ᛗ': [[.24, 0, .24, 1], [.76, 0, .76, 1], [.24, 0, .76, .4], [.76, 0, .24, .4]], 'ᛚ': [[.35, 1, .35, 0, .7, .3]], 'ᛜ': [[.5, .08, .82, .5, .5, .92, .18, .5, .5, .08]],
+    'ᛞ': [[.2, 0, .2, 1, .8, 0, .8, 1, .2, 0]], 'ᛟ': [[.2, .95, .8, .3, .5, 0, .2, .3, .8, .95]], 'ᛣ': [[.5, 0, .5, .95], [.5, .55, .2, .95], [.5, .55, .8, .95]],
+    'ᛈ': [[.3, 0, .3, 1], [.3, 0, .7, .2, .7, .35], [.3, 1, .7, .8, .7, .65]], 'ᛝ': [[.5, 0, .85, .5, .5, 1, .15, .5, .5, 0]],
+  };
+  const RUNE_KEYS = Object.keys(RUNES);
+  function strokeGlow(g, w, draw) { g.save(); g.lineWidth = w * 3.2; g.globalAlpha = 0.1; draw(); g.lineWidth = w * 2; g.globalAlpha = 0.22; draw(); g.restore(); g.lineWidth = w; draw(); }
+  function runePath(g, rn, s) { const S = RUNES[rn]; g.beginPath(); for (const L of S) { for (let i = 0; i < L.length; i += 2) { const x = (L[i] - 0.5) * s * 0.62, y = (L[i + 1] - 0.5) * s; if (i) g.lineTo(x, y); else g.moveTo(x, y); } } }
+  function paintAtlas() {
+    const c = mkCanvas(AS, AS), g = c.getContext('2d'), R = 118;
+    const cell = (name, fn) => { const i = cellN++; CELL[name] = i; g.save(); g.translate((i % CN) * CS + CS / 2, Math.floor(i / CN) * CS + CS / 2); g.beginPath(); g.rect(-CS / 2 + 2, -CS / 2 + 2, CS - 4, CS - 4); g.clip(); g.strokeStyle = g.fillStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round'; fn(g); g.restore(); };
+    const circ = (g, r) => { g.beginPath(); g.arc(0, 0, r, 0, 6.2832); };
+    const radial = (g, stops, r) => { const gr = g.createRadialGradient(0, 0, 0, 0, 0, r || R); for (const [k, a] of stops) gr.addColorStop(k, `rgba(255,255,255,${a})`); g.fillStyle = gr; g.fillRect(-CS / 2, -CS / 2, CS, CS); };
+    const rng = mulberry32(4242);
+    cell('glow', g => radial(g, [[0, 1], [0.25, 0.55], [0.55, 0.18], [1, 0]]));
+    cell('core', g => radial(g, [[0, 1], [0.2, 0.95], [0.45, 0.35], [0.7, 0]]));
+    cell('ring', g => strokeGlow(g, 7, () => { circ(g, R * 0.86); g.stroke(); }));
+    cell('ringDash', g => { g.setLineDash([22, 16]); strokeGlow(g, 6, () => { circ(g, R * 0.86); g.stroke(); }); g.setLineDash([]); for (let i = 0; i < 12; i++) { const a = i / 12 * 6.2832; g.lineWidth = 4; g.beginPath(); g.moveTo(Math.cos(a) * R * 0.7, Math.sin(a) * R * 0.7); g.lineTo(Math.cos(a) * R * 0.76, Math.sin(a) * R * 0.76); g.stroke(); } });
+    cell('disc', g => radial(g, [[0, 0.5], [0.8, 0.75], [0.95, 1], [1, 0]]));
+    cell('fill', g => radial(g, [[0, 0.08], [0.72, 0.18], [0.9, 0.55], [0.965, 1], [1, 0]]));
+    // magic circles
+    const band = (g, r0, r1, n, seed) => { const rr = mulberry32(seed); for (let i = 0; i < n; i++) { g.save(); g.rotate(i / n * 6.2832); g.translate(0, -(r0 + r1) / 2); const rn = RUNE_KEYS[(rr() * RUNE_KEYS.length) | 0]; g.lineWidth = 3; runePath(g, rn, (r1 - r0) * 0.9); g.stroke(); g.restore(); } };
+    cell('runeCircle', g => { strokeGlow(g, 5, () => { circ(g, R * 0.97); g.stroke(); circ(g, R * 0.78); g.stroke(); }); band(g, R * 0.8, R * 0.95, 20, 11);
+      g.globalAlpha = 0.85; strokeGlow(g, 3, () => { g.beginPath(); for (let k = 0; k < 2; k++) for (let i = 0; i <= 3; i++) { const a = (i / 3 + k / 6) * 6.2832 - 1.5708, x = Math.cos(a) * R * 0.74, y = Math.sin(a) * R * 0.74; if (i) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); circ(g, R * 0.36); g.stroke(); }); g.globalAlpha = 1; });
+    cell('frostCircle', g => { strokeGlow(g, 4, () => { circ(g, R * 0.96); g.stroke(); circ(g, R * 0.84); g.stroke(); });
+      strokeGlow(g, 4, () => { g.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * 6.2832, ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux; g.moveTo(ux * R * 0.12, uy * R * 0.12); g.lineTo(ux * R * 0.8, uy * R * 0.8);
+        for (const k of [0.38, 0.58]) { const px = ux * R * k, py = uy * R * k, L = R * 0.16; g.moveTo(px, py); g.lineTo(px + (ux + vx) * L * 0.7, py + (uy + vy) * L * 0.7); g.moveTo(px, py); g.lineTo(px + (ux - vx) * L * 0.7, py + (uy - vy) * L * 0.7); } } g.stroke(); });
+      g.lineWidth = 3; g.beginPath(); for (let i = 0; i <= 6; i++) { const a = i / 6 * 6.2832 + 0.5236; if (i) g.lineTo(Math.cos(a) * R * 0.3, Math.sin(a) * R * 0.3); else g.moveTo(Math.cos(a) * R * 0.3, Math.sin(a) * R * 0.3); } g.stroke(); });
+    cell('boltCircle', g => { strokeGlow(g, 5, () => { circ(g, R * 0.95); g.stroke(); }); band(g, R * 0.78, R * 0.92, 16, 23);
+      strokeGlow(g, 3.5, () => { g.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.2832, ux = Math.cos(a), uy = Math.sin(a); g.moveTo(ux * R * 0.18, uy * R * 0.18); for (let k = 1; k <= 4; k++) { const r = R * (0.18 + k * 0.14), o = (k % 2 ? 1 : -1) * R * 0.06; g.lineTo(ux * r - uy * o, uy * r + ux * o); } } g.stroke(); circ(g, R * 0.16); g.stroke(); }); });
+    cell('holyCircle', g => { strokeGlow(g, 4, () => { circ(g, R * 0.96); g.stroke(); circ(g, R * 0.9); g.stroke(); });
+      g.globalAlpha = 0.8; strokeGlow(g, 3, () => { for (let i = 0; i < 8; i++) { const a = i / 8 * 6.2832; g.beginPath(); g.arc(Math.cos(a) * R * 0.42, Math.sin(a) * R * 0.42, R * 0.42, 0, 6.2832); g.stroke(); } }); g.globalAlpha = 1; strokeGlow(g, 4, () => { circ(g, R * 0.2); g.stroke(); }); });
+    cell('cross', g => { const w = R * 0.15, L = R * 0.9; g.shadowColor = '#fff'; g.shadowBlur = 16; g.fillRect(-w / 2, -L, w, 2 * L); g.fillRect(-L, -w / 2, 2 * L, w); g.shadowBlur = 0; g.globalCompositeOperation = 'destination-out'; g.fillRect(-w * 0.18, -L * 0.94, w * 0.36, 2 * L * 0.94); g.fillRect(-L * 0.94, -w * 0.18, 2 * L * 0.94, w * 0.36); g.globalCompositeOperation = 'source-over';
+      strokeGlow(g, 4, () => { circ(g, R * 0.97); g.stroke(); circ(g, R * 0.5); g.stroke(); }); });
+    cell('mud', g => { g.globalAlpha = 1; for (let i = 0; i < 90; i++) { const a = rng() * 6.2832, d = Math.sqrt(rng()) * R * 0.78, r = R * (0.1 + rng() * 0.18), v = 110 + (rng() * 90 | 0); g.fillStyle = `rgba(${v},${v},${v},${0.55 + rng() * 0.4})`; g.beginPath(); g.arc(Math.cos(a) * d, Math.sin(a) * d, r, 0, 6.2832); g.fill(); }
+      for (let i = 0; i < 26; i++) { const a = rng() * 6.2832, d = Math.sqrt(rng()) * R * 0.75, r = R * (0.03 + rng() * 0.05); g.fillStyle = 'rgba(40,40,40,.8)'; g.beginPath(); g.arc(Math.cos(a) * d, Math.sin(a) * d, r, 0, 6.2832); g.fill(); g.strokeStyle = 'rgba(235,235,235,.7)'; g.lineWidth = 2; g.beginPath(); g.arc(Math.cos(a) * d - r * 0.3, Math.sin(a) * d - r * 0.3, r * 0.6, 3.6, 5.2); g.stroke(); }
+      g.globalCompositeOperation = 'destination-in'; radial(g, [[0, 1], [0.72, 1], [0.95, 0]], R); g.globalCompositeOperation = 'source-over'; });
+    cell('hex', g => { strokeGlow(g, 5, () => { circ(g, R * 0.9); g.stroke(); });
+      g.beginPath(); for (let i = 0; i < 18; i++) { const a = i / 18 * 6.2832, b = a + 0.17; g.moveTo(Math.cos(a - 0.08) * R * 0.9, Math.sin(a - 0.08) * R * 0.9); g.lineTo(Math.cos(b) * R * 0.66, Math.sin(b) * R * 0.66); g.lineTo(Math.cos(a + 0.12) * R * 0.9, Math.sin(a + 0.12) * R * 0.9); } g.fill();
+      strokeGlow(g, 3, () => { g.beginPath(); for (let i = 0; i <= 5; i++) { const a = i * 2 / 5 * 6.2832 - 1.5708; if (i) g.lineTo(Math.cos(a) * R * 0.55, Math.sin(a) * R * 0.55); else g.moveTo(Math.cos(a) * R * 0.55, Math.sin(a) * R * 0.55); } g.stroke(); }); });
+    cell('wardRing', g => { strokeGlow(g, 4, () => { circ(g, R * 0.95); g.stroke(); circ(g, R * 0.88); g.stroke(); }); band(g, R * 0.6, R * 0.84, 12, 57);
+      strokeGlow(g, 3, () => { for (let k = 0; k < 3; k++) { g.save(); g.rotate(k * 2.0944); g.beginPath(); for (let i = 0; i <= 3; i++) { const a = i / 3 * 6.2832 - 1.5708; const x = Math.cos(a) * R * 0.3, y = Math.sin(a) * R * 0.3 - R * 0.12; if (i) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); g.restore(); } }); });
+    cell('trap', g => { strokeGlow(g, 5, () => { g.beginPath(); g.moveTo(0, -R * 0.9); g.lineTo(R * 0.9, 0); g.lineTo(0, R * 0.9); g.lineTo(-R * 0.9, 0); g.closePath(); g.stroke(); });
+      g.lineWidth = 3; g.strokeRect(-R * 0.45, -R * 0.45, R * 0.9, R * 0.9); for (let i = 0; i < 4; i++) { g.save(); g.rotate(i * 1.5708); g.beginPath(); g.moveTo(-R * 0.12, -R * 0.66); g.lineTo(0, -R * 0.5); g.lineTo(R * 0.12, -R * 0.66); g.stroke(); g.restore(); } });
+    cell('snare', g => strokeGlow(g, 5, () => { for (let s = 0; s < 2; s++) { g.beginPath(); for (let i = 0; i <= 96; i++) { const a = i / 96 * 6.2832, r = R * (0.72 + 0.07 * Math.sin(a * 9 + s * 3.14)); if (i) g.lineTo(Math.cos(a) * r, Math.sin(a) * r); else g.moveTo(Math.cos(a) * r, Math.sin(a) * r); } g.stroke(); } for (let i = 0; i < 5; i++) { const a = i / 5 * 6.2832 + 0.3; g.beginPath(); g.moveTo(Math.cos(a) * R * 0.72, Math.sin(a) * R * 0.72); g.quadraticCurveTo(Math.cos(a + 0.3) * R * 0.45, Math.sin(a + 0.3) * R * 0.45, Math.cos(a + 0.5) * R * 0.3, Math.sin(a + 0.5) * R * 0.3); g.stroke(); } }));
+    cell('star', g => { radial(g, [[0, 0.9], [0.12, 0.45], [0.3, 0]], R); g.beginPath(); for (let i = 0; i < 4; i++) { const a = i * 1.5708; g.moveTo(0, 0); g.lineTo(Math.cos(a - 0.06) * R * 0.12, Math.sin(a - 0.06) * R * 0.12); g.lineTo(Math.cos(a) * R, Math.sin(a) * R); g.lineTo(Math.cos(a + 0.06) * R * 0.12, Math.sin(a + 0.06) * R * 0.12); } g.fill(); });
+    cell('note', g => { g.save(); g.rotate(-0.25); g.beginPath(); g.ellipse(-R * 0.22, R * 0.45, R * 0.28, R * 0.2, -0.4, 0, 6.2832); g.fill(); g.fillRect(R * 0.02, -R * 0.75, R * 0.1, R * 1.2); g.beginPath(); g.moveTo(R * 0.12, -R * 0.75); g.quadraticCurveTo(R * 0.55, -R * 0.45, R * 0.4, -R * 0.05); g.quadraticCurveTo(R * 0.4, -R * 0.4, R * 0.12, -R * 0.45); g.fill(); g.restore(); });
+    cell('ribbon', g => { const gr = g.createLinearGradient(-CS / 2, 0, CS / 2, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.3, 'rgba(255,255,255,.35)'); gr.addColorStop(0.45, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,1)'); gr.addColorStop(0.7, 'rgba(255,255,255,.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(-CS / 2, -CS / 2, CS, CS); });
+    cell('beam', g => { for (let y = -CS / 2; y < CS / 2; y += 2) { const k = (y + CS / 2) / CS, a = Math.pow(k, 1.6);   // top (y=-) transparent -> bottom bright
+      const gr = g.createLinearGradient(-CS / 2, 0, CS / 2, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, `rgba(255,255,255,${a})`); gr.addColorStop(0.36, `rgba(255,255,255,${a * 0.45})`); gr.addColorStop(0.64, `rgba(255,255,255,${a * 0.45})`); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(-CS / 2, y, CS, 2); } });
+    cell('swirl', g => strokeGlow(g, 5, () => { for (let k = 0; k < 3; k++) { g.beginPath(); for (let i = 0; i <= 40; i++) { const t = i / 40, a = k * 2.0944 + t * 3.2, r = R * (0.15 + 0.78 * t); if (i) g.lineTo(Math.cos(a) * r, Math.sin(a) * r); else g.moveTo(Math.cos(a) * r, Math.sin(a) * r); } g.stroke(); } }));
+    cell('shard', g => { g.beginPath(); g.moveTo(0, -R * 0.95); g.lineTo(R * 0.28, 0); g.lineTo(0, R * 0.95); g.lineTo(-R * 0.28, 0); g.closePath(); g.globalAlpha = 0.55; g.fill(); g.globalAlpha = 1; g.lineWidth = 4; g.stroke(); g.beginPath(); g.moveTo(0, -R * 0.95); g.lineTo(0, R * 0.95); g.stroke(); });
+    // telegraph fills sampled as (u, v): cone (u = angle 0..1, v = radius 0..1), lane (u = across, v = along), bar
+    const strip = (g, fn) => { const i = cellN - 1, im = g.createImageData(CS, CS), d = im.data;   // putImageData ignores the cell transform
+      for (let y = 0; y < CS; y++) for (let x = 0; x < CS; x++) { const o = (y * CS + x) * 4; d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = clamp(fn((x + 0.5) / CS, 1 - (y + 0.5) / CS), 0, 1) * 255; }
+      g.putImageData(im, (i % CN) * CS, Math.floor(i / CN) * CS); };
+    cell('coneBase', g => strip(g, (u, v) => 0.55 + 0.45 * Math.max(Math.exp(-u * 30), Math.exp(-(1 - u) * 30), Math.exp(-(1 - v) * 30))));
+    cell('coneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 30), Math.exp(-(1 - u) * 30), Math.exp(-(1 - v) * 26)) * (0.35 + 0.65 * v) + 0.06));
+    cell('coneFill', g => strip(g, (u, v) => 0.12 + 0.2 * v + Math.exp(-(1 - v) * 18) * 0.9));
+    cell('laneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 24), Math.exp(-(1 - u) * 24)) + 0.07));
+    cell('chev', g => strip(g, (u, v) => { const d = Math.abs(v - 0.35 - (0.5 - Math.abs(u - 0.5)) * 0.9); return Math.exp(-d * d * 160) * (1 - Math.pow(Math.abs(u - 0.5) * 2, 4)); }));
+    cell('bar', g => strip(g, (u, v) => Math.exp(-Math.pow((v - 0.5) * 5, 2)) * (1 - Math.pow(Math.abs(u - 0.5) * 2, 6))));
+    // '?' quest rune: white fill, dark outline (tinted by the vertex colour in the normal-blend batch)
+    cell('qmark', g => { g.font = `900 ${R * 1.6}px Georgia, 'Times New Roman', serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineWidth = 22; g.strokeStyle = 'rgba(26,16,8,1)'; g.strokeText('?', 0, R * 0.08); g.fillStyle = '#fff'; g.fillText('?', 0, R * 0.08); });
+    for (const rn of RUNE_KEYS) cell('rune:' + rn, g => strokeGlow(g, 11, () => { runePath(g, rn, R * 1.5); g.stroke(); }));
+    const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.LinearEncoding; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    return tex;
+  }
+  // pixel atlas: Huginn (4 wing frames, 32 px), the thrown spear (96 x 16), nearest filtering
+  const PX = { raven: [], spear: null };
+  function paintPixels() {
+    const c = mkCanvas(128, 64), g = c.getContext('2d');
+    for (let f = 0; f < 4; f++) {
+      g.save(); g.translate(f * 32 + 16, 17);
+      const up = [-9, -3, 4, -2][f];
+      g.fillStyle = '#1c1d2c'; g.beginPath(); g.moveTo(-3, -1); g.lineTo(-13, up); g.lineTo(-10, up + 4); g.lineTo(-2, 3); g.fill();           // far wing
+      g.fillStyle = '#23243a'; g.beginPath(); g.ellipse(0, 1, 8, 4.5, -0.15, 0, 6.2832); g.fill();                                            // body
+      g.beginPath(); g.moveTo(-7, 1); g.lineTo(-13, -1); g.lineTo(-13, 5); g.fill();                                                           // tail
+      g.fillStyle = '#2c2e4a'; g.beginPath(); g.arc(7, -2, 3.6, 0, 6.2832); g.fill();                                                        // head
+      g.fillStyle = '#3a3a3a'; g.beginPath(); g.moveTo(10, -3); g.lineTo(15, -1); g.lineTo(10, 0); g.fill();                                   // beak
+      g.fillStyle = '#34375a'; g.beginPath(); g.moveTo(-1, -1); g.lineTo(-8, up - 4); g.lineTo(-4, up - 1); g.lineTo(3, 0); g.fill();       // near wing
+      g.fillStyle = '#5a6aa8'; g.fillRect(-6, up - 3, 3, 1);
+      g.fillStyle = '#e8f0ff'; g.fillRect(8, -3, 1, 1);
+      g.restore(); PX.raven.push([f * 32 / 128, 1 - 32 / 64, (f + 1) * 32 / 128, 1]);
+    }
+    g.save(); g.translate(0, 40);
+    g.fillStyle = '#6a4424'; g.fillRect(2, 3, 70, 3); g.fillStyle = '#8a5a30'; g.fillRect(2, 3, 70, 1);
+    g.fillStyle = '#d8b050'; g.fillRect(70, 2, 3, 5);
+    g.fillStyle = '#c8ccd8'; g.beginPath(); g.moveTo(73, 1); g.lineTo(92, 4.5); g.lineTo(73, 8); g.fill(); g.fillStyle = '#ffffff'; g.fillRect(74, 4, 14, 1);
+    g.restore(); PX.spear = [0, 1 - 52 / 64, 96 / 128, 1 - 36 / 64];
+    if (typeof pixelize === 'function') pixelize(c, [16, 12, 20]);
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.LinearEncoding; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t;
+  }
+
+  /* ---------- quad batches ---------- */
+  const QVS = `attribute vec4 vcol; varying vec2 vUv; varying vec4 vC;
+    void main() { vUv = uv; vC = vcol; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+  const QFS = `uniform sampler2D map; uniform float uLin; varying vec2 vUv; varying vec4 vC;
+    void main() {
+      vec4 t = texture2D(map, vUv);
+    #ifdef VFX_PIXEL
+      if (t.a < 0.5) discard; t.a = 1.0; if (uLin > 0.5) t.rgb = pow(t.rgb, vec3(2.2));
+    #endif
+      gl_FragColor = vec4(t.rgb * vC.rgb, t.a * vC.a);
+      #include <tonemapping_fragment>
+      #include <encodings_fragment>
+    }`;
+  const QB = [];
+  function qbatch(o) {
+    const mat = new THREE.ShaderMaterial({ uniforms: { map: { value: null }, uLin: { value: 0 } }, vertexShader: QVS, fragmentShader: QFS, transparent: true, depthWrite: !!o.pixel, depthTest: o.depth !== false,
+      blending: o.add ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide, defines: o.pixel ? { VFX_PIXEL: '' } : {} });
+    // ground decals follow the terrain (per-vertex groundH) and depth-test against walls, props and canopies; the
+    // polygon offset keeps them on top of the terrain they were sampled from
+    if (o.ground) { mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -6; }
+    const B = { n: 0, cap: 0, mesh: null, pos: null, uv: null, col: null, mat, order: o.order, pixel: !!o.pixel, warm: 0 };
+    qalloc(B, o.cap || 128); QB.push(B); return B;
+  }
+  function qalloc(B, cap) {
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(cap * 12), uv = new Float32Array(cap * 8), col = new Float32Array(cap * 16);
+    if (B.pos) { pos.set(B.pos); uv.set(B.uv); col.set(B.col); }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('vcol', new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage));
+    const idx = new (cap * 4 > 65535 ? Uint32Array : Uint16Array)(cap * 6);
+    for (let q = 0; q < cap; q++) { const o = q * 6, v = q * 4; idx[o] = v; idx[o + 1] = v + 2; idx[o + 2] = v + 1; idx[o + 3] = v + 2; idx[o + 4] = v + 3; idx[o + 5] = v + 1; }
+    geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.setDrawRange(0, 0);
+    if (B.mesh) { B.mesh.geometry.dispose(); B.mesh.geometry = geo; }
+    else { B.mesh = new THREE.Mesh(geo, B.mat); B.mesh.frustumCulled = false; B.mesh.renderOrder = B.order; B.mesh.visible = false; scene.add(B.mesh); }
+    B.cap = cap; B.pos = pos; B.uv = uv; B.col = col;
+  }
+  let GA, GN, BA, BN, PB;
+  // one vertex: k = vertex index in the batch
+  function vx(B, k, x, y, z, u, v, c, a) { const p = B.pos, t = B.uv, q = B.col, i3 = k * 3, i2 = k * 2, i4 = k * 4; p[i3] = x; p[i3 + 1] = y; p[i3 + 2] = z; t[i2] = u; t[i2 + 1] = v; q[i4] = c[0]; q[i4 + 1] = c[1]; q[i4 + 2] = c[2]; q[i4 + 3] = a; }
+  function qpush(B) { if (B.n >= B.cap) qalloc(B, B.cap * 2); return (B.n++) * 4; }
+  // Generic quad: corners TL, TR, BL, BR (world x, height, world y), uv rect uv = [u0, v0, u1, v1] with sub-range (su0..su1, sv0..sv1)
+  function quad(B, uv, x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, c, a, a2, su0, su1, sv0, sv1) {
+    const k = qpush(B), du = uv[2] - uv[0], dv = uv[3] - uv[1];
+    const U0 = uv[0] + du * (su0 === undefined ? 0 : su0), U1 = uv[0] + du * (su1 === undefined ? 1 : su1), V0 = uv[1] + dv * (sv0 === undefined ? 0 : sv0), V1 = uv[1] + dv * (sv1 === undefined ? 1 : sv1);
+    const b = a2 === undefined ? a : a2;
+    vx(B, k, x0, y0, z0, U0, V1, c, a); vx(B, k + 1, x1, y1, z1, U1, V1, c, a); vx(B, k + 2, x2, y2, z2, U0, V0, c, b); vx(B, k + 3, x3, y3, z3, U1, V0, c, b);
+  }
+  /* Terrain-conforming ground quad: corners (x, y) TL, TR, BL, BR (bilinear), subdivided nu x nv, each vertex at
+     groundH + lift; uv sub-rect (su0..su1, sv0..sv1) of the cell. a = alpha at the TL/TR edge, a2 at BL/BR. */
+  function gquad(B, uv, x0, y0, x1, y1, x2, y2, x3, y3, lift, c, a, a2, su0, su1, sv0, sv1, nu, nv) {
+    const du = uv[2] - uv[0], dv = uv[3] - uv[1];
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const k = qpush(B);
+      for (let q = 0; q < 4; q++) {
+        const fu = (i + (q & 1)) / nu, fv = (j + (q >> 1)) / nv;                 // fv: 0 at the TL/TR edge
+        const tx = x0 + (x1 - x0) * fu, ty = y0 + (y1 - y0) * fu, bx = x2 + (x3 - x2) * fu, by = y2 + (y3 - y2) * fu, px = tx + (bx - tx) * fv, py = ty + (by - ty) * fv;
+        const U = uv[0] + du * (su0 + (su1 - su0) * fu), Vv = uv[1] + dv * (sv1 + (sv0 - sv1) * fv);
+        vx(B, k + q, px, groundH(px, py) + lift, py, U, Vv, c, a + (a2 - a) * fv);
+      }
+    }
+  }
+  const segs = r => r < 0.9 ? 1 : Math.min(6, Math.ceil(r * 1.4));
+  // Ground quad centred at (x, y), half size r, texture 'up' along angle ang; h: height at the centre (its offset above
+  // the terrain there is kept as the lift over the whole quad)
+  function ground(B, cell, x, y, h, r, ang, c, a, ry) {
+    if (a <= 0.003 || r <= 0) return; const uv = cellUV(CELL[cell]), rx = Math.cos(ang), rz = Math.sin(ang), ux = Math.sin(ang), uz = -Math.cos(ang), r2 = ry || r, n = segs(Math.max(r, r2));
+    gquad(B, uv, x - rx * r + ux * r2, y - rz * r + uz * r2, x + rx * r + ux * r2, y + rz * r + uz * r2, x - rx * r - ux * r2, y - rz * r - uz * r2, x + rx * r - ux * r2, y + rz * r - uz * r2,
+      Math.max(0.02, h - groundH(x, y)), c, a, a, 0, 1, 0, 1, n, n);
+  }
+  const CR = new THREE.Vector3(), CU = new THREE.Vector3(), CP = new THREE.Vector3(), HR = new THREE.Vector3();
+  function bill(B, cell, x, y, h, w, hh, rot, c, a) {
+    if (a <= 0.003) return; const uv = typeof cell === 'number' ? cellUV(cell) : cellUV(CELL[cell]);
+    const cs = Math.cos(rot || 0), sn = Math.sin(rot || 0);
+    const rx = (CR.x * cs + CU.x * sn) * w, ry = (CR.y * cs + CU.y * sn) * w, rz = (CR.z * cs + CU.z * sn) * w;
+    const ux = (-CR.x * sn + CU.x * cs) * hh, uy = (-CR.y * sn + CU.y * cs) * hh, uz = (-CR.z * sn + CU.z * cs) * hh;
+    quad(B, uv, x - rx + ux, h - ry + uy, y - rz + uz, x + rx + ux, h + ry + uy, y + rz + uz, x - rx - ux, h - ry - uy, y - rz - uz, x + rx - ux, h + ry - uy, y + rz - uz, c, a);
+  }
+  // Cylindrical billboard (faces the camera around the vertical): light pillars. a0 at the base, a1 at the top.
+  function pillarQ(B, cell, x, y, h, w, hgt, c, a0, a1) {
+    if (a0 <= 0.003 && a1 <= 0.003) return; const uv = cellUV(CELL[cell]), rx = HR.x * w / 2, rz = HR.z * w / 2;
+    quad(B, uv, x - rx, h + hgt, y - rz, x + rx, h + hgt, y + rz, x - rx, h, y - rz, x + rx, h, y + rz, c, a1, a0);
+  }
+  // Camera-facing ribbon through n points P[3i..] (x, height, y) with widths W[i] and alphas A[i]; texture 'ribbon'.
+  const RP = new Float32Array(96), RW = new Float32Array(32), RA = new Float32Array(32), RS = new Float32Array(96);
+  function ribbon(B, n, c, cell) {
+    if (n < 2) return; const uv = cellUV(CELL[cell || 'ribbon']);
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1);
+      const tx = RP[b * 3] - RP[a * 3], ty = RP[b * 3 + 1] - RP[a * 3 + 1], tz = RP[b * 3 + 2] - RP[a * 3 + 2];
+      const vx_ = CP.x - RP[i * 3], vy_ = CP.y - RP[i * 3 + 1], vz_ = CP.z - RP[i * 3 + 2];
+      let sx = ty * vz_ - tz * vy_, sy = tz * vx_ - tx * vz_, sz = tx * vy_ - ty * vx_; const L = Math.hypot(sx, sy, sz) || 1, k = RW[i] / 2 / L;
+      RS[i * 3] = sx * k; RS[i * 3 + 1] = sy * k; RS[i * 3 + 2] = sz * k;
+    }
+    for (let i = 0; i < n - 1; i++) {
+      const j = i + 1, p = RP, s = RS, i3 = i * 3, j3 = j * 3;
+      quad(B, uv, p[i3] + s[i3], p[i3 + 1] + s[i3 + 1], p[i3 + 2] + s[i3 + 2], p[i3] - s[i3], p[i3 + 1] - s[i3 + 1], p[i3 + 2] - s[i3 + 2],
+        p[j3] + s[j3], p[j3 + 1] + s[j3 + 1], p[j3 + 2] + s[j3 + 2], p[j3] - s[j3], p[j3 + 1] - s[j3 + 1], p[j3 + 2] - s[j3 + 2], c, RA[i], RA[j], 0, 1, 0.45, 0.55);
+    }
+  }
+  function flush() {
+    for (const B of QB) {
+      const g = B.mesh.geometry, n = B.n;
+      g.setDrawRange(0, n * 6); B.mesh.visible = n > 0 || B.warm < 3; B.warm++;
+      if (!n) continue;
+      for (const k of ['position', 'uv', 'vcol']) { const at = g.attributes[k]; at.updateRange.offset = 0; at.updateRange.count = n * 4 * at.itemSize; at.needsUpdate = true; }
+      B.mat.uniforms.uLin.value = sprLinear() ? 1 : 0;
+    }
+  }
+
+  /* ---------- fresnel spheres (Kyrie bubble, Norn ward dome) ---------- */
+  const SPH_GEO = new THREE.SphereGeometry(1, 28, 18);
+  const SPH = [];
+  function sphereMat() {
+    return new THREE.ShaderMaterial({ uniforms: { uCol: { value: new THREE.Color() }, uA: { value: 0.5 }, uT: { value: 0 }, uBand: { value: 6 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: 'varying vec3 vN; varying vec3 vV; varying float vY; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vY = position.y; gl_Position = projectionMatrix * mv; }',
+      fragmentShader: `uniform vec3 uCol; uniform float uA, uT, uBand; varying vec3 vN; varying vec3 vV; varying float vY;
+        void main() { float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.4);
+          float b = smoothstep(0.82, 1.0, 0.5 + 0.5 * sin(vY * uBand * 6.2832 - uT * 2.2));
+          gl_FragColor = vec4(uCol * (0.35 + 1.4 * f), uA * (0.05 + 0.85 * f + 0.35 * b * (0.3 + f)));
+          #include <tonemapping_fragment>
+          #include <encodings_fragment>
+        }` });
+  }
+  let sphN = 0;
+  function sphere(x, h, y, r, ry, hex, a, band) {
+    let m = SPH[sphN]; if (!m) { m = new THREE.Mesh(SPH_GEO, sphereMat()); m.renderOrder = 3; m.frustumCulled = false; scene.add(m); SPH.push(m); }
+    sphN++; m.visible = true; m.position.set(x, h, y); m.scale.set(r, ry, r); const u = m.material.uniforms; const c = lc(hex); u.uCol.value.setRGB(c[0], c[1], c[2]); u.uA.value = a; u.uT.value = time; u.uBand.value = band || 5;
+  }
+
+  /* ---------- helpers ---------- */
+  let dt = 0.016, yawA = 0, q = 1;
+  const rate = n => { const x = n * dt * q; return Math.floor(x) + (Math.random() < x - Math.floor(x) ? 1 : 0); };   // particles this frame for n per second
+  const hsh = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+  const WHITE = [1, 1, 1];
+  function motes(x, y, h, r, n, hex, up, size, soft) {
+    const k = rate(n); if (!k) return; const c = srgb(hex);
+    for (let i = 0; i < k; i++) { const a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * r; PFX.emit(soft !== false, x + Math.cos(a) * d, h + 0.05 + Math.random() * 0.2, y + Math.sin(a) * d, 0, up * (0.6 + Math.random() * 0.8), 0, 0.1, 0.4, 0.9 + Math.random() * 0.9, c[0], c[1], c[2], 0.85, size, size * 0.3, 1.5); }
+  }
+  function runeGround(rn, x, y, h, s, c, a) { if (rn && CELL['rune:' + rn] !== undefined) ground(GA, 'rune:' + rn, x, y, h, s, yawA, c, a); }
+  function runeBill(rn, x, y, h, s, c, a) { const i = CELL['rune:' + rn]; if (i !== undefined) bill(BA, i, x, y, h, s * 0.62, s, 0, c, a); }
+
+  /* ---------- zones ---------- */
+  function zoneLife(z) { return z.trap ? 1 : clamp(Math.min(z.t / 0.25, (z.dur - z.t) / 0.4), 0, 1); }
+  function drawZone(z) {
+    const life = zoneLife(z), gh = groundH(z.x, z.y) + 0.05, c = lc(z.col || '#ffffff'), pulse = 0.5 + 0.5 * Math.sin(time * 4 + z.x * 1.3), r = z.r, t = time, pop = 1 + 0.25 * Math.exp(-z.t * 10);
+    if (z.trap) {
+      const armed = z.t >= (z.arm || 0), a = armed ? 0.75 + 0.25 * pulse : 0.35;
+      ground(GN, 'disc', z.x, z.y, gh - 0.01, 0.62, 0, lc('#000000'), 0.28);
+      ground(GA, 'trap', z.x, z.y, gh, 0.58 * pop, t * 0.25 + z.x, c, a);
+      ground(GA, 'glow', z.x, z.y, gh, 0.8, 0, c, 0.18 + 0.12 * pulse);
+      runeGround(z.rune, z.x, z.y, gh + 0.01, 0.3, c, armed ? 0.95 : 0.5);
+      if (armed && Math.random() < dt * 1.5) motes(z.x, z.y, gh, 0.3, 60, z.col, 0.8, 0.06, false);
+      return;
+    }
+    if (z.hostile) {   // enemy hex: boiling violet pool, spiked rim, dark wisps
+      ground(GN, 'mud', z.x, z.y, gh - 0.01, r * 1.05, t * 0.15, lc('#1a0822'), 0.62 * life);
+      ground(GA, 'hex', z.x, z.y, gh, r * (0.98 + 0.03 * pulse) * pop, -t * 0.4, c, (0.75 + 0.2 * pulse) * life);
+      ground(GA, 'glow', z.x, z.y, gh, r * 1.15, 0, c, 0.22 * life);
+      runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.42, lc('#e8c8ff'), 0.8 * life);
+      if (q > 0.4) { const k = rate(14 * r); const cc = srgb('#2a0a34'); for (let i = 0; i < k; i++) { const a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * r * 0.9; PFX.emitDark(z.x + Math.cos(a) * d, gh + 0.1, z.y + Math.sin(a) * d, 0, 0.5 + Math.random() * 0.6, 0, 0.12, 0.6, 1 + Math.random() * 0.6, cc[0], cc[1], cc[2], 0.75, 0.16, 0.3, 1.2); } }
+      motes(z.x, z.y, gh, r * 0.9, 10 * r, z.col, 1.1, 0.08, false);
+      return;
+    }
+    switch (z.kind) {
+      case 'storm': {
+        ground(GN, 'disc', z.x, z.y, gh - 0.02, r, 0, lc('#dcecff'), 0.07 * life);
+        ground(GA, 'frostCircle', z.x, z.y, gh, r * 1.04 * pop, t * 0.3, c, 0.75 * life);
+        ground(GA, 'swirl', z.x, z.y, gh + 0.01, r * 0.95, -t * 2.6, c, 0.4 * life);
+        ground(GA, 'swirl', z.x, z.y, gh + 0.02, r * 0.6, -t * 3.4 + 1, c, 0.3 * life);
+        // blizzard: snow whipped around the centre, a few ice shards
+        const k = rate(240 * r / 3 * life), cc = srgb('#f2faff');
+        for (let i = 0; i < k; i++) { const a = Math.random() * 6.2832, d = 0.3 + Math.random() * r, hh = gh + 0.2 + Math.random() * 3, sp = 3 + Math.random() * 3;
+          PFX.emit(true, z.x + Math.cos(a) * d, hh, z.y + Math.sin(a) * d, -Math.sin(a) * sp - Math.cos(a) * 0.8, -0.4 - Math.random() * 0.8, Math.cos(a) * sp - Math.sin(a) * 0.8, 0, 0.8, 0.5 + Math.random() * 0.5, cc[0], cc[1], cc[2], 1, 0.1 + Math.random() * 0.08, 0.05, 0); }
+        // gust sheets: pale wind bands sweeping round the storm's eye
+        for (let i = 0; i < 3; i++) { const a0 = -t * 2.4 + i * 2.094; for (let k2 = 0; k2 < 7; k2++) { const a = a0 - k2 * 0.16, rr = r * (0.55 + 0.12 * i); RP[k2 * 3] = z.x + Math.cos(a) * rr; RP[k2 * 3 + 1] = gh + 0.5 + i * 0.6 + Math.sin(t * 3 + i) * 0.15; RP[k2 * 3 + 2] = z.y + Math.sin(a) * rr; RW[k2] = 0.35 * (1 - k2 / 7); RA[k2] = 0.4 * life * (1 - k2 / 7); } ribbon(BA, 7, c); }
+        const k2 = rate(16 * life), ci = srgb('#9fd8ff');
+        for (let i = 0; i < k2; i++) { const a = Math.random() * 6.2832, d = Math.random() * r * 0.9; PFX.emit(false, z.x + Math.cos(a) * d, gh + 0.1, z.y + Math.sin(a) * d, 0, 2 + Math.random() * 2, 0, -5, 0.5, 0.5, ci[0], ci[1], ci[2], 1, 0.1, 0.04, 0); }
+        break;
+      }
+      case 'vermilion': {
+        ground(GN, 'disc', z.x, z.y, gh - 0.02, r * 1.1, 0, lc('#000000'), 0.3 * life);   // the storm cloud's shadow
+        ground(GA, 'boltCircle', z.x, z.y, gh, r * 1.02 * pop, t * 0.2, c, (0.55 + 0.4 * pulse) * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.2, 0, c, 0.18 * life);
+        runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.3, c, 0.7 * life);
+        // the storm cloud: a dark churn with lightning glow inside, above the zone
+        const flash = Math.max(0, Math.sin(t * 23 + z.x) * Math.sin(t * 7.1)) ;
+        bill(BA, 'glow', z.x, z.y, gh + 7, r * 1.6, r * 0.7, 0, c, (0.12 + 0.5 * flash) * life);
+        if (Math.random() < dt * 6 * life) { const a = Math.random() * 6.2832, d = Math.random() * r; bolt(z.x + Math.cos(a) * d, z.y + Math.sin(a) * d, 7, z.x + Math.cos(a) * d + rand(-0.6, 0.6), z.y + Math.sin(a) * d + rand(-0.6, 0.6), 0.2, '#fff6a0', 0.12, 0.5); }
+        break;
+      }
+      case 'quagmire': {
+        const mc = lc('#4a3418');
+        ground(GN, 'mud', z.x, z.y, gh - 0.01, r * 1.02, t * 0.05 + z.x, mc, 0.9 * life);
+        ground(GN, 'mud', z.x, z.y, gh, r * 0.8, -t * 0.07 + z.y, lc('#6a4c24'), 0.55 * life);
+        ground(GA, 'runeCircle', z.x, z.y, gh + 0.01, r * 1.04, t * 0.12, c, 0.3 * life);
+        runeGround(z.rune, z.x, z.y, gh + 0.02, r * 0.3, c, 0.35 * life);
+        // bubbles: rings that grow and pop at hashed spots
+        for (let i = 0; i < 7; i++) { const ph = (t * 0.7 + i / 7) % 1, cyc = Math.floor(t * 0.7 + i / 7), a = hsh(i, cyc) * 6.2832, d = Math.sqrt(hsh(cyc, i + 3)) * r * 0.8;
+          ground(GN, 'ring', z.x + Math.cos(a) * d, z.y + Math.sin(a) * d, gh + 0.02, 0.08 + ph * 0.22, 0, lc('#c8a870'), (1 - ph) * 0.8 * life); }
+        if (q > 0.4) { const k = rate(6 * r * life), cc = srgb('#3a2a14'); for (let i = 0; i < k; i++) { const a = Math.random() * 6.2832, d = Math.random() * r * 0.8; PFX.emitDark(z.x + Math.cos(a) * d, gh + 0.05, z.y + Math.sin(a) * d, rand(-0.4, 0.4), 1.2 + Math.random(), rand(-0.4, 0.4), -6, 0.3, 0.45, cc[0], cc[1], cc[2], 1, 0.07, 0.05, 0); } }
+        break;
+      }
+      case 'sanctuary': {
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.3, 0, c, 0.3 * life);
+        ground(GA, 'holyCircle', z.x, z.y, gh + 0.01, r * pop, t * 0.18, c, (0.65 + 0.3 * pulse) * life);
+        runeGround(z.rune, z.x, z.y, gh + 0.02, r * 0.28, lc('#ffffff'), 0.75 * life);
+        pillarQ(BA, 'beam', z.x, z.y, gh, r * 1.7, 4.2, c, 0.3 * life, 0);
+        motes(z.x, z.y, gh, r * 0.95, 26 * r * life, '#e8ffd8', 1.1, 0.1);
+        break;
+      }
+      case 'magnus': {
+        ground(GA, 'runeCircle', z.x, z.y, gh, r * 1.02 * pop, t * 0.25, c, 0.55 * life);
+        ground(GA, 'cross', z.x, z.y, gh + 0.01, r * 0.98, yawA, c, (0.4 + 0.25 * pulse) * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.25, 0, c, 0.1 * life);
+        for (const [dx, dy] of MAG) pillarQ(BA, 'beam', z.x + dx * r * 0.47, z.y + dy * r * 0.47, gh, 0.6, 3.2, c, 0.12 * life * (0.6 + 0.4 * pulse), 0);
+        motes(z.x, z.y, gh, r * 0.9, 14 * r * life, '#fff6c8', 1.4, 0.09);
+        break;
+      }
+      case 'ward': {
+        ground(GA, 'wardRing', z.x, z.y, gh, r * pop, t * 0.1, c, 0.6 * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.1, 0, c, 0.12 * life);
+        runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.25, c, 0.6 * life);
+        sphere(z.x, gh - 0.05, z.y, r, r * 0.7, z.col || '#9fe0c0', 0.32 * life, 4);
+        motes(z.x, z.y, gh, r * 0.95, 5 * r * life, z.col || '#9fe0c0', 0.8, 0.07);
+        break;
+      }
+      default: {
+        ground(GA, 'runeCircle', z.x, z.y, gh, r * pop, t * 0.3, c, 0.7 * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.2, 0, c, 0.2 * life);
+        runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.3, c, 0.7 * life);
+        motes(z.x, z.y, gh, r, 6 * r * life, z.col || '#ffffff', 1, 0.08);
+      }
+    }
+  }
+  const MAG = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  /* ---------- cone / lines telegraphs (teles[].shape of a group) ---------- */
+  const GRP = new Map();
+  function drawShapes() {
+    GRP.clear();
+    for (const t of teles) { const s = t.shape; if (!s || (s.kind !== 'cone' && s.kind !== 'lines') || !t.grp || (t.m && t.m.dead)) continue;
+      let g = GRP.get(t.grp); if (!g) { g = { s, t: 0, dmin: 1e9, a: t.a, m: t.m }; GRP.set(t.grp, g); } if (t.t > g.t) g.t = t.t; if (t.dur < g.dmin) g.dmin = t.dur; }
+    GRP.forEach(drawShape);
+    for (const X of V.extra) if (X.shape) drawShape({ s: X.shape, t: X.t, dmin: X.dur, a: { delay: X.dur, speed: 1e9, col: X.col } });
+  }
+  const _hot = [0, 0, 0];
+  function drawShape(g) {
+    const s = g.s, a = g.a || {}, col = a.col || (g.m && g.m.d && g.m.d.glow) || (s.kind === 'cone' ? '#ff7a2a' : '#9fd8ff');
+    const gh = groundH(s.x, s.y) + 0.06, delay = a.delay || g.dmin || 1, k = clamp(g.t / delay, 0, 1), late = smoothstep(0.65, 1, k), fl = 0.5 + 0.5 * Math.sin(time * (8 + 22 * late));
+    const c = lc(col), dark = lc(s.kind === 'cone' ? '#5a0a04' : '#0a2a4a');
+    _hot[0] = c[0] + (1 - c[0]) * late * 0.6; _hot[1] = c[1] + (1 - c[1]) * late * 0.6; _hot[2] = c[2] + (1 - c[2]) * late * 0.6;
+    if (s.kind === 'cone') {
+      // dark scorched base, the heat front growing out to the full length, hot edges, heat ripples running outward
+      fan(GN, 'coneBase', s, 0.03, 0.3, s.len, dark, 0.5 + 0.2 * late);
+      fan(GA, 'coneFill', s, 0.05, 0.3, Math.max(0.4, s.len * (0.06 + 0.94 * k)), _hot, 0.45 + 0.45 * k);
+      fan(GA, 'coneEdge', s, 0.06, 0.3, s.len, c, 0.6 + 0.35 * fl * (0.4 + 0.6 * k));
+      for (let i = 0; i < 3; i++) { const ph = (time * 0.9 + i / 3) % 1, r = 0.4 + ph * (s.len - 0.4); fan(GA, 'bar', s, 0.07, Math.max(0.3, r - 0.35), r + 0.35, _hot, 0.5 * Math.sin(ph * Math.PI) * (0.3 + 0.7 * k)); }
+      if (k > 0.2 && q > 0.4) { const n = rate(30 * k), cc = srgb(col); for (let i = 0; i < n; i++) { const an = s.ang + (Math.random() * 2 - 1) * s.half, d = Math.random() * s.len * k; PFX.emit(false, s.x + Math.cos(an) * d, gh + 0.1, s.y + Math.sin(an) * d, 0, 0.8 + Math.random(), 0, 0.3, 0.6, 0.5, cc[0], cc[1], cc[2], 1, 0.08, 0.03, 2); } }
+    } else {
+      // each line: dark lane, bright rails, chevrons flowing outward; the wave front sweeps out once it breaks
+      const spd = a.speed || 7, front = g.t > delay ? 1.2 + (g.t - delay) * spd : 0;
+      for (let j = 0; j < s.n; j++) {
+        const an = s.ang + (s.n > 1 ? (j - (s.n - 1) / 2) * s.spread : 0);
+        lane(GN, 'coneBase', s.x, s.y, an, 0.8, s.len, s.w, 0.03, dark, 0.5, 0.2);
+        lane(GA, 'laneEdge', s.x, s.y, an, 0.8, s.len, s.w, 0.05, c, (0.55 + 0.35 * fl) * (0.5 + 0.5 * k), 0.25);
+        for (let i = 0; i < 4; i++) { const ph = (time * 0.8 + i / 4) % 1, d = 1 + ph * (s.len - 1.6); lane(GA, 'chev', s.x, s.y, an, d, d + 0.6, s.w * 0.8, 0.06, c, 0.8 * Math.sin(ph * Math.PI) * (0.4 + 0.6 * k)); }
+        if (front > 0 && front < s.len + 0.5) lane(GA, 'bar', s.x, s.y, an, Math.max(0.8, front - 0.6), Math.min(s.len, front + 0.6), s.w * 1.1, 0.07, _hot, 0.95);
+        else if (!front) lane(GA, 'bar', s.x, s.y, an, 0.6, 1.8, s.w * 1.05 * (0.6 + 0.4 * k), 0.07, _hot, 0.35 + 0.5 * k);
+      }
+    }
+  }
+  // Annular fan of a cone shape between radii r0 and r1 (u = angle 0..1 across the cone, v = 0 at r0 .. 1 at r1).
+  function fan(B, cell, s, lift, r0, r1, c, a, a1) {
+    const uv = cellUV(CELL[cell]), N = 10, nv = Math.max(1, Math.ceil((r1 - r0) / 1.5)), A1 = a1 === undefined ? a : a1;
+    for (let i = 0; i < N; i++) {
+      const b0 = s.ang - s.half + 2 * s.half * i / N, b1 = s.ang - s.half + 2 * s.half * (i + 1) / N, c0 = Math.cos(b0), s0 = Math.sin(b0), c1 = Math.cos(b1), s1 = Math.sin(b1);
+      gquad(B, uv, s.x + c0 * r1, s.y + s0 * r1, s.x + c1 * r1, s.y + s1 * r1, s.x + c0 * r0, s.y + s0 * r0, s.x + c1 * r0, s.y + s1 * r0, lift, c, A1, a, i / N, (i + 1) / N, 0, 1, 1, nv);
+    }
+  }
+  // A strip along angle an from s0 to s1 cells, w wide (u across, v along: 0 at s0 .. 1 at s1).
+  function lane(B, cell, x, y, an, s0, s1, w, lift, c, a, a1) {
+    const uv = cellUV(CELL[cell]), ux = Math.cos(an), uy = Math.sin(an), px = -uy * w / 2, py = ux * w / 2;
+    const xa = x + ux * s0, ya = y + uy * s0, xb = x + ux * s1, yb = y + uy * s1;
+    gquad(B, uv, xb + px, yb + py, xb - px, yb - py, xa + px, ya + py, xa - px, ya - py, lift, c, a1 === undefined ? a : a1, a, 0, 1, 0, 1, 1, Math.max(1, Math.ceil((s1 - s0) / 1.5)));
+  }
+
+  /* ---------- lightning + light pillars (fxs 'strike' / 'pillar', and VFX.bolt / VFX.beam) ---------- */
+  const BOLTS = [];
+  function bolt(x0, y0, h0, x1, y1, h1, col, life, w) { BOLTS.push({ x0, y0, h0, x1, y1, h1, col, t: 0, dur: life || 0.22, w: w || 1, seed: Math.random() * 1000 }); }
+  function drawBolt(b, k, gh1) {
+    const r = mulberry32(b.seed | 0), n = 8, al = 1 - k, c = lc(b.col || '#fff6d0');
+    for (let i = 0; i <= n; i++) { const f = i / n, j = i && i < n ? 1 : 0; RP[i * 3] = b.x0 + (b.x1 - b.x0) * f + (r() - 0.5) * 0.9 * j; RP[i * 3 + 1] = b.h0 + (b.h1 - b.h0) * f; RP[i * 3 + 2] = b.y0 + (b.y1 - b.y0) * f + (r() - 0.5) * 0.9 * j; RA[i] = al; }
+    for (let i = 0; i <= n; i++) RW[i] = 1.1 * b.w; ribbon(BA, n + 1, c);
+    for (let i = 0; i <= n; i++) RW[i] = 0.22 * b.w; ribbon(BA, n + 1, WHITE);
+    // a side branch
+    const bi = 2 + ((r() * 4) | 0); RP[0] = RP[bi * 3]; RP[1] = RP[bi * 3 + 1]; RP[2] = RP[bi * 3 + 2];
+    for (let i = 1; i < 4; i++) { RP[i * 3] = RP[(i - 1) * 3] + (r() - 0.5) * 1.1; RP[i * 3 + 1] = RP[(i - 1) * 3 + 1] - 0.7; RP[i * 3 + 2] = RP[(i - 1) * 3 + 2] + (r() - 0.5) * 1.1; }
+    for (let i = 0; i < 4; i++) { RW[i] = 0.35 * b.w * (1 - i / 4); RA[i] = al * 0.8; } ribbon(BA, 4, c);
+    if (gh1 !== undefined) { ground(GA, 'glow', b.x1, b.y1, gh1 + 0.05, 1.6 * b.w, 0, c, 0.7 * al); bill(BA, 'star', b.x1, b.y1, gh1 + 0.3, 1.4 * b.w, 1.4 * b.w, k * 2, c, al); }
+  }
+  function drawFx() {
+    for (const f of fxs) {
+      const k = f.t / f.dur;
+      if (f.k === 'strike') { const gh = groundH(f.x, f.y); if (!f._b) f._b = { x0: f.x + (hsh(f.seed, 1) - 0.5) * 1.2, y0: f.y + (hsh(f.seed, 2) - 0.5) * 1.2, h0: gh + 9, x1: f.x, y1: f.y, h1: gh, col: '#cfe6ff', seed: f.seed, w: 1 }; drawBolt(f._b, k, gh); }
+      else if (f.k === 'pillar') {
+        const e = f.e, gh = groundH(e.x, e.y), al = Math.sin(clamp(k, 0, 1) * Math.PI), w = f.big ? 1.3 : 0.9, c = lc(f.col || '#ffffff');
+        pillarQ(BA, 'beam', e.x, e.y, gh, w * 1.7, 7, c, 0.55 * al, 0);
+        pillarQ(BA, 'beam', e.x, e.y, gh, w * 0.55, 7.5, WHITE, 0.7 * al, 0);
+        ground(GA, 'glow', e.x, e.y, gh + 0.05, w * 1.4, 0, c, 0.7 * al);
+        ground(GA, 'ring', e.x, e.y, gh + 0.06, w * (0.6 + k * 0.9), 0, c, al);
+        if (Math.random() < dt * 30 * al) { const cc = srgb(f.col || '#ffffff'), a = Math.random() * 6.2832; PFX.emit(false, e.x + Math.cos(a) * w * 0.35, gh + 0.2, e.y + Math.sin(a) * w * 0.35, 0, 2 + Math.random() * 3, 0, 0, 0.3, 0.8, cc[0], cc[1], cc[2], 1, 0.09, 0.03, 2); }
+      }
+    }
+    for (let i = BOLTS.length - 1; i >= 0; i--) { const b = BOLTS[i]; b.t += dt; if (b.t >= b.dur) { BOLTS[i] = BOLTS[BOLTS.length - 1]; BOLTS.pop(); continue; } drawBolt(b, b.t / b.dur); }
+  }
+
+  /* ---------- auras, spheres ---------- */
+  function drawAuras() {
+    if (!P || P.dead || !P.buffs) return;
+    const gh = groundH(P.x, P.y) + 0.05;
+    for (const id in P.buffs) {
+      const b = P.buffs[id], au = b.aura; if (!au) continue;
+      const c = lc(au.col || '#ffffff'), fade = Math.min(1, (b.max - b.t) / 0.3 + 0.2, b.t / 0.5 + 0.3), r = au.r || 1;
+      if (au.bubble) {   // Kyrie: a shimmering prayer shell around the body
+        const hh = typeof headH === 'function' ? headH(P) : 1.6, hits = b.hits || 5;
+        sphere(P.x, gh + hh * 0.48, P.y, Math.max(0.75, r), hh * 0.62, au.col, 0.55 * fade * (0.8 + 0.2 * Math.sin(time * 5)), 7);
+        ground(GA, 'glow', P.x, P.y, gh, r * 1.3, 0, c, 0.25 * fade);
+        for (let i = 0; i < Math.min(8, hits); i++) { const a = time * 1.2 + i / Math.min(8, hits) * 6.2832; bill(BA, 'star', P.x + Math.cos(a) * r * 0.95, P.y + Math.sin(a) * r * 0.95, gh + hh * 0.5 + Math.sin(time * 3 + i) * 0.15, 0.22, 0.22, time, c, 0.8 * fade); }
+        continue;
+      }
+      if (b.song) {       // songs: a dashed staff ring, notes drifting up around the singer
+        ground(GA, 'ringDash', P.x, P.y, gh, r, time * 0.35, c, 0.55 * fade);
+        ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.12 * fade);
+        for (let i = 0; i < 7; i++) { const ph = (time * 0.45 + i / 7) % 1, a = i * 2.4 + Math.floor(time * 0.45 + i / 7) * 1.7, d = r * (0.35 + 0.55 * hsh(i, Math.floor(time * 0.45 + i / 7)));
+          const nx = P.x + Math.cos(a) * d, ny = P.y + Math.sin(a) * d, nh = gh + 0.2 + ph * 2.2, na = Math.sin(ph * Math.PI) * fade;
+          bill(BA, 'glow', nx, ny, nh, 0.34, 0.34, 0, c, 0.35 * na); bill(BA, 'note', nx, ny, nh, 0.26, 0.26, Math.sin(time * 3 + i) * 0.3, c, na); bill(BA, 'note', nx, ny, nh, 0.2, 0.2, Math.sin(time * 3 + i) * 0.3, WHITE, 0.5 * na); }
+        continue;
+      }
+      if (id === 'mrod') {  // Magic Rod: a violet vortex drinking inward
+        ground(GA, 'swirl', P.x, P.y, gh, r * 1.3, time * 6, c, 0.75 * fade);
+        ground(GA, 'ring', P.x, P.y, gh, r * (1.2 - (time * 2 % 1) * 0.5), 0, c, 0.6 * fade);
+        const hh = typeof headH === 'function' ? headH(P) : 1.6;
+        for (let i = 0; i < 8; i++) { const ph = (time * 1.6 + i / 8) % 1, a = i / 8 * 6.2832 + time * 2, d = r * 1.4 * (1 - ph); bill(BA, 'core', P.x + Math.cos(a) * d, P.y + Math.sin(a) * d, gh + hh * 0.5, 0.12, 0.12, 0, c, ph * fade); }
+        continue;
+      }
+      if (id === 'oath') {  // Oath of Tyr: a golden oath-circle with Tiwaz, a faint shield-light
+        ground(GA, 'runeCircle', P.x, P.y, gh, r * 1.1, -time * 0.3, c, 0.6 * fade);
+        runeGround('ᛏ', P.x, P.y, gh + 0.01, r * 0.35, c, 0.55 * fade);
+        pillarQ(BA, 'beam', P.x, P.y, gh, r * 1.4, 2.6, c, 0.16 * fade, 0);
+        continue;
+      }
+      ground(GA, 'ring', P.x, P.y, gh, r, 0, c, 0.6 * fade); ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.15 * fade);
+    }
+  }
+  const SPHC = '#9fd0ff';
+  function drawSpheres() {
+    if (!P || P.dead || !(P.spheres > 0)) return;
+    const gh = groundH(P.x, P.y), hh = typeof headH === 'function' ? headH(P) * 0.8 : 1.3, n = P.spheres, c = lc(SPHC), R = 0.78;
+    for (let i = 0; i < n; i++) {
+      const w = 2.2, a = time * w + i / n * 6.2832, x = P.x + Math.cos(a) * R, y = P.y + Math.sin(a) * R, h = gh + hh + Math.sin(time * 3 + i) * 0.08;
+      bill(BA, 'glow', x, y, h, 0.55, 0.55, 0, c, 0.9); bill(BA, 'core', x, y, h, 0.22, 0.22, 0, WHITE, 1);
+      for (let k = 0; k < 6; k++) { const ak = a - k * 0.13; RP[k * 3] = P.x + Math.cos(ak) * R; RP[k * 3 + 1] = gh + hh + Math.sin((time - k * 0.13 / w) * 3 + i) * 0.08; RP[k * 3 + 2] = P.y + Math.sin(ak) * R; RW[k] = 0.2 * (1 - k / 6); RA[k] = 0.75 * (1 - k / 6); }
+      ribbon(BA, 6, c);
+    }
+  }
+
+  /* ---------- projectiles ---------- */
+  const TRAIL = new WeakMap(), PK3 = { fire: 1, ice: 1, soul: 1, holy: 1, bolt: 1, sphere: 1, raven: 1, spear: 1 };
+  V.handles = kind => V.enabled && V.ready && !!PK3[kind];
+  function drawProjs() {
+    for (const p of projs) {
+      if (!PK3[p.kind]) continue;
+      let tr = TRAIL.get(p); if (!tr) { tr = { a: new Float32Array(30), n: 0 }; TRAIL.set(p, tr); }
+      const a = tr.a; if (tr.n === 0 || Math.hypot(a[0] - p.x, a[2] - p.y) > 0.05 || tr.n < 10) { a.copyWithin(3, 0, 27); a[0] = p.x; a[1] = p.zu; a[2] = p.y; tr.n = Math.min(10, tr.n + 1); }
+      const col = (typeof PCOL !== 'undefined' && PCOL[p.kind]) || '#ffffff', c = lc(col), n = tr.n;
+      if (p.kind === 'raven') { drawRaven(p, tr, c); continue; }
+      if (p.kind === 'spear') { drawSpear(p, tr, c); continue; }
+      const big = p.kind === 'bolt' ? 1.25 : p.kind === 'sphere' ? 0.8 : 1;
+      for (let i = 0; i < n; i++) { RP[i * 3] = a[i * 3]; RP[i * 3 + 1] = a[i * 3 + 1]; RP[i * 3 + 2] = a[i * 3 + 2]; RW[i] = 0.42 * big * (1 - i / n); RA[i] = 0.9 * (1 - i / n); }
+      ribbon(BA, n, c);
+      bill(BA, 'glow', p.x, p.y, p.zu, 0.62 * big, 0.62 * big, 0, c, 0.9);
+      bill(BA, 'core', p.x, p.y, p.zu, 0.26 * big, 0.26 * big, 0, WHITE, 1);
+      if (p.kind === 'bolt' && Math.random() < 0.7) bolt(p.x, p.y, p.zu, p.x + rand(-0.7, 0.7), p.y + rand(-0.7, 0.7), p.zu + rand(-0.6, 0.6), '#fff6a0', 0.06, 0.35);
+      if (p.kind === 'holy') bill(BA, 'star', p.x, p.y, p.zu, 0.7, 0.7, time * 3, c, 0.8);
+      if (Math.random() < dt * 40) { const cc = srgb(col); PFX.emit(true, p.x, p.zu, p.y, rand(-0.3, 0.3), rand(-0.2, 0.4), rand(-0.3, 0.3), 0, 1, 0.35, cc[0], cc[1], cc[2], 0.9, 0.12 * big, 0.03, 0); }
+    }
+  }
+  const _pv = new THREE.Vector3(), _pw = new THREE.Vector3();
+  function screenDir(p) {   // +1 when the projectile moves to screen-right
+    _pv.set(p.x, p.zu, p.y).project(camera); _pw.set(p.x + p.vx, p.zu + p.vz, p.y + p.vy).project(camera); return _pw.x >= _pv.x ? 1 : -1;
+  }
+  function drawRaven(p, tr, c) {
+    const f = Math.floor(time * 16) % 4, uv = PX.raven[f], s = 0.95, sd = screenDir(p), lit = lc('#c8d0ff');
+    const rx = CR.x * s / 2 * sd, ry = CR.y * s / 2 * sd, rz = CR.z * s / 2 * sd, ux = CU.x * s / 2, uy = CU.y * s / 2, uz = CU.z * s / 2;
+    quad(PB, uv, p.x - rx + ux, p.zu - ry + uy, p.y - rz + uz, p.x + rx + ux, p.zu + ry + uy, p.y + rz + uz, p.x - rx - ux, p.zu - ry - uy, p.y - rz - uz, p.x + rx - ux, p.zu + ry - uy, p.y + rz - uz, lit, 1);
+    const a = tr.a, n = tr.n; for (let i = 0; i < n; i++) { RP[i * 3] = a[i * 3]; RP[i * 3 + 1] = a[i * 3 + 1]; RP[i * 3 + 2] = a[i * 3 + 2]; RW[i] = 0.5 * (1 - i / n); RA[i] = 0.45 * (1 - i / n); }
+    ribbon(BA, n, c);
+    if (Math.random() < dt * 8) { const cc = srgb('#1a1a28'); PFX.emitDark(p.x, p.zu, p.y, rand(-0.3, 0.3), -0.3, rand(-0.3, 0.3), -0.6, 1.2, 1.1, cc[0], cc[1], cc[2], 0.95, 0.09, 0.07, 3); }
+  }
+  function drawSpear(p, tr, c) {
+    // oriented along the flight direction on screen: a quad from tail to tip facing the camera
+    const L = 1.7, W = 0.28, dx = p.vx, dy = p.vz, dz = p.vy, dl = Math.hypot(dx, dy, dz) || 1, fx = dx / dl, fy = dy / dl, fz = dz / dl;
+    const vx_ = CP.x - p.x, vy_ = CP.y - p.zu, vz_ = CP.z - p.y; let sx = fy * vz_ - fz * vy_, sy = fz * vx_ - fx * vz_, sz = fx * vy_ - fy * vx_; const sl = Math.hypot(sx, sy, sz) || 1; sx *= W / 2 / sl; sy *= W / 2 / sl; sz *= W / 2 / sl;
+    const tx = p.x + fx * L * 0.5, ty = p.zu + fy * L * 0.5, tz = p.y + fz * L * 0.5, bx = p.x - fx * L * 0.5, by = p.zu - fy * L * 0.5, bz = p.y - fz * L * 0.5;
+    // uv: u along the spear (tail 0 -> tip 1), v across
+    const uv = PX.spear, lit = lc('#ffffff'), k = qpush(PB);
+    vx(PB, k, bx + sx, by + sy, bz + sz, uv[0], uv[3], lit, 1); vx(PB, k + 1, tx + sx, ty + sy, tz + sz, uv[2], uv[3], lit, 1);
+    vx(PB, k + 2, bx - sx, by - sy, bz - sz, uv[0], uv[1], lit, 1); vx(PB, k + 3, tx - sx, ty - sy, tz - sz, uv[2], uv[1], lit, 1);
+    const a = tr.a, n = tr.n; for (let i = 0; i < n; i++) { RP[i * 3] = a[i * 3]; RP[i * 3 + 1] = a[i * 3 + 1]; RP[i * 3 + 2] = a[i * 3 + 2]; RW[i] = 0.34 * (1 - i / n); RA[i] = 0.7 * (1 - i / n); }
+    ribbon(BA, n, c); bill(BA, 'glow', tx, ty, tz, 0.5, 0.5, 0, c, 0.7);
+  }
+
+  /* ---------- monsters: statuses, named / MVP auras ---------- */
+  const COL_SNARE = '#d8b070', COL_MARK = '#cfe07a', COL_DISPEL = '#c8a8ff', COL_LEX = '#fff2b8', COL_STUN = '#ffe070', COL_FROST = '#bfe6ff';
+  function drawMobs() {
+    for (const m of mobs) {
+      if (m.dead) continue;
+      const d = m.d;
+      if (!(d.variant || d.boss || m.snare > 0 || m.slow > 0 || m.frozen > 0 || m.stun > 0 || m.mark > 0 || m.dispel > 0 || m.lex)) continue;   // nothing to draw: no per-mob cost
+      const gh = groundH(m.x, m.y) + 0.05, sz = Math.max(0.6, (d.size || (d.look && d.look.scale) || 1)), hh = typeof headH === 'function' ? headH(m) : 1.4;
+      const nl = d.variant || d.boss ? (typeof namedLook === 'function' ? namedLook(d) : null) : null;
+      if (d.variant || d.boss) {   // named rares and MVPs: a slow rune circle + glow in their colour, rising motes
+        const col = (nl && nl.col) || d.glow || '#ffb060', c = lc(col), r = 0.75 * sz * (nl ? Math.sqrt(nl.scl) : 1) + 0.25;
+        ground(GA, 'runeCircle', m.x, m.y, gh, r, time * 0.22 + m.id, c, d.boss ? 0.32 : 0.5);
+        ground(GA, 'glow', m.x, m.y, gh, r * 1.35, 0, c, d.boss ? 0.14 : 0.24);
+        motes(m.x, m.y, gh, r * 0.8, d.boss ? 5 : 7, col, 1.2, 0.08);
+      }
+      if (m.snare > 0) { ground(GA, 'snare', m.x, m.y, gh + 0.01, 0.55 * Math.max(1, sz * 0.8), time * 0.2, lc(COL_SNARE), 0.9); }
+      if (m.slow > 0) ground(GN, 'mud', m.x, m.y, gh + 0.01, 0.55 * Math.max(1, sz * 0.8), m.id, lc('#3a2810'), 0.55);
+      if (m.frozen > 0) { const c = lc(COL_FROST); ground(GA, 'frostCircle', m.x, m.y, gh + 0.01, 0.6 * Math.max(1, sz * 0.8), 0, c, 0.6); for (let i = 0; i < 3; i++) { const a = m.id + i * 2.1; bill(BA, 'shard', m.x + Math.cos(a) * 0.35, m.y + Math.sin(a) * 0.35, gh + 0.25 + i * 0.12, 0.12, 0.34, 0.4 * Math.sin(a), c, 0.8); } }
+      if (m.stun > 0) { const c = lc(COL_STUN); for (let i = 0; i < 3; i++) { const a = time * 4 + i * 2.094; bill(BA, 'star', m.x + Math.cos(a) * 0.35, m.y + Math.sin(a) * 0.35, gh + hh + 0.15, 0.22, 0.22, time * 2, c, 0.9); } }
+      let tags = 0; const top = gh + hh + 0.5;
+      if (m.mark > 0) tags++; if (m.dispel > 0) tags++; if (m.lex) tags++;
+      if (tags) { let i = 0; const x0 = -(tags - 1) * 0.2, pul = 0.75 + 0.25 * Math.sin(time * 5 + m.id);
+        const put = (rn, col) => { const o = x0 + i * 0.4; runeBill(rn, m.x + CR.x * o, m.y + CR.z * o, top + CR.y * o, 0.34, lc(col), pul); bill(BA, 'glow', m.x + CR.x * o, m.y + CR.z * o, top + CR.y * o, 0.3, 0.3, 0, lc(col), 0.35 * pul); i++; };
+        if (m.mark > 0) put('ᛞ', COL_MARK); if (m.dispel > 0) put('ᚾ', COL_DISPEL); if (m.lex) put('ᛚ', COL_LEX); }
+    }
+  }
+
+  /* ---------- quest beacons ---------- */
+  let spots = [], spotsT = -1, spotsMap = null;
+  const QCOL = { inspect: '#ffe08a', reach: '#9ae0ff', escort: '#9ae0ff', scene: '#9ae0ff', waves: '#ffa060', survive: '#ffa060', hunt: '#ff7a6a' };
+  function drawSpots() {
+    if (typeof questSpots !== 'function' || !P) return;
+    if (time - spotsT > 0.25 || time < spotsT || spotsMap !== map) { try { spots = questSpots(); } catch (e) { spots = []; } spotsT = time; spotsMap = map; }
+    const cine = typeof CINE !== 'undefined' && CINE.active ? 0.3 : 1;
+    for (const s of spots) {
+      const col = QCOL[s.kind] || '#ffe08a', c = lc(col), gh = groundH(s.x, s.y) + 0.05, pulse = 0.5 + 0.5 * Math.sin(time * 3 + s.x);
+      if (s.kind === 'inspect') {
+        const bob = Math.sin(time * 2.6 + s.y) * 0.1;
+        pillarQ(BA, 'beam', s.x, s.y, gh, 0.9, 3.4, c, 0.42 * cine * (0.8 + 0.2 * pulse), 0);
+        pillarQ(BA, 'beam', s.x, s.y, gh, 0.3, 3.6, WHITE, 0.3 * cine, 0);
+        ground(GA, 'ring', s.x, s.y, gh, 0.62 + 0.04 * pulse, 0, c, 0.55 * cine);
+        ground(GA, 'glow', s.x, s.y, gh, 0.9, 0, c, 0.3 * cine);
+        if (cine === 1) { bill(BA, 'glow', s.x, s.y, gh + 1.35 + bob, 0.5, 0.5, 0, c, 0.45); bill(BN, 'qmark', s.x, s.y, gh + 1.35 + bob, 0.3, 0.3, 0, c, 1); }
+        motes(s.x, s.y, gh, 0.4, 5 * cine, col, 1, 0.07);
+      } else if (s.kind === 'waves' || s.kind === 'survive') {
+        ground(GA, 'runeCircle', s.x, s.y, gh, 2.3, time * 0.15, c, (0.35 + 0.15 * pulse) * cine);
+        ground(GA, 'glow', s.x, s.y, gh, 2.6, 0, c, 0.1 * cine);
+        pillarQ(BA, 'beam', s.x, s.y, gh, 1.6, 3, c, 0.15 * cine, 0);
+      } else if (s.kind === 'hunt') {
+        ground(GA, 'ringDash', s.x, s.y, gh, 1.6, -time * 0.3, c, 0.45 * cine);
+      } else {
+        ground(GA, 'ringDash', s.x, s.y, gh, 1.25 + 0.08 * pulse, time * 0.4, c, 0.6 * cine);
+        ground(GA, 'glow', s.x, s.y, gh, 1.5, 0, c, 0.15 * cine);
+        pillarQ(BA, 'beam', s.x, s.y, gh, 1.3, 2.6, c, 0.2 * cine, 0);
+      }
+    }
+  }
+
+  /* ---------- per frame ---------- */
+  function init() {
+    atlas = paintAtlas(); pix = paintPixels();
+    GN = qbatch({ add: false, ground: true, order: -1.2, cap: 128 });
+    GA = qbatch({ add: true, ground: true, order: -0.9, cap: 512 });
+    PB = qbatch({ pixel: true, add: false, order: -0.4, cap: 16 });
+    BA = qbatch({ add: true, order: 3, cap: 256 });
+    BN = qbatch({ add: false, order: 3.5, cap: 16 });
+    for (const B of QB) B.mat.uniforms.map.value = B === PB ? pix : atlas;
+    V.ready = true;
+    if (typeof QUEST_UI !== 'undefined') { QUEST_UI.skills = false; QUEST_UI.spots = false; }   // js/ui.js placeholders stand down
+  }
+  V.sync = function (frameDt) {
+    if (!V.enabled || typeof started === 'undefined' || !started || !map) { if (V.ready) { for (const B of QB) { B.n = 0; } flush(); for (const m of SPH) m.visible = false; } return; }
+    if (!V.ready) init();
+    if (typeof QUEST_UI !== 'undefined' && QUEST_UI.skills !== false) { QUEST_UI.skills = false; QUEST_UI.spots = false; }
+    dt = clamp(frameDt || SPRF.dt || 0.016, 0, 0.1); q = gfxQ() === 'low' ? 0.4 : gfxQ() === 'medium' ? 0.7 : 1;
+    camera.updateMatrixWorld(); const e = camera.matrixWorld.elements;
+    CR.set(e[0], e[1], e[2]).normalize(); CU.set(e[4], e[5], e[6]).normalize(); CP.set(e[12], e[13], e[14]);
+    HR.set(CR.x, 0, CR.z).normalize(); yawA = -cam.yaw;
+    for (const B of QB) B.n = 0; sphN = 0;
+    for (const z of zones) drawZone(z);
+    for (let i = V.extra.length - 1; i >= 0; i--) { const X = V.extra[i]; X.t += dt; if (X.t >= X.dur) { V.extra.splice(i, 1); continue; } if (X.zone) { X.zone.t = X.t; drawZone(X.zone); } }
+    drawShapes(); drawAuras(); drawSpheres(); drawProjs(); drawFx(); drawMobs(); drawSpots();
+    for (let i = sphN; i < SPH.length; i++) SPH[i].visible = false;
+    flush();
+  };
+  /* one-off API (optional; content does not need it) */
+  V.zone = o => { V.extra.push({ t: 0, dur: o.dur || 2, zone: Object.assign({ t: 0, dur: o.dur || 2, r: 2, col: '#ffffff' }, o) }); };
+  V.cone = o => { V.extra.push({ t: 0, dur: o.dur || 1, col: o.col, shape: { kind: 'cone', x: o.x, y: o.y, ang: o.ang, half: o.half || 0.45, len: o.len || 6 } }); };
+  V.lines = o => { V.extra.push({ t: 0, dur: o.dur || 1, col: o.col, shape: { kind: 'lines', x: o.x, y: o.y, ang: o.ang, n: o.n || 1, spread: o.spread || 0.4, len: o.len || 9, w: o.w || 1.9 } }); };
+  V.bolt = (x0, y0, h0, x1, y1, h1, col) => bolt(x0, y0, h0, x1, y1, h1, col, 0.25, 1);
+  V.beam = (x, y, col, big) => fxs.push({ k: 'pillar', e: { x, y }, col, t: 0, dur: big ? 1.4 : 0.9, big });
+  V.clear = () => { BOLTS.length = 0; V.extra.length = 0; };
+  V.debugAtlas = () => atlas && atlas.image;   // for tools (tools/shoot.js can dump it)
+  V.stats = () => ({ quads: QB.map(B => B.n), spheres: sphN, bolts: BOLTS.length });
+  return V;
+})();
+
 /* ---------- Screen projection into reusable arrays ----------
    Same math as gfx-world.js proj() (Vector3.project), but writes into a caller-owned array: no garbage per call. */
 const _pv = new THREE.Vector3(), PA = [0, 0, 0], PB = [0, 0, 0];
@@ -885,6 +1551,7 @@ function drawOverlay() {
   for (const p of parts) { const q = projTo(a, p.x, p.y, groundH(p.x, p.y) + p.z / PXU); if (q[2] > 1) continue; ctx.globalAlpha = Math.min(1, p.life / p.max * 1.4); ctx.fillStyle = p.col; const s = p.size * sc * 1.1; ctx.fillRect(q[0] - s / 2, q[1] - s / 2, s, s); }
   ctx.globalAlpha = 1;
   for (const p of projs) {
+    if (VFX.handles(p.kind)) continue;   // 3D bolts, raven, spear, spheres (VFX)
     projTo(a, p.x, p.y, p.zu); projTo(b, p.x - p.vx * 0.6, p.y - p.vy * 0.6, p.zu - p.vz * 0.6); if (a[2] > 1) continue;
     if (p.kind === 'arrow') { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 2.5 * sc; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(a[0], a[1]); ctx.stroke(); ctx.strokeStyle = '#f0f0f0'; ctx.lineWidth = 1.2 * sc; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] + (a[0] - b[0]) * 0.25, b[1] + (a[1] - b[1]) * 0.25); ctx.stroke(); ctx.globalCompositeOperation = 'lighter'; continue; }
     const col = PCOL[p.kind] || '#fff', r = 13 * sc, rc = rgbaC(col);
@@ -894,6 +1561,7 @@ function drawOverlay() {
   }
   for (const f of fxs) {
     const k = f.t / f.dur;
+    if ((f.k === 'pillar' || f.k === 'strike') && VFX.ready && VFX.enabled) continue;   // 3D light columns / lightning (VFX)
     if (f.k === 'pillar') {
       const e = f.e, gh = groundH(e.x, e.y); projTo(b, e.x, e.y, gh); projTo(a, e.x, e.y, gh + 6); const t = a; const al = Math.sin(k * Math.PI), wd = (f.big ? 1.2 : 0.8) * PPU;
       ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = pillarGrad(f.col); ctx.translate(b[0] - wd / 2, t[1]); ctx.scale(wd, b[1] - t[1]); ctx.fillRect(0, 0, 1, 1); ctx.restore();
@@ -912,6 +1580,12 @@ function drawOverlay() {
     }
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'butt';
+  // Cinematics (CINE.active): no nameplates, labels or bars; damage numbers stay.
+  if (!(typeof CINE !== 'undefined' && CINE.active)) drawPlates(sc, a, b);
+  drawFloats(sc, a);
+  drawScreenParts();
+}
+function drawPlates(sc, a, b) {
   // Names
   for (const n of map.npcs) { projTo(a, n.x, n.y, groundH(n.x, n.y)); if (a[2] < 1) label(n.name, a[0], a[1] + 17 * sc, '#cfe6ff', 11.5); }
   for (const o of map.objs) if ((o.kind === 'way' || o.kind === 'heart') && hover === o) { projTo(a, o.x, o.y, groundH(o.x, o.y)); label(o.name, a[0], a[1] + 18 * sc, '#ffd8a8', 11.5); }
@@ -934,6 +1608,8 @@ function drawOverlay() {
     if (P.stamina < 100) gauge(x, y + 11.5, wd, 2, P.stamina / 100, P.stamina < 22 ? '#ffb070' : '#fff080', P.stamina < 22 ? '#e0501a' : '#d8b020');
     if (P.casting) { const t = projTo(b, P.x, P.y, gh + headH(P) + 0.35), k = 1 - P.castT / P.castMax; gauge(Math.round(t[0] - 30), Math.round(t[1] - 3), 60, 5, k, '#b8ff9a', '#3cb83c'); }
   }
+}
+function drawFloats(sc, a) {
   // RO-style damage numbers: pop, arc to the side, bounce; crits get a burst.
   for (const f of floats) {
     projTo(a, f.x, f.y, f.hw); if (a[2] > 1) continue; const k = f.t; let x = a[0], y = a[1], life = 0.95, s = 1;
@@ -959,7 +1635,6 @@ function drawOverlay() {
     ctx.drawImage(gl, x - w / 2, y - h / 2, w, h);
   }
   ctx.globalAlpha = 1;
-  drawScreenParts();
 }
 function setScreenParts() {
   screenParts = []; const n = map.d.part === 'dust' ? 40 : 60;
@@ -1000,6 +1675,7 @@ function render(dt) {
   animateWorld(dt || 0.016);
   syncEntities();
   syncDecals();
+  VFX.sync(dt);
   renderer.render(scene, camera);   // gfx-post.js routes this through its composer
   drawOverlay();
 }
