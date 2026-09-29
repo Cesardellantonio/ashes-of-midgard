@@ -1,0 +1,58 @@
+{
+ "sheets": [
+  {
+   "id": "mob_scarecrow_husk",
+   "layer": "mob",
+   "body": "scarecrow_husk",
+   "variant": null
+  },
+  {
+   "id": "mob_rotwood_kobold",
+   "layer": "mob",
+   "body": "rotwood_kobold",
+   "variant": null
+  },
+  {
+   "id": "mob_kobold_archer",
+   "layer": "mob",
+   "body": "kobold_archer",
+   "variant": null
+  },
+  {
+   "id": "mob_skeleton_soldier",
+   "layer": "mob",
+   "body": "skeleton_soldier",
+   "variant": null
+  },
+  {
+   "id": "mob_grave_archer",
+   "layer": "mob",
+   "body": "grave_archer",
+   "variant": null
+  },
+  {
+   "id": "mob_rust_knight",
+   "layer": "mob",
+   "body": "rust_knight",
+   "variant": null
+  },
+  {
+   "id": "mob_cinder_thrall",
+   "layer": "mob",
+   "body": "cinder_thrall",
+   "variant": null
+  },
+  {
+   "id": "mob_sir_gaunt",
+   "layer": "mob",
+   "body": "sir_gaunt",
+   "variant": null
+  },
+  {
+   "id": "mob_ashen_king",
+   "layer": "mob",
+   "body": "ashen_king",
+   "variant": null
+  }
+ ]
+}

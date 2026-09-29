@@ -1,0 +1,28 @@
+{
+ "sheets": [
+  {
+   "id": "npc_astrid",
+   "layer": "npc",
+   "body": "astrid",
+   "variant": null
+  },
+  {
+   "id": "npc_brokkr",
+   "layer": "npc",
+   "body": "brokkr",
+   "variant": null
+  },
+  {
+   "id": "npc_sigrun",
+   "layer": "npc",
+   "body": "sigrun",
+   "variant": null
+  },
+  {
+   "id": "npc_vidar",
+   "layer": "npc",
+   "body": "vidar",
+   "variant": null
+  }
+ ]
+}

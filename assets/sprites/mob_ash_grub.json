@@ -1,0 +1,57 @@
+{
+ "id": "mob_ash_grub",
+ "layer": "mob",
+ "body": "ash_grub",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 112,
+ "frameH": 96,
+ "maxFrames": 6,
+ "anchor": [
+  56,
+  72
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 6,
+   "loop": true
+  },
+  "walk": {
+   "row": 1,
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  },
+  "attack": {
+   "row": 2,
+   "frames": 6,
+   "fps": 12,
+   "loop": false
+  },
+  "hurt": {
+   "row": 3,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "dead": {
+   "row": 4,
+   "frames": 3,
+   "fps": 6,
+   "loop": false
+  }
+ },
+ "hit": {
+  "attack": 3
+ }
+}

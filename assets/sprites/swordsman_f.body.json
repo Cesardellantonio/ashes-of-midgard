@@ -1,13 +1,16 @@
 {
- "id": "hair_spiky_f",
- "layer": "hair",
- "layout": "dir-blocks",
- "frameW": 96,
- "frameH": 112,
+ "id": "swordsman_f.body",
+ "layer": "body",
+ "body": "swordsman_f",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 4,
+ "frameW": 128,
+ "frameH": 128,
  "maxFrames": 8,
  "anchor": [
-  48,
-  96
+  64,
+  104
  ],
  "dirs": [
   "S",

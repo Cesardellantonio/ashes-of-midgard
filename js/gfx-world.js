@@ -222,13 +222,13 @@ function buildWorld(m) {
   }
   if (walls.length) grp.add(new THREE.Mesh(merge(walls), lam({ map: patternTex(m.d.gen === 'town' ? 'townwall' : 'ghwall') })));
   if (ruins.length) grp.add(new THREE.Mesh(merge(ruins), lam({ map: patternTex('stone') })));
-  if (rocks.length) grp.add(new THREE.Mesh(merge(rocks), lam({ color: L.rock, flatShading: true })));
+  if (rocks.length) grp.add(new THREE.Mesh(merge(rocks), lam({ color: L.rock })));
   if (pillars.length) grp.add(new THREE.Mesh(merge(pillars), lam({ map: patternTex('stone'), color: m.id === 'throne' ? 0xb07060 : 0xffffff })));
   if (graves.length) grp.add(new THREE.Mesh(merge(graves), lam({ color: 0x9a98a4 })));
   for (let k = 0; k < 3; k++) if (trees[k].length) grp.add(new THREE.Mesh(merge(trees[k]), new THREE.MeshBasicMaterial({ map: treeTex(L.trees[k], m.d.seed * 7 + k), alphaTest: 0.5, side: THREE.DoubleSide, color: tint })));
   // Houses
   if (m.houses) {
-    const bodyM = lam({ map: patternTex('plaster') }), roofM = lam({ map: patternTex('roof'), flatShading: true }), doorM = lam({ color: 0x4a2c16 });
+    const bodyM = lam({ map: patternTex('plaster') }), roofM = lam({ map: patternTex('roof') }), doorM = lam({ color: 0x4a2c16 });
     for (const q of m.houses) {
       const sx = q.x1 - q.x0 + 1, sz = q.y1 - q.y0 + 1, cx = q.x0 + sx / 2, cz = q.y0 + sz / 2, base = groundH(cx, cz) - 0.3;
       const body = new THREE.Mesh(new THREE.BoxGeometry(sx - 0.1, 2.6, sz - 0.1), bodyM); body.position.set(cx, base + 1.3, cz); grp.add(body);

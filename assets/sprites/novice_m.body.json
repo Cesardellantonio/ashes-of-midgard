@@ -1,7 +1,10 @@
 {
  "id": "novice_m.body",
  "layer": "body",
- "layout": "dir-blocks",
+ "body": "novice_m",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
  "frameW": 96,
  "frameH": 112,
  "maxFrames": 8,

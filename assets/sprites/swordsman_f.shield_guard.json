@@ -1,13 +1,16 @@
 {
- "id": "weapon_knife_m",
- "layer": "weapon",
- "layout": "dir-blocks",
- "frameW": 96,
- "frameH": 112,
+ "id": "swordsman_f.shield_guard",
+ "layer": "shield",
+ "body": "swordsman_f",
+ "variant": "guard",
+ "layout": "blocks",
+ "blocksPerRow": 4,
+ "frameW": 128,
+ "frameH": 128,
  "maxFrames": 8,
  "anchor": [
-  48,
-  96
+  64,
+  104
  ],
  "dirs": [
   "S",

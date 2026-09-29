@@ -744,9 +744,10 @@ function gainExp(b, j) {
 function dropItem(it, at) { drops.push({ kind: 'drop', item: it, x: at.x + rand(-0.7, 0.7), y: at.y + rand(-0.7, 0.7), t: 0, id: uidc++ }); if (rarityOf(it) === 'unique' || rarityOf(it) === 'card') Sfx.rare(); }
 function dropZeny(n, at) { drops.push({ kind: 'drop', zeny: n, x: at.x + rand(-0.6, 0.6), y: at.y + rand(-0.6, 0.6), t: 0, id: uidc++ }); }
 function pickup(d) {
-  if (d.lost) { P.zeny += d.zeny; log(`You recover your lost ${fmt(d.zeny)} zeny.`, 'loot'); P.lostZeny = null; Sfx.coin(); drops.splice(drops.indexOf(d), 1); burst(d.x, d.y, 10, '#f0c060', 16, 2); UI.dirty = true; return; }
+  if (d.lost) { P.pickupAt = time; P.zeny += d.zeny; log(`You recover your lost ${fmt(d.zeny)} zeny.`, 'loot'); P.lostZeny = null; Sfx.coin(); drops.splice(drops.indexOf(d), 1); burst(d.x, d.y, 10, '#f0c060', 16, 2); UI.dirty = true; return; }
   if (d.zeny) { P.zeny += d.zeny; log(`+${fmt(d.zeny)} zeny`, 'loot'); Sfx.coin(); drops.splice(drops.indexOf(d), 1); UI.dirty = true; return; }
   if (!addItem(d.item)) return;
+  P.pickupAt = time; // sprite sheets play the "pickup" action
   const r = rarityOf(d.item);
   log(`You got ${itemName(d.item)}${d.item.qty > 1 ? ' ×' + d.item.qty : ''}.`, r === 'common' ? 'loot' : r);
   Sfx.pickup(); drops.splice(drops.indexOf(d), 1);
@@ -1102,6 +1103,7 @@ function gotoMap(id, x, y, quiet) {
   P.map = id; P.x = x; P.y = y;
   stopAll(); P.casting = null; timers = []; projs = []; teles = []; parts = []; fxs = []; floats = []; drops = [];
   spawnAll();
+  if (typeof prefetchSheets === 'function') prefetchSheets(); // lazy-load this map's sprite sheets
   if (P.lostZeny && P.lostZeny.map === id) drops.push({ kind: 'drop', zeny: P.lostZeny.zeny, lost: true, x: P.lostZeny.x, y: P.lostZeny.y, t: 0, id: uidc++ });
   $('bossbar').hidden = true; bossShown = null;
   enterWorld();

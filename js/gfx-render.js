@@ -79,8 +79,9 @@ function syncDrop(d) {
 }
 function syncEntities() {
   frameNo++;
-  for (const m of mobs) syncSprite(m, framesForMob(m), mobPose(m));
-  for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } syncSprite(n, framesForNPC(n), { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
+  const sh = typeof syncSheetMob === 'function';
+  for (const m of mobs) if (!(sh && syncSheetMob(m))) syncSprite(m, framesForMob(m), mobPose(m));
+  for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
   if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
   for (const [e, v] of VIS) if (v.seen !== frameNo) { disposeVis(v); VIS.delete(e); }

@@ -1,0 +1,64 @@
+{
+ "sheets": [
+  {
+   "id": "mob_blight_poring",
+   "layer": "mob",
+   "body": "blight_poring",
+   "variant": null
+  },
+  {
+   "id": "mob_cinder_drop",
+   "layer": "mob",
+   "body": "cinder_drop",
+   "variant": null
+  },
+  {
+   "id": "mob_blight_mother",
+   "layer": "mob",
+   "body": "blight_mother",
+   "variant": null
+  },
+  {
+   "id": "mob_ash_grub",
+   "layer": "mob",
+   "body": "ash_grub",
+   "variant": null
+  },
+  {
+   "id": "mob_hollow_hare",
+   "layer": "mob",
+   "body": "hollow_hare",
+   "variant": null
+  },
+  {
+   "id": "mob_thorn_willow",
+   "layer": "mob",
+   "body": "thorn_willow",
+   "variant": null
+  },
+  {
+   "id": "mob_mourning_spore",
+   "layer": "mob",
+   "body": "mourning_spore",
+   "variant": null
+  },
+  {
+   "id": "mob_ash_wolf",
+   "layer": "mob",
+   "body": "ash_wolf",
+   "variant": null
+  },
+  {
+   "id": "mob_hati",
+   "layer": "mob",
+   "body": "hati",
+   "variant": null
+  },
+  {
+   "id": "mob_wraith",
+   "layer": "mob",
+   "body": "wraith",
+   "variant": null
+  }
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "id": "mob_rust_knight",
+ "layer": "mob",
+ "body": "rust_knight",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 4,
+ "frameW": 144,
+ "frameH": 160,
+ "maxFrames": 6,
+ "anchor": [
+  72,
+  132
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "walk": {
+   "row": 1,
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  },
+  "attack": {
+   "row": 2,
+   "frames": 6,
+   "fps": 12,
+   "loop": false
+  },
+  "hurt": {
+   "row": 3,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "dead": {
+   "row": 4,
+   "frames": 3,
+   "fps": 6,
+   "loop": false
+  }
+ },
+ "hit": {
+  "attack": 3
+ },
+ "scale": 1.2
+}

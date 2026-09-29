@@ -349,11 +349,15 @@ const LORE = {
   ashen_king: ['The Ashen King', 'He was a fire giant’s herald, sent ahead to prepare the world for burning. With his master gone quiet he crowned himself instead. In the end he only wanted what everyone in Midgard wants: for the fire to mean something.'],
 };
 function shardCount() { return Object.keys(P.flags.shards).length; }
+let talkNPC = null; // NPC whose dialog is open (sprite sheets play "talk")
 async function talkTo(n) {
-  if (n.id === 'sigrun') return talkSigrun();
-  if (n.id === 'brokkr') return talkBrokkr();
-  if (n.id === 'vidar') return talkVidar();
-  if (n.id === 'astrid') return talkAstrid();
+  talkNPC = n;
+  try {
+    if (n.id === 'sigrun') return await talkSigrun();
+    if (n.id === 'brokkr') return await talkBrokkr();
+    if (n.id === 'vidar') return await talkVidar();
+    if (n.id === 'astrid') return await talkAstrid();
+  } finally { if (talkNPC === n) talkNPC = null; }
 }
 async function talkSigrun() {
   const f = P.flags; const N = 'Sigrun, the Ember Maiden';
