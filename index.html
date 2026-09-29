@@ -46,6 +46,7 @@ kbd{font:700 9px var(--ui);color:var(--dim);margin-left:3px}
 .bar.hp i{background:linear-gradient(var(--hp1),var(--hp2))}
 .bar.hp.low i{background:linear-gradient(#ff7a6a,#c0201a)}
 .bar.sp i{background:linear-gradient(var(--sp1),var(--sp2))}
+.bar.st{height:5px}.bar.st i{background:linear-gradient(#ffe870,#d0a010)}
 .lvrow{display:grid;grid-template-columns:78px 1fr;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--dim)}
 .lvrow b{color:var(--ink);font-variant-numeric:tabular-nums}
 .xbar{height:5px;background:#2a2e3a;border:1px solid #58627a;border-radius:2px;position:relative;overflow:hidden}
@@ -207,6 +208,7 @@ kbd{font:700 9px var(--ui);color:var(--dim);margin-left:3px}
         <div class="who"><span id="pname"></span><span id="pclass"></span></div>
         <div class="stat"><span>HP</span><div class="bar hp" id="hpbar"><i id="hpb"></i></div><em id="hpt"></em></div>
         <div class="stat"><span>SP</span><div class="bar sp"><i id="spb"></i></div><em id="spt"></em></div>
+        <div class="stat"><span>ST</span><div class="bar st"><i id="stb"></i></div><em id="stt"></em></div>
         <div class="lvrow"><span>Base Lv. <b id="blv"></b></span><div class="xbar"><i id="bxp"></i></div></div>
         <div class="lvrow"><span>Job Lv. <b id="jlv"></b></span><div class="xbar job"><i id="jxp"></i></div></div>
         <div class="zrow"><span>Zeny: <b id="zeny"></b></span><span id="shardct"></span></div>
@@ -241,6 +243,7 @@ kbd{font:700 9px var(--ui);color:var(--dim);margin-left:3px}
 <script src="js/gfx-world.js"></script>
 <script src="js/gfx-sprites.js"></script>
 <script src="js/gfx-render.js"></script>
+<script src="js/action.js"></script>
 <script src="js/ui.js"></script>
 </body>
 </html>

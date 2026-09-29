@@ -46,6 +46,9 @@ function mobPose(m) {
 }
 function playerPose() {
   if (P.dead) return { anim: 'dead', i: 0 };
+  if (P.dodgeT > 0) return { anim: 'dodge', i: Math.min(3, Math.floor((1 - P.dodgeT / 0.34) * 4)), tint: [0.85, 0.9, 1] };
+  if (P.charge >= 0) { const full = P.charge >= 0.8 && Math.floor(time * 12) % 2; return { anim: 'attack', i: 0, tint: full ? [1.0, 0.85, 0.5] : undefined }; }
+  if (P.blocking) return { anim: 'block', i: 0 };
   if (P.sitting) return { anim: 'sit', i: 0 };
   if (P.casting) return { anim: 'cast', i: Math.floor(time * 4) % 2 };
   if (P.atkAnim >= 0) return { anim: 'attack', i: Math.min(3, Math.floor(P.atkAnim * 4)) };
@@ -95,8 +98,9 @@ function syncDecals() {
     else if (f.k === 'mark') syncDecal(f, () => [decalMesh(TEX.target, 0xffe070, 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(0.5 - k * 0.2); a.material.opacity = 1 - k; a.rotation.y = k * 2; });
   }
   if (P && P.casting) { const col = new THREE.Color(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
-  const tg = P && P.target && !P.target.dead ? P.target : (hover && hover.kind === 'mob' ? hover : null);
-  if (tg && started) syncDecal('target', () => [decalMesh(TEX.target, 0xff5a3a, 0.9, true)], ([a]) => { a.material.color.setHex(tg === P.target ? 0xff5a3a : 0xffd070); a.position.set(tg.x, groundH(tg.x, tg.y) + 0.06, tg.y); a.rotation.y = time * 0.8; a.scale.setScalar(0.55 * Math.max(1, (tg.d.size || (tg.d.look && tg.d.look.scale) || 1) * 0.8)); });
+  const lk = typeof CTRL !== 'undefined' && CTRL.lock && !CTRL.lock.dead ? CTRL.lock : null;
+  const tg = lk || (P && P.target && !P.target.dead ? P.target : (hover && hover.kind === 'mob' ? hover : null));
+  if (tg && started) syncDecal('target', () => [decalMesh(TEX.target, 0xff5a3a, 0.9, true)], ([a]) => { a.material.color.setHex(tg === lk ? 0xff3a9a : tg === P.target ? 0xff5a3a : 0xffd070); a.position.set(tg.x, groundH(tg.x, tg.y) + 0.06, tg.y); a.rotation.y = time * 0.8; a.scale.setScalar(0.55 * Math.max(1, (tg.d.size || (tg.d.look && tg.d.look.scale) || 1) * 0.8)); });
   for (const [k, v] of DV) if (v.seen !== frameNo) { for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.delete(k); }
 }
 /* ---------- Picking ---------- */
@@ -157,7 +161,8 @@ function drawOverlay() {
   }
   if (P && started && !P.dead) {
     const gh = groundH(P.x, P.y), a = proj(P.x, P.y, gh), wd = 44 * sc, y = a[1] + 8 * sc;
-    ctx.fillStyle = 'rgba(10,10,20,.85)'; ctx.fillRect(a[0] - wd / 2 - 1, y, wd + 2, 9);
+    ctx.fillStyle = 'rgba(10,10,20,.85)'; ctx.fillRect(a[0] - wd / 2 - 1, y, wd + 2, P.stamina < 100 ? 12 : 9);
+    if (P.stamina < 100) { ctx.fillStyle = P.stamina < 22 ? '#ff8a3a' : '#f0d040'; ctx.fillRect(a[0] - wd / 2, y + 9, wd * P.stamina / 100, 2); }
     ctx.fillStyle = P.hp / S.maxhp < 0.25 ? '#ff3a3a' : '#3ee83a'; ctx.fillRect(a[0] - wd / 2, y + 1, wd * P.hp / S.maxhp, 3.5);
     ctx.fillStyle = '#3a8aff'; ctx.fillRect(a[0] - wd / 2, y + 5, wd * P.sp / S.maxsp, 3);
     if (P.casting) { const t = proj(P.x, P.y, gh + headH(P) + 0.35), k = 1 - P.castT / P.castMax; ctx.fillStyle = 'rgba(10,10,20,.85)'; ctx.fillRect(t[0] - 30, t[1] - 4, 60, 8); ctx.fillStyle = '#5ae05a'; ctx.fillRect(t[0] - 29, t[1] - 3, 58 * k, 6); }

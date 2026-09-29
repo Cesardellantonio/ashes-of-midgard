@@ -56,6 +56,7 @@ function setW(id, pct) { const v = clamp(pct, 0, 100).toFixed(1); if (cache['w' 
 function renderHUD() {
   setText('pname', P.name); setText('pclass', CLASSES[P.cls].name);
   setW('hpb', P.hp / S.maxhp * 100); $('hpbar').classList.toggle('low', P.hp / S.maxhp < 0.25); setText('hpt', `${Math.ceil(P.hp)} / ${S.maxhp}`);
+  setW('stb', P.stamina); setText('stt', `${Math.floor(P.stamina)}`);
   setW('spb', P.sp / S.maxsp * 100); setText('spt', `${Math.floor(P.sp)} / ${S.maxsp}`);
   setText('blv', String(P.lvl)); setText('jlv', String(P.jlvl));
   setW('bxp', P.lvl >= MAXLV ? 100 : P.exp / expNeed(P.lvl) * 100); setW('jxp', P.jlvl >= CLASSES[P.cls].maxJob ? 100 : P.jexp / jexpNeed(P.jlvl) * 100);
@@ -95,11 +96,11 @@ function useHot(i) {
 }
 function bindHot(i, ref) { for (let j = 0; j < 9; j++) if (P.hot[j] && P.hot[j].k === ref.k && P.hot[j].id === ref.id) P.hot[j] = null; P.hot[i] = ref; log(`Bound ${ref.k === 'skill' ? SKILLS[ref.id].name : ITEMS[ref.id].name} to key ${i + 1}.`, 'sys'); UI.dirty = true; }
 const TIPS = [
-  { t: () => 'Click the ground to walk. Hold the button to keep walking.', done: () => P.flags.tips.moved },
-  { t: () => 'Speak with <b>Sigrun</b>, the Ember Maiden, beside the Waystone. Click her to talk.', done: () => P.flags.talked.sigrun },
-  { t: () => `You have <b>${P.statPts}</b> status points. Press <b>A</b> to spend them.`, show: () => P.statPts > 0 && P.lvl <= 3, done: () => P.statPts === 0 || UI.open.status },
+  { t: () => isAction() ? 'Move with <b>W A S D</b>. <b>J</b> attacks, <b>K</b> heavy, <b>L</b> blocks, <b>Space</b> dodges, <b>F</b> talks. Press <b>H</b> for all controls.' : 'Click the ground to walk. Hold the button to keep walking.', done: () => P.flags.tips.moved },
+  { t: () => 'Speak with <b>Sigrun</b>, the Ember Maiden, beside the Waystone. ' + (isAction() ? 'Walk up and press <b>F</b>.' : 'Click her to talk.'), done: () => P.flags.talked.sigrun },
+  { t: () => `You have <b>${P.statPts}</b> status points. Press <b>${winKey('status')}</b> to spend them.`, show: () => P.statPts > 0 && P.lvl <= 3, done: () => P.statPts === 0 || UI.open.status },
   { t: () => 'Leave by the <b>east gate</b> for the Ashen Fields. Click a monster to attack it.', show: () => P.map === 'emberhold' && P.lvl < 3, done: () => P.map !== 'emberhold' },
-  { t: () => 'You have a skill point. Press <b>S</b> and click <b>+</b>. Hover a skill and press <b>1–9</b> to bind it.', show: () => P.skillPts > 0 && P.jlvl <= 4, done: () => P.skillPts === 0 || UI.open.skills },
+  { t: () => `You have a skill point. Press <b>${winKey('skills')}</b> and click <b>+</b>. Hover a skill and press <b>1–9</b> to bind it.`, show: () => P.skillPts > 0 && P.jlvl <= 4, done: () => P.skillPts === 0 || UI.open.skills },
   { t: () => 'Job Lv 10 and Basic Skill 9: return to Emberhold and speak with <b>Vidar</b> to choose your path.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic >= 9, done: () => P.cls !== 'novice' },
   { t: () => 'Job Lv 10 reached. Spend all 9 points on <b>Basic Skill</b> (press S), then see Vidar.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic < 9, done: () => P.skills.basic >= 9 },
 ];
@@ -202,7 +203,12 @@ const RENDER = {
   },
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
-    return `<div class="sec">Controls</div>${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal')}${k('Zoom', 'Mouse wheel')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
+    const act = isAction();
+    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>`;
+    const keys = act
+      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · H Help')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
+      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
+    return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
   },
@@ -301,6 +307,7 @@ function handleAct(act, e) {
     case 'rest': rest(); break;
     case 'travel': closeWin('way'); Sfx.warp(); { const m = genMap(b); gotoMap(b, m.way.x, m.way.y + 1.5); } break;
     case 'wipe': UI.wipeArm = true; break;
+    case 'ctrl': setCtrlMode(b); break;
     case 'wipe2': store('aom-save', null); location.reload(); break;
   }
   UI.dirty = true;
@@ -523,7 +530,7 @@ function startGame(fresh) {
   map = null; gotoMap(P.map, x, y);
   renderHotbar(); renderBuffs(); UI.dirty = true;
   log(fresh ? 'You wake in the Ash with nothing but a knife and a shirt.' : `Welcome back, ${P.name}.`, 'sys');
-  log('Press H for controls. Press A to spend status points.', 'sys');
+  log(`Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
 }
 function showTitle() {
   const save = loadSave(); const hairs = ['#b9b3a8', '#1d1a1a', '#a4532a', '#caa04f', '#6a7890'];
@@ -565,7 +572,8 @@ window.addEventListener('error', e => showErr(e.error || e.message));
 let lastT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  let dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (HITSTOP > 0) { HITSTOP -= dt; dt *= 0.12; }
   try {
     if (started) hover = pickAt(mouse.x, mouse.y);
     update(dt);

@@ -320,6 +320,7 @@ function updateCamera(dt) {
   COSP = Math.cos(cam.pitch);
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch), ty = cam.th + 0.9;
   camera.position.set(cam.tx + Math.sin(cam.yaw) * cp * cam.dist, ty + sp * cam.dist, cam.ty + Math.cos(cam.yaw) * cp * cam.dist);
+  if (typeof SHAKE !== 'undefined' && SHAKE > 0) { SHAKE = Math.max(0, SHAKE - dt); const k = SHAKE * 2.2; camera.position.x += rand(-k, k); camera.position.y += rand(-k, k); }
   camera.lookAt(cam.tx, ty, cam.ty);
   PPU = H / (2 * cam.dist * Math.tan(camera.fov * Math.PI / 360));
 }

@@ -7,7 +7,7 @@
    ========================================================= */
 if (!CanvasRenderingContext2D.prototype.roundRect) CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h) { this.rect(x, y, w, h); };
 let G = null;
-const ANIMS = { idle: 4, walk: 6, attack: 4, cast: 2, hurt: 1, dead: 1, sit: 1 };
+const ANIMS = { idle: 4, walk: 6, attack: 4, cast: 2, hurt: 1, dead: 1, sit: 1, block: 1, dodge: 4 };
 
 function eye(x, y, s, col) { G.fillStyle = col || '#2a1810'; G.beginPath(); G.ellipse(x, y, 1.5 * s + 0.5, 2.7 * s, 0, 0, 7); G.fill(); G.fillStyle = '#fff'; G.fillRect(x - 1, y - 2.2, 1.4, 1.4); }
 function xEye(x, y) { G.strokeStyle = '#2a1810'; G.lineWidth = 1.4; G.beginPath(); G.moveTo(x - 2, y - 2); G.lineTo(x + 2, y + 2); G.moveTo(x + 2, y - 2); G.lineTo(x - 2, y + 2); G.stroke(); }
@@ -24,9 +24,11 @@ function paintHuman(o, anim, i, n, back) {
   else if (anim === 'attack') { const k = [0, 0.3, 0.75, 1][i]; if (o.weapon === 'bow') { armA = -1.57; armB = -1.35; lean = -0.04 * k; } else { armA = -3.0 + k * 2.9; lean = (k - 0.45) * 0.18; } }
   else if (anim === 'cast') { armA = -2.6 + i * 0.2; armB = -2.4 - i * 0.2; bob = i; }
   else if (anim === 'hurt') { lean = -0.22; armA = 1.1; armB = 0.9; }
+  else if (anim === 'block') { armA = -1.35; armB = -1.0; lean = -0.08; leg = 0.35; }
   const sit = anim === 'sit', dead = anim === 'dead';
   G.save();
   if (dead) { G.translate(6, -5); G.rotate(-Math.PI / 2); armA = 2.8; armB = 2.5; }
+  if (anim === 'dodge') { G.translate(0, -16); G.rotate(i / n * Math.PI * 2); G.scale(0.85, 0.85); G.translate(0, 18); armA = 1.8; armB = 1.6; leg = 0.8; }
   G.rotate(lean);
   const wid = o.wide ? 1.22 : 1;
   const hip = sit ? -5 : -13, ty0 = hip - 16 - bob, hy = ty0 - 9;

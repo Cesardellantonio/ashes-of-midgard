@@ -481,7 +481,7 @@ function newPlayer(name, hair) {
   };
 }
 function resetRuntime() {
-  Object.assign(P, { path: null, target: null, goal: null, atkCD: 0, castT: 0, castMax: 0, casting: null, pending: null, cd: {}, buffs: {}, dir: 1, walk: 0, moving: false, atkAnim: -1, dead: false, sitting: false, hurtT: 0, hpT: 0, spT: 0, potCD: 0, deadT: 0, kind: 'player' });
+  Object.assign(P, { stamina: 100, stamT: 0, iframes: 0, dodgeT: 0, blocking: false, blockStart: 0, combo: 0, comboT: 0, swingT: 0, queued: null, charge: -1, fx: 1, fy: 0.35, path: null, target: null, goal: null, atkCD: 0, castT: 0, castMax: 0, casting: null, pending: null, cd: {}, buffs: {}, dir: 1, walk: 0, moving: false, atkAnim: -1, dead: false, sitting: false, hurtT: 0, hpT: 0, spT: 0, potCD: 0, deadT: 0, kind: 'player' });
 }
 function refineAtk(t) { return t.lvl < 10 ? 2 : t.lvl < 20 ? 3 : 5; }
 function calcStats() {
@@ -665,11 +665,20 @@ function knock(m, from, n) {
 }
 function mobStrike(m, mul = 1, o = {}) {
   if (P.dead) return;
+  if (P.iframes > 0) { floatText(P, 'Dodge', 'miss'); return; }
+  let guard = 1;
+  if (P.blocking && !P.dodgeT) {
+    const dx = m.x - P.x, dy = m.y - P.y, d = Math.hypot(dx, dy) || 1;
+    if ((dx * P.fx + dy * P.fy) / d > -0.2) {
+      if (time - P.blockStart < 0.2) { floatText(P, 'Parry!', 'crit'); Sfx.crit(); m.stun = m.d.boss ? 0.7 : 1.4; m.atkAnim = -1; fxs.push({ k: 'spark', x: P.x, y: P.y, h: chestH(P), t: 0, dur: 0.3, crit: true }); P.stamina = Math.min(100, P.stamina + 15); return; }
+      P.stamina -= 12 * mul; if (P.stamina > 0) { guard = o.magic ? 0.5 : 0.25; floatText(P, 'Block', 'info'); Sfx.equip(); } else { P.stamina = 0; P.blocking = false; floatText(P, 'Guard Break', 'miss'); }
+    }
+  }
   if (!o.sure && Math.random() * 100 >= hitChance(mobHitStat(m), S.flee, 95)) { floatText(P, 'Miss', 'miss'); return; }
   let raw = rand(m.d.atk[0], m.d.atk[1]) * mul;
   if (o.magic) raw *= (100 - Math.min(S.mdef, 80)) / 100; else raw = raw * (100 - Math.min(S.def, 85)) / 100 - S.softDef;
   if (isUndeadish(m)) raw -= (P.skills.divine_protection || 0) * 3;
-  raw *= 1 - Math.min(S.dmgRed, 60) / 100;
+  raw *= (1 - Math.min(S.dmgRed, 60) / 100) * guard;
   hurtP(Math.max(1, Math.round(raw)));
 }
 function hurtP(d) {
@@ -877,10 +886,12 @@ function useSkill(id) {
   if ((P.cd[id] || 0) > 0) return;
   const spc = sk.sp(lv); if (P.sp < spc) { log('Not enough SP.', 'warn'); floatText(P, 'No SP', 'miss'); return; }
   let target = null, pos = null;
-  const hm = hover && hover.kind === 'mob' ? hover : null;
+  const act = typeof isAction === 'function' && isAction();
+  const hm = act ? actionTarget(sk) : (hover && hover.kind === 'mob' ? hover : null);
   if (sk.tgt === 'enemy') { target = hm || (P.target && !P.target.dead ? P.target : null) || nearestMob(9); if (!target) { log('No target in sight.', 'sys'); return; } }
   else if (sk.tgt === 'heal') { if (hm && isUndeadish(hm)) target = hm; }
-  else if (sk.tgt === 'ground') { const w = s2w(mouse.x, mouse.y); pos = { x: w[0], y: w[1] }; if (hm) pos = { x: hm.x, y: hm.y }; }
+  else if (sk.tgt === 'ground') { if (act) pos = { x: P.x + P.fx * 3, y: P.y + P.fy * 3 }; else { const w = s2w(mouse.x, mouse.y); pos = { x: w[0], y: w[1] }; } if (hm) pos = { x: hm.x, y: hm.y }; }
+  if (act && target && dist(P, target) > skillRange(sk) + 0.4) { floatText(P, 'Too far', 'miss'); return; }
   P.sitting = false; P.goal = null;
   P.pending = { id, lv, target, pos };
 }
@@ -916,6 +927,9 @@ function updatePlayer(dt) {
   const sitMul = P.sitting ? 2 : 1;
   P.hpT += dt; if (P.hpT >= 4) { P.hpT = 0; if (P.hp < S.maxhp) { const hr = P.skills.hp_recovery || 0; P.hp = Math.min(S.maxhp, P.hp + (Math.max(1, Math.floor(S.maxhp / 200) + Math.floor(S.vit / 5)) + hr * 5 + Math.floor(S.maxhp * hr * 0.002)) * sitMul); } }
   P.spT += dt; if (P.spT >= 5) { P.spT = 0; if (P.sp < S.maxsp) P.sp = Math.min(S.maxsp, P.sp + (1 + Math.floor(S.maxsp / 100) + Math.floor(S.int / 6) + (P.skills.sp_recovery || 0) * 3) * sitMul); }
+
+  // Keyboard action controls take over while they are in use
+  if (typeof actionUpdate === 'function' && actionUpdate(dt)) { postMove(); return; }
 
   // Casting
   if (P.casting) { P.castT -= dt; if (P.castT <= 0) { const c = P.casting; P.casting = null; execSkill(c); } return; }
@@ -970,7 +984,9 @@ function updatePlayer(dt) {
   const was = P.moving;
   followPath(P, dt, S.move);
   if (was && !P.moving) P.walk = 0;
-
+  postMove();
+}
+function postMove() {
   // Auto-pick zeny & lost zeny when walking over it
   for (const d of drops) if ((d.zeny) && dist(P, d) < 0.7) { pickup(d); break; }
   // Warps
@@ -989,6 +1005,7 @@ function updateMob(m, dt) {
   m.anim += dt; if (m.hitFlash > 0) m.hitFlash -= dt;
   if (m.atkAnim >= 0) { m.atkAnim += dt * 3; if (m.atkAnim > 1) m.atkAnim = -1; }
   if (m.frozen > 0) { m.frozen -= dt; m.moving = false; return; }
+  if (m.stun > 0) { m.stun -= dt; m.moving = false; m.atkCD = Math.max(m.atkCD, 0.3); return; }
   if (m.leap) {
     const L = m.leap; L.t += dt; const k = Math.min(1, L.t / L.dur);
     m.x = L.sx + (L.tx - L.sx) * k; m.y = L.sy + (L.ty - L.sy) * k; m.z = Math.sin(k * Math.PI) * 60;
@@ -1011,7 +1028,7 @@ function updateMob(m, dt) {
       if (m.atkCD <= 0) {
         m.atkCD = d.aspd; m.atkAnim = 0;
         if (d.ranged) shot(m, P, 'arrow', () => { if (!m.dead) mobStrike(m); }, { spd: 13 });
-        else after(0.2, () => { if (!m.dead && !P.dead && dist(m, P) <= d.range + 0.9) mobStrike(m); });
+        else after(0.32, () => { if (!m.dead && !P.dead && !(m.stun > 0) && dist(m, P) <= d.range + 0.9) mobStrike(m); });
       }
     } else {
       m.repath -= dt;
