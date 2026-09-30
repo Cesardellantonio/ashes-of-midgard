@@ -26,6 +26,13 @@
    Round 5 (mounts & companions): the mounted player (mount_* sheets, gfx-sheets.js) uses the same layered path
    (x-ray, casters, hat); COMPANIONS pets and the Blitz Beat raven are instances of their sheets' sprite batches
    (syncRavenShots / syncCompanions, called from syncEntities before the batches flush).
+
+   Cycle 8 (squad mode): every hero of PARTY is drawn with the full player composite (syncHeroes). The controlled hero
+   (leadHero() / P) keeps its layered meshes exactly as before; allies are instances of the hero batches (see "Hero
+   batches": one colour + one shadow + one x-ray draw for the whole party). Per-hero trails (SWINGB, one instanced
+   draw), auras / spheres / cast circles / dodge puffs / status marks per hero (VFX), a gold ring under the controlled
+   hero and role pips under allies, allies' bars + names (drawHeroPlate), heroScreenPos() for the UI's speech bubbles.
+   A party of one (PARTY null or one member) renders pixel-identically to before.
    ========================================================= */
 const UNITPLANE = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 const FLATPLANE = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
@@ -293,6 +300,10 @@ function sprRim(e, st) {
   const k = Math.min(1, bw) / bw * 0.85; st.rim[0] = Math.min(0.8, st.rim[0] * k); st.rim[1] = Math.min(0.8, st.rim[1] * k); st.rim[2] = Math.min(0.8, st.rim[2] * k);
 }
 const FLASH_WHITE = [1, 0.97, 0.9], FLASH_HURT = [1, 0.32, 0.26];
+/* Squad mode: the heroes drawn this frame (every PARTY member + P; rebuilt in syncEntities, no allocation). A hero gets
+   the player's hurt flash and never dissolves (a fallen companion lies there until revived). */
+const HSET = new Set();
+const isHeroE = e => e === P || (!!e && e.kind !== 'mob' && HSET.has(e));
 function newSprState() { return { col: [1, 1, 1], a: 1, sx: 1, sy: 1, scl: 1, zoff: 0, rim: [0, 0, 0], rdx: 0, rdy: 0, flash: [1, 1, 1, 0], dis: 0, fade: 0, cast: true, ghost: false }; }
 // Compute the look of entity e this frame. o: { tint, opacity, ghost, scl (uniform size multiplier: named monsters) }
 function sprFrame(v, e, o) {
@@ -304,17 +315,17 @@ function sprFrame(v, e, o) {
   sprRim(e, st);
   // hit flash + squash (mobs: hitFlash; player: hurtT)
   let fl = 0, fc = FLASH_WHITE;
-  const hf = e === P ? (P.hurtT || 0) / 0.3 * 0.22 : (e.hitFlash || 0);
+  const hero = isHeroE(e), hf = hero ? (e.hurtT || 0) / 0.3 * 0.22 : (e.hitFlash || 0);
   if (!e.dead && hf > (v.lastHF || 0) + 0.04) v.sqT = time;
   v.lastHF = e.dead ? 0 : hf;
-  if (e === P) { if (P.hurtT > 0.15) { fl = 0.55 * (P.hurtT - 0.15) / 0.15; fc = FLASH_HURT; } }
+  if (hero) { if (e.hurtT > 0.15) { fl = 0.55 * (e.hurtT - 0.15) / 0.15; fc = FLASH_HURT; } }
   else if (!e.dead && hf > 0) fl = hf > 0.17 ? 0.72 : 0.6 * hf / 0.17;
   if (e.dead && e.deathT !== undefined && e.deathT < 0.12) fl = 0.9 * (1 - e.deathT / 0.12);
   st.flash[0] = toLin(fc[0]); st.flash[1] = toLin(fc[1]); st.flash[2] = toLin(fc[2]); st.flash[3] = fl;
   const tq = time - (v.sqT === undefined ? -9 : v.sqT);
   if (tq >= 0 && tq < 0.4) { const a = 0.16 * Math.exp(-tq * 11) * Math.cos(tq * 30); st.sx = 1 + a; st.sy = 1 - a * 0.85; } else { st.sx = 1; st.sy = 1; }
   // death: pixel dissolve into embers/ash (mobs are removed at deathT 0.8)
-  if (e.dead && e !== P && e.deathT !== undefined) { st.dis = clamp((e.deathT - 0.26) / 0.5, 0, 1); if (st.dis > 0.02) st.cast = false; st.a = 1; const ch = 1 - 0.6 * smoothstep(0, 0.5, st.dis); st.col[0] *= ch; st.col[1] *= ch * 0.92; st.col[2] *= ch * 0.88; }
+  if (e.dead && !hero && e.deathT !== undefined) { st.dis = clamp((e.deathT - 0.26) / 0.5, 0, 1); if (st.dis > 0.02) st.cast = false; st.a = 1; const ch = 1 - 0.6 * smoothstep(0, 0.5, st.dis); st.col[0] *= ch; st.col[1] *= ch * 0.92; st.col[2] *= ch * 0.88; }
   if (o.ghost) { st.a *= 0.66 + 0.1 * Math.sin(time * 2.3 + (e.id || 0)); st.fade = 0.85; st.zoff = 0.1 + Math.sin(time * 1.9 + (e.id || 0) * 0.7) * 0.07; st.col[0] *= 0.66; st.col[1] *= 0.84; st.col[2] *= 1.0; st.rim[0] *= 0.4; st.rim[1] *= 0.6; st.rim[2] *= 0.9; }
   return st;
 }
@@ -475,6 +486,220 @@ function placeBlob(v, x, gh, y, r, z, on) {
   const s = r * (SPRF.shadows ? 0.62 : 0.85) * (1 - Math.min(0.5, z * 0.3));
   ibMat(BLOBS, ibPush(BLOBS), x, gh + 0.03, y, 1, 0, s, s, s);
 }
+/* ---------- Hero batches (squad mode, cycle 8) ----------
+   Allies are drawn with the full player composite (body, hair + ramp tint, shield, weapon, hat on the head anchor with
+   the hide-hair clip, mount sheets) but, unlike the controlled hero's per-layer meshes (colour + sun caster + x-ray per
+   layer: ~3 draws a layer), every ally layer is one instance of a *hero batch*: one mesh whose shader reads up to
+   HB_K sheet textures (texture slots; R8 index textures of the indexed sheets) and a palette atlas (one 256-texel row
+   per slot). One batch = 1 colour draw + 1 sun-shadow draw + 1 x-ray draw (the x-ray only while an ally stands behind
+   something tall), whatever the number of allies, classes and layers; a second batch is made only when the party's
+   distinct layer textures do not fit in HB_K slots. Heroes of the same class share their sheets (one slot).
+   Per instance: position + mirror/scale (iPos), the layer's plane as a 2D affine of a unit quad (iAff/iAffT: sheet
+   frame + anchor, or the hat on the head anchor with its roll, + squash), frame UVs, the sprFrame look (light tint,
+   hurt flash, rim light + direction), the hair swatch (the same ramp as hairRamp, computed in the shader) and the
+   hat's hair clip plane; iMisc.w packs the slot (0..15) + 16 hair + 32 x-ray + 64 sun shadow. Slots are sticky (a
+   texture keeps its slot while any hero uses it), so the palette atlas is rewritten only when the party's looks change.
+   Needs indexed (palette) single-page sheets and WebGL2; otherwise an ally uses the layered meshes like P.
+   window.AOM_HERO_BATCH = false forces the layered path (A/B). */
+const HB_K = 12, HBS = [], HBQ = [];
+let _hbK = new Float64Array(8);
+function hbOn() { return sprBatchOn() && (typeof window === 'undefined' || window.AOM_HERO_BATCH !== false) && !!(renderer.capabilities && renderer.capabilities.isWebGL2); }
+const HB_VDECL = `attribute vec4 iPos; attribute vec4 iAff; attribute vec4 iAffT; attribute vec4 iUV; attribute vec4 iCol; attribute vec4 iFlash; attribute vec4 iRim; attribute vec4 iMisc; attribute vec4 iHair; attribute vec4 iClip;
+uniform vec4 uHBCam; uniform vec2 uCastCS; uniform float uCastH;
+varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec4 vIHair; varying vec4 vIClip;
+`;
+const HB_UV = 'vUv = mix(iUV.xy, iUV.zw, uv); vICol = iCol; vIFlash = iFlash; vIRim = iRim; vIMisc = iMisc; vIHair = iHair; vIClip = iClip;';
+// colour / x-ray: T(x, y, z) * RotY(camera yaw) * S(mirror k sqx, k sqy / COSP) * affine(unit quad)   (= sprInstance's matrix)
+const HB_BEGIN = `vec2 hbL = vec2(dot(iAff.xy, position.xy), dot(iAff.zw, position.xy)) + iAffT.xy;
+float hbX = iPos.w * iAffT.z * hbL.x, hbY = abs(iPos.w) * iAffT.w * hbL.y * uHBCam.z;
+vec3 transformed = vec3(iPos.x + uHBCam.x * hbX, iPos.y + hbY, iPos.z - uHBCam.y * hbX);`;
+// sun caster: faces the sun, unstretched (= CAST_OBC_I); no shadow -> degenerate quad
+const HB_BEGIN_CAST = `vec2 hbL = vec2(dot(iAff.xy, position.xy), dot(iAff.zw, position.xy)) + iAffT.xy;
+float hbX = iPos.w * hbL.x, hbY = hbL.y * uCastH * abs(iPos.w);
+vec3 transformed = (int(iMisc.w + 0.5) & 64) != 0 ? vec3(hbX * uCastCS.x + iPos.x, hbY + iPos.y, -hbX * uCastCS.y + iPos.z) : vec3(0.0);`;
+const HB_FHEAD = (() => {
+  let d = '', sz = '', fe = '';
+  for (let i = 0; i < HB_K; i++) { d += `uniform sampler2D uS${i}; `; sz += `  if (s == ${i}) return textureSize(uS${i}, 0);\n`; fe += `  if (hbS == ${i}) return texelFetch(uS${i}, t, 0).r;\n`; }
+  return `${d}uniform sampler2D uPalA; uniform vec4 uHK; uniform float uHLin;
+varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec4 vIHair; varying vec4 vIClip;
+int hbS; int hbC; ivec2 hbMx; bool hbMin;
+ivec2 hbSz(int s) {
+${sz}  return ivec2(1);
+}
+float hbI(ivec2 t) {
+  t = clamp(t, ivec2(0), hbMx);
+${fe}  return 0.0;
+}
+vec4 hbPal(ivec2 t) { return texelFetch(uPalA, ivec2(int(hbI(t) * 255.0 + 0.5), hbS), 0); }
+vec4 hbTex(vec2 uv) {   // = sprTex: NEAREST when magnified, 4-tap LINEAR emulation when minified
+  vec2 p = uv * vec2(hbMx + 1);
+  if (!hbMin) return hbPal(ivec2(floor(p)));
+  p -= 0.5; vec2 f = fract(p); ivec2 i = ivec2(floor(p));
+  return mix(mix(hbPal(i), hbPal(i + ivec2(1, 0)), f.x), mix(hbPal(i + ivec2(0, 1)), hbPal(i + ivec2(1, 1)), f.x), f.y);
+}
+void hbSetup(vec2 uv) {
+  hbC = int(vIMisc.w + 0.5); hbS = hbC & 15;
+  ivec2 ts = hbSz(hbS); hbMx = ts - 1; vec2 p = uv * vec2(ts), dx = dFdx(p), dy = dFdy(p);
+  hbMin = max(dot(dx, dx), dot(dy, dy)) > 1.0;
+}
+vec3 hbLin(vec3 c) { return uHLin > 0.5 ? mix(c * 0.0773993808, pow(c * 0.9478672986 + 0.0521327014, vec3(2.4)), step(vec3(0.04045), c)) : c; }
+`;
+})();
+const HB_MAP = `hbSetup(vUv);
+vec4 texelColor = hbTex(vUv);
+float sprA = texelColor.a;
+texelColor = mapTexelToLinear(texelColor);
+if ((hbC & 16) != 0) {   // hair: the hairRamp() palette ramp from the hero's swatch
+  vec3 c = vIHair.rgb, h0 = hbLin(c * 0.3 + (vec3(0.1, 0.08, 0.17) - c * 0.3) * 0.45), h1 = hbLin(c * 0.66 + (vec3(0.28, 0.28, 0.46) - c * 0.66) * 0.28), h2 = hbLin(c), h3 = hbLin(c + (vec3(1.0, 0.97, 0.88) - c) * 0.45);
+  float k = texelColor.g;
+  texelColor.rgb = k < uHK.y ? mix(h0, h1, clamp((k - uHK.x) / (uHK.y - uHK.x), 0.0, 1.0)) : k < uHK.z ? mix(h1, h2, (k - uHK.y) / (uHK.z - uHK.y)) : mix(h2, h3, clamp((k - uHK.z) / (uHK.w - uHK.z), 0.0, 1.0));
+}
+diffuseColor *= texelColor;`;
+const HB_CLIP = 'if ((hbC & 16) != 0 && dot(vec3(vUv, 1.0), vIClip.xyz) < 0.0) discard;';
+const HB_OUT = `{
+  float sprMx = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b);
+  if ( sprMx > 0.82 ) outgoingLight *= (0.82 + 0.2 * (1.0 - exp(-(sprMx - 0.82) * 4.0))) / sprMx;
+  float a1 = hbTex( vUv + vIMisc.xy ).a, a3 = hbTex( vUv + 3.0 * vIMisc.xy ).a;
+  outgoingLight += vIRim.rgb * (step(0.5, a1) * (1.0 - step(0.5, a3)));
+  outgoingLight = mix(outgoingLight, vIFlash.rgb, vIFlash.a);
+  gl_FragColor = vec4( outgoingLight, diffuseColor.a );
+}`;
+function hbVert(sh, cast) {
+  sh.vertexShader = HB_VDECL + sh.vertexShader.replace('#include <uv_vertex>', HB_UV).replace('#include <begin_vertex>', cast ? HB_BEGIN_CAST : HB_BEGIN);
+}
+function hbFrag(sh, body) { sh.fragmentShader = sh.fragmentShader.replace('#include <map_pars_fragment>', '#include <map_pars_fragment>\n' + HB_FHEAD) .replace('#include <map_fragment>', body); }
+function HB_OBC_C(sh) {   // colour
+  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false); hbFrag(sh, HB_MAP);
+  sh.fragmentShader = sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity ) * vICol;')
+    .replace('#include <alphatest_fragment>', 'if ( sprA < 0.5 ) discard;\n' + HB_CLIP)
+    .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );', HB_OUT);
+}
+function HB_OBC_X(sh) {   // x-ray silhouette (flag 32)
+  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false);
+  hbFrag(sh, 'hbSetup(vUv); vec4 texelColor = hbTex(vUv); float sprA = texelColor.a; texelColor = mapTexelToLinear(texelColor); diffuseColor *= texelColor;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', 'if ( sprA < 0.5 || (hbC & 32) == 0 ) discard;\n' + HB_CLIP);
+}
+function HB_OBC_D(sh) {   // sun-shadow depth (flag 64 in the vertex shader)
+  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, true);
+  hbFrag(sh, 'hbSetup(vUv); vec4 texelColor = hbTex(vUv); diffuseColor *= mapTexelToLinear(texelColor);');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n' + HB_CLIP);
+}
+const HB_ATTR = ['iPos', 'iAff', 'iAffT', 'iUV', 'iCol', 'iFlash', 'iRim', 'iMisc', 'iHair', 'iClip'];
+function hbGeo(B, cap) {
+  const src = UNITPLANE0, g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', src.attributes.position); g.setAttribute('uv', src.attributes.uv); g.setIndex(src.index);
+  for (const k of HB_ATTR) { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage); g.setAttribute(k, a); B.A[k] = a.array; }
+  g.instanceCount = 0;
+  if (B.geo) B.geo.dispose();
+  B.geo = g; B.cap = cap; if (B.mesh) { B.mesh.geometry = g; B.xmesh.geometry = g; }
+}
+const UNITPLANE0 = new THREE.PlaneGeometry(1, 1);   // centred unit quad (u, v in -0.5..0.5): the hero batch's instances
+function hbNew(tex) {
+  const U = { uPalA: { value: null }, uHK: { value: new THREE.Vector4() }, uHLin: { value: 0 }, uHBCam: { value: new THREE.Vector4(1, 0, 1, 0) }, uCastCS: CASTU.uCastCS, uCastH: CASTU.uCastH };
+  for (let i = 0; i < HB_K; i++) U['uS' + i] = { value: null };
+  const palD = new Uint8Array(256 * 4 * HB_K), pal = new THREE.DataTexture(palD, 256, HB_K, THREE.RGBAFormat, THREE.UnsignedByteType);
+  pal.magFilter = pal.minFilter = THREE.NearestFilter; pal.generateMipmaps = false; pal.needsUpdate = true; U.uPalA.value = pal;
+  const B = { n: 0, cap: 0, geo: null, mesh: null, xmesh: null, A: {}, U, pal, palD, tex: new Array(HB_K).fill(null), seen: new Int32Array(HB_K).fill(-1), warm: 0, xr: false };
+  hbGeo(B, 16);
+  const mat = spriteMat(null); mat.userData.U = U; mat.onBeforeCompile = HB_OBC_C; sprMapSet(mat, tex);
+  const xm = spriteMat(null, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+  xm.userData.U = U; xm.onBeforeCompile = HB_OBC_X; sprMapSet(xm, tex);
+  const dm = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaTest: 0.5, side: THREE.DoubleSide }); dm.userData.U = U; dm.onBeforeCompile = HB_OBC_D; sprMapSet(dm, tex);
+  B.mat = mat; B.xmat = xm; B.depth = dm;
+  const m = new THREE.Mesh(B.geo, mat); m.frustumCulled = false; m.renderOrder = -0.45; m.customDepthMaterial = dm; m.visible = false; scene.add(m); B.mesh = m;
+  const x = new THREE.Mesh(B.geo, xm); x.frustumCulled = false; x.renderOrder = 5; x.visible = false; scene.add(x); B.xmesh = x;
+  HBS.push(B); return B;
+}
+// Frame start (syncEntities): no hero queued, every slot unclaimed.
+function hbBegin() { HBQ.length = 0; }
+function hbQueue(v) { HBQ.push(v); }
+// Slot of texture t in batch B (-1 when absent).
+function hbSlotOf(B, t) { const T = B.tex; for (let s = 0; s < HB_K; s++) if (T[s] === t) return s; return -1; }
+// Put a layer's texture in batch B: its slot if resident (claimed for this frame), else a slot no hero claimed this
+// frame (its palette row rewritten). Returns the slot or -1 (batch full).
+function hbClaim(B, L, fr) {
+  const t = sheetPageTex(L.rec, L.pg); let s = hbSlotOf(B, t);
+  if (s < 0) {
+    for (let i = 0; i < HB_K; i++) if (B.seen[i] !== fr && !B.tex[i]) { s = i; break; }
+    if (s < 0) for (let i = 0; i < HB_K; i++) if (B.seen[i] !== fr) { s = i; break; }
+    if (s < 0) return -1;
+    B.tex[s] = t; B.U['uS' + s].value = t;
+    const pb = L.rec.pal.tex.image.data; B.palD.set(pb.length >= 1024 ? pb.subarray(0, 1024) : pb, s * 1024); B.pal.needsUpdate = true;
+  }
+  B.seen[s] = fr; L.hbS = s; return s;
+}
+// Textures of vis v missing from batch B (not resident), and B's free slots this frame.
+function hbMissing(B, v) { let n = 0; for (let i = 0; i < v.layers.length; i++) { const L = v.layers[i]; if (L.on && hbSlotOf(B, sheetPageTex(L.rec, L.pg)) < 0) n++; } return n; }
+function hbFree(B, fr) { let n = 0; for (let i = 0; i < HB_K; i++) if (B.seen[i] !== fr) n++; return n; }
+function hbFits(B, v, fr) {
+  let miss = 0, free = hbFree(B, fr);
+  for (let i = 0; i < v.layers.length; i++) { const L = v.layers[i]; if (!L.on) continue; const s = hbSlotOf(B, sheetPageTex(L.rec, L.pg)); if (s < 0) miss++; }
+  return miss <= free;
+}
+function hbAssign(B, v, fr) { for (let i = 0; i < v.layers.length; i++) { const L = v.layers[i]; if (L.on) hbClaim(B, L, fr); } v.hbB = B; }
+const _hbRGB = new Map();
+function hbHairRGB(hex) { hex = hex || '#b9b3a8'; let c = _hbRGB.get(hex); if (!c) { const t = new THREE.Color(hex); c = [t.r, t.g, t.b]; _hbRGB.set(hex, c); } return c; }
+// One layer instance (see the header).
+function hbInst(B, v, L, st) {
+  if (B.n >= B.cap) hbGeo(B, B.cap * 2);
+  const i = B.n++, o = i * 4, A = B.A, rec = L.rec, j = rec.json, flip = v.hbFlip, k = st.scl || 1, sgn = flip ? -1 : 1;
+  let a = A.iPos; a[o] = v.hbX; a[o + 1] = v.hbY; a[o + 2] = v.hbZ; a[o + 3] = sgn * k;
+  a = A.iAff; const a2 = A.iAffT;
+  if (L.layer === 'headgear' && L.aff) { const F = L.aff; a[o] = F[0]; a[o + 1] = F[1]; a[o + 2] = F[2]; a[o + 3] = F[3]; a2[o] = F[4]; a2[o + 1] = F[5]; }
+  else { const fw = j.frameW / PXU, fh = j.frameH / PXU; a[o] = fw; a[o + 1] = 0; a[o + 2] = 0; a[o + 3] = fh; a2[o] = fw / 2 - j.anchor[0] / PXU; a2[o + 1] = j.anchor[1] / PXU - fh / 2; }
+  a2[o + 2] = st.sx; a2[o + 3] = st.sy;
+  const uv = L.uv; a = A.iUV; a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
+  a = A.iCol; a[o] = st.col[0]; a[o + 1] = st.col[1]; a[o + 2] = st.col[2]; a[o + 3] = st.a;
+  a = A.iFlash; a[o] = st.flash[0]; a[o + 1] = st.flash[1]; a[o + 2] = st.flash[2]; a[o + 3] = st.flash[3];
+  a = A.iRim; a[o] = st.rim[0]; a[o + 1] = st.rim[1]; a[o + 2] = st.rim[2]; a[o + 3] = 0;
+  const hair = L.layer === 'hair', xr = v.xrayOn && !v.hbDead, cast = st.cast && st.a > 0.3;
+  const pg = sheetPages(rec)[L.pg];
+  a = A.iMisc; a[o] = st.rdx * sgn / rec.texW; a[o + 1] = st.rdy / pg.h; a[o + 2] = 0; a[o + 3] = L.hbS + (hair ? 16 : 0) + (xr ? 32 : 0) + (cast ? 64 : 0);
+  if (hair) {
+    const c = hbHairRGB(v.hbHair); a = A.iHair; a[o] = c[0]; a[o + 1] = c[1]; a[o + 2] = c[2]; a[o + 3] = 0;
+    a = A.iClip; if (v.clipM === 1) { a[o] = v.clip[0]; a[o + 1] = v.clip[1]; a[o + 2] = v.clip[2]; } else { a[o] = 0; a[o + 1] = 0; a[o + 2] = 1; } a[o + 3] = 0;
+  }
+  if (xr) B.xr = true;
+}
+// After every hero of the frame was queued (heroHBFrame): back-to-front order, slots (sticky per batch: a hero keeps
+// its batch while its textures fit), instances, uploads.
+function hbFlushHeroes() {
+  const Q = HBQ, n = Q.length, fr = frameNo;
+  if (n) {
+    // far -> near along the view direction (<= a handful of heroes: insertion sort, no allocation)
+    if (_hbK.length < n) _hbK = new Float64Array(n * 2);
+    const e = camera.matrixWorld.elements, fx = -e[8], fy = -e[9], fz = -e[10], cx = e[12], cy = e[13], cz = e[14];
+    for (let i = 0; i < n; i++) { const v = Q[i]; _hbK[i] = (v.hbX - cx) * fx + (v.hbY - cy) * fy + (v.hbZ - cz) * fz; }
+    for (let i = 1; i < n; i++) { const v = Q[i], kk = _hbK[i]; let j = i - 1; while (j >= 0 && _hbK[j] < kk) { Q[j + 1] = Q[j]; _hbK[j + 1] = _hbK[j]; j--; } Q[j + 1] = v; _hbK[j + 1] = kk; }
+    // claim what is already resident in each hero's last batch, then place the others
+    for (let i = 0; i < n; i++) { const v = Q[i], B = v.hbB; v.hbOK = false; if (!B || HBS.indexOf(B) < 0) { v.hbB = null; continue; }
+      let all = true; for (let l = 0; l < v.layers.length; l++) { const L = v.layers[l]; if (!L.on) continue; const s = hbSlotOf(B, sheetPageTex(L.rec, L.pg)); if (s < 0) all = false; else { B.seen[s] = fr; L.hbS = s; } }
+      v.hbOK = all; }
+    for (let i = 0; i < n; i++) {
+      const v = Q[i]; if (v.hbOK) continue;
+      let B = v.hbB && hbFits(v.hbB, v, fr) ? v.hbB : null;
+      if (!B) { let best = -1; for (let b = 0; b < HBS.length; b++) { const C = HBS[b]; if (!hbFits(C, v, fr)) continue; const m = hbMissing(C, v); if (best < 0 || m < best) { best = m; B = C; } } }
+      if (!B) { let t0 = null; for (let l = 0; l < v.layers.length && !t0; l++) if (v.layers[l].on) t0 = sheetPageTex(v.layers[l].rec, v.layers[l].pg); B = hbNew(t0); }
+      hbAssign(B, v, fr);
+    }
+    for (let i = 0; i < n; i++) { const v = Q[i], B = v.hbB, st = v.st; for (let l = 0; l < v.layers.length; l++) { const L = v.layers[l]; if (L.on) hbInst(B, v, L, st); } }
+  }
+  if (!HBS.length) return;
+  const hr = hairRamp('#b9b3a8').keys, lin = sprLinear() ? 1 : 0, ic = 1 / COSP;
+  for (let b = 0; b < HBS.length; b++) {
+    const B = HBS[b], U = B.U, m = B.mesh;
+    m.visible = B.n > 0 || B.warm < 3; B.warm++;
+    B.geo.instanceCount = B.n; m.castShadow = SPRF.shadows && B.n > 0; B.xmesh.visible = (B.xr && B.n > 0) || B.warm < 4; B.xr = false;
+    if (!B.n) continue;
+    for (const k of HB_ATTR) { const a = B.geo.attributes[k]; a.updateRange.offset = 0; a.updateRange.count = B.n * 4; a.needsUpdate = true; }
+    U.uHBCam.value.set(SPRF.cy, SPRF.sy, ic, 0); U.uHK.value.set(hr[0], hr[1], hr[2], hr[3]); U.uHLin.value = lin;
+    let t0 = null; for (let s = 0; s < HB_K && !t0; s++) if (B.seen[s] === frameNo) t0 = B.tex[s];
+    if (t0) { sprMapSet(B.mat, t0); sprMapSet(B.xmat, t0); sprMapSet(B.depth, t0); }
+    B.n = 0;
+  }
+}
+function hbStats() { let slots = 0; for (const B of HBS) for (let s = 0; s < HB_K; s++) if (B.seen[s] === frameNo) slots++; return { batches: HBS.length, queued: HBQ.length, slots, draws: HBS.filter(B => B.geo.instanceCount > 0).length }; }
+
 // Per-entity motion FX: footstep dust, death embers, ghost wisps.
 // gh: ground height at the entity when the caller already has it (placeSheetVis), else sampled here.
 function sprMotion(v, e, st, hu, gh) {
@@ -482,13 +707,14 @@ function sprMotion(v, e, st, hu, gh) {
   if (gh === undefined) gh = groundH(e.x, e.y);
   if (e.moving && !st.ghost && !(e.z > 0)) {
     const step = Math.floor((e.walk || 0) / 2.3);
-    if (v.step !== undefined && step !== v.step) { PFX.dust(e.x, gh, e.y, e === P ? (v.mounted ? 5 : 3) : 2, v.mounted ? 1.6 : (e.d && e.d.size) || 1); if (e === P && VFX.step) VFX.step(e, gh, !!v.mounted); }   // mounted: the warg's gallop kicks up more; powder on snow (VFX)
+    const hero = isHeroE(e);
+    if (v.step !== undefined && step !== v.step) { PFX.dust(e.x, gh, e.y, hero ? (v.mounted ? 5 : 3) : 2, v.mounted ? 1.6 : (e.d && e.d.size) || 1); if (hero && VFX.step) VFX.step(e, gh, !!v.mounted); }   // mounted: the warg's gallop kicks up more; powder on snow (VFX)
     v.step = step;
   }
-  if (e === P) {
-    if (P.dodgeT > 0 && !(v.dodging)) PFX.dust(e.x, gh, e.y, v.mounted ? 12 : 7, v.mounted ? 1.8 : 1.3);
-    if (P.dodgeT > 0 && Math.random() < 0.6) PFX.dust(e.x, gh, e.y, 1, 0.8);
-    v.dodging = P.dodgeT > 0;
+  if (isHeroE(e)) {
+    if (e.dodgeT > 0 && !(v.dodging)) PFX.dust(e.x, gh, e.y, v.mounted ? 12 : 7, v.mounted ? 1.8 : 1.3);
+    if (e.dodgeT > 0 && Math.random() < 0.6) PFX.dust(e.x, gh, e.y, 1, 0.8);
+    v.dodging = e.dodgeT > 0;
   }
   if (st.dis > 0 && st.dis < 1) {
     const n = Math.min(12, Math.round(SPRF.dt * 170 * Math.max(0.6, hu * 0.7)) + (Math.random() < 0.5 ? 1 : 0));
@@ -522,7 +748,7 @@ function syncSprite(e, F, pose) {
   sprApply(v.mat, st, v.flip < 0);
   v.caster.visible = st.cast && st.a > 0.3; if (v.caster.visible) { v.caster.scale.set(F.wu * v.flip, F.hu * CAST_H, 1); v.caster.position.set(e.x, gh + z - F.feetU, e.y); v.caster.rotation.y = SPRF.cyaw; }
   placeBlob(v, e.x, gh, e.y, F.shadowR * (ghost ? 0.8 : 1), z, st.a > 0.3 && st.dis < 0.6);
-  if (v.xray) { v.xray.material.map = tex; v.xray.scale.copy(v.mesh.scale); v.xray.position.copy(v.mesh.position); v.xray.rotation.y = cam.yaw; v.xray.visible = !P.dead; }
+  if (v.xray) { v.xray.material.map = tex; v.xray.scale.copy(v.mesh.scale); v.xray.position.copy(v.mesh.position); v.xray.rotation.y = cam.yaw; v.xray.visible = !e.dead; }
   if (v.glow) { v.glow.position.set(e.x, gh + z + F.headU / COSP * 0.5, e.y); const s = F.headU * (ghost ? 1.7 : 2.2); v.glow.scale.set(s, s, 1); v.glow.material.opacity = ghost ? 0.16 : 0.55; v.glow.visible = !e.dead; }
   sprMotion(v, e, st, F.headU);
 }
@@ -534,18 +760,19 @@ function mobPose(m) {
   if (m.moving || m.leap) return { anim: 'walk', i: Math.floor(m.walk * 1.26) % 6 };
   return { anim: 'idle', i: Math.floor(time * 3 + (m.id % 7)) % 4 };
 }
-function playerPose() {
-  if (P.dead) return { anim: 'dead', i: 0 };
-  if (P.dodgeT > 0) return { anim: 'dodge', i: Math.min(3, Math.floor((1 - P.dodgeT / 0.34) * 4)), tint: [0.85, 0.9, 1] };
-  if (P.charge >= 0) { const full = P.charge >= 0.8 && Math.floor(time * 12) % 2; return { anim: 'attack', i: 0, tint: full ? [1.0, 0.85, 0.5] : undefined }; }
-  if (P.blocking) return { anim: 'block', i: 0 };
-  if (P.sitting) return { anim: 'sit', i: 0 };
-  if (P.casting) return { anim: 'cast', i: Math.floor(time * 4) % 2 };
-  if (P.atkAnim >= 0) return { anim: 'attack', i: Math.min(3, Math.floor(P.atkAnim * 4)) };
-  if (P.hurtT > 0.12) return { anim: 'hurt', i: 0 };
-  if (P.moving) return { anim: 'walk', i: Math.floor(P.walk * 1.26) % 6 };
+function heroPose(h) {
+  if (h.dead) return { anim: 'dead', i: 0 };
+  if (h.dodgeT > 0) return { anim: 'dodge', i: Math.min(3, Math.floor((1 - h.dodgeT / 0.34) * 4)), tint: [0.85, 0.9, 1] };
+  if (h.charge >= 0) { const full = h.charge >= 0.8 && Math.floor(time * 12) % 2; return { anim: 'attack', i: 0, tint: full ? [1.0, 0.85, 0.5] : undefined }; }
+  if (h.blocking) return { anim: 'block', i: 0 };
+  if (h.sitting) return { anim: 'sit', i: 0 };
+  if (h.casting) return { anim: 'cast', i: Math.floor(time * 4) % 2 };
+  if (h.atkAnim >= 0) return { anim: 'attack', i: Math.min(3, Math.floor(h.atkAnim * 4)) };
+  if (h.hurtT > 0.12) return { anim: 'hurt', i: 0 };
+  if (h.moving) return { anim: 'walk', i: Math.floor(h.walk * 1.26) % 6 };
   return { anim: 'idle', i: Math.floor(time * 2.5) % 4 };
 }
+function playerPose() { return heroPose(P); }
 // Drop icons are painted on CPU-backed canvases (willReadFrequently): pixelize() reads them back and the atlas copy /
 // texture upload read them again; with GPU canvases the first drop of a new icon cost 280-420 ms on SwiftShader.
 const DROPCV = {}, DROPTEX = {}, cpuCtx = c => c.getContext('2d', { willReadFrequently: true });
@@ -649,6 +876,24 @@ function syncDrop(d) {
   if (v.glowM) { v.glowM.position.set(d.x, gh + 0.04, d.y); v.glowM.scale.setScalar(0.6 + Math.sin(time * 4) * 0.08); }
 }
 function visSweep(v, e) { if (v.seen !== frameNo) { disposeVis(v); VIS.delete(e); } }
+/* Every hero of the party (squad mode): P exactly as before (syncSheetPlayer: its own layered meshes), then the allies
+   (syncSheetHero: hero batches, see HB), then the hero batches' instances. HSET = this frame's heroes. */
+const _HL = [];
+function syncHeroes() {
+  const H = typeof gfxHeroes === 'function' ? gfxHeroes() : null;
+  let same = _HL.length === (H ? H.length : 0) + 1 && _HL[0] === P;
+  if (same && H) for (let i = 0; i < H.length; i++) if (_HL[i + 1] !== H[i]) { same = false; break; }
+  if (!same) { _HL.length = 0; _HL.push(P); HSET.clear(); if (P) HSET.add(P); if (H) for (let i = 0; i < H.length; i++) { _HL.push(H[i]); if (H[i]) HSET.add(H[i]); } }
+  hbBegin();
+  const C = ctrlHero();   // (= P outside core's withHero)
+  if (C === P) { if (P && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose()); }
+  else if (C && !(typeof syncSheetHero === 'function' && syncSheetHero(C))) syncSprite(C, framesForHero(C), heroPose(C));
+  if (H) for (let i = 0; i < H.length; i++) {
+    const h = H[i]; if (!h || h === C) continue;
+    if (!(typeof syncSheetHero === 'function' && syncSheetHero(h))) syncSprite(h, framesForHero(h), heroPose(h));
+  }
+  hbFlushHeroes();
+}
 function syncEntities() {
   frameNo++;
   SPRF.dt = clamp(time - SPRF.t, 0, 0.25); SPRF.t = time;
@@ -660,15 +905,15 @@ function syncEntities() {
   for (const m of mobs) if (!(sh && syncSheetMob(m))) syncSprite(m, framesForMob(m), mobPose(m));
   for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), n.moving ? { anim: 'walk', i: Math.floor((n.walk || time * 6) * 1.26) % 6 } : { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
-  if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
-  // after the player (a perched pet follows the owner's facing / squash of this frame), before the batches flush
+  if (started) syncHeroes();
+  // after the heroes (a perched pet follows the owner's facing / squash of this frame), before the batches flush
   if (typeof syncRavenShots === 'function') { syncRavenShots(); syncCompanions(); }
   VIS.forEach(visSweep);
   ibFlush();
   if (frameNo % 120 === 0 && typeof sheetPagesSweep === 'function') sheetPagesSweep();
   let king = null; for (const m of mobs) if (m.type === 'ashen_king' && !m.dead) { king = m; break; }
   if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
-  syncSwing();
+  syncSwing(); syncHeroSwings();
   PFX.update(SPRF.dt);
 }
 
@@ -808,6 +1053,65 @@ function syncSwing() {
   m.quaternion.copy(camera.quaternion); m.rotateZ(Math.atan2(sf, sr)); m.scale.set(size, size, 1); m.visible = true;
 }
 
+/* Allies' swing trails (squad mode): the same arc as SWING, one instance per attacking ally in a single instanced
+   mesh (one draw for the whole party). Per instance: aA = (head, len, alpha, dir), aC = (colour, width), aK = core. */
+const SWINGB = (() => {
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: `attribute vec4 aA; attribute vec4 aC; attribute vec4 aK; varying vec2 vUv; varying vec4 vA; varying vec4 vC; varying vec3 vK;
+      void main() { vUv = uv; vA = aA; vC = aC; vK = aK.rgb; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv; varying vec4 vA; varying vec4 vC; varying vec3 vK;
+      void main() {
+        float uHead = vA.x, uLen = vA.y, uAlpha = vA.z, uDir = vA.w, uW = vC.w; vec3 uCol = vC.rgb, uCore = vK;
+        vec2 p = vUv * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x), A = 1.45;
+        float s = (A - a * uDir) / (2.0 * A), d = uHead - s;
+        if (s < 0.0 || s > 1.0 || d < 0.0 || d > uLen) discard;
+        float tail = 1.0 - d / uLen, r1 = 0.94, w = mix(0.03, uW, pow(tail, 0.7)), r0 = r1 - w;
+        float band = smoothstep(r0 - 0.02, r0 + 0.04, r) * (1.0 - smoothstep(r1 - 0.015, r1 + 0.01, r));
+        float core = 1.0 - smoothstep(0.0, 0.05, abs(r - (r1 - 0.03)));
+        vec3 c = mix(uCol, uCore, core * tail) * (1.2 + 1.6 * core * tail);
+        gl_FragColor = vec4(c, band * pow(tail, 1.1) * uAlpha);
+        #include <tonemapping_fragment>
+        #include <encodings_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const B = { mat, mesh: null, cap: 0, A: null, C: null, K: null, M: new THREE.Matrix4(), q: new THREE.Quaternion(), qz: new THREE.Quaternion(), s: new THREE.Vector3(), z: new THREE.Vector3(0, 0, 1), c: new THREE.Color() };
+  B.alloc = cap => {
+    const g = new THREE.PlaneGeometry(1, 1);
+    for (const [k, f] of [['aA', 'A'], ['aC', 'C'], ['aK', 'K']]) { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4).setUsage(THREE.DynamicDrawUsage); g.setAttribute(k, a); B[f] = a.array; }
+    if (B.mesh) { scene.remove(B.mesh); B.mesh.geometry.dispose(); B.mesh.dispose(); }
+    const m = new THREE.InstancedMesh(g, mat, cap); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.renderOrder = 4; m.count = 0; m.visible = false; scene.add(m); B.mesh = m; B.cap = cap;
+  };
+  B.alloc(4);
+  return B;
+})();
+function syncHeroSwings() {
+  const B = SWINGB, H = typeof gfxHeroes === 'function' && started ? gfxHeroes() : null; let n = 0;
+  if (H) for (let i = 0; i < H.length; i++) {
+    const h = H[i]; if (!h || h === P || typeof heroState !== 'function') continue;
+    const hs = heroState(h), wt = heroWtype(h) || 'fist';
+    if (h.atkAnim >= 0 && hs.swLast < 0) hs.swN++;
+    hs.swLast = h.atkAnim >= 0 ? h.atkAnim : -1;
+    if (h.dead || wt === 'bow' || !(h.atkAnim >= 0) || h.casting) continue;
+    const k = h.atkAnim, v = VIS.get(h), heavy = !!(v && v.heavySwing);
+    const head = smoothstep(0.04, 0.5, k), alpha = (1 - smoothstep(0.5, 0.9, k)) * Math.min(1, k * 10);
+    if (alpha <= 0.01) continue;
+    if (n >= B.cap) B.alloc(B.cap * 2);
+    const cc = SWINGCOL[heavy ? 'heavy' : wt] || SWINGCOL.sword, small = wt === 'dagger' || wt === 'fist', o = n * 4;
+    B.A[o] = head * 1.25; B.A[o + 1] = heavy ? 0.75 : 0.55; B.A[o + 2] = alpha; B.A[o + 3] = (hs.swN % 2) ? 1 : -1;
+    wcol(cc[0], B.c); B.C[o] = B.c.r; B.C[o + 1] = B.c.g; B.C[o + 2] = B.c.b; B.C[o + 3] = heavy ? 0.34 : small ? 0.16 : 0.24;
+    wcol(cc[1], B.c); B.K[o] = B.c.r; B.K[o + 1] = B.c.g; B.K[o + 2] = B.c.b; B.K[o + 3] = 0;
+    const gh = groundH(h.x, h.y), hh = headH(h), size = (heavy ? 2.5 : small ? 1.5 : 1.95) * Math.min(1.25, hh / 1.6 * 0.9 + 0.1);
+    const fx = h.fx === undefined ? 1 : h.fx, fy = h.fy || 0, sr = fx * SPRF.rx + fy * SPRF.ry, sf = fx * -Math.sin(cam.yaw) + fy * -Math.cos(cam.yaw);
+    _sv.set(h.x + fx * 0.22, gh + hh * 0.4, h.y + fy * 0.22); _sv2.copy(camera.position).sub(_sv).normalize(); _sv.addScaledVector(_sv2, 0.9);
+    B.q.copy(camera.quaternion).multiply(B.qz.setFromAxisAngle(B.z, Math.atan2(sf, sr))); B.s.set(size, size, 1);
+    B.M.compose(_sv, B.q, B.s).toArray(B.mesh.instanceMatrix.array, n * 16); n++;
+  }
+  const m = B.mesh; m.count = n; m.visible = n > 0;
+  if (n) { ibFlag(m.instanceMatrix, n); const g = m.geometry.attributes; ibFlag(g.aA, n); ibFlag(g.aC, n); ibFlag(g.aK, n); }
+}
+
 /* ---------- FX textures (own copies, independent of the world's TEX) ---------- */
 const FXT = (() => {
   const T = {};
@@ -893,6 +1197,10 @@ function syncDecals() {
     else if (f.k === 'mark') syncDecal(f, () => [decalMesh(TEX.target, 0xffe070, 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(0.5 - k * 0.2); a.material.opacity = 1 - k; a.rotation.y = k * 2; });
   }
   if (P && P.casting && !(VFX.enabled && VFX.fbReady('rune_circle'))) { const col = _castCol.set(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
+  // allies casting while the rune_circle flipbook is not in yet (fallback decal, keyed by the hero's render state)
+  if (P && typeof gfxHeroes === 'function' && !(VFX.enabled && VFX.fbReady('rune_circle'))) { const H = gfxHeroes(); for (let i = 0; i < H.length; i++) { const h = H[i]; if (h === P || !h.casting || h.dead || !SKILLS[h.casting.id]) continue;
+    const hs = heroState(h), cc = hs.castCol || (hs.castCol = new THREE.Color()); cc.set(ELCOL[SKILLS[h.casting.id].el] || '#ffffff');
+    syncDecal(hs, () => [decalMesh(TEX.magic, cc, 0.95, true)], ([a]) => { a.material.color.copy(cc); a.position.set(h.x, groundH(h.x, h.y) + 0.07, h.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); } }
   syncTargetRing();
   DV.forEach(dvSweep);
 }
@@ -1432,148 +1740,196 @@ const VFX = (() => {
   }
 
   /* ---------- auras, spheres ---------- */
-  function drawAuras() {
-    if (!P || P.dead || !P.buffs) return;
-    const gh = groundH(P.x, P.y) + 0.05;
-    for (const id in P.buffs) {
-      const b = P.buffs[id], au = b.aura; if (!au) continue;
+  let AH = null;   // the hero whose auras / spheres are being drawn (squad mode: every hero in turn)
+  function drawAuras1() {
+    if (!AH || AH.dead || !AH.buffs) return;
+    const gh = groundH(AH.x, AH.y) + 0.05;
+    for (const id in AH.buffs) {
+      const b = AH.buffs[id], au = b.aura; if (!au) continue;
       const c = lc(au.col || '#ffffff'), fade = b.perm ? 1 : Math.min(1, (b.max - b.t) / 0.3 + 0.2, b.t / 0.5 + 0.3), r = au.r || 1;   // perm (Reborn): never elapses, full strength
       if (au.bubble) {   // Kyrie: a shimmering prayer shell around the body
-        const hh = typeof headH === 'function' ? headH(P) : 1.6, hits = b.hits || 5;
-        sphere(P.x, gh + hh * 0.48, P.y, Math.max(0.75, r), hh * 0.62, au.col, 0.55 * fade * (0.8 + 0.2 * Math.sin(time * 5)), 7);
-        ground(GA, 'glow', P.x, P.y, gh, r * 1.3, 0, c, 0.25 * fade);
-        for (let i = 0; i < Math.min(8, hits); i++) { const a = time * 1.2 + i / Math.min(8, hits) * 6.2832; bill(BA, 'star', P.x + Math.cos(a) * r * 0.95, P.y + Math.sin(a) * r * 0.95, gh + hh * 0.5 + Math.sin(time * 3 + i) * 0.15, 0.22, 0.22, time, c, 0.8 * fade); }
+        const hh = typeof headH === 'function' ? headH(AH) : 1.6, hits = b.hits || 5;
+        sphere(AH.x, gh + hh * 0.48, AH.y, Math.max(0.75, r), hh * 0.62, au.col, 0.55 * fade * (0.8 + 0.2 * Math.sin(time * 5)), 7);
+        ground(GA, 'glow', AH.x, AH.y, gh, r * 1.3, 0, c, 0.25 * fade);
+        for (let i = 0; i < Math.min(8, hits); i++) { const a = time * 1.2 + i / Math.min(8, hits) * 6.2832; bill(BA, 'star', AH.x + Math.cos(a) * r * 0.95, AH.y + Math.sin(a) * r * 0.95, gh + hh * 0.5 + Math.sin(time * 3 + i) * 0.15, 0.22, 0.22, time, c, 0.8 * fade); }
         continue;
       }
       if (b.song) {       // songs: a dashed staff ring, notes drifting up around the singer
-        ground(GA, 'ringDash', P.x, P.y, gh, r, time * 0.35, c, 0.55 * fade);
-        ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.12 * fade);
+        ground(GA, 'ringDash', AH.x, AH.y, gh, r, time * 0.35, c, 0.55 * fade);
+        ground(GA, 'glow', AH.x, AH.y, gh, r * 1.1, 0, c, 0.12 * fade);
         for (let i = 0; i < 7; i++) { const ph = (time * 0.45 + i / 7) % 1, a = i * 2.4 + Math.floor(time * 0.45 + i / 7) * 1.7, d = r * (0.35 + 0.55 * hsh(i, Math.floor(time * 0.45 + i / 7)));
-          const nx = P.x + Math.cos(a) * d, ny = P.y + Math.sin(a) * d, nh = gh + 0.2 + ph * 2.2, na = Math.sin(ph * Math.PI) * fade;
+          const nx = AH.x + Math.cos(a) * d, ny = AH.y + Math.sin(a) * d, nh = gh + 0.2 + ph * 2.2, na = Math.sin(ph * Math.PI) * fade;
           bill(BA, 'glow', nx, ny, nh, 0.34, 0.34, 0, c, 0.35 * na); bill(BA, 'note', nx, ny, nh, 0.26, 0.26, Math.sin(time * 3 + i) * 0.3, c, na); bill(BA, 'note', nx, ny, nh, 0.2, 0.2, Math.sin(time * 3 + i) * 0.3, WHITE, 0.5 * na); }
         continue;
       }
       if (id === 'mrod') {  // Magic Rod: a violet vortex drinking inward
-        ground(GA, 'swirl', P.x, P.y, gh, r * 1.3, time * 6, c, 0.75 * fade);
-        ground(GA, 'ring', P.x, P.y, gh, r * (1.2 - (time * 2 % 1) * 0.5), 0, c, 0.6 * fade);
-        const hh = typeof headH === 'function' ? headH(P) : 1.6;
-        for (let i = 0; i < 8; i++) { const ph = (time * 1.6 + i / 8) % 1, a = i / 8 * 6.2832 + time * 2, d = r * 1.4 * (1 - ph); bill(BA, 'core', P.x + Math.cos(a) * d, P.y + Math.sin(a) * d, gh + hh * 0.5, 0.12, 0.12, 0, c, ph * fade); }
+        ground(GA, 'swirl', AH.x, AH.y, gh, r * 1.3, time * 6, c, 0.75 * fade);
+        ground(GA, 'ring', AH.x, AH.y, gh, r * (1.2 - (time * 2 % 1) * 0.5), 0, c, 0.6 * fade);
+        const hh = typeof headH === 'function' ? headH(AH) : 1.6;
+        for (let i = 0; i < 8; i++) { const ph = (time * 1.6 + i / 8) % 1, a = i / 8 * 6.2832 + time * 2, d = r * 1.4 * (1 - ph); bill(BA, 'core', AH.x + Math.cos(a) * d, AH.y + Math.sin(a) * d, gh + hh * 0.5, 0.12, 0.12, 0, c, ph * fade); }
         continue;
       }
       if (id === 'oath') {  // Oath of Tyr: a golden oath-circle with Tiwaz, a faint shield-light
-        ground(GA, 'runeCircle', P.x, P.y, gh, r * 1.1, -time * 0.3, c, 0.6 * fade);
-        runeGround('ᛏ', P.x, P.y, gh + 0.01, r * 0.35, c, 0.55 * fade);
-        pillarQ(BA, 'beam', P.x, P.y, gh, r * 1.4, 2.6, c, 0.16 * fade, 0);
+        ground(GA, 'runeCircle', AH.x, AH.y, gh, r * 1.1, -time * 0.3, c, 0.6 * fade);
+        runeGround('ᛏ', AH.x, AH.y, gh + 0.01, r * 0.35, c, 0.55 * fade);
+        pillarQ(BA, 'beam', AH.x, AH.y, gh, r * 1.4, 2.6, c, 0.16 * fade, 0);
         continue;
       }
-      const A3 = AURA3[id]; if (A3) { A3(b, c, fade, gh, r, typeof headH === 'function' ? headH(P) : 1.6); continue; }
-      ground(GA, 'ring', P.x, P.y, gh, r, 0, c, 0.6 * fade); ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.15 * fade);
+      const A3 = AURA3[id]; if (A3) { A3(b, c, fade, gh, r, typeof headH === 'function' ? headH(AH) : 1.6); continue; }
+      ground(GA, 'ring', AH.x, AH.y, gh, r, 0, c, 0.6 * fade); ground(GA, 'glow', AH.x, AH.y, gh, r * 1.1, 0, c, 0.15 * fade);
     }
   }
   /* Round-6 auras (vfx round 7): the Reborn shimmer and a look of its own for every tier-3 buff that used to fall back
      to the plain ring. f(buff, colour, fade, ground height, radius, head height); all atlas / flipbook quads + PFX. */
-  const orbit = (n, rad, h, spd, cell, size, c, a, glow) => { for (let i = 0; i < n; i++) { const an = time * spd + i / n * 6.2832, x = P.x + Math.cos(an) * rad, y = P.y + Math.sin(an) * rad, hh = h + Math.sin(time * 3 + i * 2) * 0.06; if (glow) bill(BA, 'glow', x, y, hh, size * 2.2, size * 2.2, 0, c, a * glow); bill(BA, cell, x, y, hh, size, size, time * 2 + i, c, a); } };
-  const under = (rad, a) => ground(GN, 'glow', P.x, P.y, groundH(P.x, P.y) + 0.03, rad, 0, lc('#140c04'), a);   // contrast for glows on bright ground
+  const orbit = (n, rad, h, spd, cell, size, c, a, glow) => { for (let i = 0; i < n; i++) { const an = time * spd + i / n * 6.2832, x = AH.x + Math.cos(an) * rad, y = AH.y + Math.sin(an) * rad, hh = h + Math.sin(time * 3 + i * 2) * 0.06; if (glow) bill(BA, 'glow', x, y, hh, size * 2.2, size * 2.2, 0, c, a * glow); bill(BA, cell, x, y, hh, size, size, time * 2 + i, c, a); } };
+  const under = (rad, a) => ground(GN, 'glow', AH.x, AH.y, groundH(AH.x, AH.y) + 0.03, rad, 0, lc('#140c04'), a);   // contrast for glows on bright ground
   const AURA3 = {
     reborn(b, c, fade, gh, r, hh) {   // golden shimmer: a soft light column, glints spiralling up around the hero and twinkling, drifting motes
       const t = time, tw = 0.5 + 0.5 * Math.sin(t * 2.1);
       under(r * 1.2, 0.2 * fade);
-      ground(GA, 'glow', P.x, P.y, gh, r * 1.4, 0, c, (0.22 + 0.1 * tw) * fade);
-      ground(GA, 'ringDash', P.x, P.y, gh + 0.005, r * 1.05, t * 0.25, c, 0.55 * fade);
-      ground(GA, 'ring', P.x, P.y, gh + 0.008, r * (0.72 + 0.06 * tw), 0, c, 0.35 * fade);
-      pillarQ(BA, 'beam', P.x, P.y, gh, r * 1.9, hh * 1.25, c, (0.2 + 0.07 * tw) * fade, 0);
+      ground(GA, 'glow', AH.x, AH.y, gh, r * 1.4, 0, c, (0.22 + 0.1 * tw) * fade);
+      ground(GA, 'ringDash', AH.x, AH.y, gh + 0.005, r * 1.05, t * 0.25, c, 0.55 * fade);
+      ground(GA, 'ring', AH.x, AH.y, gh + 0.008, r * (0.72 + 0.06 * tw), 0, c, 0.35 * fade);
+      pillarQ(BA, 'beam', AH.x, AH.y, gh, r * 1.9, hh * 1.25, c, (0.2 + 0.07 * tw) * fade, 0);
       for (let i = 0; i < 9; i++) {
-        const ph = (t * 0.22 + i / 9) % 1, an = i * 2.39 + t * 0.9, rr = r * (1.05 + 0.15 * Math.sin(i * 1.7 + t * 0.7)), tws = Math.max(0, Math.sin(t * 4.6 + i * 1.9)), sz = 0.2 + 0.2 * tws, x = P.x + Math.cos(an) * rr, y = P.y + Math.sin(an) * rr, h = gh + 0.15 + ph * hh * 1.1, al = Math.sin(ph * Math.PI) * fade;
+        const ph = (t * 0.22 + i / 9) % 1, an = i * 2.39 + t * 0.9, rr = r * (1.05 + 0.15 * Math.sin(i * 1.7 + t * 0.7)), tws = Math.max(0, Math.sin(t * 4.6 + i * 1.9)), sz = 0.2 + 0.2 * tws, x = AH.x + Math.cos(an) * rr, y = AH.y + Math.sin(an) * rr, h = gh + 0.15 + ph * hh * 1.1, al = Math.sin(ph * Math.PI) * fade;
         bill(BA, 'glow', x, y, h, sz * 1.6, sz * 1.6, 0, c, 0.35 * al); bill(BA, 'star', x, y, h, sz, sz, t * 1.3 + i, c, al * (0.5 + 0.5 * tws));
       }
-      motes(P.x, P.y, gh, r * 1.0, 9 * fade, '#ffe8a0', 1.0, 0.07);
+      motes(AH.x, AH.y, gh, r * 1.0, 9 * fade, '#ffe8a0', 1.0, 0.07);
     },
     fury(b, c, fade, gh, r, hh) {     // Einherjar's Fury: a spiked blood ring, flames licking up, heat throbbing
       const pul = 0.6 + 0.4 * Math.sin(time * 9);
-      under(r * 1.2, 0.2 * fade); ground(GA, 'glow', P.x, P.y, gh, r * 1.35, 0, c, 0.28 * fade * pul);
-      ground(GA, 'hex', P.x, P.y, gh + 0.005, r * (0.95 + 0.05 * pul), time * 1.6, c, 0.6 * fade);
-      ground(GA, 'swirl', P.x, P.y, gh + 0.01, r * 0.75, -time * 4, lc('#ffb080'), 0.35 * fade);
-      bill(BA, 'glow', P.x, P.y, gh + hh * 0.5, 1.1, hh * 0.8, 0, c, 0.16 * fade * pul);
-      motes(P.x, P.y, gh, r * 0.55, 28 * fade, '#ff5a2a', 2.3, 0.1, false);
+      under(r * 1.2, 0.2 * fade); ground(GA, 'glow', AH.x, AH.y, gh, r * 1.35, 0, c, 0.28 * fade * pul);
+      ground(GA, 'hex', AH.x, AH.y, gh + 0.005, r * (0.95 + 0.05 * pul), time * 1.6, c, 0.6 * fade);
+      ground(GA, 'swirl', AH.x, AH.y, gh + 0.01, r * 0.75, -time * 4, lc('#ffb080'), 0.35 * fade);
+      bill(BA, 'glow', AH.x, AH.y, gh + hh * 0.5, 1.1, hh * 0.8, 0, c, 0.16 * fade * pul);
+      motes(AH.x, AH.y, gh, r * 0.55, 28 * fade, '#ff5a2a', 2.3, 0.1, false);
     },
     bearrage(b, c, fade, gh, r, hh) { // Bear-Skin Rage: claw marks torn into the ground, a hot orange pulse, embers
       const pul = 0.5 + 0.5 * Math.sin(time * 5);
-      under(r * 1.2, 0.25 * fade); ground(GN, 'claw', P.x, P.y, gh + 0.004, r * 1.1, yawA + 0.4, lc('#1a0802'), 0.5 * fade);
-      ground(GA, 'claw', P.x, P.y, gh + 0.008, r * 1.05, yawA + 0.4, c, (0.75 + 0.25 * pul) * fade);
-      ground(GA, 'glow', P.x, P.y, gh, r * 1.4, 0, c, 0.2 * fade * (0.6 + 0.4 * pul));
-      ground(GA, 'ring', P.x, P.y, gh + 0.01, r * (0.7 + 0.45 * ((time * 1.4) % 1)), 0, c, 0.45 * (1 - (time * 1.4) % 1) * fade);
-      motes(P.x, P.y, gh, r * 0.6, 16 * fade, '#ff8a3a', 1.6, 0.08, false);
+      under(r * 1.2, 0.25 * fade); ground(GN, 'claw', AH.x, AH.y, gh + 0.004, r * 1.1, yawA + 0.4, lc('#1a0802'), 0.5 * fade);
+      ground(GA, 'claw', AH.x, AH.y, gh + 0.008, r * 1.05, yawA + 0.4, c, (0.75 + 0.25 * pul) * fade);
+      ground(GA, 'glow', AH.x, AH.y, gh, r * 1.4, 0, c, 0.2 * fade * (0.6 + 0.4 * pul));
+      ground(GA, 'ring', AH.x, AH.y, gh + 0.01, r * (0.7 + 0.45 * ((time * 1.4) % 1)), 0, c, 0.45 * (1 - (time * 1.4) % 1) * fade);
+      motes(AH.x, AH.y, gh, r * 0.6, 16 * fade, '#ff8a3a', 1.6, 0.08, false);
     },
     gloria(b, c, fade, gh, r, hh) {   // Gloria: a golden halo over the head, a holy circle, sparkles
-      under(r * 1.1, 0.15 * fade); ground(GA, 'holyCircle', P.x, P.y, gh, r, time * 0.25, c, 0.6 * fade);
-      ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.12 * fade);
-      const hy = gh + hh * 0.92 + 0.12 + 0.03 * Math.sin(time * 2.5); ground(GA, 'ring', P.x, P.y, hy, 0.3, 0, c, fade);
-      ground(GA, 'glow', P.x, P.y, hy - 0.02, 0.5, 0, c, 0.4 * fade);
-      motes(P.x, P.y, gh, r * 0.7, 6 * fade, '#fff0a0', 1.2, 0.07);
+      under(r * 1.1, 0.15 * fade); ground(GA, 'holyCircle', AH.x, AH.y, gh, r, time * 0.25, c, 0.6 * fade);
+      ground(GA, 'glow', AH.x, AH.y, gh, r * 1.1, 0, c, 0.12 * fade);
+      const hy = gh + hh * 0.92 + 0.12 + 0.03 * Math.sin(time * 2.5); ground(GA, 'ring', AH.x, AH.y, hy, 0.3, 0, c, fade);
+      ground(GA, 'glow', AH.x, AH.y, hy - 0.02, 0.5, 0, c, 0.4 * fade);
+      motes(AH.x, AH.y, gh, r * 0.7, 6 * fade, '#fff0a0', 1.2, 0.07);
     },
     martyr(b, c, fade, gh, r, hh) {   // Tyr's Sacrifice: Tiwaz in blood on the ground, one red orb per strike left
       under(r * 1.1, 0.22 * fade);
-      runeGround('ᛏ', P.x, P.y, gh + 0.01, r * 0.6, c, 0.85 * fade);
-      ground(GA, 'ring', P.x, P.y, gh, r, 0, c, 0.6 * fade);
+      runeGround('ᛏ', AH.x, AH.y, gh + 0.01, r * 0.6, c, 0.85 * fade);
+      ground(GA, 'ring', AH.x, AH.y, gh, r, 0, c, 0.6 * fade);
       orbit(Math.max(0, Math.min(5, b.count | 0)), 0.95, gh + hh * 0.45, 1.7, 'core', 0.2, c, fade, 0.6);
     },
     amplify(b, c, fade, gh, r, hh) {  // Galdr Amplify: the galdr circle turning under the caster, three runes circling
       under(r * 1.1, 0.15 * fade);
-      if (!fbLoop('rune_circle', P.x, P.y, gh + 0.01, r * 2 / 5.333, c, 0.9 * fade, time * 0.6, 0)) ground(GA, 'runeCircle', P.x, P.y, gh, r, time * 0.6, c, 0.6 * fade);
-      for (let i = 0; i < 3; i++) { const an = time * 1.3 + i * 2.094, rn = ['ᚨ', 'ᚷ', 'ᛟ'][i]; const rx = P.x + Math.cos(an) * 0.95, ry = P.y + Math.sin(an) * 0.95, rh = gh + hh * 0.5 + Math.sin(time * 2 + i) * 0.1; bill(BA, 'glow', rx, ry, rh, 0.5, 0.5, 0, c, 0.4 * fade); runeBill(rn, rx, ry, rh, 0.34, c, fade); }
+      if (!fbLoop('rune_circle', AH.x, AH.y, gh + 0.01, r * 2 / 5.333, c, 0.9 * fade, time * 0.6, 0)) ground(GA, 'runeCircle', AH.x, AH.y, gh, r, time * 0.6, c, 0.6 * fade);
+      for (let i = 0; i < 3; i++) { const an = time * 1.3 + i * 2.094, rn = ['ᚨ', 'ᚷ', 'ᛟ'][i]; const rx = AH.x + Math.cos(an) * 0.95, ry = AH.y + Math.sin(an) * 0.95, rh = gh + hh * 0.5 + Math.sin(time * 2 + i) * 0.1; bill(BA, 'glow', rx, ry, rh, 0.5, 0.5, 0, c, 0.4 * fade); runeBill(rn, rx, ry, rh, 0.34, c, fade); }
     },
     foresight(b, c, fade, gh, r, hh) { // Foresight: the seer's eye above the head, one blue orb per quickened spell
       const bl = 0.75 + 0.25 * Math.sin(time * 3);
       const eh = gh + hh * 0.9 + 0.15; under(r * 1.1, 0.2 * fade);
-      bill(BN, 'glow', P.x, P.y, eh, 0.6, 0.45, 0, lc('#06101c'), 0.45 * fade); bill(BA, 'glow', P.x, P.y, eh, 0.75, 0.55, 0, c, 0.45 * fade); bill(BA, 'eye', P.x, P.y, eh, 0.46, 0.46 * bl, 0, c, fade);
-      ground(GA, 'ringDash', P.x, P.y, gh, r, -time * 0.4, c, 0.6 * fade);
+      bill(BN, 'glow', AH.x, AH.y, eh, 0.6, 0.45, 0, lc('#06101c'), 0.45 * fade); bill(BA, 'glow', AH.x, AH.y, eh, 0.75, 0.55, 0, c, 0.45 * fade); bill(BA, 'eye', AH.x, AH.y, eh, 0.46, 0.46 * bl, 0, c, fade);
+      ground(GA, 'ringDash', AH.x, AH.y, gh, r, -time * 0.4, c, 0.6 * fade);
       orbit(Math.max(0, Math.min(6, b.count | 0)), 0.9, gh + hh * 0.5, 1.2, 'core', 0.16, c, fade, 0.6);
     },
     sight(b, c, fade, gh, r, hh) {    // Völva's Sight: the three known bolts' sparks circling, waiting to be loosed
       under(r * 1.1, 0.2 * fade);
-      ground(GA, 'boltCircle', P.x, P.y, gh, r, time * 0.2, c, 0.7 * fade);
-      runeGround('ᛞ', P.x, P.y, gh + 0.01, r * 0.35, c, 0.7 * fade);
-      const cs = SIGHTC; for (let i = 0; i < 3; i++) { const an = time * 1.5 + i * 2.094, x = P.x + Math.cos(an) * 0.95, y = P.y + Math.sin(an) * 0.95, h = gh + hh * 0.45 + Math.sin(time * 3 + i) * 0.08, cc = lc(cs[i]);
+      ground(GA, 'boltCircle', AH.x, AH.y, gh, r, time * 0.2, c, 0.7 * fade);
+      runeGround('ᛞ', AH.x, AH.y, gh + 0.01, r * 0.35, c, 0.7 * fade);
+      const cs = SIGHTC; for (let i = 0; i < 3; i++) { const an = time * 1.5 + i * 2.094, x = AH.x + Math.cos(an) * 0.95, y = AH.y + Math.sin(an) * 0.95, h = gh + hh * 0.45 + Math.sin(time * 3 + i) * 0.08, cc = lc(cs[i]);
         bill(BA, 'glow', x, y, h, 0.45, 0.45, 0, cc, 0.8 * fade); bill(BA, 'core', x, y, h, 0.16, 0.16, 0, WHITE, fade); }
     },
     harmonize(b, c, fade, gh, r, hh) { // Harmonize: two staves weaving, a note of each colour chasing the other
       under(r * 1.2, 0.2 * fade);
-      ground(GA, 'ringDash', P.x, P.y, gh, r * 1.15, time * 0.5, c, 0.75 * fade);
-      ground(GA, 'ringDash', P.x, P.y, gh + 0.005, r * 0.9, -time * 0.5, lc('#9fd8ff'), 0.7 * fade);
-      for (let i = 0; i < 2; i++) { const an = time * 1.6 + i * 3.1416, x = P.x + Math.cos(an) * r * 1.15, y = P.y + Math.sin(an) * r * 1.15, h = gh + 0.6 + Math.sin(time * 4 + i * 3) * 0.2, cc = i ? lc('#9fd8ff') : c;
+      ground(GA, 'ringDash', AH.x, AH.y, gh, r * 1.15, time * 0.5, c, 0.75 * fade);
+      ground(GA, 'ringDash', AH.x, AH.y, gh + 0.005, r * 0.9, -time * 0.5, lc('#9fd8ff'), 0.7 * fade);
+      for (let i = 0; i < 2; i++) { const an = time * 1.6 + i * 3.1416, x = AH.x + Math.cos(an) * r * 1.15, y = AH.y + Math.sin(an) * r * 1.15, h = gh + 0.6 + Math.sin(time * 4 + i * 3) * 0.2, cc = i ? lc('#9fd8ff') : c;
         bill(BA, 'glow', x, y, h, 0.34, 0.34, 0, cc, 0.35 * fade); bill(BA, 'note', x, y, h, 0.26, 0.26, Math.sin(time * 3 + i) * 0.3, cc, fade); }
     },
     assumptio(b, c, fade, gh, r, hh) { // Assumptio: a Valkyrie's mantle, a pale rose shell and feathers of light drifting down
-      sphere(P.x, gh + hh * 0.48, P.y, Math.max(0.8, r * 0.85), hh * 0.62, '#ffd8f0', 0.28 * fade * (0.85 + 0.15 * Math.sin(time * 2)), 3);
-      ground(GA, 'wardRing', P.x, P.y, gh, r, time * 0.15, c, 0.4 * fade);
-      for (let i = 0; i < 4; i++) { const ph = (time * 0.35 + i / 4) % 1, an = i * 1.9 + Math.floor(time * 0.35 + i / 4) * 2.3, x = P.x + Math.cos(an) * 0.6, y = P.y + Math.sin(an) * 0.6;
+      sphere(AH.x, gh + hh * 0.48, AH.y, Math.max(0.8, r * 0.85), hh * 0.62, '#ffd8f0', 0.28 * fade * (0.85 + 0.15 * Math.sin(time * 2)), 3);
+      ground(GA, 'wardRing', AH.x, AH.y, gh, r, time * 0.15, c, 0.4 * fade);
+      for (let i = 0; i < 4; i++) { const ph = (time * 0.35 + i / 4) % 1, an = i * 1.9 + Math.floor(time * 0.35 + i / 4) * 2.3, x = AH.x + Math.cos(an) * 0.6, y = AH.y + Math.sin(an) * 0.6;
         bill(BA, 'shard', x + Math.sin(ph * 9 + i) * 0.12, y, gh + hh * 1.15 * (1 - ph), 0.07, 0.2, Math.sin(ph * 7 + i) * 0.6, c, Math.sin(ph * Math.PI) * 0.8 * fade); }
     },
     einherjar(b, c, fade, gh, r, hh) { // Einherjar's Call: the called dead circling you as soul fire, a golden war-ring
-      ground(GA, 'runeCircle', P.x, P.y, gh, r, -time * 0.2, c, 0.35 * fade);
-      ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.1 * fade);
-      if (!fbLoop('soul_wisps', P.x, P.y, gh, 0.9, WHITE, 0.8 * fade, 0, 0)) orbit(3, 0.8, gh + hh * 0.5, 1.4, 'core', 0.16, lc('#7affb4'), 0.9 * fade, 0.5);
+      ground(GA, 'runeCircle', AH.x, AH.y, gh, r, -time * 0.2, c, 0.35 * fade);
+      ground(GA, 'glow', AH.x, AH.y, gh, r * 1.1, 0, c, 0.1 * fade);
+      if (!fbLoop('soul_wisps', AH.x, AH.y, gh, 0.9, WHITE, 0.8 * fade, 0, 0)) orbit(3, 0.8, gh + hh * 0.5, 1.4, 'core', 0.16, lc('#7affb4'), 0.9 * fade, 0.5);
     },
     bladestop(b, c, fade, gh, r, hh) { // Blade Stop: open hands, crossed blades of light before the chest, a tight pulsing ring
       const pul = 0.5 + 0.5 * Math.sin(time * 14);
-      bill(BA, 'glow', P.x, P.y, gh + hh * 0.55, 0.9, 0.9, 0, c, 0.3 * fade);
-      bill(BA, 'cross', P.x, P.y, gh + hh * 0.55, 0.55 + 0.05 * pul, 0.55 + 0.05 * pul, 0.785, c, (0.65 + 0.35 * pul) * fade);
-      ground(GA, 'ring', P.x, P.y, gh, r * (0.9 + 0.1 * pul), 0, c, 0.65 * fade);
+      bill(BA, 'glow', AH.x, AH.y, gh + hh * 0.55, 0.9, 0.9, 0, c, 0.3 * fade);
+      bill(BA, 'cross', AH.x, AH.y, gh + hh * 0.55, 0.55 + 0.05 * pul, 0.55 + 0.05 * pul, 0.785, c, (0.65 + 0.35 * pul) * fade);
+      ground(GA, 'ring', AH.x, AH.y, gh, r * (0.9 + 0.1 * pul), 0, c, 0.65 * fade);
     },
   };
   const SIGHTC = ['#ff7a2a', '#9fd8ff', '#fff6a0'];
   const SPHC = '#9fd0ff';
-  function drawSpheres() {
-    if (!P || P.dead || !(P.spheres > 0)) return;
-    const gh = groundH(P.x, P.y), hh = typeof headH === 'function' ? headH(P) * 0.8 : 1.3, n = P.spheres, c = lc(SPHC), R = 0.78;
+  function drawSpheres1() {
+    if (!AH || AH.dead || !(AH.spheres > 0)) return;
+    const gh = groundH(AH.x, AH.y), hh = typeof headH === 'function' ? headH(AH) * 0.8 : 1.3, n = AH.spheres, c = lc(SPHC), R = 0.78;
     for (let i = 0; i < n; i++) {
-      const w = 2.2, a = time * w + i / n * 6.2832, x = P.x + Math.cos(a) * R, y = P.y + Math.sin(a) * R, h = gh + hh + Math.sin(time * 3 + i) * 0.08;
+      const w = 2.2, a = time * w + i / n * 6.2832, x = AH.x + Math.cos(a) * R, y = AH.y + Math.sin(a) * R, h = gh + hh + Math.sin(time * 3 + i) * 0.08;
       bill(BA, 'glow', x, y, h, 0.55, 0.55, 0, c, 0.9); bill(BA, 'core', x, y, h, 0.22, 0.22, 0, WHITE, 1);
-      for (let k = 0; k < 6; k++) { const ak = a - k * 0.13; RP[k * 3] = P.x + Math.cos(ak) * R; RP[k * 3 + 1] = gh + hh + Math.sin((time - k * 0.13 / w) * 3 + i) * 0.08; RP[k * 3 + 2] = P.y + Math.sin(ak) * R; RW[k] = 0.2 * (1 - k / 6); RA[k] = 0.75 * (1 - k / 6); }
+      for (let k = 0; k < 6; k++) { const ak = a - k * 0.13; RP[k * 3] = AH.x + Math.cos(ak) * R; RP[k * 3 + 1] = gh + hh + Math.sin((time - k * 0.13 / w) * 3 + i) * 0.08; RP[k * 3 + 2] = AH.y + Math.sin(ak) * R; RW[k] = 0.2 * (1 - k / 6); RA[k] = 0.75 * (1 - k / 6); }
       ribbon(BA, 6, c);
     }
   }
 
+  // Every hero of the party (P first, as before), then the squad markers and hero status marks.
+  function drawAuras() { const H = heroList(); for (let i = 0; i < H.length; i++) { AH = H[i]; drawAuras1(); } AH = null; }
+  function drawSpheres() { const H = heroList(); for (let i = 0; i < H.length; i++) { AH = H[i]; drawSpheres1(); } AH = null; }
+  const _HLV = [];
+  function heroList() {   // the controlled hero, then the others (no allocation)
+    const H = typeof gfxHeroes === 'function' ? gfxHeroes() : null, C = ctrlHero(); _HLV.length = 0; if (C) _HLV.push(C);
+    if (H) for (let i = 0; i < H.length; i++) if (H[i] && H[i] !== C) _HLV.push(H[i]);
+    return _HLV;
+  }
+  /* Squad markers (only with 2+ heroes, so a party of one looks exactly as before): a subtle gold ring at the controlled
+     hero's feet (a slow dashed ring + faint glow), a small role pip under each ally (tank blue, healer green, melee red,
+     ranged yellow: hero.ai.role). Allies' status marks: Seidr hex (buffs.hexed) and weakened (buffs.weak /
+     hero.weak), the same looks as on monsters (the controlled hero has its buff bar). All quads of the existing batches: no extra draw. */
+  const ROLEC = { tank: '#5aa8ff', healer: '#6ae08a', melee: '#ff6a5a', ranged: '#ffd84a' };
+  function drawSquad() {
+    const H = heroList(); if (H.length < 2) { drawHeroMarks(H); return; }
+    for (let i = 0; i < H.length; i++) {
+      const h = H[i], gh = groundH(h.x, h.y) + 0.02, mt = VISMOUNT(h) ? 1.45 : 1;
+      if (i === 0) {   // heroList()[0] = the controlled hero
+        if (h.dead) continue;
+        const c = lc('#ffd070'), pul = 0.85 + 0.15 * Math.sin(time * 2.4);
+        ground(GA, 'glow', h.x, h.y, gh, 0.62 * mt, 0, c, 0.13 * pul);
+        ground(GA, 'ringDash', h.x, h.y, gh + 0.004, 0.5 * mt, time * 0.5, c, 0.42 * pul);
+      } else {
+        const role = h.ai && h.ai.role, col = ROLEC[role] || '#d8d0c0', c = lc(col), a = h.dead ? 0.35 : 1, r = 0.14 * (VISMOUNT(h) ? 1.3 : 1);
+        const oy = 0.34 * mt, px = h.x + Math.sin(cam.yaw) * oy, py = h.y + Math.cos(cam.yaw) * oy;   // just in front of the feet (toward the camera)
+        ground(GN, 'glow', px, py, gh, r * 1.9, 0, lc('#0c0a08'), 0.35 * a);
+        ground(GA, 'glow', px, py, gh + 0.003, r * 2.2, 0, c, 0.3 * a);
+        ground(GA, 'core', px, py, gh + 0.006, r, 0, c, 0.95 * a);
+      }
+    }
+    drawHeroMarks(H);
+  }
+  const VISMOUNT = h => { const v = VIS.get(h); return !!(v && v.mounted); };
+  function drawHeroMarks(H) {
+    for (let i = 1; i < H.length; i++) {   // allies only (H[0] = the controlled hero: its buff bar shows it; a party of one looks as before)
+      const h = H[i]; if (h.dead || !h.buffs) continue;
+      const hexed = h.buffs.hexed, weak = h.buffs.weak || h.weak > 0; if (!hexed && !weak) continue;
+      const gh = groundH(h.x, h.y) + 0.05, hh = typeof headH === 'function' ? headH(h) : 1.6, top = gh + hh + 0.5, pul = 0.75 + 0.25 * Math.sin(time * 5 + i);
+      if (weak) { const c = lc(COL_WEAK), x = h.x, y = h.y, hy = top + (hexed ? 0.45 : 0) + 0.05 * Math.sin(time * 2.2 + i);
+        bill(BN, 'glow', x, y, hy, 0.4, 0.4, 0, lc('#1a0604'), 0.45 * pul); bill(BA, 'glow', x, y, hy, 0.34, 0.34, 0, c, 0.3 * pul); bill(BA, 'brokenShield', x, y, hy, 0.3, 0.3, 0.12 * Math.sin(time * 1.7 + i), c, pul); }
+      if (hexed) { const c = lc(COL_HEX), ha = Math.min(1, (hexed.t || 1) * 1.5), br = 0.8 + 0.2 * Math.sin(time * 3.3 + i);
+        bill(BN, 'glow', h.x, h.y, top, 0.72, 0.72, 0, lc('#12041c'), 0.6 * ha); bill(BA, 'glow', h.x, h.y, top, 0.6, 0.6, 0, c, 0.45 * ha * br);
+        bill(BA, 'seidr', h.x, h.y, top, 0.48, 0.48, Math.sin(time * 0.9 + i) * 0.35, c, 0.95 * ha * br);
+        ground(GA, 'hex', h.x, h.y, gh + 0.01, 0.5, -time * 0.8 + i, c, 0.55 * ha); }
+    }
+  }
   /* ---------- projectiles ---------- */
   const TRAIL = new WeakMap(), PK3 = { fire: 1, ice: 1, soul: 1, holy: 1, bolt: 1, sphere: 1, raven: 1, spear: 1 };
   V.handles = kind => V.enabled && V.ready && !!PK3[kind];
@@ -1885,7 +2241,7 @@ const VFX = (() => {
     for (let i = 0; i < I.length; i++) {
       const e = I[i], r = e.r, d = r.d; e.t += fdt * e.spd;
       const f = Math.floor(e.t * d.fps), loop = d.loop && e.dur > 0;
-      if (!r.ok || (loop ? e.t >= e.dur : f >= r.n) || (e.fo && e.fo.dead && e.fo !== P)) { e.r = null; e.fo = null; FB.free.push(e); continue; }
+      if (!r.ok || (loop ? e.t >= e.dur : f >= r.n) || (e.fo && e.fo.dead && !isHeroE(e.fo))) { e.r = null; e.fo = null; FB.free.push(e); continue; }
       I[n++] = e;
       let a = e.a; if (loop) a *= Math.min(1, e.t / 0.15, (e.dur - e.t) / 0.3);
       let x = e.x, y = e.y, h = e.h; if (e.fo) { x += e.fo.x; y += e.fo.y; h += groundH(x, y) + (e.fo.z || 0) / PXU; }
@@ -1947,7 +2303,7 @@ const VFX = (() => {
       FB_MET.push(f.x, f.y);
     } else if (k === 'pillar') {
       const e = f.e; if (!e || e.x === undefined) return;
-      const fo = e === P ? P : null, col = String(f.col || '#ffffff').toLowerCase(), x = fo ? 0 : e.x, y = fo ? 0 : e.y, h = fo ? 0 : groundH(e.x, e.y);
+      const fo = isHeroE(e) ? e : null, col = String(f.col || '#ffffff').toLowerCase(), x = fo ? 0 : e.x, y = fo ? 0 : e.y, h = fo ? 0 : groundH(e.x, e.y);
       if (col === '#ffd76a') { if (fbSpawn('levelup', x, y, h, fbo(1, null, 1, 0, false, 0, fo))) f._fb = 1; return; }
       if (col === '#7fe0d4') { if (fbSpawn('job_levelup', x, y, h, fbo(1, null, 1, 0, false, 0, fo))) f._fb = 1; return; }
       if (col === '#f0d070') { if (fbSpawn('job_levelup', x, y, h, fbo(1.1, lc('#ffe8a0'), 1, 0, false, 0, fo))) { fbSpawn('holy_column', x, y, h, fbo(1.1, null, 1, 0, false, 0, fo)); f._fb = 1; } return; }
@@ -1979,7 +2335,7 @@ const VFX = (() => {
     for (let i = 0; i < fxs.length; i++) { const f = fxs[i]; if (f._fs) continue; f._fs = 1; fbFx(f); }
     for (let i = 0; i < floats.length; i++) {
       const f = floats[i]; if (f._fs) continue; f._fs = 1;
-      if (f.kind === 'heal' && !f.small && time - fbHealT > 0.35) { fbHealT = time; const me = P && Math.hypot(f.x - P.x, f.y - P.y) < 0.6; fbSpawn('heal_sparkles', me ? 0 : f.x, me ? 0 : f.y, me ? 0 : groundH(f.x, f.y), fbo(0.9, null, 1, 0, false, 1, me ? P : null)); }
+      if (f.kind === 'heal' && !f.small && time - fbHealT > 0.35) { fbHealT = time; const me = heroAt(f.x, f.y, 0.6); fbSpawn('heal_sparkles', me ? 0 : f.x, me ? 0 : f.y, me ? 0 : groundH(f.x, f.y), fbo(0.9, null, 1, 0, false, 1, me)); }
       else if (f.kind === 'sp' && f.txt && f.txt[0] === '+' && time - fbSoulT > 0.5) { fbSoulT = time; fbSpawn('soul_wisps', 0, 0, 0.15, fbo(0.85, null, 1, 0, false, 1.1, P)); }
     }
     // projectiles that left projs[] this frame at their target; telegraphs that went off (not cancelled)
@@ -1992,15 +2348,20 @@ const VFX = (() => {
     FB_PZ.length = 0; for (let i = 0; i < zones.length; i++) if (zones[i].kind === 'thurisaz') FB_PZ.push(zones[i]);
     // freezes that ended
     FB_FROZE.forEach(m => { if (m.dead || !(m.frozen > 0)) { FB_FROZE.delete(m); fbSpawn('ice_shatter', m.x, m.y, groundH(m.x, m.y), fbo(0.62)); } });
-    // the hero's dodge, footfalls on snow
+    // the heroes' dodges (footfalls on snow: V.step)
     if (P && started) {
-      const dg = P.dodgeT > 0;
-      if (dg && !fbDodge) { const sr = (P.fx || 0) * SPRF.rx + (P.fy || 0) * SPRF.ry; fbSpawn(onSnow() ? 'snow_puff' : 'dodge_puff', P.x, P.y, groundH(P.x, P.y), fbo(0.95, null, 0.9, 0, sr < 0)); }
-      fbDodge = dg;
+      const H = heroList();
+      for (let i = 0; i < H.length; i++) {
+        const h = H[i], hs = h === P ? null : typeof heroState === 'function' ? heroState(h) : null, was = hs ? hs.dodge : fbDodge, dg = h.dodgeT > 0;
+        if (dg && !was) { const sr = (h.fx || 0) * SPRF.rx + (h.fy || 0) * SPRF.ry; fbSpawn(onSnow() ? 'snow_puff' : 'dodge_puff', h.x, h.y, groundH(h.x, h.y), fbo(0.95, null, 0.9, 0, sr < 0)); }
+        if (hs) hs.dodge = dg; else fbDodge = dg;
+      }
     }
   }
+  // The hero standing on (x, y) within r (heal sparkles follow it), or null. P first.
+  function heroAt(x, y, r) { const H = heroList(); for (let i = 0; i < H.length; i++) if (Math.hypot(x - H[i].x, y - H[i].y) < r) return H[i]; return null; }
   V.step = (e, gh, mounted) => {   // sprMotion footfall hook: powder kicked up on snow maps
-    if (e !== P || !onSnow() || time - fbStepT < 0.18) return; fbStepT = time;
+    if (!isHeroE(e) || !onSnow() || time - fbStepT < 0.18) return; fbStepT = time;
     fbSpawn('snow_puff', e.x - (e.fx || 0) * 0.15, e.y - (e.fy || 0) * 0.15, gh, fbo(mounted ? 0.55 : 0.38, null, 0.85));
   };
   function fbAmbient() {
@@ -2030,10 +2391,13 @@ const VFX = (() => {
     }
   }
   // The hero's cast circle (replaces the flat decal of syncDecals once the sheet is in)
-  function fbCast() {
-    if (!P || !P.casting || P.dead || typeof SKILLS === 'undefined' || !SKILLS[P.casting.id]) return;
-    const col = (typeof ELCOL !== 'undefined' && ELCOL[SKILLS[P.casting.id].el]) || '#ffffff';
-    fbLoop('rune_circle', P.x, P.y, groundH(P.x, P.y) + 0.07, 0.5 * (1 + 0.04 * Math.sin(time * 6)), lc(col), 0.95, time * 1.4, 0);
+  function fbCast() {   // every hero casting (squad mode)
+    const H = heroList();
+    for (let i = 0; i < H.length; i++) {
+      const h = H[i]; if (!h.casting || h.dead || typeof SKILLS === 'undefined' || !SKILLS[h.casting.id]) continue;
+      const col = (typeof ELCOL !== 'undefined' && ELCOL[SKILLS[h.casting.id].el]) || '#ffffff';
+      fbLoop('rune_circle', h.x, h.y, groundH(h.x, h.y) + 0.07, 0.5 * (1 + 0.04 * Math.sin(time * 6)), lc(col), 0.95, time * 1.4, i);
+    }
   }
 
   /* ---------- per frame ---------- */
@@ -2063,7 +2427,7 @@ const VFX = (() => {
     fbEvents();
     for (const z of zones) drawZone(z);
     for (let i = V.extra.length - 1; i >= 0; i--) { const X = V.extra[i]; X.t += dt; if (X.t >= X.dur) { V.extra.splice(i, 1); continue; } if (X.zone) { X.zone.t = X.t; drawZone(X.zone); } }
-    drawShapes(); drawAuras(); drawSpheres(); drawProjs(); drawFx(); drawMobs(); drawSpots();
+    drawShapes(); drawAuras(); drawSpheres(); drawSquad(); drawProjs(); drawFx(); drawMobs(); drawSpots();
     fbTeles(); fbCast(); fbAmbient(); fbPending(); fbDrawInst();
     if (++FB.sweep % 120 === 0) fbSweep();
     for (let i = sphN; i < SPH.length; i++) SPH[i].visible = false;
@@ -2265,6 +2629,38 @@ function drawPlates(sc, a, b) {
     if (P.stamina < 100) gauge(x, y + 11.5, wd, 2, P.stamina / 100, P.stamina < 22 ? '#ffb070' : '#fff080', P.stamina < 22 ? '#e0501a' : '#d8b020');
     if (P.casting) { const t = projTo(b, P.x, P.y, gh + headH(P) + 0.35), k = 1 - P.castT / P.castMax; gauge(Math.round(t[0] - 30), Math.round(t[1] - 3), 60, 5, k, '#b8ff9a', '#3cb83c'); }
   }
+  // squad mode: every other hero's HP / SP bars (under the feet, like yours), its name under them, its cast bar
+  if (P && started && typeof gfxHeroes === 'function') { const Hs = gfxHeroes(); if (Hs.length > 1) for (let i = 0; i < Hs.length; i++) if (Hs[i] && Hs[i] !== P) drawHeroPlate(Hs[i], sc, a, b); }
+}
+// Max HP / SP of a hero from its stat block (heroStatsOf: core's heroStats, a lookup), else hero.maxhp / maxsp, else
+// its current value (a full bar).
+function heroMax(h, k) {
+  const st = heroStatsOf(h);
+  return (st && st[k]) || h[k] || Math.max(1, k === 'maxhp' ? h.hp || 1 : h.sp || 1);
+}
+function drawHeroPlate(h, sc, a, b) {
+  const gh = groundH(h.x, h.y); projTo(a, h.x, h.y, gh); if (a[2] > 1 || a[0] < -60 || a[0] > W + 60 || a[1] < -60 || a[1] > H + 80) return;
+  const wd = Math.round(40 * sc), x = Math.round(a[0] - wd / 2), y = Math.round(a[1] + 9 * sc);
+  if (!h.dead) {
+    const hk = clamp(h.hp / heroMax(h, 'maxhp'), 0, 1);
+    gauge(x, y, wd, 3.5, hk, hk < 0.25 ? '#ff6a5a' : '#8cf07a', hk < 0.25 ? '#c81c1c' : '#26a832', lagOf(h, hk));
+    gauge(x, y + 5.5, wd, 2.5, clamp(h.sp / heroMax(h, 'maxsp'), 0, 1), '#8ac4ff', '#2a6ae0');
+    if (h.casting && h.castMax > 0) { const t = projTo(b, h.x, h.y, gh + headH(h) + 0.35), k = 1 - h.castT / h.castMax; gauge(Math.round(t[0] - 26), Math.round(t[1] - 3), 52, 4, k, '#b8ff9a', '#3cb83c'); }
+  }
+  if (h.name) label(h.name, a[0], y + (h.dead ? 6 : 17) * sc, h.dead ? '#a09890' : '#d8f0c8', 11);
+}
+/* Speech-bubble anchor for the UI team (squad chat): heroScreenPos(hero, out) fills out = [x, y, ndcZ] in the same CSS
+   pixel space as proj() / projTo(), at a point above the hero's head (hair, hat and mount included: headH uses the
+   sheet's visible height), which is above the name and HP bars (those are drawn under the feet). Returns out, or null
+   when the hero cannot be seen (game not started, behind the camera, or more than 40 px off screen). No allocation
+   when out is given. */
+function heroScreenPos(hero, out) {
+  if (!hero || typeof started === 'undefined' || !started || typeof map === 'undefined' || !map) return null;
+  out = out || [0, 0, 0];
+  const gh = groundH(hero.x, hero.y), hh = typeof headH === 'function' ? headH(hero) : 1.6;
+  projTo(out, hero.x, hero.y, gh + (hero.z || 0) / PXU + hh + 0.45);
+  if (!(out[2] <= 1) || out[0] < -40 || out[0] > W + 40 || out[1] < -40 || out[1] > H + 40) return null;
+  return out;
 }
 function drawFloats(sc, a) {
   // RO-style damage numbers: pop, arc to the side, bounce; crits get a burst.
@@ -2325,6 +2721,7 @@ function drawMinimap() {
   for (const n of map.npcs) dot(n.x, n.y, '#6aa8ff', 3.5);
   for (const wp of map.warps) dot(wp.x + 0.5, wp.y + 0.5, wp.lock === 'gate' && !P.flags.gate ? '#b03020' : '#4ad0ff', 4);
   for (const d of drops) if (d.lost) dot(d.x, d.y, '#ff2a2a', 4);
+  if (typeof gfxHeroes === 'function') { const Hs = gfxHeroes(); if (Hs.length > 1) for (let i = 0; i < Hs.length; i++) { const h = Hs[i]; if (h && h !== P) dot(h.x, h.y, h.dead ? '#8a8078' : '#7ae07a', 3.2); } }   // squad mode: allies
   const px = ox + P.x * s, py = oy + P.y * s, a = Math.atan2(P.fy || 0, P.fx || 1);
   g.save(); g.translate(px, py); g.rotate(a); g.fillStyle = '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -5); g.lineTo(-2, 0); g.lineTo(-5, 5); g.closePath(); g.fill(); g.stroke(); g.restore();
 }

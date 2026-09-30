@@ -149,8 +149,10 @@ img.ic{display:block;width:32px;height:32px;object-fit:contain;pointer-events:no
 .dc-a span{font:800 9.5px var(--ui);padding:1px 6px;border-radius:8px;background:#e8edf6;border:1px solid #b8c3da;color:#34426a}
 .dc-ok{color:var(--good);font-weight:800;margin-top:3px}
 .dc-b{color:#a0401a;font-weight:700;margin-top:3px;font-size:10.5px;line-height:1.3}
-#chat{position:absolute;left:calc(8px + env(safe-area-inset-left,0px));bottom:calc(8px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100vw - 16px));height:118px;overflow:hidden;font-size:11.5px;line-height:1.42;padding:6px 9px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;background:linear-gradient(rgba(12,15,26,.28),rgba(12,15,26,.62));border:1px solid rgba(170,186,220,.25);border-radius:5px;pointer-events:none!important;color:#fff;-webkit-mask-image:linear-gradient(transparent,#000 22px);mask-image:linear-gradient(transparent,#000 22px)}
-#chat div{text-shadow:0 1px 1px #000;flex:none}
+#chatbox{position:absolute;left:calc(8px + env(safe-area-inset-left,0px));bottom:calc(8px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100vw - 16px));display:flex;flex-direction:column;pointer-events:none!important}
+#chatbox>*{pointer-events:none}
+#chat,#sqlog{position:relative;width:100%;height:118px;overflow:hidden;font-size:11.5px;line-height:1.42;padding:6px 9px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;background:linear-gradient(rgba(12,15,26,.28),rgba(12,15,26,.62));border:1px solid rgba(170,186,220,.25);border-radius:5px;pointer-events:none!important;color:#fff;-webkit-mask-image:linear-gradient(transparent,#000 22px);mask-image:linear-gradient(transparent,#000 22px)}
+#chat div,#sqlog>div{text-shadow:0 1px 1px #000;flex:none}
 #chat .sys{color:#ffffff}#chat .loot{color:#c8f0a8}#chat .lvl{color:#ffe070}#chat .warn{color:#ffc070}#chat .bad{color:#ff8a80}#chat .npc{color:#a8d0ff}#chat .boss{color:#ffb08a;font-style:italic}#chat .rare{color:#ffe070}#chat .unique{color:#ffb050}#chat .magic{color:#9ab8ff}#chat .card{color:#e0c4ff}#chat .common{color:#fff}#chat .key{color:#ffc090}#chat .quest{color:#ffd890}
 #dock{position:absolute;left:50%;bottom:calc(8px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;flex-direction:column;align-items:stretch;gap:5px;pointer-events:none}
 #dock>*{pointer-events:auto}
@@ -204,7 +206,8 @@ img.ic{display:block;width:32px;height:32px;object-fit:contain;pointer-events:no
 #dockvit .bar{height:14px;border-color:#0a0d16}
 #dockvit .stat.st{grid-column:1 / -1}
 #dockvit .bar.st{height:5px}
-#hud.act #chat{opacity:.85;height:104px}
+#hud.act #chat,#hud.act #sqlog{opacity:.85;height:104px}
+#hud.act #sqlog{opacity:.92}
 #hud.act #tip{bottom:calc(112px + env(safe-area-inset-bottom,0px))}
 #hud.act #hotbar{background:var(--glass);border-color:var(--glassb);box-shadow:0 4px 12px rgba(0,0,0,.35)}
 #hud.act .hs{background:radial-gradient(90% 90% at 50% 35%,#3b4560,#1b2031);border-color:#4d5976;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
@@ -485,7 +488,7 @@ button.fc.cp:hover{background:#eaf0ff}
 #qtoast div{font:800 12.5px var(--ui);color:#fff;padding:4px 14px;border-radius:12px;background:rgba(16,20,34,.76);border:1px solid rgba(255,220,150,.35);text-shadow:0 1px 2px #000;animation:qtoast 2.6s ease forwards;white-space:nowrap}
 #qtoast div.obj{color:#c8f0a8}#qtoast div.new{color:#ffe08a}#qtoast div.ready{color:#9ae0ff}
 @keyframes qtoast{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
-#game.cine #qtrack,#game.cine #tip,#game.cine #dock,#game.cine #buffs,#game.cine #tframe{opacity:0;transition:opacity .3s}
+#game.cine #qtrack,#game.cine #tip,#game.cine #dock,#game.cine #buffs,#game.cine #tframe,#game.cine #party,#game.cine #sqrow{opacity:0;transition:opacity .3s}
 #title,#story,#ending{position:absolute;inset:0;z-index:70;display:grid;place-items:center;padding:16px}
 #title{background:radial-gradient(ellipse at 50% 45%,rgba(10,14,24,0),rgba(6,8,14,.6) 80%)}
 .t-wrap{text-align:center;max-width:420px;width:100%}
@@ -531,9 +534,127 @@ button.fc.cp:hover{background:#eaf0ff}
 @keyframes rbWord{0%{opacity:0;letter-spacing:.42em}100%{opacity:1;letter-spacing:.14em}}
 @keyframes rbMote{0%{transform:translateY(0);opacity:0}12%{opacity:.85}100%{transform:translateY(-92vh);opacity:0}}
 
+/* ---------- Squad mode (UI round 9): party frames, squad chat, bubbles, tactics, recruiting, member tabs ---------- */
+#party{font-size:11px}
+#party>.rtb #pcount{font-weight:700;font-size:10px;color:#e8eefc;opacity:.9}
+#party .rbd{padding:5px 5px 6px}
+#pfr{display:grid;gap:3px}
+.pf{position:relative;display:grid;grid-template-columns:34px 1fr;gap:6px;align-items:center;padding:3px 5px 3px 3px;border:1px solid #c4cde0;border-radius:4px;background:linear-gradient(#ffffff,#f1f4f9);cursor:pointer;box-shadow:inset 0 1px 0 #fff}
+.pf:hover{border-color:#3a5cb0;box-shadow:0 0 0 1px #8aa2dc}
+.pf.me{border-color:#d0a040;background:linear-gradient(#fffcf2,#fff1d0);box-shadow:0 0 0 1px #f0c870,inset 3px 0 0 #e0a030}
+.pfp{width:34px;height:34px;border-radius:4px}
+.pfp .pt{inset:-1px -2px 0}
+.pfk{position:absolute;left:1px;top:1px;z-index:3;font:800 8.5px/11px var(--ui);padding:0 3px;border-radius:3px;background:rgba(20,26,44,.82);color:#fff;pointer-events:none}
+.pf.me .pfk{background:linear-gradient(#ffd878,#d09018);color:#2a1800}
+.pfa{position:absolute;right:1px;bottom:1px;z-index:3;min-width:9px;padding:0 2px;font:800 8.5px/11px var(--ui);text-align:center;border-radius:3px;background:#c8281c;color:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4);pointer-events:none}
+.pfd{position:absolute;inset:0;z-index:2;display:grid;place-items:end center;padding-bottom:3px;font:800 8.5px var(--ui);letter-spacing:.06em;text-transform:uppercase;color:#ffd0c4;background:rgba(60,8,4,.5);text-shadow:0 1px 1px #000}
+.pfm{display:grid;gap:2px;min-width:0}
+.pfn{display:flex;align-items:center;gap:4px;min-width:0;line-height:13px}
+.pfn b{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;color:#1c2436}
+.pfn small{margin-left:auto;flex:none;color:var(--dim);font-size:9.5px;font-variant-numeric:tabular-nums}
+.pfb{display:flex;gap:2px;flex:none}
+.pfb i{width:6px;height:6px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.5)}
+.rl{flex:none;display:inline-grid;place-items:center;width:13px;height:13px;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.rl svg{width:9px;height:9px;display:block}
+.rl-tank{background:#3a6ad0}.rl-healer{background:#23955a}.rl-melee{background:#c43e28}.rl-ranged{background:#b87a0c}
+.pf .bar{height:10px}.pf .bar em{font-size:8.5px}
+.pf .bar.sp{height:4px;border-width:1px}.pf .bar.sp i{box-shadow:none}
+.pfx{font-size:10px;line-height:14px;color:#b0301c;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pf.dead .pfp .pt{filter:grayscale(1) brightness(.55)}
+.pf.dead .pfn b{color:var(--faint)}
+.pf.aggro .pfp{box-shadow:0 0 0 1px #e04030,0 0 6px rgba(224,64,48,.55)}
+.pff{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-top:5px}
+.pff .btn{font-size:10px;padding:2px 4px;display:flex;justify-content:center;align-items:center;white-space:nowrap}
+#hud.act #party{background:var(--glass);border-color:var(--glassb);color:var(--gink);box-shadow:0 6px 16px rgba(0,0,0,.35)}
+#hud.act #party>.rtb{display:none}
+#hud.act .pf{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);box-shadow:none}
+#hud.act .pf:hover{border-color:#8aa0d8}
+#hud.act .pf.me{background:linear-gradient(90deg,rgba(224,160,48,.24),rgba(224,160,48,.06));border-color:rgba(240,200,112,.75);box-shadow:inset 3px 0 0 #e0a030}
+#hud.act .pfn b{color:#fff}#hud.act .pfn small{color:var(--gdim)}#hud.act .pf.dead .pfn b{color:#8a93a8}#hud.act .pfx{color:#ff9a86}
+#hud.act .pff .btn{background:linear-gradient(#3a4460,#262d42);color:#e8edf8;border-color:#56627e;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+#hud.act .pff kbd{color:#9aa6c4}
+#hud.act:not(.menus) #party:not(:hover):not(:focus-within) .pff{display:none}
+/* squad chat: tabs over the log, a status pill, the input row */
+#ctabs{display:flex;align-items:flex-end;gap:2px;padding-left:4px}
+#ctabs>*,#sqrow>*{pointer-events:auto}
+.ctab{position:relative;font:800 10px/1 var(--ui);letter-spacing:.03em;padding:4px 10px 4px;color:#c8d0e4;background:rgba(12,15,26,.5);border:1px solid rgba(170,186,220,.25);border-bottom:0;border-radius:4px 4px 0 0;cursor:pointer;text-shadow:0 1px 1px #000}
+.ctab:hover{color:#fff}
+.ctab.on{color:#fff;background:rgba(12,15,26,.72);box-shadow:inset 0 2px 0 #d9b565}
+#sqnew{position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:#ff8a2a;box-shadow:0 0 5px #ff8a2a}
+#sqpill{margin:0 0 3px auto;display:flex;align-items:center;gap:4px;font:800 9.5px/1 var(--ui);padding:3px 7px;border-radius:9px;background:rgba(12,15,26,.7);border:1px solid rgba(170,186,220,.25);color:#c8d0e4;white-space:nowrap}
+#sqpill i{width:6px;height:6px;border-radius:50%;background:#8a93a8}
+#sqpill.on i{background:#5ad07a;box-shadow:0 0 5px #5ad07a}#sqpill.fb i{background:#e0a040}#sqpill.err i{background:#ff6a5a}#sqpill.off i{background:#8a93a8}
+#sqpill.busy i{background:#7cb8ff;box-shadow:0 0 6px #7cb8ff;animation:sqbusy .9s ease-in-out infinite}
+@keyframes sqbusy{50%{opacity:.25}}
+#sqlog{line-height:1.38}
+#sqlog>div{display:grid;grid-template-columns:18px 1fr;gap:5px;align-items:start;margin-top:2px}
+#sqlog .sqp{width:18px;height:18px;border-radius:50%;margin-top:1px;border-width:1px}
+#sqlog .sqp .pt{inset:-1px -2px 0;-webkit-mask-image:none;mask-image:none}
+#sqlog .sqs{grid-template-columns:1fr;color:#b8c0d4;font-style:italic}
+#sqlog b{font-weight:800}
+#chat .party b{font-weight:800}
+#sqrow{display:flex;gap:3px;margin-top:3px}
+#sqin{flex:1;min-width:0;font:700 12px var(--ui);padding:5px 8px;color:#fff;background:rgba(8,10,18,.84);border:1px solid rgba(170,186,220,.4);border-radius:4px;outline:none;user-select:text;-webkit-user-select:text}
+#sqin:focus{border-color:#d9b565;box-shadow:0 0 0 1px rgba(217,181,101,.5)}
+#sqin::placeholder{color:#8a93a8}
+#sqsend{border-radius:4px;border-bottom:1px solid rgba(170,186,220,.25);padding:4px 10px}
+/* speech bubbles over heroes (positioned per frame by js/ui.js) */
+#bubbles{position:absolute;inset:0;overflow:hidden;pointer-events:none!important}
+.bub{position:absolute;left:0;top:0;width:max-content;max-width:210px;padding:4px 9px 5px;background:rgba(252,253,255,.95);border:1px solid #55678f;border-radius:9px;font:12px/1.35 var(--ui);color:#1f2638;box-shadow:0 3px 10px rgba(0,0,0,.35);will-change:transform;transition:opacity .35s}
+.bub::after{content:'';position:absolute;left:50%;bottom:-6px;width:9px;height:9px;margin-left:-5px;background:#fcfdff;border-right:1px solid #55678f;border-bottom:1px solid #55678f;transform:rotate(45deg)}
+.bub b{display:block;font:800 10px/1.3 var(--ui);letter-spacing:.02em}
+.bub.out{opacity:0}
+/* member switcher (Status, Equipment, Skills, Items) */
+.mtabs{display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin:-2px 0 8px;padding-bottom:7px;border-bottom:1px solid #d3dae8}
+.mtl{font:800 9.5px var(--ui);color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-right:3px}
+.mtab{display:flex;align-items:center;gap:5px;padding:2px 8px 2px 2px}
+.mtab .mtp{flex:none;width:22px;height:22px;border-radius:3px}
+.mtab .mtp .pt{inset:-1px -2px 0}
+.mtab .mtn{max-width:66px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtab.me .mtn::after{content:' ★';color:#d09018}
+.mtab.on.me .mtn::after{color:#ffe08a}
+.mnote{font-size:11px;color:#7a4a00;background:#fff8e0;border:1px solid #e0c870;border-radius:4px;padding:3px 7px;margin:-3px 0 7px}
+/* tactics */
+.tac{display:grid;grid-template-columns:46px 1fr;gap:5px 10px;padding:7px 9px 8px 7px;margin-bottom:6px;background:#fff;border:1px solid #c4cde0;border-radius:5px}
+.tac.sel{border-color:#e0a040;box-shadow:0 0 0 1px #f0c070}
+.tac.all{background:linear-gradient(#f7f9fd,#ebeff7)}
+.tac>.well{width:46px;height:54px}
+.tac.all>.tall{width:46px;height:46px;display:grid;place-items:center;font:400 22px var(--rune);color:#6a5a38;background:radial-gradient(#fff,#e2e7f1);border:1px solid #c4cde0;border-radius:5px}
+.tach{display:flex;align-items:center;gap:6px;margin-bottom:4px;min-width:0}
+.tach b{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tach span{color:var(--dim);font-size:11px;white-space:nowrap}
+.tach em{margin-left:auto;font-style:normal;font-size:10.5px;font-weight:800;color:var(--bad)}
+.tacg{display:grid;grid-template-columns:54px 1fr;gap:4px 6px;align-items:center}
+.tacg>span{font:800 9px var(--ui);text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
+.seg{display:flex;flex-wrap:wrap}
+.seg .btn{border-radius:0;margin-left:-1px;padding:2px 8px;font-size:10.5px}
+.seg .btn:first-child{border-radius:3px 0 0 3px;margin-left:0}.seg .btn:last-child{border-radius:0 3px 3px 0}
+.seg .btn.on{position:relative;z-index:1}
+.seg .btn.mix{background:linear-gradient(#eef2fb,#d8e1f3);border-color:#6f8ad2}
+/* recruiting (a dialog panel) */
+.rparty{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:0 0 8px}
+.rparty .mtab{cursor:default;background:#fff;border:1px solid #c4cde0;border-radius:4px;font:700 11px var(--ui)}
+.rcg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rc{display:grid;grid-template-columns:60px 1fr;gap:3px 9px;padding:6px 8px 7px 6px;background:#fff;border:1px solid #c4cde0;border-radius:5px;min-width:0}
+.rc.in{border-color:#7ab870;background:linear-gradient(#f6fcf4,#eef8ea)}
+.rc>.well{width:60px;height:72px;grid-row:span 3}
+.rch{display:flex;justify-content:space-between;align-items:baseline;gap:6px;min-width:0}
+.rch b{font:400 15px/1.1 var(--disp);color:#3a2a10;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rch b small{font:700 10.5px var(--ui);color:var(--dim);letter-spacing:0}
+.rc.lock .well{filter:grayscale(.6) brightness(.8)}.rc.lock .rch b{color:#6a6258}
+.rch span{flex:none;font-size:10.5px;color:var(--dim);font-weight:800;font-variant-numeric:tabular-nums}
+.rcc{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dim);min-width:0;white-space:nowrap}
+.rcp{margin:0;font-size:11px;line-height:1.36;color:#3a4460;font-style:italic;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.rcf{grid-column:1 / -1;display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:3px;padding-top:4px;border-top:1px dotted #d3dae8}
+.rcf .p{color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums}
+.rcf .p.short{color:var(--bad)}
+.rcf .btn{padding:2px 12px}
+.rc .btn.prim{background:linear-gradient(#6f8ad2,#3f5bac);color:#fff;border-color:#2a4490;text-shadow:0 1px 0 rgba(0,0,30,.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+.rc .okl{margin:0;font-size:11px}
+
 /* ---------- Small laptops (1280x720 and below) ---------- */
 @media (max-height:760px){
-  #chat{height:96px}
+  #chat,#sqlog{height:96px}
   #tr{width:172px}
   #info .menu{margin-top:5px}
   #dialog{bottom:calc(118px + env(safe-area-inset-bottom,0px))}
@@ -560,13 +681,15 @@ button.fc.cp:hover{background:#eaf0ff}
   #mapbox .mapw{margin:4px}
   #mapname{font-size:10px;padding:0 5px 4px}#mapname small{display:none}
   #qtrack{font-size:10.5px}
-  #chat{height:58px;bottom:calc(64px + env(safe-area-inset-bottom,0px));font-size:10.5px;width:min(300px,calc(100vw - 16px));padding:4px 7px}
+  #chatbox{bottom:calc(64px + env(safe-area-inset-bottom,0px));width:min(300px,calc(100vw - 16px))}
+  #chat,#sqlog{height:58px;font-size:10.5px;padding:4px 7px}
   #hotbar{gap:2px;padding:3px 4px}
   .hs{width:min(36px,calc((100vw - 48px) / 9));height:min(36px,calc((100vw - 48px) / 9))}
   .hs>img{width:26px;height:26px}.hs>.skt{--s:28px}
   #tip{bottom:calc(128px + env(safe-area-inset-bottom,0px));font-size:11.5px}
   #hud.act #tip{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
-  #hud.act #chat{bottom:calc(112px + env(safe-area-inset-bottom,0px));height:58px}
+  #hud.act #chatbox{bottom:calc(112px + env(safe-area-inset-bottom,0px))}
+  #hud.act #chat,#hud.act #sqlog{height:58px}
   #bossbar{top:auto;bottom:calc(160px + env(safe-area-inset-bottom,0px));width:calc(100vw - 32px)}
   #tframe{top:auto;bottom:calc(128px + env(safe-area-inset-bottom,0px));width:200px}
   #bossbar:not([hidden])~#tframe{top:auto}
@@ -590,6 +713,20 @@ button.fc.cp:hover{background:#eaf0ff}
   .dcol{grid-template-columns:1fr;gap:4px}
   .fc{width:21px;height:21px}
   #deepcard{font-size:10px}#deepcard>.rtb{display:none}#deepcard .rbd{padding:4px 6px 5px}.dc-h b{font-size:13px}
+  #party>.rtb{display:none}#party .rbd{padding:4px}#pfr{gap:2px}
+  .pf{grid-template-columns:26px 1fr;gap:5px;padding:2px 4px 2px 2px}
+  .pfp{width:26px;height:26px}.pfk{font-size:7.5px;line-height:9px;padding:0 2px}
+  .pfd{font-size:7px;letter-spacing:0;padding-bottom:1px}
+  .pfn{line-height:11px;font-size:10px}.pfn small{font-size:8.5px}.rl{width:11px;height:11px}.rl svg{width:7px;height:7px}.pfb i{width:5px;height:5px}
+  .pf .bar{height:7px}.pf .bar em{display:none}.pf .bar.sp{height:3px}.pfx{font-size:9px;line-height:10px}
+  .pff{margin-top:3px}.pff .btn{font-size:9.5px;padding:2px 2px}.pff kbd{display:none}
+  .ctab{padding:3px 8px;font-size:9.5px}#sqpill{font-size:8.5px;padding:2px 6px}
+  #sqlog>div{grid-template-columns:14px 1fr;gap:4px}#sqlog .sqp{width:14px;height:14px}
+  #sqin{font-size:12px;padding:4px 6px}
+  .bub{max-width:170px;font-size:11px;padding:3px 7px 4px}
+  .rcg{grid-template-columns:1fr}
+  .mtab{padding-right:6px}.mtab .mtn{max-width:52px}
+  .tac{grid-template-columns:1fr}.tac>.well,.tac.all>.tall{display:none}
 }
 @media (max-width:420px){
   #tl{width:182px}#buffs{max-width:182px}
@@ -597,7 +734,7 @@ button.fc.cp:hover{background:#eaf0ff}
   #dialog{grid-template-columns:74px 1fr}#dport{height:86px}
   .pcard{grid-template-columns:78px 1fr}.pcard .well{height:92px}
 }
-@media (pointer:coarse){ #hud.act:not(.menus) #info .menu{display:grid!important} }
+@media (pointer:coarse){ #hud.act:not(.menus) #info .menu,#hud.act:not(.menus) #party .pff{display:grid!important} }
 @media (prefers-reduced-motion:reduce){.bnr,#story p,#story .s-go,.bar.hp.low i,#reborn,#reborn *{animation-duration:.01s!important;animation-delay:0s!important}#reborn .rb-motes{display:none}}
 </style>
 </head>
@@ -607,6 +744,7 @@ button.fc.cp:hover{background:#eaf0ff}
   <canvas id="gl"></canvas>
   <canvas id="cv"></canvas>
   <div id="hud" hidden>
+    <div id="bubbles"></div>
     <div id="tl">
       <div id="info" class="rwin">
         <div class="rtb"><span>Basic Info</span></div>
@@ -636,12 +774,18 @@ button.fc.cp:hover{background:#eaf0ff}
         </div>
       </div>
       <div id="buffs"></div>
+      <div id="party" class="rwin" hidden><div class="rtb"><span>Party</span><span id="pcount"></span></div><div class="rbd"><div id="pfr"></div><div class="pff"><button class="btn" data-win="tactics">Tactics<kbd>T</kbd></button><button class="btn" data-sqchat="1">Chat<kbd>Enter</kbd></button></div></div></div>
     </div>
     <div id="tr">
       <div id="mapbox" class="rwin"><div class="rtb"><span>Map</span></div><div class="mapw"><canvas id="mini" width="300" height="300"></canvas></div><div id="mapname"><b id="mapn"></b><small id="mapc"></small></div></div>
       <div id="deepcard" class="rwin" data-win="deep" title="The Deep Roots" hidden></div>
     </div>
-    <div id="chat"></div>
+    <div id="chatbox">
+      <div id="ctabs" hidden><button class="ctab on" data-ctab="log">Log</button><button class="ctab" data-ctab="squad">Squad<i id="sqnew" hidden></i></button><span id="sqpill" hidden><i></i><span></span></span></div>
+      <div id="chat"></div>
+      <div id="sqlog" hidden></div>
+      <div id="sqrow" hidden><input id="sqin" maxlength="160" autocomplete="off" spellcheck="false" enterkeyhint="send" placeholder="Talk to your squad" aria-label="Squad chat"><button class="ctab" id="sqsend">Send</button></div>
+    </div>
     <div id="tip" hidden></div>
     <div id="bossbar" hidden><div id="bossname"><span id="bossn"></span><small id="bosst"></small></div><div class="bb"><i id="bosslag"></i><i id="bossfill"></i></div></div>
     <div id="tframe" hidden><div class="tn"><span id="tname"></span><small id="tlv"></small></div><div class="bar"><i id="tbar"></i></div></div>
@@ -667,7 +811,9 @@ button.fc.cp:hover{background:#eaf0ff}
 <script src="js/data/npcs.js"></script>
 <script src="js/data/recipes.js"></script>
 <script src="js/data/quests.js"></script>
+<script src="js/data/squad.js"></script>
 <script src="js/core.js"></script>
+<script src="js/squad.js"></script>
 <script src="js/quests.js"></script>
 <script src="js/gfx-world.js"></script>
 <script src="js/gfx-post.js"></script>
@@ -678,5 +824,7 @@ button.fc.cp:hover{background:#eaf0ff}
 <script src="js/ui.js"></script>
 <script src="js/auth-config.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/squad-config.js"></script>
+<script src="js/squad-chat.js"></script>
 </body>
 </html>

@@ -45,17 +45,19 @@ code{font-size:12.5px;background:#eef1f7;padding:0 4px;border-radius:3px}
   <li><b>Your save data</b> in Cloud Firestore: the same save the game keeps in your browser (character name and look, levels, stats, skills, items, quests, play time and similar game progress), plus the time it was saved, the game version and a checksum.</li>
 </ul>
 <p>The display name and avatar are shown only to you, on the title screen and in the game menu. The game has no multiplayer, no leaderboards and no public profiles.</p>
+<h3>Squad chat with AI companions (only when signed in)</h3>
+<p>If you are signed in and the game's chat relay is switched on, what you type in squad chat, the recent chat lines and a short summary of your party and location (classes, health, map, current quest) are sent through our relay (a Cloudflare Worker) to Anthropic's Claude API, which writes your companions' replies. The relay checks your sign-in and counts your requests to enforce usage limits; it keeps only those counters (your user id and request counts and costs per hour, day and month), not the chat text. Anthropic's handling of API data is described at <a href="https://www.anthropic.com/legal/privacy" rel="noopener">anthropic.com/legal/privacy</a>. Guests' chat never leaves the browser: companions answer from lines built into the game.</p>
 <p>We do not ask your sign-in provider for your friends, contacts, posts or anything else, and we never post on your behalf.</p>
 
 <h2>What we do not do</h2>
 <ul>
   <li>No advertising, no analytics, no tracking pixels, no cookies of our own.</li>
   <li>We do not sell, rent or share your data with anyone.</li>
-  <li>We do not use your data for anything except giving you your saves.</li>
+  <li>We do not use your data for anything except giving you your saves and, if you use it, squad chat.</li>
 </ul>
 
 <h2>Other services the page uses</h2>
-<p>Like any website, the services that deliver the game see your IP address and browser details when they send you files: GitHub Pages (hosting the game), jsDelivr and cdnjs (code libraries), Google Fonts (lettering) and, if you sign in, Google Firebase and the sign-in provider you pick. Their own privacy policies apply to those requests. Firebase's privacy information is at <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a>.</p>
+<p>Like any website, the services that deliver the game see your IP address and browser details when they send you files: GitHub Pages (hosting the game), jsDelivr and cdnjs (code libraries), Google Fonts (lettering) and, if you sign in, Google Firebase, the sign-in provider you pick and, for squad chat, Cloudflare and Anthropic. Their own privacy policies apply to those requests. Firebase's privacy information is at <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a>.</p>
 
 <h2>How long we keep it, and how to delete it</h2>
 <p>Your cloud saves and account stay until you delete them. You can delete them yourself at any time from inside the game: <a href="data-deletion.html">here is how</a>. Signing out keeps your saves in this browser and leaves the cloud copy as it is.</p>

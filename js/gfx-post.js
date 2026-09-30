@@ -326,7 +326,8 @@ const POST = (() => {
     }
     // focus: the player's body on screen (sharp band), eased
     let fy = 0.5;
-    if (P && started) { _p.set(P.x, groundH(P.x, P.y) + 0.9, P.y).project(camera); fy = clamp(_p.y * 0.5 + 0.5, 0.2, 0.8); }
+    const C = typeof ctrlHero === 'function' ? ctrlHero() : P;   // squad mode: the controlled hero (leadHero)
+    if (C && started) { _p.set(C.x, groundH(C.x, C.y) + 0.9, C.y).project(camera); fy = clamp(_p.y * 0.5 + 0.5, 0.2, 0.8); }
     S.focus += (fy - S.focus) * 0.25;
     // 5. composite
     const mist = Q.mist && dtex && (R.mist || R.hfog) ? true : false, heat = Q.heat && dtex && R.heat ? true : false;

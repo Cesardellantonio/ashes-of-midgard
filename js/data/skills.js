@@ -50,11 +50,13 @@ const SKILLS = {
   concentration: { name: 'Improve Concentration', max: 10, rune: 'ᚨ', el: 'wind', tgt: 'self', sp: lv => 20 + 5 * lv, cd: 3, desc: lv => `For ${40 + 20 * lv}s: +${2 + lv} AGI and +${2 + lv} DEX.`,
     use(lv) { addBuff('conc', 'Concentration', 'concentration', 40 + 20 * lv, { agi: 2 + lv, dex: 2 + lv }); burst(P.x, P.y, 20, '#cfe07a', 16, 1.8); } },
   heal: { name: 'Heal', max: 10, rune: 'ᛒ', el: 'holy', tgt: 'heal', range: 9, sp: lv => 10 + 3 * lv, cd: 0.4, desc: lv => `Restore ${P && S ? healAmt(lv) : '?'} HP. Cast on an undead enemy to burn it for half that as holy damage.`,
-    use(lv, t) { const a = healAmt(lv); if (t && t.kind === 'mob') { const dmg = Math.round(a * 0.5 * elemMod('holy', mobElem(t))); pillar(t, '#fff2b8'); aggro(t); finishHit(t, dmg, false, {}); } else { healP(a); pillar(P, '#bff0b0'); } Sfx.heal(); } },
+    use(lv, t) { const a = healAmt(lv); if (t && t.kind === 'mob') { const dmg = Math.round(a * 0.5 * elemMod('holy', mobElem(t))); pillar(t, '#fff2b8'); aggro(t); finishHit(t, dmg, false, {}); }
+      else if (allyOf(t)) { if (!t.dead) { healHero(t, a); pillar(t, '#bff0b0'); } else if (P.skills.resurrection && typeof squadRevive === 'function') squadRevive(t, [0.1, 0.3, 0.5, 0.8][P.skills.resurrection - 1], P); }   // cycle 8: an ally (a fallen one rises with Resurrection)
+      else { healP(a); pillar(P, '#bff0b0'); } Sfx.heal(); } },
   blessing: { name: 'Blessing', max: 10, rune: 'ᚷ', el: 'holy', tgt: 'self', sp: lv => 24 + 4 * lv, cd: 2, desc: lv => `For ${40 + 20 * lv}s: +${lv} STR, DEX and INT.`,
-    use(lv) { addBuff('bless', 'Blessing', 'blessing', 40 + 20 * lv, { str: lv, dex: lv, int: lv }); pillar(P, '#f5e6a0'); Sfx.heal(); } },
+    use(lv, t) { onParty(t, 3, () => { addBuff('bless', 'Blessing', 'blessing', 40 + 20 * lv, { str: lv, dex: lv, int: lv }); pillar(P, '#f5e6a0'); }); Sfx.heal(); } },
   inc_agi: { name: 'Increase AGI', max: 10, rune: 'ᛖ', el: 'holy', tgt: 'self', sp: lv => 18 + 3 * lv, cd: 2, desc: lv => `For ${40 + 20 * lv}s: +${2 + lv} AGI and 25% movement speed.`,
-    use(lv) { addBuff('agi', 'Increase AGI', 'inc_agi', 40 + 20 * lv, { agi: 2 + lv, move: 25 }); pillar(P, '#bfe8ff'); Sfx.heal(); } },
+    use(lv, t) { onParty(t, 3, () => { addBuff('agi', 'Increase AGI', 'inc_agi', 40 + 20 * lv, { agi: 2 + lv, move: 25 }); pillar(P, '#bfe8ff'); }); Sfx.heal(); } },
   holy_light: { name: 'Holy Light', max: 5, rune: 'ᛊ', el: 'holy', tgt: 'enemy', range: 9, sp: () => 15, cast: () => 0.9, cd: 0.5, desc: lv => `A lance of light for ${125 + 25 * lv}% holy MATK.`, use(lv, t) { shot(P, t, 'holy', () => magicHit(t, 1.25 + 0.25 * lv, 'holy')); } },
   divine_protection: { name: 'Divine Protection', max: 10, passive: true, rune: 'ᛉ', el: 'holy', desc: lv => `Take ${lv * 3} less damage from each undead or demon attack.` },
   demon_bane: { name: 'Demon Bane', max: 10, passive: true, rune: 'ᛏ', el: 'holy', desc: lv => `+${lv * 3} ATK against undead and demons.` },
@@ -177,14 +179,15 @@ const SKILLS = {
   resurrection: { name: 'Resurrection', max: 4, passive: true, rune: 'ᛟ', el: 'holy', desc: lv => `When you fall, a Valkyrie refuses to carry you: you rise at once with ${[10, 30, 50, 80][lv - 1]}% HP. Then ${240 - 30 * lv}s must pass before it can happen again.` },
   magnificat: { name: 'Magnificat', max: 5, rune: 'ᛗ', el: 'holy', tgt: 'self', sp: () => 30, cast: () => 1, cd: 3,
     desc: lv => `Sing the Valkyries’ hymn for ${30 + 15 * lv}s: SP and HP recover twice as often.`,
-    use(lv) { addBuff('magnificat', 'Magnificat', 'magnificat', 30 + 15 * lv, {}, { regen: 2 }); pillar(P, '#bfe0ff', true); Sfx.heal(); } },
+    use(lv, t) { onParty(t, 5, () => { addBuff('magnificat', 'Magnificat', 'magnificat', 30 + 15 * lv, {}, { regen: 2 }); pillar(P, '#bfe0ff', true); }); Sfx.heal(); } },
   sanctuary: { name: 'Sanctuary', max: 10, rune: 'ᛒ', el: 'holy', tgt: 'ground', range: 9, sp: lv => 15 + 3 * lv, cast: () => 1.2, cd: 3,
     desc: lv => `Hallow the ground (2.5 cells) for ${4 + lv}s. Each second you recover ${P && S ? Math.round(healAmt(lv) * 0.35) : '?'} HP while you stand in it, and undead or demons inside burn for half that.`,
     use(lv, t, pos) { zoneAdd({ kind: 'sanctuary', x: pos.x, y: pos.y, r: 2.5, dur: 4 + lv, every: 1, col: '#bff0b0', rune: 'ᛒ',
-      tick(z) { const a = healAmt(lv) * 0.35; ring(z.x, z.y, z.r, '#bff0b0'); if (dist(P, z) <= z.r && !P.dead) healP(a); for (const m of mobsNear(z.x, z.y, z.r)) if (isUndeadish(m)) trueHit(m, a * 0.5, 'holy'); } }); Sfx.heal(); } },
+      tick(z) { const a = healAmt(lv) * 0.35; ring(z.x, z.y, z.r, '#bff0b0'); for (const h of heroes()) if (dist(h, z) <= z.r && !h.dead) healHero(h, a);   // cycle 8: everyone standing in it
+ for (const m of mobsNear(z.x, z.y, z.r)) if (isUndeadish(m)) trueHit(m, a * 0.5, 'holy'); } }); Sfx.heal(); } },
   kyrie_eleison: { name: 'Kyrie Eleison', max: 10, rune: 'ᚴ', el: 'holy', tgt: 'self', sp: lv => 20 + lv, cast: () => 0.8, cd: 2,
     desc: lv => `A shield of prayer for 120s. It absorbs up to ${10 + 2 * lv}% of your Max HP in damage, or ${5 + Math.ceil(lv / 2)} blows, whichever comes first.`,
-    use(lv) { addBuff('kyrie', 'Kyrie Eleison', 'kyrie_eleison', 120, {}, { shield: Math.round(S.maxhp * (0.1 + 0.02 * lv)), hits: 5 + Math.ceil(lv / 2), aura: { r: 0.8, col: '#fff2b8', bubble: true } }); pillar(P, '#fff2b8'); Sfx.heal(); } },
+    use(lv, t) { onHero(t, () => { addBuff('kyrie', 'Kyrie Eleison', 'kyrie_eleison', 120, {}, { shield: Math.round(S.maxhp * (0.1 + 0.02 * lv)), hits: 5 + Math.ceil(lv / 2), aura: { r: 0.8, col: '#fff2b8', bubble: true } }); pillar(P, '#fff2b8'); }); Sfx.heal(); } },
   magnus_exorcismus: { name: 'Magnus Exorcismus', max: 10, rune: 'ᛣ', el: 'holy', tgt: 'ground', range: 9, sp: lv => 45 + 4 * lv, cast: lv => 2 + 0.2 * lv, cd: 4,
     desc: lv => `A cross of judgement (3 cells) for ${3 + Math.ceil(lv / 2)} waves. Each wave deals 100% holy MATK to undead, demons and shadow things inside, and 35% to anything else.`,
     use(lv, t, pos) { zoneAdd({ kind: 'magnus', x: pos.x, y: pos.y, r: 3, dur: (3 + Math.ceil(lv / 2)) * 0.8 - 0.05, every: 0.8, col: '#fff2b0', rune: 'ᛣ', first: 0.05,
@@ -244,7 +247,7 @@ const SKILLS = {
   // ---------- Paladin of Tyr (oathkeeper) ----------
   gloria: { name: 'Gloria', max: 5, rune: 'ᛊ', el: 'holy', tgt: 'self', sp: lv => 20 + 5 * lv, cast: () => 0.6, cd: 4,
     desc: lv => `Sing Tyr’s glory for ${30 + 10 * lv}s: +${10 + 4 * lv} LUK and +${lv} CRIT.`,
-    use(lv) { addBuff('gloria', 'Gloria', 'gloria', 30 + 10 * lv, { luk: 10 + 4 * lv, crit: lv }, { aura: { r: 1.4, col: '#fff0a0' } }); pillar(P, '#fff0a0'); ring(P.x, P.y, 1.6, '#fff0a0'); Sfx.heal(); } },
+    use(lv, t) { onParty(t, 5, () => { addBuff('gloria', 'Gloria', 'gloria', 30 + 10 * lv, { luk: 10 + 4 * lv, crit: lv }, { aura: { r: 1.4, col: '#fff0a0' } }); pillar(P, '#fff0a0'); }); ring(P.x, P.y, 1.6, '#fff0a0'); Sfx.heal(); } },
   shield_chain: { name: 'Shield Chain', max: 5, rune: 'ᛜ', el: 'neutral', tgt: 'enemy', range: 5, sp: lv => 20 + 3 * lv, cd: 1.4, need: needShield,
     desc: lv => `Hurl your shield five times in a chain: each ${60 + 20 * lv}% ATK, more the heavier your shield (+1% per shield DEF).`,
     use(lv, t) { P.atkAnim = 0; const sd = P.equip.shield ? itemBase(P.equip.shield).def : 0, mul = (0.6 + 0.2 * lv) * (1 + sd / 100);
@@ -259,7 +262,7 @@ const SKILLS = {
   tyrs_aegis: { name: 'Tyr’s Aegis', max: 5, rune: 'ᛉ', el: 'holy', tgt: 'ground', range: 4, sp: lv => 40 + 5 * lv, cast: () => 1, cd: 10,
     desc: lv => `Raise the god’s ward over the ground (3 cells) for ${12 + 3 * lv}s: enemy blasts that land in it fizzle, and while you stand in it you take ${15 + 5 * lv}% less damage.`,
     use(lv, t, pos) { zoneAdd({ kind: 'ward', ward: true, x: pos.x, y: pos.y, r: 3, dur: 12 + 3 * lv, every: 0.5, col: '#ffe08a', rune: 'ᛉ',
-      tick(z) { if (!P.dead && dist(P, z) <= z.r) { const b = P.buffs.aegis; if (b) b.t = 0.9; else addBuff('aegis', 'Tyr’s Aegis', 'tyrs_aegis', 0.9, { dmgRed: 15 + 5 * lv }); } } }); pillar({ x: pos.x, y: pos.y, kind: 'fx' }, '#ffe08a', true); Sfx.heal(); } },
+      tick(z) { for (const h of heroes()) if (!h.dead && dist(h, z) <= z.r) withHero(h, () => { const b = P.buffs.aegis; if (b) b.t = 0.9; else addBuff('aegis', 'Tyr’s Aegis', 'tyrs_aegis', 0.9, { dmgRed: 15 + 5 * lv }); }); } });   /* cycle 8: every hero in it */ pillar({ x: pos.x, y: pos.y, kind: 'fx' }, '#ffe08a', true); Sfx.heal(); } },
   // ---------- Galdr Master (runecaster) ----------
   muspel_vulcan: { name: 'Muspel’s Vulcan', max: 5, rune: 'ᚲ', el: 'ghost', tgt: 'enemy', range: 9, sp: lv => 20 + 6 * lv, cast: lv => 0.6 + 0.1 * lv, cd: 1,
     desc: lv => `Ghost-fire from Muspelheim, ${lv} strike${lv > 1 ? 's' : ''}: each ${100 + 20 * lv}% ghost MATK to the target and everything within 1.5 cells, with a 10% chance to curse (ATK −20% for 10s).`,
@@ -297,7 +300,8 @@ const SKILLS = {
   vardlokkur: { name: 'Varðlokkur', max: 5, rune: 'ᚹ', el: 'water', tgt: 'ground', range: 6, sp: lv => 30 + 5 * lv, cast: () => 1, cd: 8,
     desc: lv => `Sing the ward-song over the ground (3 cells) for ${15 + 3 * lv}s: while you stand in it you recover ${(1 + 0.5 * lv).toFixed(1)}% of your Max SP each second, and enemies in it are slowed.`,
     use(lv, t, pos) { zoneAdd({ kind: 'ward', x: pos.x, y: pos.y, r: 3, dur: 15 + 3 * lv, every: 1, col: '#a8c8ff', rune: 'ᚹ',
-      tick(z) { if (!P.dead && dist(P, z) <= z.r) { const g = S.maxsp * (0.01 + 0.005 * lv); P.sp = Math.min(S.maxsp, P.sp + g); } for (const m of mobsNear(z.x, z.y, z.r)) { m.slow = Math.max(m.slow || 0, 1.2); m.slowLv = Math.max(m.slowLv || 1, 2); } } }); Sfx.heal(); } },
+      tick(z) { for (const h of heroes()) if (!h.dead && dist(h, z) <= z.r) withHero(h, () => { const g = S.maxsp * (0.01 + 0.005 * lv); P.sp = Math.min(S.maxsp, P.sp + g); });   // cycle 8: every hero in it
+ for (const m of mobsNear(z.x, z.y, z.r)) { m.slow = Math.max(m.slow || 0, 1.2); m.slowLv = Math.max(m.slowLv || 1, 2); } } }); Sfx.heal(); } },
   volva_sight: { name: 'Völva’s Sight', max: 5, rune: 'ᛞ', el: 'wind', tgt: 'self', sp: () => 40, cast: () => 0.8, cd: 5,
     desc: lv => `For ${60 + 30 * lv}s your normal attacks have a ${6 + 3 * lv}% chance to loose a bolt you know (Fire, Cold or Lightning Bolt, up to Lv ${2 * lv}) for free.`,
     use(lv) { addBuff('sight', 'Völva’s Sight', 'volva_sight', 60 + 30 * lv, {}, { sight: lv, aura: { r: 0.9, col: '#d8cf5a' } }); pillar(P, '#d8cf5a'); Sfx.cast(); } },
@@ -337,7 +341,7 @@ const SKILLS = {
   // ---------- Valkyrie (priest) ----------
   assumptio: { name: 'Assumptio', max: 5, rune: 'ᛉ', el: 'holy', tgt: 'self', sp: lv => 40 + 5 * lv, cast: () => 1, cd: 5,
     desc: lv => `Wrap yourself in a Valkyrie’s mantle for ${60 + 20 * lv}s: you take ${25 + 5 * lv}% less damage.`,
-    use(lv) { addBuff('assumptio', 'Assumptio', 'assumptio', 60 + 20 * lv, { dmgRed: 25 + 5 * lv }, { aura: { r: 1, col: '#ffd8f0' } }); pillar(P, '#ffe0f4', true); Sfx.heal(); } },
+    use(lv, t) { onHero(t, () => { addBuff('assumptio', 'Assumptio', 'assumptio', 60 + 20 * lv, { dmgRed: 25 + 5 * lv }, { aura: { r: 1, col: '#ffd8f0' } }); pillar(P, '#ffe0f4', true); }); Sfx.heal(); } },
   basilica: { name: 'Basilica', max: 5, rune: 'ᛒ', el: 'holy', tgt: 'self', sp: lv => 60 + 5 * lv, cast: () => 2, cd: 20,
     desc: lv => `Raise a hall of light around you (3 cells) for ${10 + 2 * lv}s: enemies are pushed out and cannot strike inside it, and enemy blasts that land in it fizzle. Bosses are not pushed.`,
     use(lv) { zoneAdd({ kind: 'sanctuary', ward: true, x: P.x, y: P.y, r: 3, dur: 10 + 2 * lv, every: 0.25, col: '#fff2c0', rune: 'ᛒ',
@@ -372,6 +376,17 @@ const SKILLS = {
     use(lv, t) { setSpheres(P.spheres - 1); P.atkAnim = 0; after(0.1, () => { if (t.dead) return; physHit(t, (1.5 + 0.4 * lv) * (1 + t.d.def / 100), { sure: true, ignoreDef: true, knock: 4, from: P }); if (!t.dead) t.stun = Math.max(t.stun || 0, t.d.boss ? 0.3 : 1); strike(t.x, t.y); ring(t.x, t.y, 1.2, '#fff6a0'); SHAKE_(0.2); HITSTOP_(0.1); }); Sfx.crit(); } },
 };
 // ---------- Skill helpers (run at play time) ----------
+/* Cycle 8 (squad mode): support skills on allies. A skill's target may be a party member (the companion AI passes one,
+   the player's heals pick one: partyHealTarget in js/core.js). onHero runs the effect in that hero's context (its Max HP
+   for Kyrie, its buff bar), else on the caster; onParty also touches every ally within r cells of the caster when no
+   one in particular was chosen. Solo, both are a plain call. */
+const allyOf = t => t && t.kind === 'player' && t !== P && typeof inParty === 'function' && inParty(t) ? t : null;
+function onHero(t, fn) { const h = allyOf(t); if (h) { if (!h.dead) withHero(h, fn); } else fn(); }
+function onParty(t, r, fn) {
+  const h = allyOf(t); if (h) { if (!h.dead) withHero(h, fn); return; }
+  fn(); if (typeof PARTY === 'undefined' || !PARTY || PARTY.members.length < 2) return;
+  const c = P; for (const a of PARTY.members) if (a !== c && !a.dead && Math.hypot(a.x - c.x, a.y - c.y) <= r) withHero(a, fn);
+}
 function needW(...ws) { return () => ws.includes(S.wtype) ? null : `Needs a ${ws.map(w => WNAME[w] || w).join(' or ')}`; }
 function needShield() { return P.equip.shield ? null : 'Needs a shield'; }
 function needSpheres(n) { return () => (P.spheres || 0) >= n ? null : 'No spirit spheres'; }

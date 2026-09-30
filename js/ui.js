@@ -219,6 +219,7 @@ function setHudMode(act) {
 }
 function syncMenus() { const h = $('hud'); if (h) h.classList.toggle('menus', Object.keys(UI.open).some(k => UI.open[k])); }
 function renderHUD() {
+  if (typeof sqTick === 'function' && SQ.lastP !== P) sqOnSwap();   // round 9: the controlled hero changed (squadSwap)
   if (chg('act', typeof isAction === 'function' && isAction(), 0)) setHudMode(HUDA.act);
   if (chg('name', P.name, P.cls)) { setText('pname', P.name); setText('pclass', CLASSES[P.cls].name); }
   if (chg('por', P.cls + '|' + P.gender + '|' + P.hairStyle, P.hair)) $('pport').innerHTML = playerPortrait();
@@ -260,6 +261,7 @@ function renderHUD() {
   // Tips (rebuilt 4 times a second)
   if (time - tipT > 0.25 || time < tipT) { tipT = time; tipHTML = currentTip(); const te = $('tip'); if (tipHTML) { if (cache.tip !== tipHTML) { cache.tip = tipHTML; te.innerHTML = tipHTML; } te.hidden = false; } else if (!te.hidden) te.hidden = true; }
   renderTracker(); renderDeepCard(); if (UI.open.gauntlet) rushTickUI();   // round 8
+  if (typeof sqTick === 'function') sqTick();   // round 9: party frames, squad chat, speech bubbles
   if (UI.open.help && (time - (UI.gfxT || 0) > 1 || time < UI.gfxT)) { UI.gfxT = time; const gi = $('gfxinfo'); if (gi) gi.textContent = gfxInfoText(); }   // round 6
   // Buff timers (or counters, e.g. spirit spheres)
   for (let i = 0; i < BUFFEL.length; i++) { const e = BUFFEL[i], b = P.buffs[e.k]; if (!b) continue; const v = b.count !== undefined ? b.count : buffT(b.t); if (e.v !== v) { e.v = v; e.sp.textContent = v; } }
@@ -371,7 +373,7 @@ function dragify(el, id) {
 }
 // After a resize (or a UI zoom change) keep every open window on screen.
 function fitWins() { for (const id in UI.open) { if (!UI.open[id]) continue; const el = $('w-' + id); if (!el) continue; if (phoneUI()) { placeWin(id, el); continue; } const x = clamp(el.offsetLeft, 6 - el.offsetWidth + 60, Math.max(6, vw() - 60)), y = clamp(el.offsetTop, 0, Math.max(0, vh() - 60)); el.style.left = x + 'px'; el.style.top = y + 'px'; } }
-function renderWin(id) { const el = $('w-' + id); if (!el || el.hidden) return; const bd = el.querySelector('.bd'); const st = bd.scrollTop, fo = document.activeElement && bd.contains(document.activeElement) && document.activeElement.id; bd.innerHTML = RENDER[id](); bd.scrollTop = st; if (fo && $(fo)) $(fo).focus(); if (AFTER[id]) AFTER[id](bd); }   // round 6: an input keeps focus across re-renders; round 8: AFTER[id] mounts canvases
+function renderWin(id) { const el = $('w-' + id); if (!el || el.hidden) return; const bd = el.querySelector('.bd'); const st = bd.scrollTop, fo = document.activeElement && bd.contains(document.activeElement) && document.activeElement.id; bd.innerHTML = typeof viewRender === 'function' && VIEW_WINS[id] ? viewRender(id) : RENDER[id](); bd.scrollTop = st; if (fo && $(fo)) $(fo).focus(); if (AFTER[id]) AFTER[id](bd); }   // round 6: an input keeps focus across re-renders; round 8: AFTER[id] mounts canvases
 const AFTER = {};
 function renderAll() { for (const id in UI.open) if (UI.open[id]) renderWin(id); renderHotbar(); renderTracker(true); UI.dirty = false; }
 
@@ -773,7 +775,10 @@ function tipFor(key) {
 
 const ACTS = {};
 function handleAct(act, e) {
-  const [a, b, c] = act.split(':'); Sfx.click();
+  const [a, b, c] = act.split(':');
+  // Round 9: Status / Equipment / Skills (and equipping from Items) act on the member the member switcher shows.
+  if (typeof sqViewAct === 'function' && !SQ.inAs && sqViewAct(a, b)) { SQ.inAs = true; try { asHero(viewHero(), () => handleAct(act, e)); } finally { SQ.inAs = false; UI.dirty = true; } return; }
+  Sfx.click();
   switch (a) {
     case 'stat': { const v = P.st[b], cost = statCost(v); if (P.statPts >= cost && v < 99) { P.statPts -= cost; P.st[b]++; calcStats(); } break; }
     case 'learn': { const sk = SKILLS[b]; const lv = P.skills[b] || 0; if (P.skillPts > 0 && lv < sk.max) { P.skillPts--; P.skills[b] = lv + 1; if (!lv && !sk.passive && !P.hot.some(h => h && h.k === 'skill' && h.id === b)) { const i = P.hot.findIndex((h, j) => !h && j < 6); if (i >= 0) { P.hot[i] = { k: 'skill', id: b }; log(`${sk.name} placed on key ${i + 1}.`, 'sys'); } } calcStats(); } break; }
@@ -901,7 +906,7 @@ const dlgBye = opts => { const i = opts.findIndex(o => /^(Farewell|Nothing|Not y
 function dlgPanelDraw(fresh) {
   const c = DLG.cur; if (!c) return;
   const r = c.pn.render(c.text, c.opts), dt = $('dtext'), st = fresh ? 0 : dt.scrollTop;
-  dt.innerHTML = `<span class="nm">[${esc(c.name)}]</span><p class="dq">${c.text}</p>${r.html}`; dt.scrollTop = st;
+  dt.innerHTML = `<span class="nm">[${esc(c.name)}]</span><p class="dq">${c.pn.text ? c.pn.text(c.text) : c.text}</p>${r.html}`; dt.scrollTop = st;
   const shown = new Set(r.show), btn = (i, cls) => `<button class="btn${cls}" data-dlg="${i}">${esc(c.opts[i])}</button>`;
   $('dopts').className = 'panel-opts';
   $('dopts').innerHTML = (r.extra || []).map(x => `<button class="btn prim" data-dx="${esc(x.act)}">${esc(x.label)}</button>`).join('')
@@ -1239,6 +1244,7 @@ game.addEventListener('click', e => {
   const qt = e.target.closest('#qtrack'); if (qt && phoneUI() && !e.target.closest('.qlog')) { Sfx.unlock(); UI.trackOpen = !UI.trackOpen; renderTracker(true); return; }
   if (e.target.closest('.qlog')) UI.trackOpen = false;
   if (dlgExtraClick(e)) return;
+  if (typeof sqClick === 'function' && sqClick(e)) return;   // round 9: party frames, chat tabs
   const w = e.target.closest('[data-win]'); if (w) { Sfx.unlock(); toggleWin(w.dataset.win); return; }
   const x = e.target.closest('[data-close]'); if (x) { closeWin(x.dataset.close); return; }
   const d = e.target.closest('[data-dlg]'); if (d) { const r = dlgResolve; dlgResolve = null; if (r) r(+d.dataset.dlg); return; }
@@ -1246,21 +1252,24 @@ game.addEventListener('click', e => {
   const a = e.target.closest('[data-act]'); if (a && a.dataset.act) { handleAct(a.dataset.act, e); return; }
 });
 game.addEventListener('contextmenu', e => {
+  if (typeof sqContext === 'function' && sqContext(e)) return;   // round 9: right-click a party frame opens Tactics
   const h = e.target.closest('[data-hot]'); if (h) { e.preventDefault(); P.hot[+h.dataset.hot] = null; UI.dirty = true; return; }
   const c = e.target.closest('.cell[data-act]'); if (c) { e.preventDefault(); const it = findItem(+c.dataset.act.split(':')[1]); if (it && P.inv.includes(it) && ITEMS[it.id].type !== 'key') { P.inv.splice(P.inv.indexOf(it), 1); drops.push({ kind: 'drop', item: it, x: P.x + rand(-0.4, 0.4), y: P.y + rand(-0.4, 0.4), t: 0, id: uidc++ }); log(`You drop ${itemName(it)}.`, 'sys'); UI.dirty = true; } return; }
   if (e.target.closest('.win')) e.preventDefault();
 });
 game.addEventListener('pointerover', e => {
-  const t = e.target.closest('[data-tip]'); if (t) { const html = tipFor(t.dataset.tip); if (html) showTip(html, e.clientX, e.clientY); }
+  const t = e.target.closest('[data-tip]'); if (t) { const html = typeof sqTipFor === 'function' ? sqTipFor(t) : tipFor(t.dataset.tip); if (html) showTip(html, e.clientX, e.clientY); }
   const b = e.target.closest('[data-bind]'); UI.hoverBind = b && b.dataset.bind ? b.dataset.bind : null;
 });
 game.addEventListener('pointerout', e => { const t = e.target.closest('[data-tip]'); if (t && !t.contains(e.relatedTarget)) hideTip(); const b = e.target.closest('[data-bind]'); if (b && !b.contains(e.relatedTarget)) UI.hoverBind = null; });
 game.addEventListener('pointermove', e => { const el = $('tooltip'); if (!el.hidden && e.target.closest('[data-tip]')) moveTip(e.clientX, e.clientY); });
 
 addEventListener('keydown', e => {
+  if (e.target.id === 'sqin' && typeof sqInputKey === 'function') { sqInputKey(e); return; }   // round 9: squad chat input (action.js ignores INPUT targets)
   if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && !$('title').hidden) $('bNew').click(); if (e.key === 'Enter' && e.target.id === 'petname') { handleAct('petrename'); e.target.blur(); } return; }
   if (e.key === 'Alt') { mouse.alt = true; e.preventDefault(); return; }
   if (!started) return;
+  if (e.key === 'Enter' && $('dialog').hidden && !e.repeat && typeof sqFocusChat === 'function' && sqFocusChat()) { e.preventDefault(); return; }   // round 9
   if (!$('dialog').hidden && (e.key === 'Enter' || e.key === ' ')) { const b = $('dopts').querySelector('button:not(.dup)'); if (b && document.activeElement !== b) { b.click(); e.preventDefault(); } return; }
   const k = e.key.toLowerCase();
   if (/^[1-9]$/.test(e.key)) {
@@ -1273,6 +1282,7 @@ addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey) return;
   const map_ = { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help', p: 'pet' };
   if (map_[k]) { toggleWin(map_[k]); return; }
+  if (k === 't' && typeof sqMulti === 'function' && sqMulti()) { toggleWin('tactics'); return; }   // round 9: squad tactics
   if (k === 'r') { toggleMount(); return; }   // round 6: ride / dismount (action mode: js/action.js)
   if (k === ',' || (k === 'w' && !isAction())) { toggleWin('worldmap'); return; }
   if (k === 'x') { if ((P.skills.basic || 0) < 3) { log('You need Basic Skill 3 to sit.', 'warn'); return; } if (P.target || P.casting) return; P.sitting = !P.sitting; P.path = null; log(P.sitting ? 'You sit and catch your breath.' : 'You stand.', 'sys'); return; }
@@ -1289,7 +1299,7 @@ addEventListener('resize', () => { resize(); if (map) setScreenParts(); applyUIZ
    Save / load / boot
    ========================================================= */
 const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests', 'titles', 'title', 'ach', 'storage', 'mail', 'pet', 'mounted'];
-function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; return JSON.stringify(o); }
+function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; if (typeof squadSerialize === 'function') { try { squadSerialize(o); } catch (e) { console.error(e); } } return JSON.stringify(o); }   // round 9: core adds o.party / o.lead
 function saveGame() { if (!started || !P) return; const s = serialize(); if (s) store('aom-save', s); }
 function loadSave() { const raw = store('aom-save'); if (!raw) return null; try { return JSON.parse(raw); } catch (e) { return null; } }
 let questMigrate = false;
@@ -1319,6 +1329,7 @@ function applySave(o) {
   P.mounted = !!o.mounted && !!P.flags.warg && MOUNT_CLASSES.includes(P.cls);
   for (const list of [P.inv, P.storage]) for (let i = 0; i < list.length; i++) { const it = list[i]; if (stackable(it.id) && it.qty > STACK_MAX && list.length < (list === P.inv ? BAG_SLOTS : STORAGE_SLOTS)) { list.push({ uid: uidc++, id: it.id, qty: it.qty - STACK_MAX }); it.qty = STACK_MAX; } }
   resetRuntime();
+  if (typeof squadRestore === 'function') { try { squadRestore(o); } catch (e) { console.error(e); } }   // round 9: core rebuilds PARTY (old saves: a party of one)
 }
 function startGame(fresh) {
   started = true; $('title').hidden = true; $('hud').hidden = false;
@@ -1724,4 +1735,307 @@ if (typeof rebirth === 'function') {
   const baseRebirth = rebirth;
   // eslint-disable-next-line no-global-assign
   rebirth = function () { const from = P && P.cls, r = baseRebirth.apply(this, arguments); if (r) { try { rebornCeremony(from); } catch (e) { console.error(e); } } return r; };
+}
+
+/* =========================================================
+   UI round 9 (cycle 8): Squad mode. design/squad-contract.md; every global of another team is guarded with typeof.
+   - Party frames under Basic Info (#party): class portrait with the hair tint, name, level, role, HP/SP, buff pips,
+     the swap key, the controlled hero highlighted, down state, a count of monsters on that hero. Click: squadSwap(i);
+     right-click (or a long press): Tactics. Built once per party signature; bars are patched per frame.
+   - Tactics window (T): stance, focus and hold/follow per companion and for all, through squadOrder / squadTactics.
+   - Recruiting: a dialog panel (DLG_PANELS) over the recruit NPC's menu; its Recruit / Dismiss buttons resolve the
+     same option indices as the plain menu.
+   - Squad chat: a Squad tab beside the log, an input (Enter focuses it, Esc leaves), lines from SQUAD_CHAT.onLine
+     with the speaker's colour and portrait (mirrored into the log), a status pill, speech bubbles over the speaker
+     for 4 s positioned each frame with heroScreenPos (gfx) or proj.
+   - Member switcher in Status, Equipment, Skills and Items: those windows render, and their actions run, with P (and
+     S) pointing at the chosen member for the call (asHero), so companions can be geared without swapping. The bag is
+     shared, so equipping a companion from Items works the same way.
+   Hooks other teams provide: see the report / docs (squadSerialize, squadRestore, heroStats, SQUAD_KEYS,
+   squadReviveHint, heroScreenPos).
+   ========================================================= */
+const SQ = { lastP: null, sig: '', els: [], t4: -1, hooked: false, tab: 'log', unread: 0, bub: new Map(), pv: [0, 0, 0], stats: new WeakMap(), inAs: false, avail: null, pill: '', tacSig: '' };
+const sqHas = () => typeof PARTY !== 'undefined' && !!PARTY && Array.isArray(PARTY.members) && PARTY.members.length > 0;
+const sqMembers = () => sqHas() ? PARTY.members : (P ? [P] : []);
+const sqMulti = () => sqHas() && PARTY.members.length > 1;
+const sqChat = () => typeof SQUAD_CHAT !== 'undefined' && SQUAD_CHAT ? SQUAD_CHAT : null;
+const sqById = id => sqMembers().find(h => h && h.id === id) || null;
+function sqKey(i) { const K = typeof SQUAD_KEYS !== 'undefined' && Array.isArray(SQUAD_KEYS) ? SQUAD_KEYS : null; const k = K ? K[i] : i < 4 ? 'F' + (i + 1) : ''; return k ? String(k).replace(/^(Key|Digit)/, '') : ''; }
+const heroPortrait = h => classPortraitHTML(h.cls, h.gender, h.hairStyle, h.hair);
+// Companions from js/data/squad.js: an array or a map keyed by id.
+function sqComps() { if (typeof COMPANIONS_DATA === 'undefined' || !COMPANIONS_DATA) return []; const D = COMPANIONS_DATA; return Array.isArray(D) ? D.filter(Boolean) : Object.keys(D).map(k => Object.assign({ id: k }, D[k])); }
+const sqComp = h => h && h.persona ? sqComps().find(c => c.id === h.persona) || null : null;
+const ROLE_OF_BASE = { acolyte: 'healer', mage: 'ranged', archer: 'ranged', swordsman: 'melee', novice: 'melee' };
+function heroRole(h) {
+  if (h && h.ai && h.ai.role) return h.ai.role; const c = sqComp(h); if (c && c.role) return c.role;
+  let k = h && h.cls; for (let n = 0; k && n < 8; n++) { if (ROLE_OF_BASE[k]) return ROLE_OF_BASE[k]; const C = CLASSES[k]; k = C && (C.from || C.base); }
+  return 'melee';
+}
+const ROLE_NAME = { tank: 'Tank', healer: 'Healer', melee: 'Melee', ranged: 'Ranged' };
+const ROLE_SVG = {
+  tank: '<path d="M5 .6 9.2 2v3.1C9.2 7.6 7.4 9 5 9.8 2.6 9 .8 7.6.8 5.1V2z" fill="#fff"/>',
+  healer: '<path d="M3.7.8h2.6v2.9h2.9v2.6H6.3v2.9H3.7V6.3H.8V3.7h2.9z" fill="#fff"/>',
+  melee: '<path d="M8.8 1.2 4.4 5.6M2.4 4.6l3 3M3.6 6.4 1.4 8.6" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/><path d="M9.2.8 7 1.4 8.6 3z" fill="#fff"/>',
+  ranged: '<path d="M2.2 1C5.6 2.4 5.6 7.6 2.2 9M2.2 1v8M1.4 5H9M7.2 3.4 9 5 7.2 6.6" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+};
+const roleIcon = r => `<span class="rl rl-${ROLE_SVG[r] ? r : 'melee'}" title="${ROLE_NAME[r] || 'Melee'}"><svg viewBox="0 0 10 10">${ROLE_SVG[r] || ROLE_SVG.melee}</svg></span>`;
+// Speaker colours, stable per hero id: [on the dark log, on the light bubble]. The player is white / ink.
+const SQCOL = [['#ffd27a', '#9a6200'], ['#8fd4ff', '#1d6aa8'], ['#b8f08a', '#347e1a'], ['#ffa8d0', '#a8346e'], ['#c8b0ff', '#6444c0'], ['#ffb08a', '#b04a18']];
+function sqColor(h) { if (!h || (h === P && !h.persona)) return ['#ffffff', '#2a3450']; const s = String(h.id || h.name || ''); let x = 7; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) >>> 0; return SQCOL[x % SQCOL.length]; }
+
+/* ---------- Stats of a member who is not P: core's heroStats(h) or h.S, else calcStats() with P swapped (1 s cache) ---------- */
+function asHero(h, fn) {
+  if (!h || h === P) return fn();
+  if (typeof withHero === 'function') return withHero(h, fn);   // core: P = h and S = h's stat block, restored after
+  const p0 = P, s0 = S; P = h;
+  try { calcStats(); return fn(); } finally { P = p0; S = s0; }
+}
+function heroS(h) {
+  if (h === P) return S;
+  if (typeof heroStats === 'function') { try { const s = heroStats(h); if (s && s.maxhp) return s; } catch (e) { /* fall through */ } }
+  if (h.S && h.S.maxhp) return h.S;
+  const c = SQ.stats.get(h), now = performance.now(); if (c && now - c.t < 1000) return c.s;
+  let s = null; const d0 = UI.dirty; try { s = asHero(h, () => S); } catch (e) { s = null; } UI.dirty = d0;
+  s = s || { maxhp: Math.max(1, h.maxhp || h.hp || 1), maxsp: Math.max(1, h.maxsp || h.sp || 1) }; SQ.stats.set(h, { t: now, s }); return s;
+}
+
+/* ---------- Swap: Basic Info, buffs, hotbar and open windows follow the new P ---------- */
+function sqOnSwap() {
+  const first = SQ.lastP === null; SQ.lastP = P; if (first || !P) return;
+  try { calcStats(); } catch (e) { console.error(e); }
+  renderBuffs(); UI.hotSig = null; UI.dirty = true; SQ.t4 = -1;
+  if (UI.viewId && P && UI.viewId === P.id) UI.viewId = null;
+}
+
+/* ---------- Party frames ---------- */
+function sqFrameSig(L) { return L.map(h => [h.id, h.name, h.cls, h.gender, h.hairStyle, h.hair, heroRole(h)].join('|')).join(';') + '#' + (ART.porIdx ? 1 : 0) + [0, 1, 2, 3].map(sqKey).join(''); }
+function renderParty() {
+  const el = $('party'); if (!el) return;
+  const show = sqMulti();
+  if (el.hidden === show) el.hidden = !show;
+  if (!show) { if (SQ.sig) { SQ.sig = ''; SQ.els = []; $('pfr').innerHTML = ''; } return; }
+  const L = PARTY.members, sig = sqFrameSig(L);
+  if (sig !== SQ.sig) {
+    SQ.sig = sig;
+    $('pfr').innerHTML = L.map((h, i) => `<div class="pf" data-pf="${i}" role="button" tabindex="0" aria-label="${esc(h.name)}: take control" title="${esc(h.name)} · click to take control (${esc(sqKey(i))}) · right-click for tactics"><div class="pfp well">${heroPortrait(h)}<span class="pfk">${esc(sqKey(i))}</span><span class="pfa" hidden></span><span class="pfd" hidden>Down</span></div><div class="pfm"><div class="pfn">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span class="pfb"></span><small></small></div><div class="bar hp"><i></i><em></em></div><div class="bar sp"><i></i></div><div class="pfx" hidden></div></div></div>`).join('');
+    SQ.els = [...$('pfr').children].map(e => ({ e, hp: e.querySelector('.bar.hp i'), hpt: e.querySelector('.bar.hp em'), hpbar: e.querySelector('.bar.hp'), sp: e.querySelector('.bar.sp i'), spbar: e.querySelector('.bar.sp'), lv: e.querySelector('.pfn small'), pips: e.querySelector('.pfb'), ag: e.querySelector('.pfa'), dn: e.querySelector('.pfd'), hint: e.querySelector('.pfx'), c: {} }));
+    setText('pcount', L.length + '/4'); SQ.t4 = -1;
+  }
+  const slow = time - SQ.t4 > 0.25 || time < SQ.t4; if (slow) SQ.t4 = time;
+  for (let i = 0; i < L.length; i++) {
+    const h = L[i], r = SQ.els[i]; if (!r) continue; const c = r.c;
+    const me = h === P, dead = !!h.dead || h.hp <= 0, s = heroS(h), mh = Math.max(1, s.maxhp || 1), ms = Math.max(1, s.maxsp || 1);
+    if (c.me !== me) { c.me = me; r.e.classList.toggle('me', me); r.e.setAttribute('aria-current', me ? 'true' : 'false'); }
+    if (c.dead !== dead) { c.dead = dead; r.e.classList.toggle('dead', dead); r.dn.hidden = !dead; r.hpbar.hidden = dead; r.spbar.hidden = dead; r.hint.hidden = !dead; if (!dead) { c.hint = null; r.e.title = `${h.name} · click to take control (${sqKey(i)}) · right-click for tactics`; } }
+    if (dead) { if (slow) { let t = 'Down · needs reviving'; if (typeof squadReviveHint === 'function') { try { t = squadReviveHint(h) || t; } catch (e) { /* keep */ } } if (c.hint !== t) { c.hint = t; r.hint.textContent = t; r.e.title = h.name + ': ' + t; } } }
+    else {
+      const hw = Math.round(clamp(h.hp / mh, 0, 1) * 1000); if (c.hw !== hw) { c.hw = hw; r.hp.style.width = hw / 10 + '%'; const low = hw < 250; if (c.low !== low) { c.low = low; r.hpbar.classList.toggle('low', low); } }
+      const sw = Math.round(clamp(h.sp / ms, 0, 1) * 1000); if (c.sw !== sw) { c.sw = sw; r.sp.style.width = sw / 10 + '%'; }
+      const hv = Math.ceil(h.hp); if (c.hv !== hv || c.mh !== mh) { c.hv = hv; c.mh = mh; r.hpt.textContent = hv + ' / ' + mh; }
+    }
+    if (c.lv !== h.lvl) { c.lv = h.lvl; r.lv.textContent = 'Lv ' + h.lvl; }
+    if (slow) {
+      const ks = h.buffs ? Object.keys(h.buffs) : [], bs = ks.slice(0, 5).join(',');
+      if (c.bs !== bs) { c.bs = bs; r.pips.innerHTML = ks.slice(0, 5).map(k => { const b = h.buffs[k], sk = SKILLS[b && b.icon] || BUFF_ICONS[b && b.icon] || {}; return `<i style="background:${ELCOL[sk.el] || '#c8bca6'}" title="${esc(b && b.name || k)}"></i>`; }).join(''); }
+      let ag = 0; if (!dead && typeof mobs !== 'undefined') for (let j = 0; j < mobs.length; j++) { const m = mobs[j]; if (m.target === h && !m.dead && m.state === 'chase') ag++; }
+      if (c.ag !== ag) { c.ag = ag; r.ag.hidden = !ag; r.ag.textContent = ag > 9 ? '9+' : String(ag); r.e.classList.toggle('aggro', ag > 0); }
+    }
+  }
+}
+// Clicks: a frame takes control of that hero; chat tabs; Send; the Chat button.
+function sqClick(e) {
+  const f = e.target.closest('[data-pf]');
+  if (f) { Sfx.unlock(); Sfx.click(); const i = +f.dataset.pf; if (typeof squadSwap === 'function' && sqMembers()[i] && sqMembers()[i] !== P) { try { squadSwap(i); } catch (err) { console.error(err); } } return true; }
+  const t = e.target.closest('[data-ctab]'); if (t) { Sfx.click(); sqTab(t.dataset.ctab); return true; }
+  if (e.target.closest('#sqsend')) { sqSend(); return true; }
+  if (e.target.closest('[data-sqchat]')) { Sfx.click(); sqFocusChat(true); return true; }
+  return false;
+}
+function sqContext(e) {
+  const f = e.target.closest('[data-pf]'); if (!f) return false; e.preventDefault();
+  const h = sqMembers()[+f.dataset.pf]; UI.tacSel = h && h !== P ? h.id : null; openWin('tactics'); return true;
+}
+addEventListener('keydown', e => { const f = e.target && e.target.closest && e.target.closest('[data-pf]'); if (f && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopImmediatePropagation(); f.click(); } }, true);
+
+/* ---------- Tactics window ---------- */
+WIN.tactics = { title: 'Squad Tactics', w: 470, pos: () => [272, 64] };
+function sqTac(h) {
+  let t = null; if (typeof squadTactics === 'function') { try { t = squadTactics(h.id); } catch (e) { t = null; } }
+  t = t || h.ai || {}; const f = t.focus;
+  return { stance: t.stance || 'aggressive', focus: f == null || f === 'free' ? 'free' : typeof f === 'string' ? f : 'target', hold: t.hold !== undefined ? !!t.hold : t.follow === false };
+}
+const TAC_ST = [['aggressive', 'Aggressive', 'Engages anything that threatens the party'], ['defensive', 'Defensive', 'Fights back and guards allies, does not start fights'], ['passive', 'Passive', 'Never attacks; follows and heals only']];
+const TAC_FO = [['target', 'My target', 'Attacks what you attack'], ['nearest', 'Nearest', 'Takes the closest enemy'], ['boss', 'Boss', 'Goes for the boss or strongest enemy'], ['free', 'Free', 'Chooses by role']];
+const TAC_MV = [['follow', 'Follow', 'Stays in formation behind you'], ['hold', 'Hold', 'Holds this spot']];
+function tacSeg(who, key, opts, cur) { return `<div class="seg">${opts.map(([v, l, tip]) => { const on = Array.isArray(cur) ? cur.every(x => x === v) : cur === v, mix = Array.isArray(cur) && !on && cur.includes(v); return `<button class="btn${on ? ' on' : ''}${mix ? ' mix' : ''}" data-act="sqo:${who}:${key}=${v}" title="${esc(tip)}" aria-pressed="${on}">${l}</button>`; }).join('')}</div>`; }
+function tacGrid(who, st, fo, mv) { return `<div class="tacg"><span>Stance</span>${tacSeg(who, 'stance', TAC_ST, st)}<span>Focus</span>${tacSeg(who, 'focus', TAC_FO, fo)}<span>Move</span>${tacSeg(who, 'move', TAC_MV, mv)}</div>`; }
+RENDER.tactics = function () {
+  const L = sqMembers(), A = L.map((h, i) => ({ h, i })).filter(x => x.h !== P);
+  if (!A.length) return `<p class="lore">You travel alone. Companions can be hired in Emberhold; their stance, focus and whether they follow you are set here.</p>`;
+  const T = A.map(x => sqTac(x.h));
+  const all = `<div class="tac all"><div class="tall">ᛗ</div><div><div class="tach"><b>All companions</b><span>${A.length} in the party</span></div>${tacGrid('all', T.map(t => t.stance), T.map(t => t.focus), T.map(t => t.hold ? 'hold' : 'follow'))}</div></div>`;
+  const rows = A.map(({ h, i }, k) => { const t = T[k], c = CLASSES[h.cls], dead = !!h.dead || h.hp <= 0;
+    return `<div class="tac${UI.tacSel === h.id ? ' sel' : ''}" data-tac="${esc(h.id)}"><div class="well">${heroPortrait(h)}</div><div><div class="tach">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span>${esc(c ? c.name : '')} · Lv ${h.lvl} · ${ROLE_NAME[heroRole(h)] || ''}</span>${dead ? '<em>Down</em>' : ''}</div>${tacGrid(i, t.stance, t.focus, t.hold ? 'hold' : 'follow')}</div></div>`; }).join('');
+  return all + rows + `<p class="muted" style="margin:4px 0 0;font-size:11px;line-height:1.4">Right-click a party frame to open this window. You can also give orders in the squad chat, for example “focus boss”, “hold” or “defensive”.</p>`;
+};
+AFTER.tactics = bd => { if (!UI.tacSel) return; const el = bd.querySelector(`[data-tac="${CSS.escape(UI.tacSel)}"]`); if (el && !SQ.tacScrolled) { SQ.tacScrolled = true; bd.scrollTop = Math.max(0, el.offsetTop - 40); } };
+Object.assign(ACTS, {
+  sqo(b, c) {
+    if (typeof squadOrder !== 'function' || !c) return; const [k, v] = c.split('=');
+    const o = k === 'stance' ? { stance: v } : k === 'focus' ? { focus: v === 'free' ? null : v } : k === 'move' ? (v === 'hold' ? { hold: true, follow: false } : { hold: false, follow: true }) : null;
+    const h = b === 'all' ? null : sqMembers()[+b]; if (!o || (b !== 'all' && !h)) return;
+    try { squadOrder(b === 'all' ? 'all' : h.id, o); } catch (e) { console.error(e); }
+  },
+  view(b) { const h = sqMembers()[+b]; UI.viewId = h && h !== P ? h.id : null; },
+  nocast() { log('Swap to that hero to use their skills.', 'warn'); },
+});
+
+/* ---------- Member switcher: Status, Equipment, Skills, Items ---------- */
+const VIEW_WINS = { status: 1, equip: 1, skills: 1, inv: 1 };
+function viewHero() { if (!UI.viewId || !sqMulti()) return P; const h = sqById(UI.viewId); if (!h) { UI.viewId = null; return P; } return h; }
+function sqViewAct(a, b) {
+  const v = viewHero(); if (v === P) return false;
+  if (a === 'stat' || a === 'learn' || a === 'uneq' || a === 'mount') return true;
+  if (a === 'inv') { const it = findItem(+b); return !!(it && ITEMS[it.id] && ITEMS[it.id].type === 'equip'); }
+  return false;
+}
+function memberTabs(id, v) {
+  return `<div class="mtabs" role="group" aria-label="${id === 'inv' ? 'Equip onto' : 'Party member'}">${sqMembers().map((h, i) => `<button class="btn mtab${h === v ? ' on' : ''}${h === P ? ' me' : ''}" data-act="view:${i}" title="${esc(h.name)}${h === P ? ' (you are playing this hero)' : ''}${id === 'inv' ? ': gear you click goes to them' : ''}" aria-pressed="${h === v}"><span class="well mtp">${heroPortrait(h)}</span><span class="mtn">${esc(String(h.name).split(/\s+/)[0])}</span></button>`).join('')}</div>`;
+}
+function viewRender(id) {
+  const v = viewHero(), other = v !== P, tb0 = $('w-' + id) && $('w-' + id).querySelector('.tb span');
+  if (!sqMulti()) { if (tb0 && tb0.textContent !== WIN[id].title) tb0.textContent = WIN[id].title; return RENDER[id](); }
+  let html = id === 'inv' ? RENDER[id]() : asHero(v, RENDER[id]);
+  if (other && id === 'skills') html = html.replace(/data-act="cast:/g, 'data-act="nocast:').replace(/data-bind="skill:[^"]*"/g, 'data-bind=""');
+  const tb = tb0; if (tb) { const t = WIN[id].title + (other ? ' · ' + v.name : ''); if (tb.textContent !== t) tb.textContent = t; }
+  const note = other ? `<div class="mnote">${id === 'inv' ? `Gear you click goes to <b>${esc(v.name)}</b>. Potions are still yours.` : id === 'skills' ? `${esc(v.name)}’s skills: points can be spent here; swap to use them.` : `Showing <b>${esc(v.name)}</b>. Changes apply to them.`}</div>` : '';
+  return memberTabs(id, v) + note + html;
+}
+// Tooltips inside a switched window describe (and compare against) the member it shows.
+function sqTipFor(t) {
+  const w = t.closest('.win'), id = w && w.id.slice(2);
+  if (id && VIEW_WINS[id] && viewHero() !== P) { const v = viewHero(); try { return asHero(v, () => tipFor(t.dataset.tip)); } catch (e) { return null; } }
+  return tipFor(t.dataset.tip);
+}
+
+/* ---------- Recruiting: a panel over the recruit NPC's dialog ---------- */
+const RX_REC = /^\s*(recruit|hire)\b/i, RX_DIS = /^\s*(dismiss|release|part ways)\b/i;
+const optNames = (o, c) => { const t = normName(o); return (c.name && t.includes(normName(c.name))) || (c.id && t.includes(String(c.id).toLowerCase())); };
+function recruitPanel(text, opts) {
+  const C = sqComps(), L = sqMembers(), used = new Set(), full = L.length >= 4;
+  const find = (rx, c) => { const i = opts.findIndex((o, k) => !used.has(k) && rx.test(o) && optNames(o, c)); if (i >= 0) used.add(i); return i; };
+  const cards = C.map(c => {
+    const ri = find(RX_REC, c), di = find(RX_DIS, c), mem = L.find(h => h.persona === c.id || h.id === c.id);
+    let info = {}; if (typeof squadRecruitInfo === 'function') { try { info = squadRecruitInfo(c.id) || {}; } catch (e) { info = {}; } }
+    const feeTxt = ri >= 0 ? (/([\d][\d,.]*)\s*z\s*\)/i.exec(opts[ri]) || [])[1] : null;
+    const fee = info.fee != null ? info.fee : c.fee != null ? c.fee : c.cost != null ? c.cost : feeTxt ? +feeTxt.replace(/[,.]/g, '') : null;
+    const lock = ri >= 0 ? +((/\(\s*Base Lv\s*(\d+)\s*\)/i.exec(opts[ri]) || [])[1] || 0) : 0;
+    let lvl = mem ? mem.lvl : info.lvl != null ? info.lvl : c.lvl != null ? c.lvl : c.level;
+    if (lvl == null && typeof squadBench === 'function' && typeof squadRecruitLevel === 'function') { try { const b = squadBench()[c.id]; lvl = b && b.lvl ? b.lvl : squadRecruitLevel(c); } catch (e) { lvl = null; } }
+    const per = c.persona, blurb = c.blurb || c.tagline || (typeof per === 'string' ? per : per && (per.blurb || per.background || per.voice)) || '';
+    const short = String(blurb).split(/(?<=[.!?])\s/).slice(0, 2).join(' ').slice(0, 170);
+    const role = c.role || heroRole({ cls: c.cls }), cls = CLASSES[c.cls];
+    const act = mem ? (di >= 0 ? `<button class="btn warn" data-dlg="${di}">Dismiss</button>` : '<span class="okl">In your party</span>')
+      : ri >= 0 ? `<button class="btn${lock ? '' : ' prim'}" data-dlg="${ri}"${lock ? ` title="${esc(c.name)} wants a leader of Base Lv ${lock}"` : ''}>Recruit</button>` : `<span class="muted" style="font-size:11px">${full ? 'Party full' : info.why ? esc(info.why) : 'Not here now'}</span>`;
+    const feeH = mem ? '<span class="muted" style="font-size:11px">Travelling with you</span>' : lock ? `<span class="p short">Needs Base Lv ${lock}</span>` : fee != null ? `<span class="p${P.zeny < fee ? ' short' : ''}">${fmt(fee)}z</span>` : '<span></span>';
+    return `<div class="rc${mem ? ' in' : ''}${lock ? ' lock' : ''}"><div class="well">${classPortraitHTML(c.cls, c.gender, c.hairStyle || (c.gender === 'f' ? 'long' : 'spiky'), c.hair)}</div><div class="rch"><b>${esc(c.name || c.id)}${c.title ? ` <small>${esc(c.title)}</small>` : ''}</b><span>${lvl != null ? 'Lv ' + lvl : ''}</span></div><div class="rcc">${roleIcon(role)}${esc(ROLE_NAME[role] || role)} · ${esc(cls ? cls.name : c.cls || '')}</div><p class="rcp">${esc(short)}</p><div class="rcf">${feeH}${act}</div></div>`;
+  }).join('');
+  const strip = `<div class="rparty"><span class="mtl">Your party ${L.length}/4</span>${L.map(h => `<span class="mtab${h === P ? ' me' : ''}"><span class="well mtp">${heroPortrait(h)}</span><span class="mtn">${esc(h.name)}</span></span>`).join('')}<span class="muted" style="margin-left:auto;font-size:11px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
+  const show = opts.map((o, i) => i).filter(i => !used.has(i));
+  return { html: strip + (cards ? `<div class="rcg">${cards}</div>` : '<p class="muted">No one is looking for work.</p>'), show, primary: -1 };
+}
+DLG_PANELS.push({ id: 'recruit', title: 'Companions for Hire', render: (t, o) => recruitPanel(t, o), text: t => String(t).split(/<br>\s*<br>/i)[0],   // the cards replace the roster in the text
+  test: (name, opts) => typeof COMPANIONS_DATA !== 'undefined' && sqComps().length > 0 && opts.some(o => RX_REC.test(o) || RX_DIS.test(o)) && opts.some(o => sqComps().some(c => optNames(o, c))) });
+
+/* ---------- Squad chat ---------- */
+function sqLine(l) {
+  if (!l || l.text == null) return;
+  const text = String(l.text).slice(0, 240), sys = l.who === 'system', h = l.who === 'you' ? P : sys ? null : sqById(l.who);
+  if (!sys && !h) return;
+  const name = h ? h.name : '', col = sqColor(l.who === 'you' ? null : h);
+  const box = $('sqlog');
+  if (box) {
+    const d = document.createElement('div');
+    if (sys) { d.className = 'sqs'; d.textContent = text; }
+    else d.innerHTML = `<span class="well sqp">${heroPortrait(h)}</span><span><b style="color:${col[0]}">${esc(name)}</b> ${esc(text)}</span>`;
+    box.appendChild(d); while (box.children.length > 40) box.removeChild(box.firstChild);
+  }
+  const c = $('chat');
+  if (c) { const d = document.createElement('div'); d.className = sys ? 'sys' : 'party'; if (sys) d.textContent = text; else d.innerHTML = `<b style="color:${col[0]}">${esc(name)}:</b> ${esc(text)}`; c.appendChild(d); while (c.children.length > 40) c.removeChild(c.firstChild); }
+  if (SQ.tab !== 'squad') { SQ.unread++; const n = $('sqnew'); if (n) n.hidden = false; }
+  if (h) sqBubble(h, name, text, col[1]);
+}
+function sqTab(t) {
+  SQ.tab = t === 'squad' ? 'squad' : 'log';
+  for (const b of document.querySelectorAll('[data-ctab]')) b.classList.toggle('on', b.dataset.ctab === SQ.tab);
+  $('chat').hidden = SQ.tab !== 'log'; $('sqlog').hidden = SQ.tab !== 'squad'; $('sqrow').hidden = SQ.tab !== 'squad' || !sqChat();
+  if (SQ.tab === 'squad') { SQ.unread = 0; $('sqnew').hidden = true; }
+}
+function sqFocusChat(force) {
+  if (!SQ.avail || !sqChat()) return false;
+  sqTab('squad'); const i = $('sqin'); if (!i) return false;
+  if (typeof CTRL !== 'undefined') { CTRL.keys.clear(); if (P) P.blocking = false; }
+  i.focus({ preventScroll: true }); return true;
+}
+function sqBlur() { const i = $('sqin'); if (i) i.blur(); }
+function sqSend() {
+  const i = $('sqin'), t = i ? i.value.trim().slice(0, 160) : ''; if (i) i.value = '';
+  const C = sqChat(); if (t && C && typeof C.send === 'function') { try { C.send(t); } catch (e) { console.error(e); } }
+  sqBlur();
+}
+function sqInputKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); sqSend(); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.target.value = ''; sqBlur(); }
+}
+// SQUAD_CHAT.status(): off = no relay configured, fallback = guest (not signed in), error = relay failing (backing off).
+const SQST = { off: ['Not set up', 'fb', 'Cloud chat is not set up. Companions use their own lines.'], fallback: ['Offline', 'off', 'Sign in for cloud chat. Companions speak from memory.'], online: ['Online', 'on', 'Cloud chat online.'], busy: ['Thinking…', 'busy', 'Companions are thinking…'], error: ['Offline', 'err', 'Cloud chat is offline. Companions speak from memory.'] };
+function sqChatTick() {
+  const C = sqChat(), avail = sqMulti();   // the Squad tab is for a party; solo play keeps the plain log
+  if (C && !SQ.hooked && typeof C.onLine === 'function') { SQ.hooked = true; try { C.onLine(sqLine); } catch (e) { console.error(e); } }
+  if (avail !== SQ.avail) { SQ.avail = avail; $('ctabs').hidden = !avail; if (!avail) sqTab('log'); else sqTab(SQ.tab); }
+  const pill = $('sqpill'); if (!pill) return;
+  let st = null; if (C && typeof C.status === 'function') { try { st = C.status(); } catch (e) { st = 'error'; } }
+  const k = C ? (SQST[st] ? st : 'off') : ''; if (k === SQ.pill) return; SQ.pill = k;
+  pill.hidden = !k; if (!k) return; const [lbl, cls, tip] = SQST[k];
+  let info = null; if (typeof C.statusInfo === 'function') { try { info = C.statusInfo(); } catch (e) { info = null; } }
+  pill.className = cls; pill.title = info && info.label ? info.label + (info.detail ? '. ' + info.detail : '') : tip; pill.lastChild.textContent = lbl;
+}
+
+/* ---------- Speech bubbles ---------- */
+function sqBubble(h, name, text, col) {
+  const layer = $('bubbles'); if (!layer) return;
+  let b = SQ.bub.get(h);
+  if (!b) { const el = document.createElement('div'); el.className = 'bub'; el.style.visibility = 'hidden'; layer.appendChild(el); b = { el, x: NaN, y: NaN, vis: false }; SQ.bub.set(h, b); }
+  b.el.innerHTML = `<b style="color:${col}">${esc(name)}</b>${esc(text)}`; b.el.classList.remove('out'); b.out = false; b.until = performance.now() + 4000;
+  sqBubblesTick();
+}
+function sqScreen(h, out) {
+  if (typeof heroScreenPos === 'function') { try { const r = heroScreenPos(h, out); if (r === null || r === false) return null; return Array.isArray(r) ? r : out; } catch (e) { /* fall back */ } }
+  if (typeof proj !== 'function' || !map) return null;
+  const z = (typeof groundH === 'function' ? groundH(h.x, h.y) : 0) + (typeof headH === 'function' ? headH(h) : 1.6) + 0.35;
+  return proj(h.x, h.y, z, out);
+}
+function sqBubblesTick() {
+  if (!SQ.bub.size) return;
+  const now = performance.now(), L = sqMembers();
+  for (const [h, b] of SQ.bub) {
+    if (now > b.until + 400 || !L.includes(h)) { b.el.remove(); SQ.bub.delete(h); continue; }
+    if (now > b.until && !b.out) { b.out = true; b.el.classList.add('out'); }
+    const p = h.map && P && h.map !== P.map ? null : sqScreen(h, SQ.pv), on = !!p && p[2] < 1 && p[0] > -40 && p[0] < W + 40 && p[1] > 10 && p[1] < H + 40;
+    if (on !== b.vis) { b.vis = on; b.el.style.visibility = on ? '' : 'hidden'; }
+    if (!on) continue;
+    const x = Math.round(p[0] / UIZ), y = Math.round(p[1] / UIZ) - 6;
+    if (x !== b.x || y !== b.y) { b.x = x; b.y = y; b.el.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-100%)`; }
+  }
+}
+
+/* ---------- Per frame (from renderHUD) ---------- */
+function sqTick() {
+  renderParty();
+  if (SQ.t4c === undefined || time - SQ.t4c > 0.25 || time < SQ.t4c) {
+    SQ.t4c = time; sqChatTick();
+    if (UI.open.tactics) { const sig = sqMembers().map(h => h === P ? 'P' : JSON.stringify(sqTac(h)) + (h.dead ? 'd' : '')).join('|'); if (sig !== SQ.tacSig) { SQ.tacSig = sig; renderWin('tactics'); } }
+    else SQ.tacScrolled = false;
+  }
+  sqBubblesTick();
 }

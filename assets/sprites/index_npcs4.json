@@ -53,6 +53,12 @@
    "layer": "npc",
    "body": "ylva",
    "variant": null
+  },
+  {
+   "id": "npc_hrodny",
+   "layer": "npc",
+   "body": "hrodny",
+   "variant": null
   }
  ]
 }

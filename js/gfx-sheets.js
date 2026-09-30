@@ -40,6 +40,7 @@ const SHEETS = {
   byKey: {},         // "body|layer|variant" -> id
   indexLeft: SHEET_INDEX_FILES.length, indexReady: false, indexFiles: [],
   loaded: [], failed: [], requests: 0,
+  gen: 0,            // bumped when the index is registered (cached hero layer wants depend on which sheets exist)
 };
 const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
 const LAYER_ORDER = ['body', 'mob', 'npc', 'pet', 'hair', 'headgear', 'shield', 'weapon'];
@@ -98,7 +99,7 @@ function registerIndex(file, j) {
 function loadIndexes() {
   const got = new Array(SHEET_INDEX_FILES.length).fill(null);
   // register in list order once every file has answered (or failed), so the winner of a duplicate id is deterministic
-  const fin = () => { if (--SHEETS.indexLeft > 0) return; SHEET_INDEX_FILES.forEach((f, i) => { if (got[i]) registerIndex(f, got[i]); }); SHEETS.indexReady = true; prefetchSheets(); };
+  const fin = () => { if (--SHEETS.indexLeft > 0) return; SHEET_INDEX_FILES.forEach((f, i) => { if (got[i]) registerIndex(f, got[i]); }); SHEETS.indexReady = true; SHEETS.gen++; prefetchSheets(); };
   SHEET_INDEX_FILES.forEach((f, i) => sheetXHR(SHEET_BASE + f, j => { got[i] = j; fin(); }, fin));
 }
 // Top of the opaque pixels in the idle S frame -> visible height above the feet (px).
@@ -459,34 +460,95 @@ function mountBody(body) {
   return alt && sheetId(alt, 'mount:body', null) ? alt : null;
 }
 function playerMountLook(body) { return !!(P && P.mounted) && !!mountBody(body); }
-function playerLayerWants() {
-  if (!P) return null;
-  const pb = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`, mb = P.mounted ? mountBody(pb) : null;
+/* ---------- Heroes (squad mode, cycle 8) ----------
+   Every hero in the party (design/squad-contract.md: PARTY.members, P = the controlled one) is drawn with the full
+   player composite. gfxHeroes() is the party without allocating (PARTY.members, else a reused [P]); PARTY / heroes()
+   belong to core (js/squad.js) and are only read here, guarded. Per-hero render state (cached layer wants, mount swap,
+   swing trail, dodge puff) lives in HGFX, keyed by hero.id (the hero object itself until core gives ids). */
+const _H1 = [null], _H0 = [];
+function gfxHeroes() {
+  if (typeof PARTY !== 'undefined' && PARTY && PARTY.members && PARTY.members.length) return PARTY.members;
+  if (typeof P === 'undefined' || !P) return _H0;
+  _H1[0] = P; return _H1;
+}
+const HGFX = new Map();
+function heroState(h) {
+  const k = h.id !== undefined && h.id !== null ? h.id : h; let s = HGFX.get(k);
+  if (!s || s.h !== h) {
+    if (HGFX.size > 24) HGFX.clear();   // dismissed / reloaded heroes: states are cheap to rebuild
+    s = { h, w: null, mnt: undefined, mntMap: null, swN: 0, swLast: -1, dodge: false, occ: false, occT: -1 }; HGFX.set(k, s);
+  }
+  return s;
+}
+// A hero's stat block: core's heroStats(h) (a lookup of the block core keeps current; S for P), else hero._S.
+// The function check is made once (core.js loads before the gfx files).
+const heroStatsOf = typeof heroStats === 'function' ? heroStats : (h => h === P ? (typeof S !== 'undefined' ? S : null) : (h._S || h.S || h.stats || null));
+// Weapon type of a hero: from its stat block (P: S), else its equipped weapon.
+function heroWtype(h) {
+  if (h === P) return typeof S !== 'undefined' && S ? S.wtype : undefined;
+  const st = heroStatsOf(h); if (st && st.wtype) return st.wtype;
+  const w = h.equip && h.equip.weapon, t = w && typeof ITEMS !== 'undefined' ? ITEMS[w.id] : null;
+  return (t && t.wtype) || 'fist';
+}
+// action.js shieldVariant() for any hero: the shield item's `sv`, falling back to whichever sheet the body has.
+function heroShieldVariant(h, body) {
+  if (h === P && typeof shieldVariant === 'function') return shieldVariant(body);
+  const it = h.equip && h.equip.shield; if (!it) return null;
+  const want = (typeof ITEMS !== 'undefined' && ITEMS[it.id] && ITEMS[it.id].sv) || 'guard', other = want === 'tower' ? 'guard' : 'tower';
+  if (sheetId(body, 'shield', want)) return want;
+  return sheetId(body, 'shield', other) ? other : want;
+}
+// Layer sheets a hero wants: [[body, layer, variant], ...] (body first). Allocates: called only when the hero's look
+// changes (heroWants caches it).
+function heroLayerWants(h) {
+  if (!h) return null;
+  const pb = `${h.cls}_${h.gender === 'f' ? 'f' : 'm'}`, mb = h.mounted ? mountBody(pb) : null, wv = WTYPE_VARIANT[heroWtype(h)];
   if (mb) {
-    const body = mb, hv = P.hairStyle === 'long' ? 'long' : 'spiky', wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null, w = [[body, 'mount:body', null]];
+    const body = mb, hv = h.hairStyle === 'long' ? 'long' : 'spiky', w = [[body, 'mount:body', null]];
     if (sheetId(body, 'mount:hair', hv)) w.push([body, 'mount:hair', hv]);
-    if (P.equip && P.equip.shield) { const sv = (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard'; if (sheetId(body, 'mount:shield', sv)) w.push([body, 'mount:shield', sv]); }
+    if (h.equip && h.equip.shield) { const sv = heroShieldVariant(h, body) || 'guard'; if (sheetId(body, 'mount:shield', sv)) w.push([body, 'mount:shield', sv]); }
     if (wv && sheetId(body, 'mount:weapon', wv)) w.push([body, 'mount:weapon', wv]);
-    const hk = playerHeadgearKey(); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
+    const hk = heroHeadgearKey(h); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
     return w;
   }
-  const body = pb, w = [[body, 'body', null], [body, 'hair', P.hairStyle === 'long' ? 'long' : 'spiky']];
-  if (P.equip && P.equip.shield) w.push([body, 'shield', (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard']);   // shieldVariant: action.js (Oathkeeper -> 'tower')
-  const wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null; if (wv) w.push([body, 'weapon', wv]);
-  const hk = playerHeadgearKey(); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
+  const body = pb, w = [[body, 'body', null], [body, 'hair', h.hairStyle === 'long' ? 'long' : 'spiky']];
+  if (h.equip && h.equip.shield) w.push([body, 'shield', heroShieldVariant(h, body) || 'guard']);   // shieldVariant: action.js (Oathkeeper -> 'tower')
+  if (wv) w.push([body, 'weapon', wv]);
+  const hk = heroHeadgearKey(h); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
   return w;
 }
+// The controlled hero's wants (action.js wraps this global to apply its shieldVariant; kept for that hook).
+function playerLayerWants() { return P ? heroLayerWants(P) : null; }
 // Visual key of the equipped head item (ITEMS[id].headgear, content round 4), or null.
-function playerHeadgearKey() {
-  const h = P && P.equip && P.equip.head, t = h && typeof ITEMS !== 'undefined' ? ITEMS[h.id] : null;
+function heroHeadgearKey(h) {
+  const it = h && h.equip && h.equip.head, t = it && typeof ITEMS !== 'undefined' ? ITEMS[it.id] : null;
   return (t && t.headgear) || null;
+}
+function playerHeadgearKey() { return heroHeadgearKey(P); }
+/* Cached wants + load records of a hero (hs = heroState(h)). Rebuilt only when what the layers depend on changes
+   (class, gender, hair style, mount, weapon type, shield / head item, index generation) or a record was released;
+   otherwise no allocation per frame. P's list goes through the global playerLayerWants (action.js hook). */
+function heroWants(h, hs) {
+  const W = hs.w || (hs.w = { cls: null, g: null, hs: null, mnt: null, wt: null, sh: null, hd: null, gen: -1, want: null, recs: [], ready: [] });
+  const eq = h.equip, sh = eq && eq.shield ? eq.shield.id : null, hd = eq && eq.head ? eq.head.id : null, wt = heroWtype(h), mnt = !!h.mounted;
+  let stale = W.cls !== h.cls || W.g !== h.gender || W.hs !== h.hairStyle || W.mnt !== mnt || W.wt !== wt || W.sh !== sh || W.hd !== hd || W.gen !== SHEETS.gen;
+  if (!stale) for (let i = 0; i < W.recs.length; i++) { const r = W.recs[i]; if (r && SHEETS.byId[r.id] !== r) { stale = true; break; } }
+  if (stale) {
+    W.cls = h.cls; W.g = h.gender; W.hs = h.hairStyle; W.mnt = mnt; W.wt = wt; W.sh = sh; W.hd = hd; W.gen = SHEETS.gen;
+    W.want = SHEETS.indexReady ? (h === P ? playerLayerWants() : heroLayerWants(h)) : null; W.recs.length = 0;
+    if (W.want) for (const w of W.want) W.recs.push(sheetRec(w[0], w[1], w[2]));
+  }
+  return W;
 }
 const hasHeadAnchors = j => !!(j && j.anchors && j.anchors.head);
 function prefetchSheets() {
   if (!SHEETS.indexReady) return;
   try {
-    const pw = playerLayerWants(); if (pw && sheetId(pw[0][0], 'body', null)) for (const w of pw) sheetRec(w[0], w[1], w[2]);
-    if (P && P.cls === 'wolfhunter') huginnRec();                               // Blitz Beat's raven (small sheet)
+    const H = gfxHeroes();
+    for (let i = 0; i < H.length; i++) {
+      const pw = H[i] === P ? playerLayerWants() : heroLayerWants(H[i]); if (pw && sheetId(pw[0][0], 'body', null)) for (const w of pw) sheetRec(w[0], w[1], w[2]);
+      if (H[i].cls === 'wolfhunter' || H[i].cls === 'fenris_stalker') huginnRec();   // Blitz Beat's raven (small sheet)
+    }
     for (const c of compList()) compRec(c);
     if (typeof map === 'undefined' || !map) return;
     prefetchMapSheets(map, mobs, null);
@@ -525,8 +587,11 @@ function sheetsRelease(freedId, resident) {
   const keepMaps = new Set(resident || []); if (typeof map !== 'undefined' && map) keepMaps.add(map.id);
   if (SHEET_NEAR.map === map) for (const id of SHEET_NEAR.ids) keepMaps.add(id);
   const keep = new Set();
-  const want = playerLayerWants(); if (want) for (const w of want) { const id = sheetId(w[0], w[1], w[2]); if (id) keep.add(id); }
-  if (P) { const b = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`, mb = mountBody(b); for (const k in SHEETS.byId) if (k.indexOf(b + '.') === 0 || (mb && mb !== b && k.indexOf(mb + '.mount_') === 0)) keep.add(k); }   // on-foot + mount set of the current class (or the one it borrows)
+  const H = gfxHeroes();
+  for (let i = 0; i < H.length; i++) {   // every hero of the party: its layers + the on-foot and mount sets of its class (or the one it borrows)
+    const h = H[i], want = h === P ? playerLayerWants() : heroLayerWants(h); if (want) for (const w of want) { const id = sheetId(w[0], w[1], w[2]); if (id) keep.add(id); }
+    const b = `${h.cls}_${h.gender === 'f' ? 'f' : 'm'}`, mb = mountBody(b); for (const k in SHEETS.byId) if (k.indexOf(b + '.') === 0 || (mb && mb !== b && k.indexOf(mb + '.mount_') === 0)) keep.add(k);
+  }
   for (const c of compList()) if (c && c._gid) keep.add(c._gid);
   keep.add('pet_huginn');
   let n = 0;
@@ -598,32 +663,33 @@ function actHeld(v, A, a) { if (v.act !== a) { v.act = a; v.actT = time; } retur
 const TINT_ONE = [1, 1, 1], TINT_DODGE = [0.85, 0.9, 1], TINT_CHARGE = [1.0, 0.85, 0.5], TINT_FROZEN = [0.55, 0.8, 1];
 
 /* ---------- Player pose -> action/frame ---------- */
-function sheetPlayerPose(v, body) {
-  const A = body.actions, n = a => actN(A, a), fps = a => actFps(A, a), held = a => actHeld(v, A, a);
+function sheetPlayerPose(v, body, h) {
+  if (!h) h = P;
+  const A = body.actions;   // (no helper closures: this runs per hero per frame)
   let act = 'idle', f = 0, tint;
   // heavy swing: remember the charge so the release plays the heavy strike, not a light one
-  if (P.charge >= 0) v.heavyArm = true;
-  else if (!(P.atkAnim >= 0) && v.heavyArm && !v.heavySwing) v.heavyArm = false;
-  if (P.atkAnim >= 0 && v.heavyArm) { v.heavySwing = true; v.heavyArm = false; }
-  if (!(P.atkAnim >= 0)) v.heavySwing = false;
-  if (P.atkAnim >= 0 && v.lastAtk < 0 && !v.heavySwing) v.swings++;
-  v.lastAtk = P.atkAnim >= 0 ? P.atkAnim : -1;
-  if (P.atkAnim >= 0 || P.charge >= 0 || P.blocking) v.combatT = time;
-  const pk = time - (P.pickupAt === undefined ? -99 : P.pickupAt);
+  if (h.charge >= 0) v.heavyArm = true;
+  else if (!(h.atkAnim >= 0) && v.heavyArm && !v.heavySwing) v.heavyArm = false;
+  if (h.atkAnim >= 0 && v.heavyArm) { v.heavySwing = true; v.heavyArm = false; }
+  if (!(h.atkAnim >= 0)) v.heavySwing = false;
+  if (h.atkAnim >= 0 && v.lastAtk < 0 && !v.heavySwing) v.swings++;
+  v.lastAtk = h.atkAnim >= 0 ? h.atkAnim : -1;
+  if (h.atkAnim >= 0 || h.charge >= 0 || h.blocking) v.combatT = time;
+  const pk = time - (h.pickupAt === undefined ? -99 : h.pickupAt);
 
-  if (P.dead) { act = 'dead'; f = held('dead'); }
-  else if (P.dodgeT > 0) { act = 'dodge'; f = Math.floor((1 - P.dodgeT / 0.34) * n('dodge')); tint = TINT_DODGE; }
-  else if (P.charge >= 0) { act = 'heavy'; f = Math.min(1, Math.floor(P.charge / 0.8 * 2)); if (P.charge >= 0.8 && Math.floor(time * 12) % 2) tint = TINT_CHARGE; }
-  else if (v.heavySwing) { act = 'heavy'; const k = n('heavy'), s0 = Math.min(2, k - 1); f = s0 + Math.floor(P.atkAnim * (k - s0)); }
-  else if (P.blocking) { act = 'block'; f = held('block'); }
-  else if (P.casting) { act = 'cast'; f = Math.floor(time * fps('cast')) % n('cast'); }
-  else if (P.atkAnim >= 0) { const c = P.combo > 0 ? P.combo : v.swings; act = c % 2 === 0 ? 'attack2' : 'attack1'; f = Math.floor(P.atkAnim * n(act)); }
-  else if (P.hurtT > 0.12) { act = 'hurt'; f = held('hurt'); }
-  else if (pk >= 0 && pk < 0.3 && sheetHas(body, 'pickup')) { act = 'pickup'; f = Math.floor(pk / 0.3 * n('pickup')); }
-  else if (P.sitting) { act = 'sit'; f = 0; }
-  else if (P.moving) { act = 'walk'; f = Math.floor(P.walk * 1.26 * n('walk') / 6 * (v.stride || 1)) % n('walk'); }
-  else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = Math.floor(time * fps('stance')) % n('stance'); }
-  else { act = 'idle'; f = Math.floor(time * fps('idle')) % n('idle'); }
+  if (h.dead) { act = 'dead'; f = actHeld(v, A, 'dead'); }
+  else if (h.dodgeT > 0) { act = 'dodge'; f = Math.floor((1 - h.dodgeT / 0.34) * actN(A, 'dodge')); tint = TINT_DODGE; }
+  else if (h.charge >= 0) { act = 'heavy'; f = Math.min(1, Math.floor(h.charge / 0.8 * 2)); if (h.charge >= 0.8 && Math.floor(time * 12) % 2) tint = TINT_CHARGE; }
+  else if (v.heavySwing) { act = 'heavy'; const k = actN(A, 'heavy'), s0 = Math.min(2, k - 1); f = s0 + Math.floor(h.atkAnim * (k - s0)); }
+  else if (h.blocking) { act = 'block'; f = actHeld(v, A, 'block'); }
+  else if (h.casting) { act = 'cast'; f = Math.floor(time * actFps(A, 'cast')) % actN(A, 'cast'); }
+  else if (h.atkAnim >= 0) { const c = h.combo > 0 ? h.combo : v.swings; act = c % 2 === 0 ? 'attack2' : 'attack1'; f = Math.floor(h.atkAnim * actN(A, act)); }
+  else if (h.hurtT > 0.12) { act = 'hurt'; f = actHeld(v, A, 'hurt'); }
+  else if (pk >= 0 && pk < 0.3 && sheetHas(body, 'pickup')) { act = 'pickup'; f = Math.floor(pk / 0.3 * actN(A, 'pickup')); }
+  else if (h.sitting) { act = 'sit'; f = 0; }
+  else if (h.moving) { act = 'walk'; f = Math.floor(h.walk * 1.26 * actN(A, 'walk') / 6 * (v.stride || 1)) % actN(A, 'walk'); }
+  else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = Math.floor(time * actFps(A, 'stance')) % actN(A, 'stance'); }
+  else { act = 'idle'; f = Math.floor(time * actFps(A, 'idle')) % actN(A, 'idle'); }
   const r = sheetFrame(body, act, f), ra = r ? r.act : 'idle', rf = r ? r.f : 0;
   if (v.act !== ra) { v.act = ra; v.actT = time; }
   const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = ra; o.f = rf; o.tint = tint; return o;
@@ -744,7 +810,7 @@ function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
   if (hair && !v.batched) hatHair(hair, hat);
   if (!v.batched) for (const L of v.layers) {
     if (L.caster) { L.caster.visible = L.mesh.visible && st.cast && st.a > 0.3; if (L.caster.visible) { L.caster.scale.set(sx * k, CAST_H * k, 1); L.caster.position.set(e.x, gh + z, e.y); L.caster.rotation.y = SPRF.cyaw; } }
-    if (L.xray) { L.xray.scale.copy(L.mesh.scale); L.xray.position.copy(L.mesh.position); L.xray.rotation.y = cam.yaw; L.xray.visible = L.mesh.visible && !P.dead; }
+    if (L.xray) { L.xray.scale.copy(L.mesh.scale); L.xray.position.copy(L.mesh.position); L.xray.rotation.y = cam.yaw; L.xray.visible = L.mesh.visible && !e.dead && v.xrayOn !== false; }   // (xrayOn: allies only when something may hide them)
   }
   _PL.rect = rect; _PL.gh = gh; _PL.z = z; return _PL;
 }
@@ -778,19 +844,43 @@ function placeHat(L, bodyL, sector) {
   pos.needsUpdate = true; L.geo.boundingSphere = null;
   return r;
 }
+// Hero batch variant (gfx-render.js HB): the same hat frame selection, but the placement is returned as a 2D affine of
+// a unit plane (u, v in -0.5..0.5) into the body plane, world units: X = a u + b v + tx, Y = c u + d v + ty (in _HAT).
+const _HAT = { a: 0, b: 0, c: 0, d: 0, tx: 0, ty: 0 };
+function hatAffine(L, bodyL, sector) {
+  const bj = bodyL.rec.json, hj = L.rec.json;
+  _hatD = sectorToDir(bj, sector === undefined ? 0 : sector).d;
+  const ha = headAnchor(bodyL); L.head = ha; if (!ha || !ha[3]) return null;
+  const hd = sectorToDir(hj, sector === undefined ? 0 : sector).d; L.hd = hd;
+  const r = setLayerFrame(L, 'idle', hd, 0); if (!r) return null;
+  const rot = ha[2] * Math.PI / 180, c = Math.cos(rot), s = Math.sin(rot);
+  const ax = hj.anchor[0], ay = hj.anchor[1], fw = hj.frameW, fh = hj.frameH;
+  const hx = ha[0] - bj.anchor[0], hy = bj.anchor[1] - ha[1], px0 = fw * 0.5 - ax, py0 = ay - fh * 0.5;   // (placeHat: px = fw (u + .5) - ax, py = fh (v + .5) + ay - fh)
+  _HAT.a = c * fw / PXU; _HAT.b = s * fh / PXU; _HAT.c = -s * fw / PXU; _HAT.d = c * fh / PXU;
+  _HAT.tx = (hx + px0 * c + py0 * s) / PXU; _HAT.ty = (hy - px0 * s + py0 * c) / PXU;
+  return r;
+}
 // hideHair: 'all' hides the hair layer; 'top' drops hair pixels beyond the hat's hairClip line (hglib.hair_clip_line),
 // expressed as a plane in the hair layer's atlas UVs: keep where dot(vec3(uv, 1), uClip) >= 0.
-function hatHair(hair, hat) {
-  const on = hat && hat.on && hat.head, hj = on ? hat.rec.json : null, mode = hj ? hj.hideHair || 'none' : 'none', U = hair.clipU;
-  if (mode === 'all') { hair.on = false; hair.mesh.visible = false; if (U) U.value.set(0, 0, 1); return; }
+// hatClip: 0 = no clip, 1 = clip plane in _CLIP, 2 = hide the hair (shared by the mesh path and the hero batch).
+const _CLIP = [0, 0, 1];
+function hatClip(hair, hat) {
+  const on = hat && hat.on && hat.head, hj = on ? hat.rec.json : null, mode = hj ? hj.hideHair || 'none' : 'none';
+  if (mode === 'all') return 2;
   const clip = mode === 'top' && hj.hairClip ? hj.hairClip[hat.hd === undefined ? 0 : hat.hd] : undefined;
-  if (!U) return;
-  if (clip === undefined) { U.value.set(0, 0, 1); return; }
+  if (clip === undefined) return 0;
   const ha = hat.head, rot = ha[2] * Math.PI / 180, dy = clip - hj.anchor[1];
   const px = ha[0] - Math.sin(rot) * dy, py = ha[1] + Math.cos(rot) * dy, nx = -Math.sin(rot), ny = Math.cos(rot);   // frame px, y down
   const pg = sheetPages(hair.rec)[hair.pg], tw = hair.rec.texW, th = pg.h, rx = hair.r.x, ry = hair.r.y - pg.y0;   // page-relative
   // pixel x = u*tw - rx, pixel y = (1 - v)*th - ry
-  U.value.set(tw * nx, -th * ny, (-rx - px) * nx + (th - ry - py) * ny);
+  _CLIP[0] = tw * nx; _CLIP[1] = -th * ny; _CLIP[2] = (-rx - px) * nx + (th - ry - py) * ny;
+  return 1;
+}
+function hatHair(hair, hat) {
+  const U = hair.clipU, m = hatClip(hair, hat);
+  if (m === 2) { hair.on = false; hair.mesh.visible = false; if (U) U.value.set(0, 0, 1); return; }
+  if (!U) return;
+  if (m === 0) U.value.set(0, 0, 1); else U.value.set(_CLIP[0], _CLIP[1], _CLIP[2]);
 }
 function sameRecs(a, b) { if (!a || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
 function setVis(e, recs, o) {
@@ -810,49 +900,108 @@ function setVis1(e, rec, glow, noCast) {
   v.seen = frameNo; return v;
 }
 
-/* ---------- Player ---------- */
-// Ready layer records for the player, or null (procedural). While a wanted layer is still
-// loading, keep the current sheet vis (or the procedural sprite) so nothing pops in half-dressed.
-function playerSheetRecs() {
-  const W = playerLayerWants(); if (!W || !SHEETS.indexReady) return null;
-  const recs = W.map(w => sheetRec(w[0], w[1], w[2]));
-  const keep = () => { const v = VIS.get(P); return v && v.sheet && v.pRecs ? v.pRecs : null; };
-  if (!recReady(recs[0])) return recPending(recs[0]) ? keep() : null;
-  if (recs.some(recPending)) return keep();
-  const bj = recs[0].json;   // a hat needs the body's head anchors (contract v3); without them it is left off
-  return recs.filter(r => recReady(r) && (layerOf(r) !== 'headgear' || hasHeadAnchors(bj)));
+/* ---------- Player / heroes ---------- */
+// Ready layer records for a hero, or null (procedural). While a wanted layer is still loading, keep the current sheet
+// vis (or the procedural sprite) so nothing pops in half-dressed. W = heroWants(h, hs); the returned array is W.ready
+// (reused: no allocation per frame).
+function heroSheetRecs(W, v) {
+  if (!W.want || !SHEETS.indexReady) return null;
+  const recs = W.recs, keep = v && v.sheet && v.pRecs ? v.pRecs : null;
+  if (!recReady(recs[0])) return recPending(recs[0]) ? keep : null;
+  for (let i = 0; i < recs.length; i++) if (recPending(recs[i])) return keep;
+  const bj = recs[0].json, R = W.ready; R.length = 0;   // a hat needs the body's head anchors (contract v3); without them it is left off
+  for (let i = 0; i < recs.length; i++) { const r = recs[i]; if (recReady(r) && (layerOf(r) !== 'headgear' || hasHeadAnchors(bj))) R.push(r); }
+  return R;
 }
+function playerSheetRecs() { if (!P) return null; const hs = heroState(P); return heroSheetRecs(heroWants(P, hs), VIS.get(P)); }
 // Mount / dismount: a dust puff at the swap (the new layer set appears once all its sheets have loaded) and the
 // squash-and-stretch wobble of sprFrame, so the rider does not just pop. Map changes and the first frame stay quiet.
-const MOUNTFX = { was: undefined, map: null };
-function mountSwap(v, mnt) {
-  const same = MOUNTFX.map === map; if (same && MOUNTFX.was !== undefined && MOUNTFX.was !== mnt && typeof PFX !== 'undefined') {
-    const gh = groundH(P.x, P.y); v.sqT = time;
-    PFX.dust(P.x, gh, P.y, 16, 1.9); PFX.dust(P.x + (P.fx || 0) * 0.5, gh, P.y + (P.fy || 0) * 0.5, 8, 1.2); PFX.dust(P.x - (P.fx || 0) * 0.5, gh, P.y - (P.fy || 0) * 0.5, 8, 1.2);
-    if (typeof VFX !== 'undefined' && VFX.flip) VFX.flip('impact_dust', P.x, P.y, gh, { sc: 1.25, a: 0.9 });   // the flipbook puff (vfx round 7)
+// Per hero (hs = heroState(h)): each rider of the party puffs on its own.
+function mountSwap(v, mnt, h, hs) {
+  if (!h) { h = P; hs = heroState(P); }
+  const same = hs.mntMap === map; if (same && hs.mnt !== undefined && hs.mnt !== mnt && typeof PFX !== 'undefined') {
+    const gh = groundH(h.x, h.y); v.sqT = time;
+    PFX.dust(h.x, gh, h.y, 16, 1.9); PFX.dust(h.x + (h.fx || 0) * 0.5, gh, h.y + (h.fy || 0) * 0.5, 8, 1.2); PFX.dust(h.x - (h.fx || 0) * 0.5, gh, h.y - (h.fy || 0) * 0.5, 8, 1.2);
+    if (typeof VFX !== 'undefined' && VFX.flip) VFX.flip('impact_dust', h.x, h.y, gh, { sc: 1.25, a: 0.9 });   // the flipbook puff (vfx round 7)
   }
-  MOUNTFX.was = mnt; MOUNTFX.map = map;
+  hs.mnt = mnt; hs.mntMap = map;
 }
 function usingSheetPlayer() { return !!(P && playerSheetRecs()); }
-const PLAYER_VIS_OPT = { xray: true };
-// Called from syncEntities. Returns false when the procedural sprite should be used.
-function syncSheetPlayer() {
-  const recs = playerSheetRecs();
-  if (!recs) { P.sheetH = 0; if (!SHEETS.indexReady) return pendingBlob(P, 0.45); const W = playerLayerWants(), b = W && sheetRec(W[0][0], W[0][1], W[0][2]); return recPending(b) ? pendingBlob(P, 0.45) : false; }
-  const v0 = VIS.get(P), v = setVis(P, recs, PLAYER_VIS_OPT); v.pRecs = recs;
-  for (let i = 0; i < recs.length; i++) if (!recs[i].keep) sheetWantAll(recs[i], true);   // the player fights any time: every page resident (idle-time uploads)
-  const body = v.layers[0].rec.json, mnt = !!(recs[0].entry && recs[0].entry.mounted);
-  if (v !== v0) { v.mounted = mnt; v.stride = mnt ? 0.72 : 1; if (v0 && v0.sheet) v.sector = v0.sector; mountSwap(v, mnt); }
-  v.sector = facingSector(P.fx === undefined ? 1 : P.fx, P.fy || 0, cam.yaw, v.sector);
-  const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body);
-  const st = sprFrame(v, P, { tint: pose.tint });
-  const pl = placeSheetVis(v, P, pose.act, dd, pose.f, dflip, st, P.hair);
-  placeBlob(v, P.x, pl.gh, P.y, v.mounted ? 0.85 : 0.45, pl.z, true);
-  P.sheetH = v.layers[0].rec.visH;
-  const dg = v.diag || (v.diag = { ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer) });
-  dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.d = dd; dg.flip = dflip; dg.sector = v.sector; dg.rect = pl.rect;
-  sprMotion(v, P, st, P.sheetH / PXU, pl.gh);
+const PLAYER_VIS_OPT = { xray: true }, HERO_HB_OPT = { batch: true };
+// Tall tiles between a hero and the camera (houses, walls, trees, pillars, props) within ~3.5 tiles: only then does an
+// ally draw its x-ray silhouette (the controlled hero always has it). A few tile reads per ally per frame.
+function heroOccluded(h) {
+  if (typeof map === 'undefined' || !map || !map.t || typeof T === 'undefined' || !T) return true;
+  const t = map.t, w = map.w, hh = map.h, fx = Math.sin(cam.yaw), fy = Math.cos(cam.yaw), rx = SPRF.rx, ry = SPRF.ry;
+  for (let k = 1; k <= 7; k++) {
+    const d = k * 0.5;
+    for (let s = -1; s <= 1; s++) {
+      const xi = Math.floor(h.x + fx * d + rx * s * 0.4), yi = Math.floor(h.y + fy * d + ry * s * 0.4); if (xi < 0 || yi < 0 || xi >= w || yi >= hh) continue;
+      const q = t[yi * w + xi];
+      if (q === T.WALL || q === T.TREE || q === T.RUIN || q === T.PILLAR || q === T.WAY || q === T.HEART || (T.PROP !== undefined && q === T.PROP) || (T.CRYSTAL !== undefined && q === T.CRYSTAL)) return true;
+    }
+  }
+  return false;
+}
+// Vis state carried over when a swap moves a hero between the layered path and the hero batch, so facing, light,
+// squash and the attack alternation do not pop.
+function heroVisCarry(v, v0) {
+  if (!v0 || !v0.sheet) return;
+  v.sector = v0.sector; v.lt = v0.lt; v.sqT = v0.sqT; v.lastHF = v0.lastHF; v.swings = v0.swings; v.lastAtk = v0.lastAtk; v.combatT = v0.combatT; v.heavyArm = v0.heavyArm; v.heavySwing = v0.heavySwing; v.step = v0.step;
+}
+// Hero batch eligibility (gfx-render.js HB): every layer indexed (palette) and on one page.
+function hbRecsOK(recs) {
+  if (typeof hbOn !== 'function' || !hbOn()) return false;
+  for (let i = 0; i < recs.length; i++) { const r = recs[i]; if (!r.pal || sheetPages(r).length !== 1) return false; }
   return true;
+}
+// Called from syncEntities for every hero (P through syncSheetPlayer). Returns false when the procedural sprite should
+// be used. The controlled hero keeps its own layered meshes (exactly as before squad mode); allies are instances of the
+// shared hero batches (HB: a few draws for the whole party), or layered meshes when their sheets cannot be batched.
+function syncSheetHero(h) {
+  const hs = heroState(h), W = heroWants(h, hs), v0 = VIS.get(h), recs = heroSheetRecs(W, v0);
+  if (!recs) { h.sheetH = 0; if (!SHEETS.indexReady) return pendingBlob(h, 0.45); return recPending(W.recs[0]) ? pendingBlob(h, 0.45) : false; }
+  const lead = typeof ctrlHero === 'function' ? ctrlHero() : P, hb = h !== lead && hbRecsOK(recs);
+  let v = v0;
+  if (!v || !v.sheet || !!v.hb !== hb || !sameRecs(v.recs, recs)) { if (v) disposeVis(v); v = makeSheetVis(recs, hb ? HERO_HB_OPT : PLAYER_VIS_OPT); v.hb = hb; VIS.set(h, v); if (v0 && v0.sheet && !!v0.hb !== hb) heroVisCarry(v, v0); }
+  v.seen = frameNo; v.pRecs = recs;
+  for (let i = 0; i < recs.length; i++) if (!recs[i].keep) sheetWantAll(recs[i], true);   // heroes fight any time: every page resident (idle-time uploads)
+  const body = v.layers[0].rec.json, mnt = !!(recs[0].entry && recs[0].entry.mounted);
+  if (v !== v0) { v.mounted = mnt; v.stride = mnt ? 0.72 : 1; if (v0 && v0.sheet) v.sector = v0.sector; mountSwap(v, mnt, h, hs); }
+  v.xrayOn = h === lead ? undefined : !h.dead && heroOccluded(h);
+  v.sector = facingSector(h.fx === undefined ? 1 : h.fx, h.fy || 0, cam.yaw, v.sector);
+  const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body, h);
+  const so = v.so || (v.so = { tint: undefined }); so.tint = pose.tint;
+  const st = sprFrame(v, h, so);
+  const pl = hb ? heroHBFrame(v, h, pose.act, dd, pose.f, dflip, st) : placeSheetVis(v, h, pose.act, dd, pose.f, dflip, st, h.hair);
+  placeBlob(v, h.x, pl.gh, h.y, v.mounted ? 0.85 : 0.45, pl.z, true);
+  h.sheetH = v.layers[0].rec.visH;
+  const dg = v.diag || (v.diag = { ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer), hb });
+  dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.d = dd; dg.flip = dflip; dg.sector = v.sector; dg.rect = pl.rect;
+  sprMotion(v, h, st, h.sheetH / PXU, pl.gh);
+  return true;
+}
+function syncSheetPlayer() { return syncSheetHero(P); }   // (the name tools/perf.js times as sync.player)
+// Hero batch frame: select every layer's frame (hat: its affine on the head anchor; hair: the hat's clip), then queue
+// the vis for gfx-render.js hbFlushHeroes, which gives the layers texture slots and writes the instances once every hero
+// of the frame is known. Returns a shared scratch { rect, gh, z } like placeSheetVis.
+const _HBL = { rect: null, gh: 0, z: 0 };
+function heroHBFrame(v, e, act, d, f, flip, st) {
+  const gh = groundH(e.x, e.y), z = (e.z || 0) / PXU + st.zoff;
+  let rect = null, body = null, hat = null, hair = null;
+  for (let i = 0; i < v.layers.length; i++) {
+    const L = v.layers[i]; let r;
+    if (L.layer === 'headgear') {
+      hat = L; r = body ? hatAffine(L, body, v.sector) : null;
+      if (r) { const A = L.aff || (L.aff = new Float32Array(6)); A[0] = _HAT.a; A[1] = _HAT.b; A[2] = _HAT.c; A[3] = _HAT.d; A[4] = _HAT.tx; A[5] = _HAT.ty; } else L.on = false;
+    } else { r = setLayerFrame(L, act, d, f); if (!body) body = L; if (L.layer === 'hair') hair = L; }
+    if (!rect) rect = r;
+  }
+  v.clipM = hair ? hatClip(hair, hat) : 0;
+  if (v.clipM === 2) hair.on = false; else if (v.clipM === 1) { const C = v.clip || (v.clip = new Float32Array(3)); C[0] = _CLIP[0]; C[1] = _CLIP[1]; C[2] = _CLIP[2]; }
+  v.hbX = e.x; v.hbY = gh + z; v.hbZ = e.y; v.hbFlip = flip; v.hbHair = e.hair; v.hbDead = !!e.dead;
+  hbQueue(v);
+  _HBL.rect = rect; _HBL.gh = gh; _HBL.z = z; return _HBL;
 }
 
 /* ---------- Mobs ---------- */
@@ -1013,20 +1162,28 @@ if (typeof companionFollow !== 'function') window.companionFollow = function (c,
    least SEP.pet on its side of the owner and a flying Huginn at least SEP.raven on the other side, lifted SEP.lift
    higher. The side follows the pet (hysteresis), offsets ease in and out, and fade to 0 as Huginn leaves on a dive. */
 const COMP_SEP = { pet: 0.62, raven: 0.8, lift: 0.42, near: 3.2, side: 1 };
+function compEase(c, lat, lift, k) { c._sepL = (c._sepL || 0) + (lat - (c._sepL || 0)) * k; c._sepH = (c._sepH || 0) + (lift - (c._sepH || 0)) * k; }
+// Squad mode: one pet + raven pair per owner hero (each ally's pet and Huginn separate around their own owner).
 function compSeparate(L, dt) {
   if (typeof window !== 'undefined' && window.AOM_COMP_SEP === false) { for (const c of L) if (c) c._sepL = c._sepH = 0; return; }   // A/B switch
-  let pet = null, rav = null;
-  for (let i = 0; i < L.length; i++) { const c = L[i]; if (!c || c.hidden || c.x === undefined) continue; if (c.kind === 'raven') { if (!rav && !c.tint) rav = c; } else if (!pet) pet = c; }
   const k = 1 - Math.exp(-dt * 7), rx = SPRF.rx, ry = SPRF.ry;
-  const ease = (c, lat, lift) => { if (!c) return; c._sepL = (c._sepL || 0) + (lat - (c._sepL || 0)) * k; c._sepH = (c._sepH || 0) + (lift - (c._sepH || 0)) * k; };
-  if (!pet || !rav || (pet.owner || P) !== (rav.owner || P)) { for (const c of L) if (c && (c._sepL || c._sepH)) ease(c, 0, 0); return; }
-  const o = pet.owner || P, lp = (pet.x - o.x) * rx + (pet.y - o.y) * ry;
-  if (lp > 0.25) COMP_SEP.side = 1; else if (lp < -0.25) COMP_SEP.side = -1;
-  const sd = COMP_SEP.side, dp = Math.hypot(pet.x - o.x, pet.y - o.y), wp = clamp((COMP_SEP.near + 1 - dp) / 1, 0, 1);
-  ease(pet, Math.max(0, COMP_SEP.pet - sd * lp) * sd * wp, 0);
-  const lr = (rav.x - o.x) * rx + (rav.y - o.y) * ry, dr = Math.hypot(rav.x - o.x, rav.y - o.y);
-  const flying = rav.state !== 'perch' && rav.state !== 'attack', wr = flying ? clamp((COMP_SEP.near - dr) / 1.2, 0, 1) : 0;
-  ease(rav, -Math.max(0, COMP_SEP.raven + sd * lr) * sd * wr, COMP_SEP.lift * wr);
+  for (let i = 0; i < L.length; i++) if (L[i]) L[i]._sepP = false;
+  for (let i = 0; i < L.length; i++) {
+    const pet = L[i]; if (!pet || pet.hidden || pet.x === undefined || pet.kind === 'raven') continue;
+    const o = pet.owner || P; if (!o) continue;
+    let rav = null, other = false;
+    for (let j = 0; j < L.length; j++) { const c = L[j]; if (!c || c === pet || c.hidden || c.x === undefined || (c.owner || P) !== o) continue; if (c.kind === 'raven') { if (!rav && !c.tint) rav = c; } else if (c._sepP) other = true; }
+    if (!rav || other || rav._sepP) continue;   // (the first pet of an owner pairs with its raven)
+    pet._sepP = rav._sepP = true;
+    const lp = (pet.x - o.x) * rx + (pet.y - o.y) * ry;
+    if (lp > 0.25) pet._sepS = 1; else if (lp < -0.25) pet._sepS = -1;
+    const sd = pet._sepS || COMP_SEP.side, dp = Math.hypot(pet.x - o.x, pet.y - o.y), wp = clamp((COMP_SEP.near + 1 - dp) / 1, 0, 1);
+    compEase(pet, Math.max(0, COMP_SEP.pet - sd * lp) * sd * wp, 0, k);
+    const lr = (rav.x - o.x) * rx + (rav.y - o.y) * ry, dr = Math.hypot(rav.x - o.x, rav.y - o.y);
+    const flying = rav.state !== 'perch' && rav.state !== 'attack', wr = flying ? clamp((COMP_SEP.near - dr) / 1.2, 0, 1) : 0;
+    compEase(rav, -Math.max(0, COMP_SEP.raven + sd * lr) * sd * wr, COMP_SEP.lift * wr, k);
+  }
+  for (let i = 0; i < L.length; i++) { const c = L[i]; if (c && !c._sepP && (c._sepL || c._sepH)) compEase(c, 0, 0, k); }
 }
 function syncCompanions() {
   const L = compList(); if (!L.length || !SHEETS.indexReady) return;

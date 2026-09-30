@@ -88,7 +88,10 @@ function pollPad(dt) {
   const b = i => !!(gp.buttons[i] && gp.buttons[i].pressed), prev = CTRL.padPrev, down = i => b(i) && !prev[i], up = i => !b(i) && prev[i];
   if (started && $('dialog').hidden) {
     if (down(2)) actLight(); if (down(3)) actHeavyStart(); if (up(3)) actHeavyRelease();
-    if (down(1)) actDodge(); if (down(4) || down(5)) actBlock(true); if ((up(4) || up(5)) && !b(4) && !b(5)) actBlock(false);
+    // cycle 8: with companions the right bumper takes control of the next hero (squadCycle); the left one still blocks
+    const rbSwap = typeof PARTY !== 'undefined' && PARTY && PARTY.members.length > 1 && typeof squadCycle === 'function';
+    if (down(1)) actDodge(); if (down(4) || (down(5) && !rbSwap)) actBlock(true); if ((up(4) || up(5)) && !b(4) && !(b(5) && !rbSwap)) actBlock(false);
+    if (rbSwap && down(5)) squadCycle(1);
     if (down(0)) actInteract(); if (down(12)) useHot(0); if (down(15)) useHot(1); if (down(13)) useHot(2); if (down(14)) useHot(3);
     if (down(9)) toggleWin('status'); if (down(8)) toggleWin('inv');
   } else if (!$('dialog').hidden && down(0)) { const btn = $('dopts').querySelector('button'); if (btn) btn.click(); }

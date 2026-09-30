@@ -285,7 +285,7 @@ function questTick(dt) {
     const q = QUESTS[id], a = P.quests.active[id];
     q.obj.forEach((o, i) => {
       if (o.type !== 'survive' || objDone(q, a, i) || !objOpen(q, a, i)) return;
-      if (P.dead) { if (a.p[i] > 0) { a.p[i] = 0; a.w = 0; log(`${q.name}: you fell. The count starts again.`, 'warn'); UI.dirty = true; } return; }
+      if (P.dead) { if (partyWiped() && a.p[i] > 0) { a.p[i] = 0; a.w = 0; log(`${q.name}: you fell. The count starts again.`, 'warn'); UI.dirty = true; } return; }   // cycle 8: only a fallen party starts over
       const inside = P.map === o.map && (o.x === undefined || Math.hypot(P.x - o.x, P.y - o.y) <= (o.r || 5));
       if (!inside) return;
       const before = Math.floor(a.p[i] || 0); a.p[i] = (a.p[i] || 0) + dt;
@@ -406,7 +406,7 @@ function questTickWaves(dt) {
       }
       const vanished = W.mobs.some(m => !m.dead && !mobs.includes(m));
       const fail = why => { for (const m of W.mobs) if (!m.dead) { const j = mobs.indexOf(m); if (j >= 0) mobs.splice(j, 1); } delete WAVE_RT[tag]; a.p[i] = 0; a.wcool = time + 5; questToast(`${q.name}: ${why}`, ''); log(`${q.name}: ${why} Step back in to start again.`, 'warn'); UI.dirty = true; };
-      if (P.dead || P.map !== o.map || Math.hypot(P.x - o.x, P.y - o.y) > R + 8) { fail(P.dead ? 'you fell. The line breaks.' : 'you left your post.'); return; }
+      if (partyWiped() || P.map !== o.map || (!P.dead && Math.hypot(P.x - o.x, P.y - o.y) > R + 8)) { fail(P.dead ? 'you fell. The line breaks.' : 'you left your post.'); return; }   // cycle 8: a companion takes over when you fall
       if (vanished) { fail('the line was broken.'); return; }
       if (W.gap > 0) {
         W.gap -= dt; if (W.gap > 0) return;

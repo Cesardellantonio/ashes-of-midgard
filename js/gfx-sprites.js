@@ -240,8 +240,14 @@ function buildFrames(key, spr, look, s, hPx) {
 function framesForMob(m) { const d = m.d; const human = d.spr === 'human'; const s = human ? (d.look.scale || 1) : (d.size || 1); return buildFrames('mob:' + (m.variant || m.type), d.spr, human ? d.look : { col: d.col, eye: d.eye, crown: d.crown, spots: d.spots }, s, d.h); }
 function framesForNPC(n) { return buildFrames('npc:' + n.id, 'human', n.look, n.look.scale || 1, 58 * (n.look.scale || 1)); }
 function framesForPlayer() { const lk = playerLook(); const key = 'pl:' + JSON.stringify(lk); return buildFrames(key, 'human', lk, 1, 58); }
-function playerLook() {
-  const C = CLASSES[P.cls].look, head = P.equip.head ? P.equip.head.id : null, hg = headgearLook(head);
-  return Object.assign({ skin: '#f7d8bf', hair: P.hair, head: 'human', weapon: S.wtype === 'fist' ? 'none' : S.wtype, wcol: S.wtype === 'bow' ? '#7a4e28' : '#c8ccd6', shield: !!P.equip.shield,
+function playerLook() { return heroLook(P); }
+// Procedural look of any hero (squad mode: allies whose class has no sheets). An ally's weapon type comes from its own
+// stats (hero.S / hero.stats) when core gives them, else its equipped weapon (gfx-sheets.js heroWtype).
+function heroLook(h) {
+  const C = CLASSES[h.cls].look, head = h.equip.head ? h.equip.head.id : null, hg = headgearLook(head);
+  const wt = h === P ? S.wtype : (typeof heroWtype === 'function' ? heroWtype(h) : 'fist');
+  return Object.assign({ skin: '#f7d8bf', hair: h.hair, head: 'human', weapon: wt === 'fist' ? 'none' : wt, wcol: wt === 'bow' ? '#7a4e28' : '#c8ccd6', shield: !!h.equip.shield,
     headgear: hg ? hg.hg : null, hgCol: hg && hg.col, hgGem: hg && hg.gem, hgWings: !!(hg && hg.wings), hgHood: !!(hg && hg.hood) }, C, { hat: head ? null : C.hat });
 }
+// (fallback path only: the key string is built per call, as for the player)
+function framesForHero(h) { if (h === P) return framesForPlayer(); const lk = heroLook(h); return buildFrames('pl:' + JSON.stringify(lk), 'human', lk, 1, 58); }

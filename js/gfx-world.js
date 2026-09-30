@@ -449,6 +449,10 @@ function canvasTex(c, o = {}) {
     t.encoding = THREE.sRGBEncoding; return t;
   };
 })();
+/* Squad mode: the hero the player controls. core's withHero(h, fn) swaps P to a companion while that companion acts;
+   rendering runs outside it, but the camera, the controlled-hero ring, the prop occluder and the focus band read
+   leadHero() when core defines it, falling back to P. */
+function ctrlHero() { if (typeof leadHero === 'function') { const h = leadHero(); if (h) return h; } return P; }
 function smoothstep(a, b, x) { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
 function tnoise(x, y, Pp, s) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf); const h = (i, j) => hash2(((i % Pp) + Pp) % Pp, ((j % Pp) + Pp) % Pp, s); const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1); return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; }
 const NZ = (() => { const N = 256, a = new Float32Array(N * N), b = new Float32Array(N * N); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { a[y * N + x] = tnoise(x / 16, y / 16, 16, 5) * 0.65 + tnoise(x / 8, y / 8, 32, 6) * 0.35; b[y * N + x] = Math.random(); } return { a, b }; })();
@@ -870,7 +874,7 @@ function groundHm(m, x, y) {
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 }
 function hgtAt(m, x, y) { const W1 = m.w + 1; return m.hgt[clamp(Math.round(y), 0, m.h) * W1 + clamp(Math.round(x), 0, m.w)]; }
-function headH(e) { const hp = e === P || e.kind === 'player' ? 58 : e.d ? e.d.h : e.look ? 58 * (e.look.scale || 1) : 30; return hp / PXU / COSP; }
+function headH(e) { const hp = e === P || e.kind === 'player' || (typeof HSET !== 'undefined' && HSET.has(e)) ? 58 : e.d ? e.d.h : e.look ? 58 * (e.look.scale || 1) : 30; return hp / PXU / COSP; }
 function chestH(e) { if (!e || e.x === undefined) return 1; if (e.kind === 'drop') return groundH(e.x, e.y) + 0.3; return groundH(e.x, e.y) + (e.z || 0) / PXU + headH(e) * 0.5; }
 // Height of the decorative skirt around the map (continues the edge, gentle hills further out)
 // (the sea / a lake running off the map edge continues outward: no hills rising out of it along the border, which drew a
@@ -1156,7 +1160,7 @@ function occluder(sh) {
       if (ok > 0.0) { vec2 f = mod(floor(gl_FragCoord.xy), 4.0); float b = mod(f.x * 2.0 + f.y * 3.0 + floor(f.y * 0.5) * 1.0, 4.0) * 0.25 + mod(f.x + f.y * 2.0, 2.0) * 0.125; if (b < ok * 1.15 - 0.1) discard; } }`);
 }
 function updateOccluder() {
-  if (!P) return;
+  const P = ctrlHero(); if (!P) return;
   camera.updateMatrixWorld();
   _v3.set(P.x, groundH(P.x, P.y) + 0.7, P.y); const z = -_v3.clone().applyMatrix4(camera.matrixWorldInverse).z; _v3.project(camera);
   OCC.uOccP.value.set(_v3.x, _v3.y); OCC.uOccZ.value = z; OCC.uOccA.value = camera.aspect; OCC.uOccR.value = 0.16 * 40 / Math.max(15, cam.dist);
@@ -2918,6 +2922,7 @@ function spellLights() {
   }
   if (typeof teles !== 'undefined') for (const t of teles) add(t.x, t.y, groundH(t.x, t.y) + 0.8, '#ff4a1a', 0.8 + 1.4 * (t.t / t.dur), t.r + 2.5);
   if (P && P.casting && typeof SKILLS !== 'undefined' && SKILLS[P.casting.id]) add(P.x, P.y, groundH(P.x, P.y) + 0.6, ELCOL[SKILLS[P.casting.id].el] || '#ffffff', 1.6, 5);
+  if (P && typeof gfxHeroes === 'function' && typeof SKILLS !== 'undefined') { const H = gfxHeroes(); for (let i = 0; i < H.length; i++) { const h = H[i]; if (h !== P && h.casting && !h.dead && SKILLS[h.casting.id]) add(h.x, h.y, groundH(h.x, h.y) + 0.6, ELCOL[SKILLS[h.casting.id].el] || '#ffffff', 1.6, 5); } }   // squad mode: allies' casts
   return n;
 }
 function updateLights() {
@@ -3017,10 +3022,28 @@ function animateWorld(dt) {
   const key = map.id + '|' + lit + '|' + !!(P.flags && P.flags.kingSlain); if (LT.key !== key) buildLightGrid();
   updateLights(); updateSun(); updateAtmosphere();
 }
+/* Squad mode: when the player swaps heroes (P changes to another member of the same PARTY, same map), the camera eases
+   from where it is to the new hero over CAMSW.dur s (smoothstep, tracking the hero while it moves) instead of the
+   follow's snap-ish catch-up, then the usual exponential follow takes over. A party of one never swaps. */
+const CAMSW = { p: null, map: null, t: -1, dur: 0.3, x0: 0, y0: 0, h0: 0 };
 function updateCamera(dt) {
+  const P = ctrlHero();
   if (P) {
-    const k = started ? 1 - Math.pow(0.0005, dt) : 0.02;
-    cam.tx += (P.x - cam.tx) * k; cam.ty += (P.y - cam.ty) * k; cam.th += (groundH(P.x, P.y) - cam.th) * k;
+    if (CAMSW.p !== P) {
+      const prev = CAMSW.p, party = typeof PARTY !== 'undefined' && PARTY && PARTY.members;
+      if (prev && started && CAMSW.map === map && party && party.length > 1 && party.indexOf(prev) >= 0 && party.indexOf(P) >= 0) { CAMSW.t = 0; CAMSW.x0 = cam.tx; CAMSW.y0 = cam.ty; CAMSW.h0 = cam.th; }
+      else CAMSW.t = -1;
+      CAMSW.p = P;
+    }
+    CAMSW.map = map;
+    if (CAMSW.t >= 0) {
+      CAMSW.t += dt; const k = smoothstep(0, CAMSW.dur, CAMSW.t);
+      cam.tx = CAMSW.x0 + (P.x - CAMSW.x0) * k; cam.ty = CAMSW.y0 + (P.y - CAMSW.y0) * k; cam.th = CAMSW.h0 + (groundH(P.x, P.y) - CAMSW.h0) * k;
+      if (CAMSW.t >= CAMSW.dur) CAMSW.t = -1;
+    } else {
+      const k = started ? 1 - Math.pow(0.0005, dt) : 0.02;
+      cam.tx += (P.x - cam.tx) * k; cam.ty += (P.y - cam.ty) * k; cam.th += (groundH(P.x, P.y) - cam.th) * k;
+    }
   }
   if (!started) cam.yawT += dt * 0.04;
   cam.yaw += (cam.yawT - cam.yaw) * (1 - Math.pow(0.002, dt));

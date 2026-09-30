@@ -292,7 +292,7 @@
   function cleanUrl() { try { history.replaceState(null, '', here() + location.hash); } catch (e) { /* */ } }
   async function signOut() {
     if (!S.user || S.busy) return; S.busy = true; S.msg = { t: 'info', m: 'Saving to the cloud before signing out…' }; render();
-    try { if (Object.keys(S.dirty).length) await withTimeout(run(() => uploadDirty('signout')), 6000).catch(() => {}); await S.auth.signOut(); S.msg = { t: 'ok', m: 'Signed out. Your saves on this device stay here.' }; gameLog('Signed out of cloud saves. Your save stays in this browser.'); }
+    try { if (Object.keys(S.dirty).length) await withTimeout(run(() => uploadDirty('signout')), 6000).catch(() => {}); await S.auth.signOut(); S.delPending = false; S.msg = { t: 'ok', m: 'Signed out. Your saves on this device stay here.' }; gameLog('Signed out of cloud saves. Your save stays in this browser.'); }
     catch (e) { S.msg = { t: 'bad', m: 'Could not sign out: ' + ((e && e.code) || e) }; }
     finally { S.busy = false; render(); }
   }
@@ -348,7 +348,7 @@
   }
   async function syncAll(why) {
     return run(async () => {
-      if (!S.user || S.reloading) return;
+      if (!S.user || S.reloading || S.delPending) return;   // delPending: cloud saves deleted, account deletion awaits re-auth, so don't re-upload
       S.status = 'checking'; S.err = null; render();
       try {
         flushGame();
@@ -365,7 +365,7 @@
     });
   }
   async function uploadDirty(why) {
-    if (!S.user || S.reloading) return;
+    if (!S.user || S.reloading || S.delPending) return;   // delPending: cloud saves deleted, account deletion awaits re-auth, so don't re-upload
     if (!S.initialDone) return;   // the sign-in sync covers it
     const slots = Object.keys(S.dirty).filter(s => !S.paused[s]); if (!slots.length) return;
     S.status = 'uploading'; render();
@@ -406,7 +406,7 @@
   function clearTimers() { clearTimeout(S.tmr); clearTimeout(S.retryTmr); S.tmr = S.retryTmr = null; S.retryKind = null; S.retryAt = 0; S.attempt = 0; }
   function onLocalWrite(slot, removed) {
     if (!removed) setLocalAt(slot, Date.now());
-    if (!S.user || S.reloading) return;
+    if (!S.user || S.reloading || S.delPending) return;   // delPending: cloud saves deleted, account deletion awaits re-auth, so don't re-upload
     S.dirty[slot] = true; schedule(false);
   }
   function flushNow() { if (S.user && Object.keys(S.dirty).length && !S.reloading) { clearTimeout(S.retryTmr); S.retryTmr = null; S.retryKind = null; schedule(true); } }
@@ -452,10 +452,10 @@
     const u = S.auth.currentUser; if (!u) return;
     try {
       await withTimeout(u.delete(), 0, 'account delete');
-      lsSet(K.was, null); S.view = 'panel'; S.msg = { t: 'ok', m: 'Your cloud saves and your account are deleted. Saves on this device are untouched.' };
+      S.delPending = false; lsSet(K.was, null); S.view = 'panel'; S.msg = { t: 'ok', m: 'Your cloud saves and your account are deleted. Saves on this device are untouched.' };
       gameLog('Cloud data deleted. Your save stays in this browser.');
     } catch (e) {
-      if (e && e.code === 'auth/requires-recent-login') { S.view = 'reauth'; S.msg = { t: 'warn', m: 'Your cloud saves are deleted. To delete the account itself, confirm it is you by signing in once more.' }; }
+      if (e && e.code === 'auth/requires-recent-login') { S.delPending = true; S.view = 'reauth'; S.msg = { t: 'warn', m: 'Your cloud saves are deleted. To delete the account itself, confirm it is you by signing in once more.' }; }
       else throw e;
     }
   }
@@ -842,6 +842,8 @@
     configured, providers,
     state: () => ({ status: S.status, view: S.view, user: S.user && Object.assign({}, S.user), dirty: Object.keys(S.dirty), paused: Object.keys(S.paused), conflicts: S.conflicts.map(c => ({ slot: c.slot, local: summary(c.L), cloud: c.C ? summary(c.C.data) : null })), msg: S.msg, busy: S.busy, initialDone: S.initialDone, attempt: S.attempt, retryAt: S.retryAt, sdk: !!S.auth, stats: Object.assign({}, S.stats), hooks: { store: !!ORIG.store, saveGame: !!ORIG.saveGame, showTitle: !!ORIG.showTitle } }),
     idle: () => S.chain,
+    // Firebase ID token of the signed-in user (for the squad chat relay), or null for guests / not configured / mock.
+    idToken: async force => { try { const u = S.auth && S.auth.currentUser; return u && u.getIdToken ? await u.getIdToken(!!force) : null; } catch (e) { return null; } },
     get mock() { return S.mock ? S.mock.M : null; },
     _csum: csum
   };

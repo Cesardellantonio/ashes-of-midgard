@@ -68,6 +68,47 @@ let hover = null, lastSave = 0, bossShown = null, bossLag = 1;
 const mapCache = {};
 let uidc = 1;
 
+/* Cycle 8 (squad mode): the party. design/squad-contract.md.
+   PARTY = { members: [hero, ...], lead, owner } holds 1-4 heroes, or is null (solo play, exactly as before). Every hero
+   has the shape of P; P is always the member the player controls (squadSwap in js/squad.js moves it). The player's own
+   hero is PARTY.owner: the companions' party-wide fields (bag, zeny, quests, flags, storage, ...) are accessors onto
+   the owner's (js/squad.js SQUAD_SHARED), so every member sees the same bag and the same quest log.
+   Hero context: withHero(h, fn) runs fn with P = h and S = h's stat block (h._S) and puts both back afterwards, so all
+   the P-centric combat code (skills, hits, buffs, regen, death) works for a companion unchanged. Timers, projectiles
+   and zones remember the hero that made them (t.h / p.h / z.h) and fire in that hero's context. With a party of one
+   none of this changes anything: withHero(P, fn) is a plain call and every multi-hero branch is gated on partyN() > 1. */
+var PARTY = null;
+const SOLO_ = [null];
+function heroes() { if (PARTY) return PARTY.members; SOLO_[0] = P; return P ? SOLO_ : []; }
+function allies() { return heroes().filter(h => h !== P); }
+const partyN = () => PARTY ? PARTY.members.length : 1;
+// The hero the player controls, also while another hero's context is active.
+const leadHero = () => PARTY ? PARTY.members[PARTY.lead] || P : P;
+const inParty = h => !!PARTY && PARTY.members.indexOf(h) >= 0;
+// Whole party down (solo: the hero is dead): the old death flow and every "you fell" check.
+function partyWiped() { if (!PARTY || PARTY.members.length < 2) return !!(P && P.dead); for (const h of PARTY.members) if (!h.dead) return false; return true; }
+const HCTX = { depth: 0, quiet: 0, rb: null };
+const NOOP_ = () => {};
+function withHero(h, fn, a, b, c) {
+  if (!h || h === P) return fn(a, b, c);
+  const p0 = P, s0 = S, quiet = h !== leadHero();
+  if (p0) p0._S = s0;
+  P = h; S = h._S || null; HCTX.depth++;
+  // A companion's buff changes must not repaint the player's buff bar (js/ui.js renderBuffs reads P).
+  if (quiet && HCTX.quiet++ === 0 && typeof renderBuffs === 'function') { HCTX.rb = renderBuffs; renderBuffs = NOOP_; }
+  try { if (!S) calcStats(); return fn(a, b, c); }
+  finally {
+    h._S = S; P = p0; S = p0 ? p0._S || s0 : s0; HCTX.depth--;
+    if (quiet && --HCTX.quiet === 0 && HCTX.rb) { renderBuffs = HCTX.rb; HCTX.rb = null; }
+  }
+}
+// A hero's stat block (the S of that hero). The UI and the renderer read companions' Max HP / SP through this.
+function heroStats(h) { if (!h || h === P) return S; if (!h._S) withHero(h, NOOP_); return h._S; }
+// Deferred work (timers, projectiles, zones) made by hero h runs in h's context again (a party of one: a plain call).
+function asOwner(h, fn, a) { if (PARTY && h && h !== P && PARTY.members.indexOf(h) >= 0) return withHero(h, fn, a); return fn(a); }
+// Hero-centric chatter ("Blessing wears off.", "Not enough SP.") is only for the hero the player controls.
+function hlog(msg, cls) { if (!HCTX.quiet) log(msg, cls); }
+
 /* =========================================================
    Map generation
    ========================================================= */
@@ -454,11 +495,12 @@ function useItem(it) {
   if (t.type !== 'use' || P.dead) return;
   if (P.potCD > 0) return; P.potCD = 0.25;
   if (t.effect === 'tame') { tameUse(it); return; } if (t.effect === 'egg') { hatchEgg(it); return; } if (t.effect === 'petfood') { petFeed(); return; }   // round 6
+  if (t.effect === 'revive') { if (typeof squadLeaf === 'function') squadLeaf(it); else log('Nobody here needs it.', 'sys'); return; }   // cycle 8: Leaf of Yggdrasil
   if (t.buff) { const B = t.buff; addBuff(B.id, B.name, B.icon || 'food', B.secs, B.bonus); if (t.heal) healP(randi(t.heal[0], t.heal[1])); floatText(P, B.name, 'info'); burst(P.x, P.y, 26, t.color || '#ffd070', 10, 1.4); log(`${t.name}: ${Object.entries(B.bonus).map(([k, v]) => bonusLine(k, v)).join(', ')} for ${Math.round(B.secs / 60)} min.`, 'sys'); }
   else if (t.heal) { if (P.hp >= S.maxhp) { log('You are already at full health.', 'sys'); return; } healP(randi(t.heal[0], t.heal[1])); burst(P.x, P.y, 26, '#ff6a6a', 8, 1.2); }
   else if (t.sp) { if (P.sp >= S.maxsp) { log('Your SP is already full.', 'sys'); return; } const a = randi(t.sp[0], t.sp[1]); P.sp = Math.min(S.maxsp, P.sp + a); floatText(P, '+' + a, 'sp'); burst(P.x, P.y, 26, '#6a9aff', 8, 1.2); }
   else if (t.effect === 'full') { P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffc070'); }
-  else if (t.effect === 'fly') { if (map.d.safe) { log('The Waystone’s pull is too strong here.', 'sys'); return; } const s = randomSpot(4); if (!s) return; P.x = s.x; P.y = s.y; stopAll(); snapCam(); Sfx.warp(); burst(P.x, P.y, 20, '#e8e0c8', 16, 2); }
+  else if (t.effect === 'fly') { if (map.d.safe) { log('The Waystone’s pull is too strong here.', 'sys'); return; } const s = randomSpot(4); if (!s) return; P.x = s.x; P.y = s.y; stopAll(); snapCam(); Sfx.warp(); burst(P.x, P.y, 20, '#e8e0c8', 16, 2); if (partyN() > 1 && typeof squadArrive === 'function') squadArrive(); }   // cycle 8: the party flies with you
   else if (t.effect === 'return') { takeItem(it.id); Sfx.warp(); gotoMap(P.lastWay.map, P.lastWay.x, P.lastWay.y); return; }
   Sfx.drink(); takeItem(it.id);
 }
@@ -552,7 +594,7 @@ const mobsNear = (x, y, r) => {
 };
 const mobElem = m => m.frozen > 0 ? 'water' : m.d.elem;
 const isUndeadish = m => m.d.elem === 'undead' || m.d.race === 'undead' || m.d.race === 'demon';
-function after(t, fn) { timers.push({ t, fn }); }
+function after(t, fn) { timers.push({ t, fn, h: P }); }   // cycle 8: h = the hero whose context it fires in
 
 /* =========================================================
    Combat
@@ -564,8 +606,35 @@ const mobHitStat = m => m.d.lvl * 2 + 12;
 function aggro(m) {
   if (m.dead || m.d.inert) return;
   if (m.state !== 'chase') { m.state = 'chase'; m.repath = 0; }
+  if (PARTY && PARTY.members.length > 1 && (!m.target || m.target.dead || !inParty(m.target))) m.target = P;   // cycle 8: whoever woke it
   if ((m.d.boss || m.d.elite) && !m.announced) announceBoss(m);
 }
+/* Cycle 8: monster targeting in a party. m.target is the hero a monster hunts (solo: always P). Damage builds threat
+   per hero (m.thr, tanks x1.6); every 0.5 s a monster takes the living hero with the most threat (10 % stickiness),
+   the nearest one when nobody has hurt it yet, or its taunter while a taunt lasts (m.taunt = { h, t }). */
+function threatAdd(m, h, v) {
+  const thr = m.thr || (m.thr = {}), k = h.id || 'hero';
+  thr[k] = (thr[k] || 0) + v * (h.ai && h.ai.role === 'tank' ? 1.6 : 1);
+  if (h.kind === 'player') { h.lastHitM = m; h.lastHitT = time; }
+}
+function mobTarget(m) {
+  const L = PARTY.members, tn = m.taunt;
+  if (tn && tn.t > time && !tn.h.dead && L.indexOf(tn.h) >= 0) return (m.target = tn.h);
+  let t = m.target;
+  if (t && !t.dead && L.indexOf(t) >= 0 && (m.tgtT || 0) > time) return t;
+  m.tgtT = time + 0.5;
+  let best = null, bv = -1, near = null, nd = 1e9;
+  for (const h of L) {
+    if (h.dead) continue;
+    const d = hyp(h.x - m.x, h.y - m.y); if (d < nd) { nd = d; near = h; }
+    const v = m.thr ? (m.thr[h.id || 'hero'] || 0) * (h === t ? 1.1 : 1) : 0; if (v > bv) { bv = v; best = h; }
+  }
+  if (!near) return (m.target = t && L.indexOf(t) >= 0 ? t : P);   // everyone is down: the monster goes home
+  if (m.state !== 'chase' || !(bv > 0)) return (m.target = near);
+  return (m.target = best);
+}
+// Where a monster aims its abilities (rain, leaps, cones, lunges, curses): its target, else the controlled hero.
+const mobAim = m => PARTY && PARTY.members.length > 1 && m.target && !m.target.dead && PARTY.members.indexOf(m.target) >= 0 ? m.target : P;
 // Perf round 5: the hit functions only read their options; callers that pass none share one frozen empty object
 // instead of allocating {} per blow.
 const NOOPT = Object.freeze({});
@@ -606,6 +675,7 @@ function finishHit(m, dmg, crit, o) {
   if (m.lex && dmg > 0) { dmg *= 2; m.lex = false; floatText(m, 'Lex!', 'info'); }
   dmg = dmg <= 0 ? 0 : Math.max(1, Math.round(dmg));
   m.hp -= dmg; m.hitFlash = 0.22; fxs.push({ k: 'spark', x: m.x, y: m.y, h: chestH(m), t: 0, dur: 0.2, crit });
+  if (PARTY && PARTY.members.length > 1 && P) threatAdd(m, P, dmg);   // cycle 8: the hero in context dealt it
   floatText(m, dmg, crit ? 'crit' : 'dmg');
   if (S.leech && dmg > 0) healP(dmg * S.leech / 100, true);
   if (o.knock && !m.d.boss) knock(m, o.from || P, o.knock);
@@ -618,7 +688,9 @@ function knock(m, from, n) {
   for (let i = 0; i < n * 4; i++) { const nx = m.x + ux * 0.25, ny = m.y + uy * 0.25; if (blocked(nx, ny)) break; m.x = nx; m.y = ny; }
   m.path = null;
 }
-function mobStrike(m, mul = 1, o = NOOPT) {
+// h (cycle 8): the hero struck (default: the hero in context, i.e. P). It runs in that hero's context.
+function mobStrike(m, mul = 1, o = NOOPT, h) {
+  if (h && h !== P) return withHero(h, mobStrike, m, mul, o);
   if (P.dead) return;
   if (P.iframes > 0) { floatText(P, 'Dodge', 'miss'); return; }
   let guard = 1;
@@ -649,7 +721,7 @@ function shieldHit(d, m) {
   const k = P.buffs.kyrie;
   if (k) {
     const a = Math.min(d, k.shield); k.shield -= a; k.hits--; d -= a; floatText(P, d > 0 ? 'Kyrie breaks' : 'Kyrie', 'info');
-    if (k.shield <= 0 || k.hits <= 0) { delete P.buffs.kyrie; renderBuffs(); log('Kyrie Eleison shatters.', 'sys'); burst(P.x, P.y, 30, '#fff2b8', 16, 2.5); }
+    if (k.shield <= 0 || k.hits <= 0) { delete P.buffs.kyrie; renderBuffs(); hlog('Kyrie Eleison shatters.', 'sys'); burst(P.x, P.y, 30, '#fff2b8', 16, 2.5); }
   }
   const oa = P.buffs.oath;
   if (oa && d > 0) {
@@ -667,11 +739,11 @@ function hurtP(d) {
 // Valkyrie Priest: Resurrection (passive) catches a killing blow once per cooldown.
 function tryRevive() {
   const ec = P.buffs.einherjar;   // round 6: Einherjar's Call carries you back once, whatever Resurrection's cooldown
-  if (ec && ec.revive) { delete P.buffs.einherjar; calcStats(); renderBuffs(); P.hp = Math.max(1, Math.round(S.maxhp * ec.revive)); P.iframes = 1.5; pillar(P, '#ffe8a0', true); burst(P.x, P.y, 40, '#fff6d8', 30, 3); banner('Einherjar’s Call', 'The fallen lift you back to your feet', 'band gold'); floatText(P, 'Einherjar!', 'lvl'); log('The einherjar you called lift you back to your feet.', 'lvl'); Sfx.level(); return true; }
+  if (ec && ec.revive) { delete P.buffs.einherjar; calcStats(); renderBuffs(); P.hp = Math.max(1, Math.round(S.maxhp * ec.revive)); P.iframes = 1.5; pillar(P, '#ffe8a0', true); burst(P.x, P.y, 40, '#fff6d8', 30, 3); if (!HCTX.quiet) banner('Einherjar’s Call', 'The fallen lift you back to your feet', 'band gold'); floatText(P, 'Einherjar!', 'lvl'); log(HCTX.quiet ? `The einherjar lift ${P.name} back to their feet.` : 'The einherjar you called lift you back to your feet.', 'lvl'); Sfx.level(); return true; }
   const lv = P.skills.resurrection || 0; if (!lv || P.reviveCD > 0) return false;
   P.hp = Math.max(1, Math.round(S.maxhp * [0.1, 0.3, 0.5, 0.8][lv - 1])); P.reviveCD = 240 - 30 * lv; P.iframes = 1.5;
-  pillar(P, '#fff2b8', true); burst(P.x, P.y, 40, '#ffffff', 30, 3); banner('Resurrection', 'The Valkyrie will not carry you yet', 'band gold');
-  floatText(P, 'Resurrection!', 'lvl'); log('A Valkyrie refuses to carry you. You rise.', 'lvl'); Sfx.level();
+  pillar(P, '#fff2b8', true); burst(P.x, P.y, 40, '#ffffff', 30, 3); if (!HCTX.quiet) banner('Resurrection', 'The Valkyrie will not carry you yet', 'band gold');
+  floatText(P, 'Resurrection!', 'lvl'); log(HCTX.quiet ? `A Valkyrie refuses to carry ${P.name}. They rise.` : 'A Valkyrie refuses to carry you. You rise.', 'lvl'); Sfx.level();
   addBuff('rescd', 'Resurrection recharging', 'resurrection', P.reviveCD, {});
   return true;
 }
@@ -719,15 +791,16 @@ function bolts(t, n, el, mul, o) {
   });
   Sfx.cast();
 }
-function shot(from, to, kind, onHit, o = {}) { projs.push({ x: from.x, y: from.y, zu: o.zu !== undefined ? o.zu : chestH(from), to, kind, onHit, spd: o.spd || (kind === 'arrow' ? 17 : 12), t: 0, vx: 0, vy: 0, vz: 0 }); }
+function shot(from, to, kind, onHit, o = {}) { projs.push({ x: from.x, y: from.y, zu: o.zu !== undefined ? o.zu : chestH(from), to, kind, onHit, spd: o.spd || (kind === 'arrow' ? 17 : 12), t: 0, vx: 0, vy: 0, vz: 0, h: P }); }   // cycle 8: h = the hero whose context onHit runs in
 function killMob(m) {
   m.dead = true; m.deathT = 0; m.hp = 0; m.path = null;
   const d = m.d;
   let b = mobExp(d), j = Math.round(b * 0.75);
-  if (P.lvl - d.lvl > 10) { b = Math.ceil(b * 0.25); j = Math.ceil(j * 0.25); }
+  const share = PARTY && PARTY.members.length > 1 && typeof squadExp === 'function';   // cycle 8: shared EXP (per-hero level penalty there)
+  if (!share && P.lvl - d.lvl > 10) { b = Math.ceil(b * 0.25); j = Math.ceil(j * 0.25); }
   if (m.summoned) { b = Math.ceil(b * 0.3); j = Math.ceil(j * 0.3); }
   if (map && map.d.deep && deepHas('soul_rich')) { b = Math.round(b * 1.5); j = Math.round(j * 1.5); }   // round 7: a Soul-Rich floor
-  gainExp(b, j);
+  if (share) squadExp(m, b, j); else gainExp(b, j);
   if (m.lastMagic && P.skills.soul_drain) { const g = Math.round(d.lvl * (1 + 0.4 * P.skills.soul_drain)); P.sp = Math.min(S.maxsp, P.sp + g); floatText(P, '+' + g, 'sp'); }   // round 6: Soul Drain
   for (const [id, ch] of d.drops || []) if (Math.random() < ch) dropItem(makeItem(id), m);
   // Round 5 economy pass: zeny grows a little faster than linearly with level (see docs/CONTENT.md, economy table).
@@ -751,14 +824,14 @@ function gainExp(b, j) {
     P.exp += b; let up = false;
     while (P.lvl < cap && P.exp >= expNeed(P.lvl)) { P.exp -= expNeed(P.lvl); P.lvl++; P.statPts += Math.floor(P.lvl / 5) + 3; up = true; }
     if (P.lvl >= cap) P.exp = 0;
-    if (up) { calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffd76a', true); floatText(P, 'Level Up!', 'lvl'); log(`Base level ${P.lvl}. You feel the Ash give way.`, 'lvl'); Sfx.level(); }
+    if (up) { calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffd76a', true); floatText(P, 'Level Up!', 'lvl'); log(HCTX.quiet ? `${P.name} reaches base level ${P.lvl}.` : `Base level ${P.lvl}. You feel the Ash give way.`, 'lvl'); Sfx.level(); squadEmit('level_up', { hero: P }); }
   }
   const jcap = CLASSES[P.cls].maxJob;
   if (P.jlvl < jcap) {
     P.jexp += j; let up = false;
     while (P.jlvl < jcap && P.jexp >= jexpNeed(P.jlvl)) { P.jexp -= jexpNeed(P.jlvl); P.jlvl++; P.skillPts++; up = true; }
     if (P.jlvl >= jcap) P.jexp = 0;
-    if (up) { pillar(P, '#7fe0d4', true); after(0.35, () => floatText(P, 'Job Level Up!', 'job')); log(`Job level ${P.jlvl}. You have a skill point to spend.`, 'lvl'); Sfx.level(); }
+    if (up) { const h = P; pillar(P, '#7fe0d4', true); after(0.35, () => floatText(h, 'Job Level Up!', 'job')); hlog(`Job level ${P.jlvl}. You have a skill point to spend.`, 'lvl'); Sfx.level(); }
   }
   UI.dirty = true;
 }
@@ -773,8 +846,14 @@ function pickup(d) {
   if (r === 'card' && ITEMS[d.item.id].mob) { P.flags.cards = P.flags.cards || {}; P.flags.cards[ITEMS[d.item.id].mob] = true; }
   log(`You got ${itemName(d.item)}${d.item.qty > 1 ? ' ×' + d.item.qty : ''}.`, r === 'common' ? 'loot' : r);
   Sfx.pickup(); drops.splice(drops.indexOf(d), 1);
+  if (r === 'unique' || r === 'card') squadEmit('loot_rare', { item: d.item });
   questEvent('pickup', d.item.id);
 }
+// Cycle 8: events for the squad chat and UI (js/squad.js squadDispatch rate-limits them and calls squadEvent /
+// SQUAD_CHAT.event). Only a party with companions has anyone to talk: solo play emits nothing.
+function squadEmit(type, data) { if (PARTY && PARTY.members.length > 1 && typeof squadDispatch === 'function') squadDispatch(type, data); }
+// Heal another hero (in that hero's context: its Max HP, its float text).
+function healHero(h, a, quiet) { if (h && !h.dead) withHero(h, healP, a, quiet); }
 // extra: special buff fields read by the engine, e.g. { endow, guard, share, shield, hits, absorb, regen, song,
 // castCut, cdCut, wtype, aura: { r, col, bubble }, every, onTick, count }. Buffs are runtime only (not saved).
 function addBuff(id, name, icon, t, bonus, extra) { P.buffs[id] = Object.assign({ name, icon, t, max: t, bonus: bonus || {} }, extra || {}); calcStats(); renderBuffs(); }
@@ -796,7 +875,7 @@ function setSpheres(n) {
 
 /* Ground effects. zoneAdd({ x, y, r, dur, every, first, tick(z), end(z), col, rune, ward, follow })
    ticks every `every` seconds (first tick at `first`, default 0). Drawn by drawSkillOverlay (js/ui.js). */
-function zoneAdd(o) { const z = Object.assign({ t: 0, every: 0, col: '#ffffff' }, o); z.next = o.first || 0; zones.push(z); return z; }
+function zoneAdd(o) { const z = Object.assign({ t: 0, every: 0, col: '#ffffff', h: P }, o); z.next = o.first || 0; zones.push(z); return z; }   // cycle 8: z.h = the hero who made it
 // Traps: triggered by the first enemy that steps within r. At most 4 at a time (the oldest goes).
 function trapAdd(pos, rune, col, onTrigger) {
   let x = pos.x, y = pos.y; if (blocked(x, y) || dist(P, pos) > 4) { x = P.x + (P.fx || 0) * 0.8; y = P.y + (P.fy || 0) * 0.8; if (blocked(x, y)) { x = P.x; y = P.y; } }
@@ -808,16 +887,17 @@ const wardAt = (x, y) => zones.some(z => z.ward && hyp(z.x - x, z.y - y) <= z.r)
 function updateZones(dt) {
   for (let i = zones.length - 1; i >= 0; i--) {
     const z = zones[i]; z.t += dt;
-    if (z.follow) { z.x = P.x; z.y = P.y; }
+    const own = PARTY && z.h && !z.hostile ? z.h : P;   // cycle 8: a hero's zone follows / ticks for that hero
+    if (z.follow) { z.x = own.x; z.y = own.y; }
     if (z.trap) {
       if (z.t > z.dur) { rmAt(zones, i); continue; }
       if (z.t < z.arm) continue;
       const m = trapVictim(z);
-      if (m) { rmAt(zones, i); floatText(m, 'Trap!', 'info'); z.onTrigger(m, z); }
+      if (m) { rmAt(zones, i); floatText(m, 'Trap!', 'info'); if (own !== P) asOwner(own, () => z.onTrigger(m, z)); else z.onTrigger(m, z); }
       continue;
     }
-    if (z.every > 0) while (z.t >= z.next && z.next < z.dur) { z.next += z.every; try { z.tick(z); } catch (e) { console.error(e); } }
-    if (z.t >= z.dur) { rmAt(zones, i); if (z.end) z.end(z); }
+    if (z.every > 0) while (z.t >= z.next && z.next < z.dur) { z.next += z.every; try { if (own !== P) asOwner(own, z.tick, z); else z.tick(z); } catch (e) { console.error(e); } }
+    if (z.t >= z.dur) { rmAt(zones, i); if (z.end) { if (own !== P) asOwner(own, z.end, z); else z.end(z); } }
   }
 }
 // The first mob (in mobs[] order) inside a trap's trigger radius (perf round 5: grid candidates, same answer).
@@ -887,6 +967,7 @@ function announceBoss(m) {
   $('bossbar').hidden = false; $('bossn').textContent = m.d.name; $('bosst').textContent = m.d.title || '';
   banner(m.d.name, m.d.title, 'band'); Sfx.boss();
   if (m.d.intro) log(m.d.intro, 'boss');
+  squadEmit('boss_seen', { mob: m });
 }
 function bossDefeated(m) {
   const f = P.flags, real = !m.variant && !m.deep && !m.rush;   // round 7: scaled copies in the Deep / the Gauntlet
@@ -908,19 +989,20 @@ function bossDefeated(m) {
   else if (m.d.shard) banner('MVP', 'Shardbearer felled · ' + ITEMS[m.d.shard].name, 'mvp');
   else banner('MVP', `${m.d.name} felled`, 'mvp');
   if (m.d.outro) log(m.d.outro, 'boss');
+  squadEmit('kill_mvp', { mob: m });
   Sfx.victory(); UI.dirty = true; saveGame();
 }
 function doAbility(m, a) {
-  const say = (txt) => floatText(m, txt, 'shout');
+  const say = (txt) => floatText(m, txt, 'shout'), A = mobAim(m);   // cycle 8: A = the hero it aims at (solo: P)
   switch (a.id) {
     case 'slam': say('!'); telegraph(m.x, m.y, a.r, a.delay, () => { if (!m.dead) { ring(m.x, m.y, a.r, '#ff6a3a'); burst(m.x, m.y, 4, '#c8a080', 26, 3.5); Sfx.slam(); } }, m, a); break;
     case 'nova': say(a.shout || '!!'); telegraph(m.x, m.y, a.r, a.delay, () => { if (!m.dead) { const c = a.col || m.d.glow || '#ff8a3a'; ring(m.x, m.y, a.r, c); burst(m.x, m.y, 10, c, 40, 5); Sfx.slam(); } }, m, a); break;   // round 7: a.col, a.shout
-    case 'rain': for (let i = 0; i < a.n; i++) { const x = P.x + (i ? rand(-2.6, 2.6) : 0), y = P.y + (i ? rand(-2.6, 2.6) : 0); telegraph(x, y, a.r, a.delay + i * 0.12, () => { burst(x, y, 30, m.d.glow || '#ff7a2a', 14, 3); fxs.push({ k: 'meteor', x, y, t: 0, dur: 0.35, col: m.d.glow || '#ff7a2a' }); Sfx.fire(); }, m, a); } break;
-    case 'leap': { const t = nearestOpen(P.x, P.y, 2); if (!t) break; const tx = t.x + 0.5, ty = t.y + 0.5; say('!'); m.leap = { sx: m.x, sy: m.y, tx, ty, t: 0, dur: a.delay }; telegraph(tx, ty, a.r, a.delay, () => { ring(tx, ty, a.r, '#bfe0ff'); burst(tx, ty, 6, '#cfe0ff', 20, 3); Sfx.slam(); }, m, a); break; }
+    case 'rain': for (let i = 0; i < a.n; i++) { const x = A.x + (i ? rand(-2.6, 2.6) : 0), y = A.y + (i ? rand(-2.6, 2.6) : 0); telegraph(x, y, a.r, a.delay + i * 0.12, () => { burst(x, y, 30, m.d.glow || '#ff7a2a', 14, 3); fxs.push({ k: 'meteor', x, y, t: 0, dur: 0.35, col: m.d.glow || '#ff7a2a' }); Sfx.fire(); }, m, a); } break;
+    case 'leap': { const t = nearestOpen(A.x, A.y, 2); if (!t) break; const tx = t.x + 0.5, ty = t.y + 0.5; say('!'); m.leap = { sx: m.x, sy: m.y, tx, ty, t: 0, dur: a.delay }; telegraph(tx, ty, a.r, a.delay, () => { ring(tx, ty, a.r, '#bfe0ff'); burst(tx, ty, 6, '#cfe0ff', 20, 3); Sfx.slam(); }, m, a); break; }
     case 'summon': { const n = mobs.filter(s => s.summoned && !s.dead).length; if (n >= a.max) break; say(a.shout || 'Rise!'); for (let i = 0; i < a.n; i++) { const s = nearestOpen(m.x + rand(-3, 3), m.y + rand(-3, 3), 3); if (s) { const c = makeMob(a.mob, s.x + 0.5, s.y + 0.5, { summoned: true }); if (m.scaleL) { scaleMobTo(c, m.scaleL - 6); c.rush = m.rush; } c.state = 'chase'; mobs.push(c); burst(c.x, c.y, 10, '#6a5a5a', 12, 2); } } break; }
     case 'lunge': { // round 7: a telegraphed charge along a line; parry it (block as it lands) to stagger the beast
-      say(a.shout || '!'); face(m, P); m.atkCD = Math.max(m.atkCD, a.delay + 0.5);
-      const ang = Math.atan2(P.y - m.y, P.x - m.x), len = a.len || 7, w = a.w || 1.2, col = a.col || m.d.glow || '#ff6a4a';
+      say(a.shout || '!'); face(m, A); m.atkCD = Math.max(m.atkCD, a.delay + 0.5);
+      const ang = Math.atan2(A.y - m.y, A.x - m.x), len = a.len || 7, w = a.w || 1.2, col = a.col || m.d.glow || '#ff6a4a';
       const grp = { hit: false, snd: false, shape: { kind: 'lines', x: m.x, y: m.y, ang, n: 1, spread: 0, len, w: w * 2 } };
       let ex = m.x, ey = m.y;
       for (let s = 1.0; s <= len + 0.01; s += 0.9) {
@@ -935,8 +1017,8 @@ function doAbility(m, a) {
     // Round 3 kinds. Cones and lines are built from overlapping circle telegraphs sharing one group (one hit per
     // cast); each telegraph also carries `shape` so a renderer can draw the exact cone / lines instead.
     case 'breath': { // a cone toward the player (dragon fire, dark flame): step out of it sideways
-      say(a.shout || '!!'); face(m, P); m.atkCD = Math.max(m.atkCD, a.delay + 0.3);
-      const ang = Math.atan2(P.y - m.y, P.x - m.x) + (a.back ? Math.PI : 0), half = a.arc || 0.45, len = a.len || 6, rays = a.rays || 3, col = a.col || m.d.glow || '#ff7a2a';   // round 7: a.back = a tail sweep
+      say(a.shout || '!!'); face(m, A); m.atkCD = Math.max(m.atkCD, a.delay + 0.3);
+      const ang = Math.atan2(A.y - m.y, A.x - m.x) + (a.back ? Math.PI : 0), half = a.arc || 0.45, len = a.len || 6, rays = a.rays || 3, col = a.col || m.d.glow || '#ff7a2a';   // round 7: a.back = a tail sweep
       const grp = { hit: false, snd: false, shape: { kind: 'cone', x: m.x, y: m.y, ang, half, len } };
       if (a.zone) for (let i = 0; i < (a.zone.n || 3); i++) { const aa = ang + (Math.random() - 0.5) * half * 1.6, s = len * (0.35 + Math.random() * 0.6), zx = m.x + Math.cos(aa) * s, zy = m.y + Math.sin(aa) * s; if (!blocked(zx, zy)) after(a.delay + 0.2, () => { if (!m.dead) hexZone(m, Object.assign({ r: 1.3, dur: 6, tick: 0.3, slow: 30, rune: 'ᚾ' }, a.zone), zx, zy, a.zone.col || col); }); }   // round 7: rot left behind
       for (let i = 0; i < rays; i++) {
@@ -949,8 +1031,8 @@ function doAbility(m, a) {
       break;
     }
     case 'wave': { // lines rolling outward from the boss (the tide, chain lashes): side-step between them
-      say(a.shout || '!'); face(m, P);
-      const ang = Math.atan2(P.y - m.y, P.x - m.x), n = a.n || 1, spread = a.spread || 0.4, len = a.len || 9, r = a.r || 0.95, spd = a.speed || 7, col = a.col || m.d.glow || '#9fd8ff';
+      say(a.shout || '!'); face(m, A);
+      const ang = Math.atan2(A.y - m.y, A.x - m.x), n = a.n || 1, spread = a.spread || 0.4, len = a.len || 9, r = a.r || 0.95, spd = a.speed || 7, col = a.col || m.d.glow || '#9fd8ff';
       const grp = { hit: false, snd: false, shape: { kind: 'lines', x: m.x, y: m.y, ang, n, spread, len, w: r * 2 } };
       for (let k = 0; k < n; k++) {
         const aa = ang + (n > 1 ? (k - (n - 1) / 2) * spread : 0);
@@ -965,7 +1047,7 @@ function doAbility(m, a) {
       say(a.shout || 'Hex!');
       const col = a.col || '#a066e0';
       for (let i = 0; i < (a.n || 2); i++) {
-        const x = P.x + (i ? rand(-3, 3) : 0), y = P.y + (i ? rand(-3, 3) : 0); if (i && blocked(x, y)) continue;
+        const x = A.x + (i ? rand(-3, 3) : 0), y = A.y + (i ? rand(-3, 3) : 0); if (i && blocked(x, y)) continue;
         telegraph(x, y, a.r, a.delay + i * 0.25, () => { if (m.dead) return; ring(x, y, a.r, col); burst(x, y, 10, col, 14, 2); Sfx.cast(); hexZone(m, a, x, y, col); }, m, a, { hit: false, shape: { kind: 'circle' } });
       }
       break;
@@ -975,9 +1057,25 @@ function doAbility(m, a) {
 // A lingering hostile ground zone (curse): ticks while the player stands in it. Drawn by drawSkillOverlay (js/ui.js).
 function hexZone(m, a, x, y, col) {
   zoneAdd({ hostile: true, x, y, r: a.r, dur: a.dur || 6, every: 0.5, first: 0.5, col, rune: a.rune || 'ᚺ', src: m,
-    tick(z) { if (P.dead || m.dead || hyp(P.x - z.x, P.y - z.y) > z.r) return; mobStrike(m, a.tick || 0.3, { sure: true, magic: true }); hexed(a.slow || 30); } });
+    tick(z) {
+      if (PARTY && PARTY.members.length > 1) {   // cycle 8: it burns every hero standing in it
+        if (m.dead) return;
+        for (const h of PARTY.members) if (!h.dead && hyp(h.x - z.x, h.y - z.y) <= z.r) withHero(h, hexTick, m, a);
+        return;
+      }
+      if (P.dead || m.dead || hyp(P.x - z.x, P.y - z.y) > z.r) return; mobStrike(m, a.tick || 0.3, { sure: true, magic: true }); hexed(a.slow || 30); } });
 }
-function hexed(pct) { if (P.buffs.hexed) { P.buffs.hexed.t = Math.max(P.buffs.hexed.t, 2); return; } addBuff('hexed', 'Hexed', 'hex', 2, { move: -pct }); log('A hex clings to you. You move slower.', 'warn'); }
+function hexTick(m, a) { mobStrike(m, a.tick || 0.3, { sure: true, magic: true }); if (!P.dead) hexed(a.slow || 30); }
+function hexed(pct) { if (P.buffs.hexed) { P.buffs.hexed.t = Math.max(P.buffs.hexed.t, 2); return; } addBuff('hexed', 'Hexed', 'hex', 2, { move: -pct }); hlog('A hex clings to you. You move slower.', 'warn'); }
+// Cycle 8: a telegraph landing on a party. Each hero under it is struck once per blast group (grp.hits).
+function teleParty(t) {
+  let g = null; if (t.grp) g = t.grp.hits || (t.grp.hits = []);
+  for (const h of PARTY.members) {
+    if (h.dead || hyp(h.x - t.x, h.y - t.y) > t.r || (g && g.indexOf(h) >= 0)) continue;
+    if (g) { g.push(h); t.grp.hit = true; }
+    if (wardAt(t.x, t.y)) { floatText(h, 'Warded', 'info'); ring(t.x, t.y, t.r, '#9fe0c0'); } else mobStrike(t.m, t.mul || t.a.mul, Object.assign({ sure: true, magic: true }, t.a.hit || {}, t.a.parry ? { parry: t.a.parry } : {}), h);
+  }
+}
 function telegraph(x, y, r, dur, boom, m, a, grp) { const t = { x, y, r, t: 0, dur, boom, m, a }; if (grp) { t.grp = grp; t.shape = grp.shape; } teles.push(t); return t; }
 
 /* =========================================================
@@ -1052,7 +1150,7 @@ const Sfx = {
    Update
    ========================================================= */
 function stopAll() { P.path = null; P.target = null; P.goal = null; P.pending = null; }
-function cancelCast() { if (P.casting) { P.casting = null; P.castT = 0; log('Cast interrupted.', 'sys'); } }
+function cancelCast() { if (P.casting) { P.casting = null; P.castT = 0; hlog('Cast interrupted.', 'sys'); } }
 function moveTo(wx, wy) {
   const t = blocked(wx, wy) ? nearestOpen(wx, wy, 4) : { x: Math.floor(wx), y: Math.floor(wy) };
   if (!t) return false;
@@ -1094,7 +1192,10 @@ function useSkill(id) {
   const act = typeof isAction === 'function' && isAction(), rng = skillRange(sk, lv);
   const hm = act ? actionTarget(sk, lv) : (hover && hover.kind === 'mob' ? hover : null);
   if (sk.tgt === 'enemy') { target = hm || (P.target && !P.target.dead ? P.target : null) || nearestMob(act ? rng + 0.5 : 9); if (!target) { log('No target in sight.', 'sys'); floatText(P, 'No target', 'miss'); return; } }
-  else if (sk.tgt === 'heal') { if (hm && isUndeadish(hm)) target = hm; }
+  else if (sk.tgt === 'heal') {
+    if (hm && isUndeadish(hm)) target = hm;
+    else if (PARTY && PARTY.members.length > 1) target = !act && hover && hover.kind === 'player' && hover !== P && inParty(hover) ? hover : partyHealTarget(rng);   // cycle 8: an ally
+  }
   else if (sk.tgt === 'ground' || sk.tgt === 'dir') {
     // Keyboard: in front of you, or on the soft target. Mouse: at the cursor, or on the monster under it.
     const ahead = sk.tgt === 'dir' ? rng : Math.min(3, rng);
@@ -1107,6 +1208,17 @@ function useSkill(id) {
   if (act && target && dist(P, target) > rng + 0.4 && dist(P, target) > rng + 3) { floatText(P, 'Too far', 'miss'); return; }
   P.sitting = false; P.goal = null;
   P.pending = { id, lv, target, pos };
+}
+// Cycle 8: who a heal cast by the player goes to in a party: a fallen ally (with Resurrection learned), else the most
+// hurt ally in reach when worse off than you (under 90 %), else yourself (null).
+function partyHealTarget(r) {
+  let best = null, bp = P.hp / S.maxhp;
+  for (const h of PARTY.members) {
+    if (h === P || hyp(h.x - P.x, h.y - P.y) > r + 3) continue;
+    if (h.dead) { if (P.skills.resurrection) return h; continue; }
+    const p = h.hp / heroStats(h).maxhp; if (p < 0.9 && p < bp) { bp = p; best = h; }
+  }
+  return best;
 }
 function nearestMobScan(r) { let best = null, bd = r; for (const m of mobs) { if (m.dead) continue; const d = dist(m, P); if (d < bd) { bd = d; best = m; } } return best; }
 function nearestMob(r) {   // perf round 5: grid candidates in mobs[] order, so ties still go to the first mob
@@ -1128,17 +1240,17 @@ function beginCast(pd) {
 function execSkill(pd) {
   const sk = SKILLS[pd.id];
   if (pd.target && pd.target.kind === 'mob' && pd.target.dead) return;
-  const why = skillBlocked(sk, pd.lv); if (why) { log(why + '.', 'warn'); floatText(P, why, 'miss'); return; }
-  const spc = sk.sp(pd.lv); if (P.sp < spc) { log('Not enough SP.', 'warn'); return; }
+  const why = skillBlocked(sk, pd.lv); if (why) { hlog(why + '.', 'warn'); floatText(P, why, 'miss'); return; }
+  const spc = sk.sp(pd.lv); if (P.sp < spc) { hlog('Not enough SP.', 'warn'); return; }
   P.sp -= spc; P.cd[pd.id] = (sk.cd || 0.3) * (1 - (S.cdCut || 0) / 100);
   floatText(P, sk.name + '!!', 'skill');
   sk.use(pd.lv, pd.target, pd.pos);
   const fs = P.buffs.foresight; if (fs && sk.cast && pd.id !== 'foresight' && --fs.count <= 0) { delete P.buffs.foresight; calcStats(); renderBuffs(); }   // round 6: Foresight
   if (pd.target && pd.target.kind === 'mob' && sk.range === 'weapon') P.target = pd.target;
 }
-function updatePlayer(dt) {
-  if (P.dead) { P.deadT += dt; if (P.deadT > 1.3 && !P.deathShown) { P.deathShown = true; showDeath(); } return; }
-  P.playTime += dt;
+/* Cycle 8: the per-hero parts of updatePlayer, shared with the companions' update (js/squad.js squadAllyTick, which
+   runs them in the companion's context). The controlled hero runs exactly the old sequence. */
+function heroTimers(dt) {
   for (const k in P.cd) if (P.cd[k] > 0) P.cd[k] -= dt;
   if (P.potCD > 0) P.potCD -= dt;
   if (P.iframes > 0) P.iframes -= dt;
@@ -1149,24 +1261,22 @@ function updatePlayer(dt) {
   let buffChanged = false;
   for (const k in P.buffs) {
     const bf = P.buffs[k]; bf.t -= dt;
-    if (bf.t <= 0) { log(`${bf.name} wears off.`, 'sys'); delete P.buffs[k]; buffChanged = true; continue; }
+    if (bf.t <= 0) { hlog(`${bf.name} wears off.`, 'sys'); delete P.buffs[k]; buffChanged = true; continue; }
     if (bf.every && bf.onTick) { bf.tk = (bf.tk || 0) + dt; if (bf.tk >= bf.every) { bf.tk -= bf.every; bf.onTick(bf); } }
     if (bf.needShield && !P.equip.shield) { delete P.buffs[k]; buffChanged = true; }
   }
   if (buffChanged) { calcStats(); renderBuffs(); }
-  petTick(dt); rebornAura();   // round 6
-
-  // Regeneration (Magnificat doubles the tick rate)
+}
+// Regeneration (Magnificat doubles the tick rate)
+function heroRegen(dt) {
   const sitMul = P.sitting ? 2 : 1, rg = P.buffs.magnificat ? P.buffs.magnificat.regen : 1;
-  if (P.dash) { updateDash(dt); postMove(); return; }
   P.hpT += dt * rg; if (P.hpT >= 4) { P.hpT = 0; if (P.hp < S.maxhp) { const hr = P.skills.hp_recovery || 0; P.hp = Math.min(S.maxhp, P.hp + (Math.max(1, Math.floor(S.maxhp / 200) + Math.floor(S.vit / 5)) + hr * 5 + Math.floor(S.maxhp * hr * 0.002)) * sitMul); } }
   P.spT += dt * rg; if (P.spT >= 5) { P.spT = 0; if (P.sp < S.maxsp && !noSpRegen()) P.sp = Math.min(S.maxsp, P.sp + (1 + Math.floor(S.maxsp / 100) + Math.floor(S.int / 6) + (P.skills.sp_recovery || 0) * 3) * sitMul); }
-
-  // Keyboard action controls take over while they are in use
-  if (typeof actionUpdate === 'function' && actionUpdate(dt)) { postMove(); return; }
-
+}
+// Casting, a pending skill, the attack target. True when that used up the tick (the caller returns).
+function heroAct(dt) {
   // Casting
-  if (P.casting) { P.castT -= dt; if (P.castT <= 0) { const c = P.casting; P.casting = null; execSkill(c); } return; }
+  if (P.casting) { P.castT -= dt; if (P.castT <= 0) { const c = P.casting; P.casting = null; execSkill(c); } return true; }
 
   // Pending skill: close in, then cast
   if (P.pending) {
@@ -1174,9 +1284,9 @@ function updatePlayer(dt) {
     if (pd.target && pd.target.kind === 'mob' && pd.target.dead) { P.pending = null; }
     else {
       const tp = pd.target || pd.pos; const r = skillRange(sk, pd.lv);
-      if (!tp || sk.tgt === 'dir' || dist(P, tp) <= r + 0.3) { P.pending = null; beginCast(pd); return; }
+      if (!tp || sk.tgt === 'dir' || dist(P, tp) <= r + 0.3) { P.pending = null; beginCast(pd); return true; }
       P.repath = (P.repath || 0) - dt; if (!P.path || P.repath <= 0) { P.repath = 0.35; goNear(P, tp.x, tp.y); if (!P.path) P.pending = null; }
-      followPath(P, dt, S.move * surfMul(P)); return;
+      followPath(P, dt, S.move * surfMul(P)); return true;
     }
   }
 
@@ -1196,10 +1306,28 @@ function updatePlayer(dt) {
         if (!P.path || P.repath <= 0) { P.repath = 0.3; goNear(P, t.x, t.y); if (!P.path) P.target = null; }
         followPath(P, dt, S.move * surfMul(P));
       }
-      return;
+      return true;
     }
   }
   P.atkCD = Math.max(0, P.atkCD - dt);
+  return false;
+}
+function updatePlayer(dt) {
+  if (P.dead) {
+    if (PARTY && PARTY.members.length > 1 && typeof squadAutoSwap === 'function' && squadAutoSwap()) return;   // cycle 8: a companion takes over
+    P.deadT += dt; if (P.deadT > 1.3 && !P.deathShown) { P.deathShown = true; showDeath(); } return;
+  }
+  P.playTime += dt;
+  heroTimers(dt);
+  petTick(dt); rebornAura();   // round 6
+
+  if (P.dash) { updateDash(dt); postMove(); return; }
+  heroRegen(dt);
+
+  // Keyboard action controls take over while they are in use
+  if (typeof actionUpdate === 'function' && actionUpdate(dt)) { postMove(); return; }
+
+  if (heroAct(dt)) return;
 
   // Goals: NPC, object, drop
   if (P.goal) {
@@ -1267,11 +1395,13 @@ function updateMob(m, dt) {
     if (k >= 1) { m.leap = null; m.z = 0; m.path = null; }
     return;
   }
-  const d = m.d, dp = dist(m, P), spd = m.snare > 0 ? 0 : d.speed * (m.slow > 0 ? 0.5 : 1) * (m.spdMul || 1);
+  // cycle 8: tg = the hero this monster hunts (solo: P). In a party: its target by threat / taunt, else the nearest.
+  const tg = PARTY && PARTY.members.length > 1 ? mobTarget(m) : P;
+  const d = m.d, dp = dist(m, tg), spd = m.snare > 0 ? 0 : d.speed * (m.slow > 0 ? 0.5 : 1) * (m.spdMul || 1);
   // round 7: a safe camp (map.d.safeZone): nothing hunts you inside it, and nothing follows you in
-  const sz = map.d.safeZone, pSafe = !!sz && !m.rush && hyp(P.x - sz.x, P.y - sz.y) < sz.r;
-  if (!P.dead && !pSafe && m.state === 'idle' && d.aggro && dp < (d.sight || 7) - (map.d.deep && deepHas('ashen') ? 3 : 0)) aggro(m);
-  if ((P.dead || pSafe || (sz && !m.rush && hyp(m.x - sz.x, m.y - sz.y) < sz.r)) && m.state === 'chase') { m.state = 'return'; m.path = null; }
+  const sz = map.d.safeZone, pSafe = !!sz && !m.rush && hyp(tg.x - sz.x, tg.y - sz.y) < sz.r;
+  if (!tg.dead && !pSafe && m.state === 'idle' && d.aggro && dp < (d.sight || 7) - (map.d.deep && deepHas('ashen') ? 3 : 0)) aggro(m);
+  if ((tg.dead || pSafe || (sz && !m.rush && hyp(m.x - sz.x, m.y - sz.y) < sz.r)) && m.state === 'chase') { m.state = 'return'; m.path = null; }
   m.atkCD -= dt;
   if (m.state === 'idle') {
     m.t -= dt;
@@ -1281,19 +1411,19 @@ function updateMob(m, dt) {
     const leash = d.boss ? 24 : 16;
     if (hyp(m.x - m.hx, m.y - m.hy) > leash && !m.summoned) { m.state = 'return'; m.path = null; return; }
     if (dp <= d.range + 0.2) {
-      m.path = null; m.moving = false; face(m, P);
+      m.path = null; m.moving = false; face(m, tg);
       if (m.atkCD <= 0) {
         m.atkCD = d.aspd * (m.slow > 0 ? 1 + 0.1 * (m.slowLv || 1) : 1); m.atkAnim = 0;
-        if (d.ranged) shot(m, P, d.shot || 'arrow', () => { if (!m.dead) mobStrike(m, 1, d.magic ? { magic: true } : {}); }, { spd: d.shot && d.shot !== 'arrow' ? 11 : 13 });
-        else if (d.magic) after(0.32, () => { if (!m.dead && !P.dead && !(m.stun > 0) && dist(m, P) <= d.range + 0.9) mobStrike(m, 1, { magic: true }); });
-        else after(0.32, () => { if (!m.dead && !P.dead && !(m.stun > 0) && dist(m, P) <= d.range + 0.9) mobStrike(m); });
+        if (d.ranged) shot(m, tg, d.shot || 'arrow', () => { if (!m.dead) mobStrike(m, 1, d.magic ? { magic: true } : {}, tg); }, { spd: d.shot && d.shot !== 'arrow' ? 11 : 13 });
+        else if (d.magic) after(0.32, () => { if (!m.dead && !tg.dead && !(m.stun > 0) && dist(m, tg) <= d.range + 0.9) mobStrike(m, 1, { magic: true }, tg); });
+        else after(0.32, () => { if (!m.dead && !tg.dead && !(m.stun > 0) && dist(m, tg) <= d.range + 0.9) mobStrike(m, 1, NOOPT, tg); });
       }
     } else {
       m.repath -= dt;
       if ((m.repath <= 0 || !m.path) && (!m.path || dp < 2.5 || pathBudget())) {   // perf round 5: re-path budget (PATHB)
         m.repath = rand(0.4, 0.7);
-        if (dp < 2.5 && clearLine(m.x, m.y, P.x, P.y)) m.path = [{ x: P.x, y: P.y }];
-        else { const p = findPath(m.x, m.y, P.x, P.y, 2200); m.path = p ? smooth(m, p) : null; if (!p && !m.summoned) { m.state = 'return'; } }
+        if (dp < 2.5 && clearLine(m.x, m.y, tg.x, tg.y)) m.path = [{ x: tg.x, y: tg.y }];
+        else { const p = findPath(m.x, m.y, tg.x, tg.y, 2200); m.path = p ? smooth(m, p) : null; if (!p && !m.summoned) { m.state = 'return'; } }
       }
       followPath(m, dt, spd); if (!spd) m.moving = false;
     }
@@ -1321,14 +1451,16 @@ const AILOD = { on: !(typeof window !== 'undefined' && window.AOM_AI_LOD === fal
 function rmAt(a, i) { const n = a.length - 1; for (let k = i; k < n; k++) a[k] = a[k + 1]; a.length = n; }
 function update(dt) {
   time += dt;
-  for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { rmAt(timers, i); t.fn(); } }
-  if (started) { updatePlayer(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
+  if (PARTY && PARTY.members.indexOf(P) < 0) PARTY = null;   // cycle 8: a new game (or a test) replaced the hero
+  for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { rmAt(timers, i); if (PARTY && t.h !== P) asOwner(t.h, t.fn); else t.fn(); } }
+  if (started) { updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
   if (typeof CINE !== 'undefined' && CINE.active) { if (P) P.iframes = Math.max(P.iframes || 0, 0.3); } // scenes freeze the monsters and shield you
   else if (!AILOD.on || !P) for (const m of mobs) updateMob(m, dt);
   else {   // perf round 5: AI level of detail (AILOD)
-    const px = P.x, py = P.y, r2 = AILOD.r2;
+    const px = P.x, py = P.y, r2 = AILOD.r2, L = PARTY && PARTY.members.length > 1 ? PARTY.members : null;   // cycle 8: far from every hero
     for (const m of mobs) {
-      const far = m.state === 'idle' && !m.dead && !m.d.boss && (m.x - px) * (m.x - px) + (m.y - py) * (m.y - py) > r2;
+      let far = m.state === 'idle' && !m.dead && !m.d.boss && (m.x - px) * (m.x - px) + (m.y - py) * (m.y - py) > r2;
+      if (far && L) for (const h of L) if ((m.x - h.x) * (m.x - h.x) + (m.y - h.y) * (m.y - h.y) <= r2) { far = false; break; }
       if (!far) { AILOD.ran++; if (m.lodT) { const acc = m.lodT; m.lodT = 0; updateMob(m, dt + acc); } else updateMob(m, dt); continue; }
       m.lodT = (m.lodT || 0) + dt;
       if (m.lodT >= AILOD.step) { AILOD.ran++; const acc = m.lodT; m.lodT = 0; updateMob(m, acc); } else AILOD.skipped++;
@@ -1339,7 +1471,7 @@ function update(dt) {
     const p = projs[i]; p.t += dt;
     const tgt = p.to; if ((tgt.dead && tgt !== P) || (tgt === P && P.dead) || p.t > 3) { rmAt(projs, i); continue; }
     const dx = tgt.x - p.x, dy = tgt.y - p.y, dz = chestH(tgt) - p.zu, d = hyp3(dx, dy, dz), st = p.spd * dt;
-    if (d <= st + 0.25) { rmAt(projs, i); p.onHit(); if (p.kind !== 'arrow') burst(tgt.x, tgt.y, 30, PCOL[p.kind], 12, 2.2); }
+    if (d <= st + 0.25) { rmAt(projs, i); if (PARTY && p.h !== P) asOwner(p.h, p.onHit); else p.onHit(); if (p.kind !== 'arrow') burst(tgt.x, tgt.y, 30, PCOL[p.kind], 12, 2.2); }
     else { p.vx = dx / d; p.vy = dy / d; p.vz = dz / d; p.x += p.vx * st; p.y += p.vy * st; p.zu += p.vz * st; }
   }
   for (let i = teles.length - 1; i >= 0; i--) {
@@ -1347,6 +1479,7 @@ function update(dt) {
     if (t.t >= t.dur) {
       rmAt(teles, i); if (t.m.dead) continue; t.boom();
       // Blasts of one cone / wave share a group: the player is hit at most once per group.
+      if (PARTY && PARTY.members.length > 1) { teleParty(t); continue; }   // cycle 8: every hero under it (once per group each)
       if (!P.dead && hyp(P.x - t.x, P.y - t.y) <= t.r && !(t.grp && t.grp.hit)) {
         if (t.grp) t.grp.hit = true;
         if (wardAt(t.x, t.y)) { floatText(P, 'Warded', 'info'); ring(t.x, t.y, t.r, '#9fe0c0'); } else mobStrike(t.m, t.mul || t.a.mul, Object.assign({ sure: true, magic: true }, t.a.hit || {}, t.a.parry ? { parry: t.a.parry } : {}));   // round 7: a.hit / a.parry
@@ -1364,6 +1497,7 @@ function update(dt) {
    Death, maps, waystones
    ========================================================= */
 function die() {
+  if (PARTY && PARTY.members.length > 1 && typeof squadDown === 'function' && squadDown(P)) return;   // cycle 8: a hero falls, the party fights on
   P.flags.deaths = (P.flags.deaths || 0) + 1;
   if (P.mounted) { P.mounted = false; log('You are thrown from your warg. It waits for you at the Waystone.', 'bad'); calcStats(); }   // round 6
   P.dead = true; P.deadT = 0; P.casting = null; P.pending = null; P.target = null; P.path = null; P.goal = null; P.dash = null; P.spheres = 0;
@@ -1380,6 +1514,7 @@ function die() {
 }
 function respawn() {
   $('death').hidden = true; P.dead = false; calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; P.buffs = {}; calcStats(); renderBuffs();
+  if (PARTY && PARTY.members.length > 1 && typeof squadReviveAll === 'function') squadReviveAll(1, true);   // cycle 8: the Waystone wakes the whole party
   gotoMap(P.lastWay.map, P.lastWay.x, P.lastWay.y, true);
   log('The Waystone pulls you back from the dark.', 'sys');
 }
@@ -1390,11 +1525,13 @@ function gotoMap(id, x, y, quiet) {
   if (blocked(x, y)) { const o = nearestOpen(x, y, 5) || map.entry; x = o.x + 0.5; y = o.y + 0.5; }
   P.map = id; P.x = x; P.y = y;
   stopAll(); P.casting = null; P.dash = null; timers = []; projs = []; teles = []; parts = []; fxs = []; floats = []; drops = []; zones = [];
+  if (PARTY && PARTY.members.length > 1 && typeof squadArrive === 'function') squadArrive();   // cycle 8: the companions warp with you
   spawnAll();
   if (typeof prefetchSheets === 'function') prefetchSheets(); // lazy-load this map's sprite sheets
   if (P.lostZeny && P.lostZeny.map === id) drops.push({ kind: 'drop', zeny: P.lostZeny.zeny, lost: true, x: P.lostZeny.x, y: P.lostZeny.y, t: 0, id: uidc++ });
   $('bossbar').hidden = true; bossShown = null;
   const firstVisit = !P.flags.seen[id]; P.flags.seen[id] = true;
+  if (first) squadEmit('map_enter', { map: id });
   npcSync(); compSync(true);   // round 6: the pet and Huginn arrive with you
   enterWorld();
   if (first || !quiet) banner(map.d.name, map.d.sub);
@@ -1415,6 +1552,7 @@ function useObj(o) {
 }
 function rest() {
   P.hp = S.maxhp; P.sp = S.maxsp; P.lastWay = { map: map.id, x: map.way.x, y: map.way.y + 1.2 };
+  if (PARTY && PARTY.members.length > 1 && typeof squadReviveAll === 'function') squadReviveAll(1, true);   // cycle 8: fallen companions rise, everyone is healed
   if (blocked(P.lastWay.x, P.lastWay.y)) { const o = nearestOpen(map.way.x, map.way.y + 1, 3); if (o) P.lastWay = { map: map.id, x: o.x + 0.5, y: o.y + 0.5 }; }
   const lost = drops.filter(d => d.lost);
   mobs = []; spawnAll(); drops = drops.filter(d => d.lost || d.item);
@@ -1689,6 +1827,7 @@ function sail(dest, by) {
 function innRest() {
   const fee = INN_FEE(P.lvl); if (!zenyOk(fee)) return false;
   P.zeny -= fee; P.hp = S.maxhp; P.sp = S.maxsp; addBuff('rested', 'Well Rested', 'rested', 600, { maxhpPct: 5, maxsp: 40, luk: 2 }); P.hp = S.maxhp; P.sp = S.maxsp;
+  if (PARTY && PARTY.members.length > 1 && typeof squadReviveAll === 'function') squadReviveAll(1, true);
   pillar(P, '#ffd8a0'); Sfx.heal(); log(`A warm bed above the Salt Hall (${fmt(fee)}z). You wake Well Rested.`, 'sys'); return true;
 }
 
@@ -1846,8 +1985,11 @@ function petTick(dt) {
 
 /* ---------- Companions (window.COMPANIONS, drawn by js/gfx-sheets.js) ---------- */
 if (typeof window !== 'undefined' && !Array.isArray(window.COMPANIONS)) window.COMPANIONS = [];
-const PETC = { c: null };                  // the pet's entry
-const HUG = { c: null, mu: null };         // Huginn (Wolfhunter / Fenris Stalker) and Muninn (Huginn & Muninn only)
+// Cycle 8: the pet and the ravens belong to their hero (h._petc, h._hugc, h._muc). PETC.c / HUG.c / HUG.mu read and
+// write the ones of the hero in context (P), so a companion's Huginn stays with that companion when you swap.
+const PETC = { get c() { return P && P._petc || null; }, set c(v) { if (P) P._petc = v; } };                 // the pet's entry
+const HUG = { get c() { return P && P._hugc || null; }, set c(v) { if (P) P._hugc = v; },                    // Huginn (Wolfhunter / Fenris Stalker)
+  get mu() { return P && P._muc || null; }, set mu(v) { if (P) P._muc = v; } };                                // and Muninn (Huginn & Muninn only)
 const HUG_SPEED = 15;                      // cells/s on a dive (the old Blitz Beat projectile speed)
 const hugClass = () => !!P && (P.cls === 'wolfhunter' || P.cls === 'fenris_stalker');
 const hugHome = () => !!HUG.c && !!P && !P.dead;
@@ -1856,6 +1998,11 @@ function hugMake(temp) { return { kind: 'raven', sheet: 'pet_huginn', manual: tr
 // Make COMPANIONS match the hero: the pet that is out, Huginn for the raven classes. reset: place them beside you.
 function compSync(reset) {
   const L = window.COMPANIONS; if (!P) return;
+  const H = heroes(); for (let i = L.length - 1; i >= 0; i--) if (L[i].owner && H.indexOf(L[i].owner) < 0) L.splice(i, 1);   // cycle 8: a hero that left
+  for (const h of H) withHero(h, compSyncOne, reset);
+}
+function compSyncOne(reset) {
+  const L = window.COMPANIONS;
   const want = P.pet && PETS[P.pet.type] ? P.pet.type : null;
   if (PETC.c && PETC.c.type !== want) { compDrop(PETC.c); PETC.c = null; }
   if (want && !PETC.c) { PETC.c = { kind: 'pet', sheet: 'mob_' + want, type: want, manual: true, owner: P, scale: 0.6, state: 'idle', walk: 0, z: 0, fx: P.fx, fy: P.fy }; reset = true; }
@@ -1872,6 +2019,10 @@ function compSync(reset) {
 }
 function compUpdate(dt) {
   if (!P || !map) return;
+  if (PARTY && PARTY.members.length > 1) { for (const h of PARTY.members) if (h._petc || h._hugc || h._muc) withHero(h, compUpdateOne, dt); return; }   // cycle 8: each hero's own
+  compUpdateOne(dt);
+}
+function compUpdateOne(dt) {
   if (PETC.c) { PETC.c.owner = P; petFollow(PETC.c, dt); }
   if (HUG.c) { HUG.c.owner = P; hugUpdate(HUG.c, dt); }
   if (HUG.mu) hugUpdate(HUG.mu, dt);
@@ -1975,8 +2126,8 @@ function hitRefresh(id, name, icon, secs, bonus, extra) {
 function hitFx(kind, m) {
   if (kind === 'chill') hitRefresh('chill', 'Chilled', 'hex', 2.5, { move: -20, aspd: -10 });
   else if (kind === 'hex') { if (Math.random() < 0.35) hexed(25); }
-  else if (kind === 'rot') { if (Math.random() < 0.4) { if (!P.buffs.rot) log('Rot seeps into the wound.', 'warn'); hitRefresh('rot', 'Rot', 'hex', 5, {}, { every: 1, onTick: ROT_TICK }); } }
-  else if (kind === 'stagger') { if (Math.random() < 0.5) { hitRefresh('stagger', 'Staggered', 'hex', 1, { move: -40 }); P.stamina = Math.max(0, P.stamina - 15); if (typeof SHAKE !== 'undefined') SHAKE = Math.max(SHAKE, 0.15); } }
+  else if (kind === 'rot') { if (Math.random() < 0.4) { if (!P.buffs.rot) hlog('Rot seeps into the wound.', 'warn'); hitRefresh('rot', 'Rot', 'hex', 5, {}, { every: 1, onTick: ROT_TICK }); } }
+  else if (kind === 'stagger') { if (Math.random() < 0.5) { hitRefresh('stagger', 'Staggered', 'hex', 1, { move: -40 }); P.stamina = Math.max(0, P.stamina - 15); if (typeof SHAKE !== 'undefined' && !HCTX.quiet) SHAKE = Math.max(SHAKE, 0.15); } }
 }
 // A parried lunge: the beast is knocked off balance (stunned for `secs`) and exposed (+30 % damage taken).
 function parryStagger(m, secs) {
@@ -2012,7 +2163,7 @@ function gnawStart(m, g) {
 }
 function gnawTick(m, dt) {
   const G = m.gnaw; m.moving = false; m.atkCD = Math.max(m.atkCD, 0.5);
-  if (P.dead) { m.gnaw = null; return; }
+  if (partyWiped()) { m.gnaw = null; return; }
   m.hp = Math.min(m.maxhp, m.hp + m.maxhp * G.heal * dt); G.t -= dt; G.rain -= dt;
   if (G.rain <= 0) { G.rain = 7; doAbility(m, { id: 'rain', n: 5, r: 1.5, mul: 1.3, delay: 1.6 }); }
   let alive = 0; for (const a of G.adds) if (!a.dead) alive++;
@@ -2141,11 +2292,11 @@ function deepArrive(first) {
   D.run.floor = n;
   if (n > D.best) { D.best = n; if (n > 1) questToast(`New deepest floor: ${n}`, 'ready'); if (n >= 10) grantTitle('deep_walker'); if (n >= 20) grantTitle('root_diver'); }
   for (const k of plan.aff) if (first) log(`${DEEP_AFFIXES[k].name}: ${DEEP_AFFIXES[k].desc}`, 'warn');
-  if (plan.aff.includes('frozen')) { addBuff('deep_frozen', 'Frozen Floor', 'hex', 1e9, { move: -15 }, { perm: true }); renderBuffs(); }
+  if (plan.aff.includes('frozen')) for (const h of heroes()) withHero(h, () => { addBuff('deep_frozen', 'Frozen Floor', 'hex', 1e9, { move: -15 }, { perm: true }); renderBuffs(); });   // cycle 8: every hero
   if (first) log(plan.boss ? `Floor ${n}. Something enormous is waiting in the arena to the north.` : `Floor ${n}. Somewhere in the far hall a warden keeps the way down.`, 'sys');
 }
 function deepLeave() {
-  if (P && P.buffs && P.buffs.deep_frozen) { delete P.buffs.deep_frozen; calcStats(); if (typeof renderBuffs === 'function') renderBuffs(); }
+  for (const h of heroes()) withHero(h, () => { if (P && P.buffs && P.buffs.deep_frozen) { delete P.buffs.deep_frozen; calcStats(); if (typeof renderBuffs === 'function') renderBuffs(); } });
   DEEP.id = null;
 }
 
@@ -2168,7 +2319,7 @@ function rushStart() {
 }
 function rushTick(dt) {
   if (!map || map.id !== 'helheim_arena') { rushAbort('The Gauntlet is over.'); return; }
-  if (P.dead) { rushAbort('You fell in the Gauntlet. The dead of Eljudnir howl with laughter.'); return; }
+  if (partyWiped()) { rushAbort('You fell in the Gauntlet. The dead of Eljudnir howl with laughter.'); return; }
   RUSH.t += dt;
   if (RUSH.wait > 0) { RUSH.wait -= dt; if (RUSH.wait <= 0) rushSpawn(); }
   const sec = Math.floor(RUSH.t * 4); if (sec !== RUSH.shown) { RUSH.shown = sec; const el = typeof $ === 'function' && $('bosst'); if (el && RUSH.cur && !RUSH.cur.dead && bossShown === RUSH.cur) el.textContent = `Gauntlet ${RUSH.i + 1}/${RUSH_LIST.length} · ${rushClock(RUSH.t)}`; }
@@ -2186,7 +2337,8 @@ function rushDown(m) {
   RUSH.splits.push(+RUSH.t.toFixed(1)); RUSH.i++; RUSH.cur = null;
   for (const s of mobs) if (s.summoned && !s.dead) { s.dead = true; s.deathT = 0; }
   if (RUSH.i >= RUSH_LIST.length) { rushWin(); return; }
-  healP(S.maxhp * 0.25); P.sp = Math.min(S.maxsp, P.sp + S.maxsp * 0.25);
+  if (partyN() > 1) { for (const h of PARTY.members) if (!h.dead) withHero(h, () => { healP(S.maxhp * 0.25); P.sp = Math.min(S.maxsp, P.sp + S.maxsp * 0.25); }); }   // cycle 8: the whole party
+  else { healP(S.maxhp * 0.25); P.sp = Math.min(S.maxsp, P.sp + S.maxsp * 0.25); }
   questToast(`Gauntlet ${RUSH.i}/${RUSH_LIST.length} · ${rushClock(RUSH.t)} · next: ${MOBS[RUSH_LIST[RUSH.i]].name}`, 'obj'); RUSH.wait = 4;
 }
 function rushWin() {

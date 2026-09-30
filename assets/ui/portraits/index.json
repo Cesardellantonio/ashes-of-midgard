@@ -236,6 +236,13 @@
    "sad": "modgud_sad.png",
    "angry": "modgud_angry.png",
    "surprised": "modgud_surprised.png"
+  },
+  "hrodny": {
+   "neutral": "hrodny_neutral.png",
+   "happy": "hrodny_happy.png",
+   "sad": "hrodny_sad.png",
+   "angry": "hrodny_angry.png",
+   "surprised": "hrodny_surprised.png"
   }
  },
  "classes": {
