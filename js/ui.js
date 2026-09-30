@@ -453,8 +453,8 @@ const RENDER = {
     const act = isAction();
     const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>` + gfxOptionsHTML();
     const keys = act
-      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Ride / dismount a warg', 'R (Ash Knight, Rune Jarl)')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · P Pet · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
-      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Ride / dismount a warg', 'R')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · P Pet · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
+      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, read, open, pick up, enter a door', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Ride / dismount a warg', 'R (Ash Knight, Rune Jarl)')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · P Pet · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
+      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, read, open, pick up', 'Click an NPC, a sign, a chest or an item on the ground')}${k('Enter a door or cave', 'Click it, or walk onto it')}${k('Hotbar', 'Keys 1–9')}${k('Ride / dismount a warg', 'R')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · P Pet · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
     return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
@@ -1231,12 +1231,13 @@ cv.addEventListener('pointerdown', e => {
   if (h && map.npcs.includes(h)) { P.goal = { kind: 'npc', ref: h }; P.path = null; return; }
   if (h && map.objs.includes(h)) { P.goal = { kind: 'obj', ref: h }; P.path = null; return; }
   P.goal = null;
+  const dw = doorAtScreen(e.clientX, e.clientY); if (dw) { goDoor(dw); return; }   // UI round 11: a click on a door walks in
   const w = s2w(e.clientX, e.clientY);
   if (moveTo(w[0], w[1])) fxs.push({ k: 'mark', x: w[0], y: w[1], t: 0, dur: 0.5 });
   mouse.hold = true; mouse.holdT = 0.25;
 });
 let aggroHover = null;
-addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; if (mouse.rot) { cam.yawT = mouse.rot.yaw - (e.clientX - mouse.rot.x) * 0.008; cam.yaw = cam.yawT; if (e.ctrlKey || e.altKey) cam.pitch = clamp(mouse.rot.pitch + (e.clientY - mouse.rot.y) * 0.004, 0.6, 1.25); } });
+addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.seen = e.pointerType !== 'touch' && e.target === cv; if (mouse.rot) { cam.yawT = mouse.rot.yaw - (e.clientX - mouse.rot.x) * 0.008; cam.yaw = cam.yawT; if (e.ctrlKey || e.altKey) cam.pitch = clamp(mouse.rot.pitch + (e.clientY - mouse.rot.y) * 0.004, 0.6, 1.25); } });
 addEventListener('pointerup', () => { mouse.down = false; mouse.hold = false; mouse.rot = null; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 22, 72); }, { passive: false });
@@ -1404,7 +1405,7 @@ function frame(now) {
     update(dt);
     render(dt);
     if (started) { renderHUD(); if (UI.dirty) renderAll(); worldUIFrame(dt); }   // UI round 10: minimap layers, door prompt, regions
-    setCursor(hover ? (hover.kind === 'mob' ? 'atk' : hover.kind === 'drop' ? 'pick' : 'talk') : 'def');
+    setCursor(hover ? (hover.kind === 'mob' ? 'atk' : hover.kind === 'drop' ? 'pick' : 'talk') : DP.hov ? 'talk' : 'def');   // UI round 11: a hovered door
   } catch (err) { console.error(err); showErr(err); }
 }
 // UI round 10: the minimap lives in ui.js now (see "UI round 10" below). drawMinimapExtras / drawMinimap stay callable
@@ -1471,6 +1472,7 @@ function miniRebuild() {
   E.z.title = local ? 'Show the whole map' : 'Follow me (local map)'; E.z.setAttribute('aria-label', E.z.title);
   miniPaintBase(E.base, m, MM.S, MM.kind);
   MM.tf = MM.pf = MM.rf = ''; MM.px = NaN; MM.t = 1;
+  LM.key = ''; lmBuild();   // UI round 11: landmark pips (HTML, inside the scrolled wrapper)
   // The entry banner of an interior / cave becomes a plaque in that style (core's banner() drew it this frame).
   const b = MM.kind && $('banner').firstElementChild; if (b && b.classList.contains('bnr')) b.classList.add('loc', MM.kind);
 }
@@ -1585,7 +1587,10 @@ function mmDoor(g, x, y, u, kind, col, C) {
   g.beginPath(); const w2 = w * 0.55; g.moveTo(x - w2, y + h * 0.55); g.lineTo(x - w2, y + h * 0.05); g.arc(x, y + h * 0.05, w2, Math.PI, 0); g.lineTo(x + w2, y + h * 0.55); g.closePath(); g.fill();
 }
 /* ---------- Door prompt, found doors, regions (10 times a second; the prompt follows its door every frame) ---------- */
-const DP = { wp: null, key: '', tf: '', t: 0, below: false };
+const DP = { wp: null, key: '', tf: '', t: 0, below: false, hov: null };
+// UI round 11 state (declared here, before boot, so the first frame can use it): object prompt, minimap landmarks
+const OP = { o: null, key: '', tf: '', below: false };
+const LM = { map: null, key: '', t0: 0 };
 const RG = { cur: null, pend: null, since: 0, map: null, shown: {}, t: 0 };
 const SIGN_KINDS = { sign: 1, signpost: 1 };
 // Place icons (door prompt, World Map): a house for rooms, a rock arch for caves (currentColor fill).
@@ -1594,14 +1599,25 @@ const PLACE_PATH = { interior: '<path d="M1.5 7.2L7 2.2L12.5 7.2V12.5H1.5Z" fill
 const placeIcon = k => `<svg viewBox="0 0 14 14" aria-hidden="true">${PLACE_PATH[k === 'cave' ? 'cave' : 'interior']}</svg>`;
 function worldUIFrame(dt) {
   miniFrame(dt);
-  DP.t += dt; if (DP.t >= 0.1) { DP.t = 0; doorTick(); regionTick(); }
-  const el = $('doorp'); if (!el || !DP.wp) return;
-  // Above the door; below its threshold when that label would sit on the hero (a door behind you, toward the camera).
-  const wp = DP.wp, x = wp.x + 0.5, y = wp.y + 0.5, gh = groundH(x, y), a = pj(x, y, gh + 2.1), b = pj(x, y, gh), f = pj(P.x, P.y, groundH(P.x, P.y));
-  const below = a[1] > f[1] - 150 * clamp(PPU / 34, 0.6, 1.6) && a[1] < f[1] + 10 && Math.abs(a[0] - f[0]) < 110, q = below ? b : a[1] < H * 0.26 ? b : a;   // near the top edge (the HUD): on the threshold
-  const tf = q[2] > 1 ? '' : `translate(${Math.round(q[0])}px,${Math.round(q[1] + (below ? 6 : 0))}px)`;
-  if (tf !== DP.tf) { DP.tf = tf; el.style.transform = tf; el.style.visibility = tf ? '' : 'hidden'; }
-  if (below !== DP.below) { DP.below = below; el.classList.toggle('below', below); }
+  DP.t += dt; if (DP.t >= 0.1) { DP.t = 0; doorTick(); regionTick(); lmTick(); objTick(); }   // UI round 11: landmarks, object prompt
+  const el = $('doorp'); if (el && DP.wp) promptAt(el, DP, DP.wp.x + 0.5, DP.wp.y + 0.5, 2.1);
+  const oe = $('objp'); if (oe && OP.o) promptAt(oe, OP, OP.o.x, OP.o.y, OBJ_H[OP.o.kind] || 1.8, true);
+}
+// A world-anchored prompt (door / object): above its anchor, or on the ground below it when the label would sit on the
+// hero (an anchor behind you, toward the camera) or under the HUD at the top edge. st keeps the last transform.
+// Objects (obj): a label that would cover the hero goes just above the hero's head instead, at the object's x.
+function promptAt(el, st, x, y, h, obj) {
+  const gh = groundH(x, y), fg = groundH(P.x, P.y), a = pj(x, y, gh + h), b = pj(x, y, gh), f = pj(P.x, P.y, fg);
+  let below = a[1] > f[1] - 150 * clamp(PPU / 34, 0.6, 1.6) && a[1] < f[1] + 10 && Math.abs(a[0] - f[0]) < 110, q = below ? b : a[1] < H * 0.26 ? b : a;
+  if (!st.hw) st.hw = ((el.firstElementChild && el.firstElementChild.offsetWidth) || 160) / 2;
+  if (obj) {
+    const hd = pj(P.x, P.y, fg + (typeof headH === 'function' ? headH(P) : 1.8) + 0.25), on = Math.abs(a[0] - f[0]) < st.hw + 26 * clamp(PPU / 34, 0.6, 1.6) && a[1] > hd[1] - 14 && a[1] < f[1] + 10;
+    below = false; q = on ? [a[0], hd[1] - 4, hd[2]] : a[1] < H * 0.26 ? b : a;
+  }
+  const qx = clamp(q[0], st.hw + 6, Math.max(st.hw + 6, W - st.hw - 6));   // kept on screen (phones: a door at the edge)
+  const tf = q[2] > 1 ? '' : `translate(${Math.round(qx)}px,${Math.round(q[1] + (below ? 6 : 0))}px)`;
+  if (tf !== st.tf) { st.tf = tf; el.style.transform = tf; el.style.visibility = tf ? '' : 'hidden'; }
+  if (below !== st.below) { st.below = below; el.classList.toggle('below', below); }
 }
 function doorTick() {
   const el = $('doorp'); if (!el || !map || !P) return;
@@ -1612,15 +1628,20 @@ function doorTick() {
     if (d < 6 && !F[wp.to] && MAPDEFS[wp.to]) { F[wp.to] = 1; if (UI.open.worldmap) UI.dirty = true; }
     if (d < bd) { bd = d; best = wp; }
   }
+  // UI round 11: the door under the mouse (a click walks in: doorAtScreen / goDoor) and the key that enters it
+  DP.hov = busy || hover || !mouse.seen ? null : doorAtScreen(mouse.x, mouse.y);
+  if (!best) best = DP.hov;
   if (busy) best = null;
-  const key = best ? best.to + '|' + best.x + '|' + best.y + '|' + (warpLocked(best) ? 1 : 0) : '';
-  if (key === DP.key) return; DP.key = key; DP.wp = best; DP.tf = ''; DP.below = false;
+  const pk = best && isAction() && typeof actPick === 'function' ? actPick() : null;
+  const hint = !best ? '' : pk && pk.k === 'door' && pk.r === best ? keyHint() : DP.hov === best || !isAction() ? clickHint() : '';
+  const key = best ? best.to + '|' + best.x + '|' + best.y + '|' + (warpLocked(best) ? 1 : 0) + '|' + hint : '';
+  if (key === DP.key) return; DP.key = key; DP.wp = best; DP.tf = ''; DP.below = false; DP.hw = 0;
   if (!best) { el.hidden = true; return; }
   const to = MAPDEFS[best.to], kin = uiDefKind(to) || (typeof mapCache !== 'undefined' && mapCache[best.to] ? uiMapKind(mapCache[best.to]) : null), cave = best.door === 'cave' || kin === 'cave', out = !kin && !!uiMapKind(map);
   const name = best.label || (to && to.name) || '';
   const verb = warpLocked(best) ? 'Sealed' : out ? 'Exit to' : 'Enter';
   el.className = 'doorp' + (cave ? ' cave' : '') + (warpLocked(best) ? ' locked' : '');
-  el.innerHTML = `<div><span class="di">${placeIcon(cave ? 'cave' : 'interior')}</span><span class="dv">${verb}</span> <b>${esc(name)}</b></div>`; DP.cls = el.className;
+  el.innerHTML = `<div><span class="di">${placeIcon(cave ? 'cave' : 'interior')}</span><span class="dv">${verb}</span> <b>${esc(name)}</b>${hintTag(hint)}</div>`; DP.cls = el.className;
   el.hidden = false; el.style.visibility = 'hidden';
 }
 function mapRegions(m) { return (m && (m.regions || (m.d && m.d.regions))) || null; }
@@ -1693,9 +1714,11 @@ function wmBadge(k, x, y) {
 }
 function wmTipSubs(k) {
   const all = wmSubs().list[k] || [], L = all.filter(wmFound), F = P.flags.found || {};
-  const m = mapCache[k], places = m ? [].concat(mapRegions(m) || [], m.landmarks || []).filter(r => r.name && F[k + '#' + (r.id || r.name)]).map(r => r.name) : [];
+  const m = mapCache[k], places = m ? (mapRegions(m) || []).filter(r => r.name && F[k + '#' + (r.id || r.name)]).map(r => r.name) : [];
+  const lms = m && m.landmarks ? m.landmarks.filter(l => l.name) : [], lv = lms.filter(l => F[k + '#' + (l.id || l.name)]);   // UI round 11
   return (all.length ? `<div class="tt-l" style="margin-top:3px">${L.length ? esc(L.map(s => MAPDEFS[s].name).join(', ')) : 'No caves or rooms found yet'}${all.length > L.length ? ` <span class="muted">(+${all.length - L.length} undiscovered)</span>` : ''}</div>` : '')
-    + (places.length ? `<div class="tt-l" style="margin-top:3px">Visited: ${esc(places.join(', '))}</div>` : '');
+    + (places.length ? `<div class="tt-l" style="margin-top:3px">Visited: ${esc(places.join(', '))}</div>` : '')
+    + (lms.length ? `<div class="tt-l" style="margin-top:3px"><span style="color:#ffe6a8">◆</span> Landmarks ${lv.length}/${lms.length}${lv.length ? ': ' + esc(lv.map(l => l.name).join(', ')) : ' <span class="muted">(none found yet)</span>'}</div>` : '');
 }
 function wmPlacesHTML() {
   const S = wmSubs(), rows = [];
@@ -2099,7 +2122,7 @@ function renderParty() {
   const L = PARTY.members, sig = sqFrameSig(L);
   if (sig !== SQ.sig) {
     SQ.sig = sig;
-    $('pfr').innerHTML = L.map((h, i) => `<div class="pf" data-pf="${i}" role="button" tabindex="0" aria-label="${esc(h.name)}: take control" title="${esc(h.name)} · click to take control (${esc(sqKey(i))}) · right-click for tactics"><div class="pfp well">${heroPortrait(h)}<span class="pfk">${esc(sqKey(i))}</span><span class="pfa" hidden></span><span class="pfd" hidden>Down</span></div><div class="pfm"><div class="pfn">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span class="pfb"></span><small></small></div><div class="bar hp"><i></i><em></em></div><div class="bar sp"><i></i></div><div class="pfx" hidden></div></div></div>`).join('');
+    $('pfr').innerHTML = L.map((h, i) => `<div class="pf" data-pf="${i}" role="button" tabindex="0" aria-label="${esc(h.name)}: take control" title="${esc(h.name)} · click to take control (${esc(sqKey(i))}) · right-click for tactics"><div class="pfp well">${heroPortrait(h)}<span class="pfk">${esc(sqKey(i))}</span><span class="pfa" hidden></span><span class="pfq" hidden title="Has something to ask you: open Tactics (right-click)">!</span><span class="pfd" hidden>Down</span></div><div class="pfm"><div class="pfn">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span class="pfb"></span><small></small></div><div class="bar hp"><i></i><em></em></div><div class="bar sp"><i></i></div><div class="pfx" hidden></div></div></div>`).join('');
     SQ.els = [...$('pfr').children].map(e => ({ e, hp: e.querySelector('.bar.hp i'), hpt: e.querySelector('.bar.hp em'), hpbar: e.querySelector('.bar.hp'), sp: e.querySelector('.bar.sp i'), spbar: e.querySelector('.bar.sp'), lv: e.querySelector('.pfn small'), pips: e.querySelector('.pfb'), ag: e.querySelector('.pfa'), dn: e.querySelector('.pfd'), hint: e.querySelector('.pfx'), c: {} }));
     setText('pcount', L.length + '/4'); SQ.t4 = -1;
   }
@@ -2121,6 +2144,7 @@ function renderParty() {
       if (c.bs !== bs) { c.bs = bs; r.pips.innerHTML = ks.slice(0, 5).map(k => { const b = h.buffs[k], sk = SKILLS[b && b.icon] || BUFF_ICONS[b && b.icon] || {}; return `<i style="background:${ELCOL[sk.el] || '#c8bca6'}" title="${esc(b && b.name || k)}"></i>`; }).join(''); }
       let ag = 0; if (!dead && typeof mobs !== 'undefined') for (let j = 0; j < mobs.length; j++) { const m = mobs[j]; if (m.target === h && !m.dead && m.state === 'chase') ag++; }
       if (c.ag !== ag) { c.ag = ag; r.ag.hidden = !ag; r.ag.textContent = ag > 9 ? '9+' : String(ag); r.e.classList.toggle('aggro', ag > 0); }
+      const qr = !me && !dead && (sqQuest(h) || {}).status === 'ready'; if (c.qr !== qr) { c.qr = qr; const q = r.e.querySelector('.pfq'); if (q) q.hidden = !qr; }   // UI round 11: a companion quest is ready
     }
   }
 }
@@ -2144,20 +2168,23 @@ WIN.tactics = { title: 'Squad Tactics', w: 470, pos: () => [272, 64] };
 function sqTac(h) {
   let t = null; if (typeof squadTactics === 'function') { try { t = squadTactics(h.id); } catch (e) { t = null; } }
   t = t || h.ai || {}; const f = t.focus;
-  return { stance: t.stance || 'aggressive', focus: f == null || f === 'free' ? 'free' : typeof f === 'string' ? f : 'target', hold: t.hold !== undefined ? !!t.hold : t.follow === false };
+  const o = { stance: t.stance || 'aggressive', focus: f == null || f === 'free' ? 'free' : typeof f === 'string' ? f : 'target', hold: t.hold !== undefined ? !!t.hold : t.follow === false };
+  const p = tacPotions(h); if (p) { if (p.potions != null) o.potions = p.potions; if (p.reserve != null) o.reserve = p.reserve; }   // UI round 11
+  const qi = sqQuest(h); if (qi) o.quest = qi.status;
+  return o;
 }
 const TAC_ST = [['aggressive', 'Aggressive', 'Engages anything that threatens the party'], ['defensive', 'Defensive', 'Fights back and guards allies, does not start fights'], ['passive', 'Passive', 'Never attacks; follows and heals only']];
 const TAC_FO = [['target', 'My target', 'Attacks what you attack'], ['nearest', 'Nearest', 'Takes the closest enemy'], ['boss', 'Boss', 'Goes for the boss or strongest enemy'], ['free', 'Free', 'Chooses by role']];
 const TAC_MV = [['follow', 'Follow', 'Stays in formation behind you'], ['hold', 'Hold', 'Holds this spot']];
 function tacSeg(who, key, opts, cur) { return `<div class="seg">${opts.map(([v, l, tip]) => { const on = Array.isArray(cur) ? cur.every(x => x === v) : cur === v, mix = Array.isArray(cur) && !on && cur.includes(v); return `<button class="btn${on ? ' on' : ''}${mix ? ' mix' : ''}" data-act="sqo:${who}:${key}=${v}" title="${esc(tip)}" aria-pressed="${on}">${l}</button>`; }).join('')}</div>`; }
-function tacGrid(who, st, fo, mv) { return `<div class="tacg"><span>Stance</span>${tacSeg(who, 'stance', TAC_ST, st)}<span>Focus</span>${tacSeg(who, 'focus', TAC_FO, fo)}<span>Move</span>${tacSeg(who, 'move', TAC_MV, mv)}</div>`; }
+function tacGrid(who, st, fo, mv, pot, res) { return `<div class="tacg"><span>Stance</span>${tacSeg(who, 'stance', TAC_ST, st)}<span>Focus</span>${tacSeg(who, 'focus', TAC_FO, fo)}<span>Move</span>${tacSeg(who, 'move', TAC_MV, mv)}${tacPotRow(who, pot, res)}</div>`; }
 RENDER.tactics = function () {
   const L = sqMembers(), A = L.map((h, i) => ({ h, i })).filter(x => x.h !== P);
   if (!A.length) return `<p class="lore">You travel alone. Companions can be hired in Emberhold; their stance, focus and whether they follow you are set here.</p>`;
   const T = A.map(x => sqTac(x.h));
-  const all = `<div class="tac all"><div class="tall">ᛗ</div><div><div class="tach"><b>All companions</b><span>${A.length} in the party</span></div>${tacGrid('all', T.map(t => t.stance), T.map(t => t.focus), T.map(t => t.hold ? 'hold' : 'follow'))}</div></div>`;
+  const all = `<div class="tac all"><div class="tall">ᛗ</div><div><div class="tach"><b>All companions</b><span>${A.length} in the party</span></div>${tacGrid('all', T.map(t => t.stance), T.map(t => t.focus), T.map(t => t.hold ? 'hold' : 'follow'), T.some(t => t.potions != null) ? T.map(t => t.potions) : null, T.some(t => t.reserve != null) ? T.map(t => t.reserve || 0) : null)}</div></div>`;
   const rows = A.map(({ h, i }, k) => { const t = T[k], c = CLASSES[h.cls], dead = !!h.dead || h.hp <= 0;
-    return `<div class="tac${UI.tacSel === h.id ? ' sel' : ''}" data-tac="${esc(h.id)}"><div class="well">${heroPortrait(h)}</div><div><div class="tach">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span>${esc(c ? c.name : '')} · Lv ${h.lvl} · ${ROLE_NAME[heroRole(h)] || ''}</span>${dead ? '<em>Down</em>' : ''}</div>${tacGrid(i, t.stance, t.focus, t.hold ? 'hold' : 'follow')}</div></div>`; }).join('');
+    return `<div class="tac${UI.tacSel === h.id ? ' sel' : ''}" data-tac="${esc(h.id)}"><div class="well">${heroPortrait(h)}</div><div><div class="tach">${roleIcon(heroRole(h))}<b>${esc(h.name)}</b><span>${esc(c ? c.name : '')} · Lv ${h.lvl} · ${ROLE_NAME[heroRole(h)] || ''}</span>${dead ? '<em>Down</em>' : ''}${tacQuest(h, i)}</div>${tacGrid(i, t.stance, t.focus, t.hold ? 'hold' : 'follow', t.potions, t.reserve)}</div></div>`; }).join('');
   return all + rows + `<p class="muted" style="margin:4px 0 0;font-size:11px;line-height:1.4">Right-click a party frame to open this window. You can also give orders in the squad chat, for example “focus boss”, “hold” or “defensive”.</p>`;
 };
 AFTER.tactics = bd => { if (!UI.tacSel) return; const el = bd.querySelector(`[data-tac="${CSS.escape(UI.tacSel)}"]`); if (el && !SQ.tacScrolled) { SQ.tacScrolled = true; bd.scrollTop = Math.max(0, el.offsetTop - 40); } };
@@ -2320,4 +2347,183 @@ function sqTick() {
     else SQ.tacScrolled = false;
   }
   sqBubblesTick();
+}
+
+/* =========================================================
+   UI round 11 (leftovers round, design/leftovers10-contract.md "Interaction (E4)")
+   - Doors: F (pad A) in action mode enters a door / cave-mouth warp within 1.2 tiles (js/action.js actPick /
+     enterDoor: the hero steps onto the warp tile and core postMove fires it). A click on a door (the tile, or the
+     door drawn above it: doorAtScreen) walks there and in, in both modes. Walking onto a door works as before.
+     The door prompt (#doorp) now shows how: a key cap (F / A) when F would enter it, "Click" / "Tap" otherwise.
+   - Objects: #objp, a prompt like the door's: "Read" (sign, signpost, lore, ibook), "Open" (chest, ichest; faded
+     "Opened" once o.open / P.flags.chests says so), else the object's name. Classic mode: the object under the mouse;
+     action mode: what F would use (actPick). Using it is the existing path (a click -> P.goal 'obj', F -> useObj).
+   - Landmarks: m.landmarks [{ id, name, x, y, r }]. Walking inside r marks one visited in P.flags.found
+     ['<map>#<id>'] (the UI-owned set from round 10, saved with flags; old saves get {} in applySave) with a toast.
+     The minimap shows visited ones as named pips (HTML in #mml, inside the scrolled wrapper), and unvisited ones
+     within LM_NEAR tiles as a faint "?". The World Map tooltip lists them with a count.
+   - Tactics: when squadTactics(id) reports `potions` ('auto' | 'off') and `reserve` (squad team, round 10), a
+     Potions row: an Auto / Off toggle and a "Keep N" stepper, sent as squadOrder(id, { potions, reserve }).
+   ========================================================= */
+const OBJ_VERB = { sign: 'Read', signpost: 'Read', lore: 'Read', ibook: 'Read', chest: 'Open', ichest: 'Open', board: 'Browse' };
+const OBJ_NAME = { sign: 'Signpost', signpost: 'Signpost', lore: 'Old Writing', ibook: 'Writing', chest: 'Chest', ichest: 'Chest' };
+const OBJ_H = { chest: 1.25, ichest: 1.25, sign: 2.1, signpost: 2.1, lore: 1.9, ibook: 1.6, board: 2.6 };   // prompt height above the ground (tiles)
+const OBJ_ICON = { read: '<path d="M1.5 3C3.5 2.2 5.5 2.4 7 3.6C8.5 2.4 10.5 2.2 12.5 3V11.6C10.5 10.9 8.5 11.1 7 12.2C5.5 11.1 3.5 10.9 1.5 11.6Z" fill="currentColor"/><path d="M7 3.6V12.2" stroke="rgba(0,0,0,.55)" stroke-width="1"/>',
+  open: '<path d="M1.5 6.5H12.5V12.5H1.5Z" fill="currentColor"/><path d="M1.5 6.5C1.5 3.5 3.5 2.2 7 2.2S12.5 3.5 12.5 6.5Z" fill="currentColor" opacity=".8"/><path d="M1.5 6.5H12.5M6 6.5V9H8V6.5" stroke="rgba(0,0,0,.6)" stroke-width="1.1" fill="none"/>' };
+const LM_NEAR = 10;
+const keyHint = () => (CTRL.pad ? 'A' : 'F');
+const clickHint = () => (matchMedia && matchMedia('(pointer: coarse)').matches ? 'Tap' : 'Click');
+const hintTag = h => (h ? `<kbd class="${h.length > 1 ? 'mk' : ''}">${h}</kbd>` : '');
+
+/* ---------- Doors: click to enter ---------- */
+// The door warp under a screen point: its tile (the ground under the cursor within 0.7 tiles) or the door drawn above
+// it (a short vertical segment from the threshold up, within ~0.6 tiles on screen). Nearest wins.
+function doorAtScreen(sx, sy) {
+  if (!map || !P) return null;
+  let best = null, bd = 1e9; const g = s2w(sx, sy), r = Math.max(14, 0.6 * PPU);
+  for (const wp of map.warps) {
+    if (!wp.door) continue; const x = wp.x + 0.5, y = wp.y + 0.5, gh = groundH(x, y);
+    const dg = g ? hyp(g[0] - x, g[1] - y) : 1e9; if (dg < 0.7 && dg * PPU < bd) { bd = dg * PPU; best = wp; }
+    for (const z of [0.3, 1.0, 1.7]) { const q = pj(x, y, gh + z); if (q[2] > 1) continue; const d = Math.hypot(sx - q[0], sy - q[1]); if (d < r && d < bd) { bd = d; best = wp; } }
+  }
+  return best;
+}
+function goDoor(wp) {
+  const x = wp.x + 0.5, y = wp.y + 0.5;
+  P.goal = null; P.target = null; mouse.hold = false;
+  if (!moveTo(x, y)) { goNear(P, x, y); if (!P.path) return false; }
+  // end exactly on the warp tile (moveTo keeps the click point only when that tile is open)
+  if (P.path && P.path.length) { const e = P.path[P.path.length - 1]; if (Math.floor(e.x) !== wp.x || Math.floor(e.y) !== wp.y) P.path.push({ x, y }); }
+  fxs.push({ k: 'mark', x, y, t: 0, dur: 0.5 });
+  return true;
+}
+
+/* ---------- Objects: Read / Open prompt ---------- */
+function objState(o) {
+  const F = P.flags || {};
+  if (o.kind === 'chest' || o.kind === 'ichest') return o.open || (F.chests && F.chests[o.kind === 'ichest' ? 'int_' + o.key : o.id]) ? 'opened' : '';
+  if (o.kind === 'lore') return o.lore && F.lore && F.lore[o.lore] ? 'read' : '';
+  if (o.kind === 'ibook') return o.key && F.iread && F.iread[o.key] ? 'read' : '';
+  return '';
+}
+const objPromptable = o => !!o && o.kind !== 'way' && o.kind !== 'heart' && o.kind !== 'anvil' && !!(OBJ_VERB[o.kind] || o.name);   // the renderer labels Waystones and the Heart itself
+function objTick() {
+  const el = $('objp'); if (!el || !map || !P) return;
+  const busy = P.dead || !$('dialog').hidden || (typeof CINE !== 'undefined' && CINE.active);
+  let o = null, hint = '';
+  if (!busy) {
+    const pk = isAction() && typeof actPick === 'function' ? actPick() : null, po = pk && pk.k === 'obj' && objPromptable(pk.r) ? pk.r : null;
+    const ho = hover && objPromptable(hover) && map.objs.includes(hover) ? hover : null;
+    if (ho && ho !== po) { o = ho; hint = clickHint(); } else if (po) { o = po; hint = keyHint(); }
+  }
+  const st = o ? objState(o) : '', key = o ? (map.objs.indexOf(o) + '|' + st + '|' + hint + '|' + (o.name || '')) : '';
+  if (key === OP.key && o === OP.o) return; OP.key = key; OP.o = o; OP.tf = ''; OP.below = false; OP.hw = 0;
+  if (!o) { el.hidden = true; return; }
+  const v = OBJ_VERB[o.kind], open = v === 'Open', done = st === 'opened';
+  const verb = done ? 'Opened' : v || '';
+  el.className = 'doorp objp' + (open ? ' chest' : v === 'Read' ? ' read' : '') + (done ? ' done' : '');
+  el.innerHTML = `<div>${v === 'Read' || open ? `<span class="di"><svg viewBox="0 0 14 14" aria-hidden="true">${OBJ_ICON[open ? 'open' : 'read']}</svg></span>` : ''}${verb ? `<span class="dv">${verb}</span> ` : ''}<b>${esc(o.name || OBJ_NAME[o.kind] || '')}</b>${st === 'read' ? '<span class="ok" title="Read before">✓</span>' : ''}${hintTag(hint)}</div>`;
+  el.hidden = false; el.style.visibility = 'hidden';
+}
+
+/* ---------- Landmarks: visited set, minimap pips ---------- */
+const lmKey = (m, l) => m.id + '#' + (l.id || l.name);
+function lmTick() {
+  const m = map; if (!m || !P) return;
+  const L = m.landmarks || [], F = P.flags.found || (P.flags.found = {}), fresh = LM.map !== m;
+  if (fresh) { LM.map = m; LM.t0 = time; }
+  let key = m.id + '|' + MM.mode;
+  for (const l of L) {
+    if (!l.name) continue;
+    const k = lmKey(m, l), d = hyp(P.x - l.x, P.y - l.y);
+    if (!F[k] && d <= (l.r || 6) && !P.dead) {
+      F[k] = 1; if (UI.open.worldmap) UI.dirty = true;
+      // a discovery toast (not on arrival: the map banner speaks then); regionTick shares the 45 s de-duplication
+      const sk = m.id + '|' + l.name;
+      if (!fresh && time - LM.t0 > 1.5 && !(time - (RG.shown[sk] || -1e9) < 45)) { RG.shown[sk] = time; regionToast(l.name, 'Landmark found · ' + m.d.name); }
+    }
+    key += F[k] ? '1' : d <= LM_NEAR ? '?' : '0';
+  }
+  if (MM.mode === 'local') key += '|' + Math.round(MM.x0) + ',' + Math.round(MM.y0);   // the local view scrolled: re-lay the names
+  if (key !== LM.key) { LM.key = key; lmBuild(); }
+}
+// Visited landmarks in view get a pip and their name: right of the pip, else left, else above / below it slid inside
+// the box. A name that would clip or overlap a nearer one is dropped (the pip stays). Unvisited ones within LM_NEAR
+// tiles get a faint "?". Names are measured once per font size (canvas measureText, cached).
+const LM_W = new Map();
+function lmTextW(txt, fs) {
+  const k = fs + '|' + txt; let w = LM_W.get(k);
+  if (w === undefined) { const g = LM_W.g || (LM_W.g = document.createElement('canvas').getContext('2d')); g.font = `800 ${fs}px 'Nanum Gothic',Tahoma,Verdana,sans-serif`; w = g.measureText(txt).width + 2; if (LM_W.size > 300) LM_W.clear(); LM_W.set(k, w); }
+  return w;
+}
+function lmBuild() {
+  let el = $('mml');
+  if (!el) { const wr = $('mmw'); if (!wr) return; el = document.createElement('div'); el.id = 'mml'; el.className = 'mml'; el.setAttribute('aria-hidden', 'true'); wr.appendChild(el); }
+  const m = map; if (!m || !P || !m.landmarks || !m.landmarks.length) { if (el.firstChild) el.innerHTML = ''; return; }
+  const F = P.flags.found || {}, out = [], loc = MM.mode === 'local', box = MM.el ? MM.el.box : $('mapw');
+  const bw = (box && box.clientWidth) || 180, ppt = bw / MM.V, fs = loc ? 9.5 : 8.5, th = fs + 2, placed = [];
+  const hit = (x0, y0, w) => x0 < 1 || x0 + w > bw - 1 || y0 < 1 || y0 + th > bw - 1 || placed.some(b => x0 < b[1] && x0 + w > b[0] && y0 < b[3] && y0 + th > b[2]);
+  placed.push([bw / 2 - 8, bw / 2 + 8, 0, 14]);   // the "N"
+  if (MM.el && !MM.el.z.hidden) placed.push([bw - 26, bw, bw - 26, bw]);   // the zoom button
+  const L = m.landmarks.filter(l => l.name).map(l => ({ l, v: !!F[lmKey(m, l)], d: hyp(P.x - l.x, P.y - l.y) })).sort((p, q) => p.d - q.d);
+  for (const { l, v, d } of L) {
+    if (!v && d > LM_NEAR) continue;
+    const px = (l.x - MM.x0) * ppt, py = (l.y - MM.y0) * ppt; if (px < -2 || py < -2 || px > bw + 2 || py > bw + 2) continue;   // outside the view
+    const pos = `left:${(l.x / m.w * 100).toFixed(2)}%;top:${(l.y / m.h * 100).toFixed(2)}%`;
+    if (!v) { out.push(`<span class="lmk q" style="${pos}">?</span>`); continue; }
+    placed.push([px - 4, px + 4, py - 4, py + 4]);   // the pip itself
+    const tw = lmTextW(l.name, fs), cx = clamp(px - tw / 2, 1, bw - 1 - tw);
+    let at = null;
+    for (const [x0, y0] of [[px + 5, py - th / 2], [px - 5 - tw, py - th / 2], [cx, py - 5 - th], [cx, py + 5]]) if (!hit(x0, y0, tw)) { at = [x0, y0]; placed.push([x0, x0 + tw, y0, y0 + th]); break; }
+    out.push(`<span class="lmk" style="${pos}"><i></i>${at ? `<b style="left:${(at[0] - px).toFixed(1)}px;top:${(at[1] - py).toFixed(1)}px">${esc(l.name)}</b>` : ''}</span>`);
+  }
+  el.className = 'mml' + (loc ? ' loc' : '');
+  el.innerHTML = out.join('');
+}
+
+/* ---------- Tactics: potions (squad team's potion use) ---------- */
+// Companion quest status (squad team's squadQuestInfo), or null.
+function sqQuest(h) { if (typeof squadQuestInfo !== 'function' || !h || h === P) return null; try { return squadQuestInfo(h.persona || h.id) || null; } catch (e) { return null; } }
+function tacQuest(h, i) {
+  const q = sqQuest(h); if (!q) return '';
+  const tip = esc(`${q.name}${q.title ? ' · reward: the title ' + q.title : ''}${q.perk ? ' and ' + q.perk : ''}`);
+  if (q.status === 'ready') return `<button class="btn tq ready" data-act="sqq:${i}" title="${tip}">! Their quest</button>`;
+  if (q.status === 'paused') return `<button class="btn tq" data-act="sqq:${i}" title="${tip}">Resume quest</button>`;
+  if (q.status === 'active') return `<span class="tq on" title="${tip}">On their quest</span>`;
+  if (q.status === 'done') return `<span class="tq done" title="${tip}">✓ ${esc(q.title || 'Quest done')}</span>`;
+  return `<span class="tq" title="${tip} · unlocks at Lv ${q.needLvl} after ${q.needMins} min together${q.nowLvl ? `, or at Lv ${q.nowLvl}` : ''}">Quest later</span>`;
+}
+const TAC_PO = [['auto', 'Auto', 'Drinks from the shared bag when low on HP'], ['off', 'Off', 'Never touches the shared potions']];
+function tacPotions(h) {   // { potions, reserve } when the squad team reports them, else null
+  if (typeof squadTactics !== 'function') return null; let t = null; try { t = squadTactics(h.id); } catch (e) { return null; }
+  if (!t || (typeof t.potions !== 'string' && typeof t.reserve !== 'number')) return null;
+  return { potions: typeof t.potions === 'string' ? t.potions : null, reserve: typeof t.reserve === 'number' ? t.reserve : null };
+}
+function tacPotRow(who, pot, res) {
+  if (pot == null && res == null) return '';
+  const val = Array.isArray(res) ? (res.every(x => x === res[0]) ? res[0] : '–') : res;
+  const step = res == null ? '' : `<span class="tacres" title="Potions they always leave in the bag"><span>Keep</span><button class="btn" data-act="sqr:${who}:-1" aria-label="Keep one fewer potion"${val === 0 ? ' disabled' : ''}>−</button><b>${val}</b><button class="btn" data-act="sqr:${who}:1" aria-label="Keep one more potion"${val >= 99 ? ' disabled' : ''}>+</button></span>`;
+  return `<span>Potions</span><div class="tacpot">${pot == null ? '' : tacSeg(who, 'potions', TAC_PO, pot)}${step}</div>`;
+}
+{
+  const baseSqo = ACTS.sqo;
+  ACTS.sqo = function (b, c) {
+    if (c && c.startsWith('potions=')) {
+      if (typeof squadOrder !== 'function') return; const v = c.slice(8) === 'off' ? 'off' : 'auto';
+      const L = b === 'all' ? sqMembers().filter(h => h !== P) : [sqMembers()[+b]].filter(Boolean);
+      for (const h of L) { const p = tacPotions(h) || {}; try { squadOrder(h.id, p.reserve != null ? { potions: v, reserve: p.reserve } : { potions: v }); } catch (e) { console.error(e); } }
+      return;
+    }
+    return baseSqo(b, c);
+  };
+  // companion quests (squad team): the Tactics row's quest chip opens the offer, or resumes a paused one
+  ACTS.sqq = function (b) {
+    const h = sqMembers()[+b]; if (!h || h === P || typeof squadQuestOffer !== 'function') return;
+    closeWin('tactics'); try { squadQuestOffer(h.persona || h.id, { force: true }); } catch (e) { console.error(e); }
+  };
+  ACTS.sqr = function (b, c) {
+    if (typeof squadOrder !== 'function') return; const dlt = +c || 0;
+    const L = b === 'all' ? sqMembers().filter(h => h !== P) : [sqMembers()[+b]].filter(Boolean);
+    for (const h of L) { const p = tacPotions(h); if (!p || p.reserve == null) continue; const o = { reserve: clamp(p.reserve + dlt, 0, 99) }; if (p.potions != null) o.potions = p.potions; try { squadOrder(h.id, o); } catch (e) { console.error(e); } }
+  };
 }

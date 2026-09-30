@@ -402,8 +402,9 @@ const rlookBase = id => { for (const k in RLOOK_BASE) if (id === k || id.startsW
    render.interior = { floor: 'plank'|'stone'|'flag'|'straw', wall: 'timber'|'stone'|'dwarf'|'hall', trim: '#hex' | 0xhex,
      ceilingFade: true, windows: [[x, y], ...] (wall tiles with a window: pane + light shaft), beams: false (ceiling beams across the room) }
    render.cave = { rock: 'basalt'|'ice'|'mud'|'crystal'|'mine', wet: 0..1, glow: 'mushroom'|'crystal'|null,
-     torch: 1 (hero torch radius / intensity scale), drips: 0..1, dust: 0..1, walls: true (procedural rock walls; false
-     = content draws T.WALL itself with props.wall models) } */
+     torch: 1 (hero torch radius / intensity scale), drips: 0..1, dust: 0..1, walls: procedural rock by default (also
+     when props.wall lists kit blocks); 'kit' = the props.wall kit blocks (cave_wall*) when listed; false = content draws
+     T.WALL itself with props.wall models (see wallsDrawn) } */
 function mapKind(m) {
   if (!m) return '';
   const k = m.kind !== undefined && m.kind !== null ? m.kind : (m.d && m.d.render && m.d.render.kind) || (m.d && (m.d.gen === 'cave' || m.d.gen === 'interior') ? m.d.gen : null);
@@ -438,7 +439,7 @@ const CAVE_ROCK = {
 function caveCfg(m) {
   const C = (m.d && m.d.render && m.d.render.cave) || {}, n = (v, d, a, b) => clamp(isFinite(v) && v !== null && v !== '' ? +v : d, a, b);
   return { rock: CAVE_ROCK[C.rock] ? C.rock : 'basalt', wet: n(C.wet, 0.5, 0, 1), glow: C.glow === 'mushroom' || C.glow === 'crystal' ? C.glow : null,
-    torch: n(C.torch, 1, 0.4, 2), drips: n(C.drips, 0.75, 0, 2), dust: n(C.dust, 0.6, 0, 2), walls: C.walls !== false };
+    torch: n(C.torch, 1, 0.4, 2), drips: n(C.drips, 0.75, 0, 2), dust: n(C.dust, 0.6, 0, 2), walls: C.walls === false ? false : C.walls === 'kit' ? 'kit' : true };
 }
 // Base looks (RLOOK units). Interiors: warm bounce from the fires, a faint window fill (the shadow-casting "sun"), soft
 // SSAO, a warm grade with a stronger vignette. Caves: near-black cool ambient, the hero's torch, echo mist, drips.
@@ -1434,13 +1435,71 @@ function propIds(items, lq) {
   for (const id of req) opt.delete(id);
   return { req: [...req], opt: [...opt] };
 }
+/* Round 10: chest lids. A chest model is one mesh; its lid is every triangle above the seam (per material: the iron bands
+   of the body reach a little higher than the planks). The body instances with the other props (a closed chest draws
+   exactly as before); the lid (and a dark inside, shown only while open) is its own small InstancedMesh per chest model,
+   swung about the back hinge by chestFrame when the chest's o.open changes. */
+const CHEST_LID = { interior_chest: { cut: { planks: 0.352, iron: 0.3625 }, hinge: [0.36, -0.255], open: -1.75, inside: [0.72, 0.43, 0.349] } };
+function chestSplit(tpl) {
+  if (tpl.lidS !== undefined) return tpl.lidS;
+  const L = CHEST_LID[tpl.id]; tpl.lidS = null; if (!L) return null;
+  const body = [], lid = [];
+  for (const pt of tpl.parts) {
+    const cut = L.cut[pt.name], g = pt.geo; if (cut === undefined) { body.push(pt); continue; }
+    const pos = g.attributes.position, ix = g.index ? g.index.array : null, n = ix ? ix.length : pos.count, bi = [], li = [];
+    for (let t = 0; t + 2 < n; t += 3) { const a = ix ? ix[t] : t, b = ix ? ix[t + 1] : t + 1, c = ix ? ix[t + 2] : t + 2; (Math.min(pos.getY(a), pos.getY(b), pos.getY(c)) >= cut ? li : bi).push(a, b, c); }
+    const mk = (arr, mat) => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(arr); return Object.assign({}, pt, { geo: ng }, mat ? { mat } : {}); };
+    // (the lid is an open shell: two-sided, so its underside shows once it swings up toward the camera)
+    const lm = () => { const c = pt.mat.clone(); c.side = THREE.DoubleSide; c.onBeforeCompile = pt.mat.onBeforeCompile; c.customProgramCacheKey = pt.mat.customProgramCacheKey; return c; };
+    if (bi.length) body.push(mk(bi)); if (li.length) lid.push(mk(li, lm()));
+  }
+  if (!lid.length) return null;
+  const inside = new THREE.PlaneGeometry(L.inside[0], L.inside[1]).rotateX(-Math.PI / 2).translate(0, L.inside[2], 0);
+  lid.push({ geo: inside, mat: new THREE.MeshBasicMaterial({ color: 0x0c0704 }), depth: null, name: '__inside', inside: true });
+  return (tpl.lidS = { body: Object.assign({}, tpl, { parts: body }), lid, L });
+}
+const _chM = new THREE.Matrix4(), _chR = new THREE.Matrix4(), _chT = new THREE.Matrix4(), _chZ = new THREE.Matrix4().makeScale(0, 0, 0);
+function chestMatrices(c) {
+  const L = c.cs.L, a = c.a;
+  _chM.copy(c.M).multiply(_chT.makeTranslation(0, L.hinge[0], L.hinge[1])).multiply(_chR.makeRotationX(a)).multiply(_chT.makeTranslation(0, -L.hinge[0], -L.hinge[1]));
+  for (const e of c.ims) { e.im.setMatrixAt(e.i, e.inside ? (a < -0.02 ? c.M : _chZ) : _chM); e.im.instanceMatrix.needsUpdate = true; }
+}
+function buildChests(grp, list) {
+  const by = new Map(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), out = [];
+  for (const c of list) { let l = by.get(c.cs); if (!l) by.set(c.cs, l = []); l.push(c); }
+  for (const [cs, l] of by) {
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9; for (const c of l) { const it = c.it; x0 = Math.min(x0, it.x); x1 = Math.max(x1, it.x); y0 = Math.min(y0, it.y); y1 = Math.max(y1, it.y); z0 = Math.min(z0, it.z); z1 = Math.max(z1, it.z); }
+    const bs = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2 + 0.5, (z0 + z1) / 2), Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + 1.5);
+    const ims = cs.lid.map(part => {
+      const geo = new THREE.BufferGeometry(); for (const k in part.geo.attributes) geo.setAttribute(k, part.geo.attributes[k]); geo.setIndex(part.geo.index); geo.boundingSphere = bs;
+      const im = new THREE.InstancedMesh(geo, part.mat, l.length); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      if (part.depth) im.customDepthMaterial = part.depth; im.castShadow = !part.inside; im.receiveShadow = !part.inside; im.userData.small = cs.body.small; im.matrixAutoUpdate = false; im.updateMatrix();
+      grp.add(im); return { im, inside: !!part.inside };
+    });
+    l.forEach((c, i) => {
+      const it = c.it, o = it.chestObj; q.setFromAxisAngle(Y, it.r); p.set(it.x, it.y, it.z); s.set(it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || 1));
+      const rec = { it, o, cs, M: new THREE.Matrix4().compose(p, q, s), a: o && o.open ? cs.L.open : 0, ims: ims.map(e => ({ im: e.im, i, inside: e.inside })) };
+      chestMatrices(rec); out.push(rec);
+    });
+  }
+  grp.userData.chests = out;
+}
+// per frame: lids ease toward o.open (live: opening a chest swings its lid; a reload / a closed state snaps back)
+function chestFrame(dt) {
+  const pr = map.world && map.world.userData.props, L = pr && pr.userData.chests; if (!L || !L.length) return;
+  for (const c of L) {
+    const t = c.o && c.o.open ? c.cs.L.open : 0; if (Math.abs(t - c.a) < 1e-3) continue;
+    c.a = Math.abs(t - c.a) < 0.004 ? t : c.a + (t - c.a) * Math.min(1, dt * 7); chestMatrices(c); SHADOW.need = true;
+  }
+}
 // One InstancedMesh per (model part, tint, near/far) for the whole map + skirt: the old 32-tile chunks were
 // nearly always all in view at this camera distance, so chunking only multiplied the draw calls.
 function buildProps(grp, items, lq, sec) {
-  const CH = 128, by = new Map();
+  const CH = 128, by = new Map(), chests = [];
   for (const it0 of items) {
-    const id = propId(it0, lq), it = it0, tpl = PROPS.tpl[id]; if (!tpl) continue;
-    const k = id + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + (sec ? '' : Math.floor((it.x + 32) / CH) + ',' + Math.floor((it.z + 32) / CH));   // (big maps: one group, sector-culled)
+    const id = propId(it0, lq), it = it0; let tpl = PROPS.tpl[id], ck = ''; if (!tpl) continue;
+    if (it.chestObj) { const cs = chestSplit(tpl); if (cs) { tpl = cs.body; ck = '|chest'; chests.push({ it, cs }); } }   // (round 10: the lid is drawn by buildChests)
+    const k = id + ck + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + (sec ? '' : Math.floor((it.x + 32) / CH) + ',' + Math.floor((it.z + 32) / CH));   // (big maps: one group, sector-culled)
     let e = by.get(k); if (!e) by.set(k, e = { tpl, tint: it.tint, far: !!it.far, list: [] }); e.list.push(it);
   }
   const q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), M = new THREE.Matrix4(), Y = new THREE.Vector3(0, 1, 0);
@@ -1467,6 +1526,7 @@ function buildProps(grp, items, lq, sec) {
       grp.add(im);
     }
   }
+  if (chests.length) buildChests(grp, chests);
 }
 
 /* ---------- Prop placement ---------- */
@@ -1518,10 +1578,25 @@ function decorUpgrade(m) {
 }
 // Cycle 9: T.WALL drawn by the renderer itself (no wall props): interior walls, cave rock, cave annexes in field maps.
 // Content keeps control with props.wall (models per wall tile, as before) and render.cave.walls = false.
+// Round 10: a cave draws procedural rock even when content lists kit wall blocks (props.wall: the real caves' cave_wall*),
+// unless render.cave.walls === 'kit' (and props.wall is there) or walls === false (the old opt-out). Compared on the six
+// real caves (shots/gfx11): the kit blocks are 1-tile cubes, so a cellular-automaton cave reads as stair-stepped boxes
+// with a repeating face; the rock heightfield follows the cave's own outline, takes the torch and the wet sheen, and
+// costs ~40 % of the triangles (106k vs 256k in the Wolf Den) and a few draw calls fewer.
 function wallsDrawn(m) {
-  if (m.d && m.d.props && Array.isArray(m.d.props.wall) && m.d.props.wall.length) return '';
-  const k = mapKind(m); if (k === 'interior') return 'interior'; if (k === 'cave') return caveCfg(m).walls ? 'rock' : '';
+  const k = mapKind(m), kitW = !!(m.d && m.d.props && Array.isArray(m.d.props.wall) && m.d.props.wall.length);
+  if (k === 'cave') { const wv = m.d.render && m.d.render.cave ? m.d.render.cave.walls : undefined; return wv === false || (wv === 'kit' && kitW) ? '' : 'rock'; }
+  if (kitW) return '';
+  if (k === 'interior') return 'interior';
   return m.d && m.d.gen === 'field' ? 'rock' : '';
+}
+// Round 10: the door of each house model (model space, the door side facing +Z): centre x, sill y, face z, width, height
+const HOUSE_DOOR = { town_house_big: { x: -0.9, y: 0.35, z: 2.25, w: 0.96, h: 1.5 }, town_house_small: { x: 0.45, y: 0.3, z: 1.35, w: 0.86, h: 1.45 } };
+// the house door a warp opens (its tile is the plot's door tile or next to it), from the map's plan; else null
+function houseDoorOf(wp, m) {
+  const L = m && m.plan && m.plan.houseDoors; if (!L || !wp) return null;
+  for (const d of L) if (Math.abs(d.tile[0] - wp.x) <= 1 && Math.abs(d.tile[1] - wp.y) <= 1) return d;
+  return null;
 }
 function planProps(m) {
   const w = m.w, h = m.h, sd = m.d.seed * 17 + 5, gen = m.d.gen, items = [], ao = [], lights = [], avoid = [], mk = mapKind(m), ownWalls = wallsDrawn(m);
@@ -1579,10 +1654,21 @@ function planProps(m) {
     else if (isT(x, y, T.GRAVE)) opt(add(graveL ? pickW(graveL, hs(x, y, 27)) : m.var[y * w + x] & 1 ? 'dng_grave_b' : 'dng_grave_a', x + 0.5, y + 0.5, (hs(x, y, 18) - 0.5) * 0.5, 0.95 + hs(x, y, 19) * 0.12));
   }
   // -- houses: the 6x5 and 4x3 plots, doors facing the plaza (south plots turn around)
+  // (round 10: a plot with a `door` tile (the street tile in front of it: the world team's grown plots) turns its model's
+  // door toward it; houseDoors records where each model's door is in the world (plots with `door` or interior `doors`),
+  // so the glow of a warp on / next to that door sits on the model's own door, see houseDoorOf)
+  const houseDoors = [];
   for (const q of (m.houses || [])) {
-    const sx = q.x1 - q.x0 + 1, sz = q.y1 - q.y0 + 1, big = sx >= 5 && sz >= 4, fw = big ? 6 : 4, fd = big ? 5 : 3, cx = q.x0 + sx / 2, cz = q.y0 + sz / 2;
+    const dt = Array.isArray(q.door) && q.door.length >= 2 ? q.door : null;
+    const ds = dt ? (dt[1] > q.y1 ? 's' : dt[1] < q.y0 ? 'n' : dt[0] > q.x1 ? 'e' : dt[0] < q.x0 ? 'w' : 's') : '', turn = ds === 'e' || ds === 'w';
+    const sx = q.x1 - q.x0 + 1, sz = q.y1 - q.y0 + 1, al = turn ? sz : sx, dp = turn ? sx : sz, big = al >= 5 && dp >= 4, fw = big ? 6 : 4, fd = big ? 5 : 3, cx = q.x0 + sx / 2, cz = q.y0 + sz / 2;
     let y0 = 1e9; for (let yy = q.y0; yy <= q.y1 + 1; yy++) for (let xx = q.x0; xx <= q.x1 + 1; xx++) y0 = Math.min(y0, m.hgt[yy * (w + 1) + xx]);
-    add(big ? 'town_house_big' : 'town_house_small', cx, cz, cz > h / 2 ? Math.PI : 0, Math.min(sx / fw, sz / fd), { y: y0 - 0.04 });
+    const id = big ? 'town_house_big' : 'town_house_small', rot = ds ? { s: 0, n: Math.PI, e: Math.PI / 2, w: -Math.PI / 2 }[ds] : cz > h / 2 ? Math.PI : 0, sc = Math.min(al / fw, dp / fd);
+    add(id, cx, cz, rot, sc, { y: y0 - 0.04 });
+    if (dt || Array.isArray(q.doors)) {
+      const D = HOUSE_DOOR[id], lx = D.x * sc, lz = D.z * sc, x = cx + Math.cos(rot) * lx + Math.sin(rot) * lz, z = cz - Math.sin(rot) * lx + Math.cos(rot) * lz;
+      houseDoors.push({ q, tile: dt || [Math.floor(x - Math.sin(rot) * 0.5), Math.floor(z - Math.cos(rot) * 0.5)], x, z, y: y0 - 0.04 + D.y * sc, rot, w: D.w * sc, h: D.h * sc });
+    }
   }
   // -- waystone, braziers
   if (m.way) { add('waystone', m.way.x, m.way.y, 0, 0.9); ao.push([m.way.x, m.way.y, 1.4, 0.35]); }
@@ -1659,6 +1745,9 @@ function planProps(m) {
     const sc = ph ? 1 : +d.scale || 1, rot = +d.rot || 0, onW = d.on === 'water';
     const it = add(id, +d.x, +d.y, rot, sc, onW ? { y: WL + (+d.dy || 0) } : isFinite(d.y0) ? { y: +d.y0 } : { dy: +d.dy || 0, sy: isFinite(d.sy) && +d.sy > 0 ? +d.sy : undefined }); it.opt = true;
     if (ph) { it.sx = ph.sx; it.sz = ph.sz; it.sy = ph.sy; it.ph = true; }
+    // round 10: a chest piece (decor `chest: <id>`, or any chest model on an objs chest / interior 'ichest') gets a lid that
+    // opens with o.open (see chestSplit / chestFrame)
+    if (!ph && CHEST_LID[id]) { const ck = d.chest !== undefined && d.chest !== null ? String(d.chest) : null; it.chestObj = (m.objs || []).find(o => o && (ck !== null ? o.kind === 'chest' && String(o.id) === ck : (o.kind === 'chest' || o.kind === 'ichest') && Math.hypot(o.x - d.x, o.y - d.y) < 0.8)) || null; }
     if (Array.isArray(d.fp) && d.fp.length === 4 && d.fp.every(isFinite)) {
       const [x0, y0, x1, y1] = d.fp.map(Number), cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, rx = (x1 - x0 + 1) / 2, ry = (y1 - y0 + 1) / 2;
       if (!onW) ao.push([cx, cy, Math.min(4, Math.max(rx, ry) + 0.4), 0.3]);
@@ -1707,7 +1796,7 @@ function planProps(m) {
       else { const id = pickW(trees, r()), it = add(id, cx, cz, r() * 6.283, (TREE_S[id] || 0.74) * (0.95 + r() * 0.35), { y: gy - 0.05, far: !near }); if (!PROP_ALL.includes(id)) it.opt = true; }
     }
   }
-  return { items, ao, lights, dlights, avoid, ok: true, mouths };
+  return { items, ao, lights, dlights, avoid, ok: true, mouths, houseDoors };
 }
 
 /* ---------- Grass tufts (instanced camera-facing cards, wind-animated) ---------- */
@@ -1940,12 +2029,13 @@ function buildWater(m, W, R, hg) {
     uFlags: { value: new THREE.Vector4(W.murky ? 1 : 0, W.ice || W.frozen ? 1 : 0, clamp(+W.frozen || 0, 0, 1), W.blackSun ? 1 : 0) }, uSky: { value: SKY.top }, uHor: { value: SKY.hor }, uSunDir: { value: SKY.sunDir }, uSunC: { value: sun.color },
     uFogCol: LAVAU.uFogCol, uFog: LAVAU.uFog,
   }, WATERU, still ? TORCHU : {});
+  if (still) Object.assign(U, poolUniforms(m, W, lvl));
   const mat = new THREE.ShaderMaterial({
-    uniforms: U, transparent: true, depthWrite: false, fog: false, defines: still ? { WATER_STILL: 1 } : {},
+    uniforms: U, transparent: true, depthWrite: false, fog: false, defines: still ? { WATER_STILL: 1, POOL_NL: POOL_NL } : {},
     vertexShader: 'varying vec3 vW; varying float vDepth; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mv = viewMatrix * w; vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
     fragmentShader: `uniform sampler2D tHgt, tNoise; uniform vec4 uHgt, uFlags; uniform float uLevel, uT, uRain, uGlint; uniform vec3 uCol, uDeep, uFoam, uIce, uSky, uHor, uSunDir, uSunC, uFogCol; uniform vec2 uFog;
       #ifdef WATER_STILL
-      uniform vec3 uTorchP, uTorchC; uniform vec2 uTorchC2;
+      uniform vec3 uTorchP, uTorchC; uniform vec2 uTorchC2; uniform vec4 uPL[POOL_NL]; uniform vec3 uPC[POOL_NL]; uniform vec3 uPAmb, uPRim; uniform float uPDrip;
       #endif
       varying vec3 vW; varying float vDepth;
       void main(){
@@ -1962,6 +2052,17 @@ function buildWater(m, W, R, hg) {
         slope *= 0.16;
         #endif
         float rip = 0.0;
+        #ifdef WATER_STILL
+        // round 10: drips ringing the still pool (sparse cells, each its own period and phase; two rings per drop)
+        if (uPDrip > 0.0) {
+          vec2 g = p * 0.8, id = floor(g), f = fract(g) - 0.5;
+          float h = fract(sin(dot(id, vec2(27.619, 57.583))) * 43758.5453), per = 2.2 + 2.6 * fract(h * 13.7), ph = fract(uT / per + h);
+          vec2 d = f - (vec2(fract(h * 7.13), fract(h * 3.71)) - 0.5) * 0.5; float r = length(d), tt = ph * per;
+          float ring = smoothstep(0.035, 0.0, abs(r - tt * 0.34)) + 0.6 * smoothstep(0.03, 0.0, abs(r - max(tt - 0.22, 0.0) * 0.34)) * step(0.22, tt);
+          float dr = ring * max(0.0, 1.0 - tt / 1.3) * step(h, 0.55 * uPDrip) * smoothstep(0.02, 0.2, 0.5 - max(abs(f.x), abs(f.y)));
+          rip += dr; slope += d / max(r, 0.02) * dr * 0.5;
+        }
+        #endif
         if (uRain > 0.01) {   // rain rings: one drop per cell, random phase and centre
           vec2 g = p * 1.7, id = floor(g), f = fract(g) - 0.5;
           float h = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453), ph = fract(uT * 1.1 + h);
@@ -1977,6 +2078,9 @@ function buildWater(m, W, R, hg) {
         float glint = (pow(sd, 220.0) * 5.0 + pow(sd, 24.0) * 0.12) * uGlint * (1.0 - 0.75 * uRain);
         if (uFlags.w > 0.5) { glint = 0.0; float disk = smoothstep(0.9975, 0.9985, sd); sky = mix(sky, sky * 0.06, disk) + vec3(0.55, 0.75, 0.62) * smoothstep(0.990, 0.9972, sd) * (1.0 - disk) * 0.8; }
         vec3 body = mix(uCol, uDeep, smoothstep(0.04, 0.75, dep));
+        #ifdef WATER_STILL
+        body = mix(uCol, uDeep, smoothstep(0.04, 0.9, dep) * 0.75);   // (round 10: still pools keep some of their colour at depth)
+        #endif
         float scum = murk * smoothstep(0.55, 0.8, texture2D(tNoise, p * 0.06 + vec2(uT * 0.004, 0.0)).g);
         body = mix(body, uFoam * 0.5, scum * 0.6);
         vec3 c = mix(body, sky, fres * (0.8 - murk * 0.55)) + uSunC * glint * (1.0 - murk * 0.85) * (1.0 - scum);
@@ -1984,8 +2088,22 @@ function buildWater(m, W, R, hg) {
         float foam = (1.0 - smoothstep(0.0, wave, dep)) * smoothstep(0.3, 0.6, fn) * (1.0 - murk * 0.6);
         #ifdef WATER_STILL
         foam *= 0.25;
+        vec3 lsum = vec3(0.0);
         { vec3 tl = uTorchP - vW; float td = max(length(tl), 1e-3), tg = pow(max(dot(Rf, tl / td), 0.0), 90.0) * 3.0 + pow(max(dot(Rf, tl / td), 0.0), 12.0) * 0.08;
-          c += uTorchC * tg * pow(max(0.0, 1.0 - td / uTorchC2.x), 2.0) + uTorchC * 0.05 * pow(max(0.0, 1.0 - td / uTorchC2.x), 3.0); }
+          float ta = pow(max(0.0, 1.0 - td / uTorchC2.x), 2.0);
+          c += uTorchC * tg * ta + uTorchC * 0.05 * pow(max(0.0, 1.0 - td / uTorchC2.x), 3.0); lsum += uTorchC * ta; }
+        // round 10: faint mirror images of the crystals / torches / m.lights round the pool (streaked by the slope),
+        // the light they throw on the surface, a pale sheen of the cave haze, and a wet rim lit by all of it
+        for (int i = 0; i < POOL_NL; i++) {
+          vec3 ll = uPL[i].xyz - vW; float ld = max(length(ll), 1e-3), la = max(0.0, 1.0 - ld / uPL[i].w); la *= la;
+          float rd = max(dot(Rf, ll / ld), 0.0);
+          c += uPC[i] * la * (pow(rd, 70.0) * 1.8 + pow(rd, 16.0) * 0.2 + 0.05); lsum += uPC[i] * la;
+        }
+        c += uPAmb * (0.25 + fres * 0.75);
+        float shore = (1.0 - smoothstep(0.04, 0.34, dep)) * mEdge;
+        c = mix(c, uPRim * (0.35 + 0.65 * texture2D(tNoise, p * 0.9).g) + lsum * 0.1, shore * 0.55);
+        c += (lsum * 0.5 + uPRim * 0.4) * smoothstep(0.1, 0.0, abs(dep - 0.07)) * mEdge * 0.35;
+        c += (lsum * 0.8 + uPAmb * 2.0) * rip * 0.35;
         #endif
         c = mix(c, uFoam, foam * 0.8);
         c += (sky * 0.5 + 0.08) * rip * 0.35;
@@ -2002,7 +2120,7 @@ function buildWater(m, W, R, hg) {
         }
         float a = mix(0.55, 0.96, smoothstep(0.0, 0.5, dep));
         #ifdef WATER_STILL
-        a *= mEdge * smoothstep(0.02, 0.3, dep - 0.1 + texture2D(tNoise, p * 0.31).r * 0.36);   // an organic shoreline
+        a *= mEdge * smoothstep(0.0, 0.34, dep - 0.08 + texture2D(tNoise, p * 0.31).r * 0.3);   // an organic shoreline (round 10: a softer falloff)
         #endif
         c = mix(c, uFogCol, smoothstep(uFog.x, uFog.y, vDepth));
         gl_FragColor = vec4(c, a);
@@ -2012,6 +2130,21 @@ function buildWater(m, W, R, hg) {
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(m.w + 2 * E, m.h + 2 * E).rotateX(-Math.PI / 2), mat);
   mesh.position.set(m.w / 2, lvl, m.h / 2); mesh.renderOrder = 2; mesh.frustumCulled = false; return mesh;
+}
+// Round 10: still cave pools reflect the lights round them. The POOL_NL strongest of m.lights and the decor lights (lit
+// crystals, mushrooms, lanterns) within reach of any water tile, fixed at build (no per-frame cost); unused slots are dark.
+const POOL_NL = 6;
+function poolUniforms(m, W, lvl) {
+  const w = m.w, h = m.h, near = (x, y, r) => { const x0 = Math.max(0, Math.floor(x - r)), x1 = Math.min(w - 1, Math.floor(x + r)), y0 = Math.max(0, Math.floor(y - r)), y1 = Math.min(h - 1, Math.floor(y + r)); for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) if (m.t[yy * w + xx] === T.WATER) return true; return false; };
+  const cand = [];
+  for (const l of mapLights(m)) if (near(l.x, l.y, Math.min(8, l.r + 1))) cand.push({ x: l.x, y: groundHm(m, l.x, l.y) + l.h, z: l.y, c: l.lin.clone(), i: l.i, r: Math.max(5, l.r * 1.6) });
+  for (const l of (m.propDLights || [])) { let c; try { c = linCol(l.col); } catch (e) { continue; } if (near(l.x, l.z, Math.min(8, (l.d || 5) + 1))) cand.push({ x: l.x, y: l.h, z: l.z, c, i: l.i || 1, r: Math.max(5, (l.d || 5) * 1.6) }); }
+  cand.sort((a, b) => b.i - a.i);
+  const PL = [], PC = [];
+  for (let i = 0; i < POOL_NL; i++) { const l = cand[i]; PL.push(l ? new THREE.Vector4(l.x, l.y, l.z, l.r) : new THREE.Vector4(0, -99, 0, 1)); PC.push(l ? l.c.clone().multiplyScalar(Math.min(1.6, l.i) * 0.8) : new THREE.Color(0, 0, 0)); }
+  const cave = mapKind(m) === 'cave', K = cave ? CAVE_ROCK[caveCfg(m).rock] : null;
+  const amb = _hexOr(W.sheen !== undefined ? W.sheen : K ? K.mist : 0x6c7890, 0x6c7890).multiplyScalar(0.09), rim = _hexOr(W.rim !== undefined ? W.rim : K ? K.b : 0x6a6660, 0x6a6660).multiplyScalar(0.3);
+  return { uPL: { value: PL }, uPC: { value: PC }, uPAmb: { value: amb }, uPRim: { value: rim }, uPDrip: { value: cave ? clamp(caveCfg(m).drips, 0, 2) : 0.5 } };
 }
 function buildVoid(m, V, R) {
   const y0 = Math.max(isFinite(V.depth) ? +V.depth : -4.5, -4.1), grp = new THREE.Group();
@@ -2975,13 +3108,15 @@ function buildInteriorWalls(m, R, grp, A, plan) {
    from the hero's torch, faint glowing veins in crystal rock. Dithers between the camera and the hero like trees. */
 function caveRockMaterial(K, C) {
   const U = { uRD: { value: detailTex(K.detail).tex }, uRA: { value: linCol(K.a) }, uRB: { value: linCol(K.b) }, uRG: { value: linCol(K.glow).multiplyScalar(1.8) },
-    uRK: { value: new THREE.Vector4(C.wet, K.veins ? 1 : 0, K.spec || 0, 0.21) } };
+    uRK: { value: new THREE.Vector4(C.wet, K.veins ? 1 : 0, K.spec || 0, 0.21) },
+    uRKnee: { value: new THREE.Vector2(C.knee || 0, 0.25) } };   // round 10: caves roll off the torch's hot spot on rock faces (knee, range; 0 = off)
   const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, specular: new THREE.Color(0.5, 0.53, 0.58), shininess: K.spec ? 70 : 42 });
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U, OCC);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aRH; varying vec3 vRW, vRN; varying float vRH;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvRW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRN = normalize(mat3(modelMatrix) * objectNormal); vRH = aRH;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uRD; uniform vec3 uRA, uRB, uRG; uniform vec4 uRK; varying vec3 vRW, vRN; varying float vRH; float rkWet; vec3 rkSl;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uRD; uniform vec3 uRA, uRB, uRG; uniform vec4 uRK; uniform vec2 uRKnee; varying vec3 vRW, vRN; varying float vRH; float rkWet; vec3 rkSl;')
+      .replace('#include <envmap_fragment>', '#include <envmap_fragment>\nif (uRKnee.x > 0.0) { float l = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b); if (l > uRKnee.x) { float e = l - uRKnee.x; outgoingLight *= (uRKnee.x + e / (1.0 + e / uRKnee.y)) / l; } }')
       .replace('#include <map_fragment>', `{
         vec3 an = abs(normalize(vRN)); an = an * an * an; an /= (an.x + an.y + an.z);
         vec4 tx = texture2D(uRD, vRW.zy * uRK.w), ty = texture2D(uRD, vRW.xz * uRK.w), tz = texture2D(uRD, vRW.xy * uRK.w);
@@ -3074,6 +3209,14 @@ function buildDoors(m, R, grp, A, GB, lam, plan) {
     const D = doorDir(wp, m), cx = wp.x + 0.5, cz = wp.y + 0.5, gh = groundHm(m, cx, cz), rot = Math.atan2(D.nx, D.nz), rec = { wp, dk, D, halo: null };
     A.doors.push(rec);
     if (dk === 'mouth') { if (!(plan && plan.mouths && plan.mouths.has(wp))) grp.add(buildCaveMouth(wp, m, D)); continue; }
+    const hd = dk === 'door' && !kind ? (plan && plan.houseDoors ? houseDoorOf(wp, { plan }) : null) : null;
+    if (hd) {   // round 10: the glow on the house model's own door (its facade), the halo just outside it
+      const col = new THREE.Color(2.0, 1.15, 0.5), dg = new THREE.PlaneGeometry(hd.w * 1.08, hd.h * 1.04).translate(0, hd.h * 0.52, 0.03);
+      M.compose(P0.set(hd.x, hd.y, hd.z), Q.setFromAxisAngle(Y, hd.rot), ONE); dg.applyMatrix4(M); gl.push(ni(dg)); for (let i = 0; i < 6; i++) glC.push(col.r, col.g, col.b);
+      const ox = Math.sin(hd.rot), oz = Math.cos(hd.rot), halo = GB.add(linCol(0xffb870), 0.3, 2.4, 2.8); halo.position.set(hd.x + ox * 0.35, hd.y + hd.h * 0.62, hd.z + oz * 0.35);
+      rec.halo = halo; rec.col = halo.material.color.clone(); rec.at = { x: hd.x + ox * 0.6, y: hd.z + oz * 0.6 }; A.halos.push({ s: halo, op: 0.3, ph: wp.x * 1.3 + wp.y, fl: 0.15 });
+      continue;
+    }
     const exit = dk === 'exit', col = exit ? (kind === 'cave' ? new THREE.Color(0.75, 0.84, 0.98) : new THREE.Color(1.3, 1.42, 1.62)) : new THREE.Color(2.0, 1.15, 0.5);
     // (a doorway in a wall line: the plane stands in the gap; a building's door tile: on the facade, the tile's open edge)
     const off = D.inWall || kind ? 0.44 : -0.53, dx = cx - D.nx * off, dz = cz - D.nz * off, ht = I ? Math.min(2.25, INT_WALL[I.wall].h - 0.3) : 2.2;
@@ -3282,7 +3425,7 @@ function buildWorld(m) {
   const own = wallsDrawn(m);
   try {
     if (own === 'interior') buildInteriorWalls(m, R, grp, A, plan);
-    else if (own === 'rock' && m.t.some(t => t === T.WALL)) { const C = kind === 'cave' ? caveCfg(m) : { wet: 0.12 }, rk = buildCaveRock(m, kind === 'cave' ? CAVE_ROCK[C.rock] : annexRock(m), C); if (rk) { grp.add(rk); A.rock = rk; } }
+    else if (own === 'rock' && m.t.some(t => t === T.WALL)) { const C = kind === 'cave' ? Object.assign({ knee: 0.2 }, caveCfg(m)) : { wet: 0.12 }, rk = buildCaveRock(m, kind === 'cave' ? CAVE_ROCK[C.rock] : annexRock(m), C); if (rk) { grp.add(rk); A.rock = rk; } }
   } catch (e) { console.warn('[gfx] walls / rock', e); }
   // Volumetric-looking light shafts (additive crossed planes along the sun direction; big maps: more of them)
   if (R.shafts) { const sg = new THREE.Group(); grp.add(sg); A.shafts = buildShafts(m, big ? Object.assign({}, R, { shafts: Object.assign({}, R.shafts, { n: Math.round(R.shafts.n * w * h / 4096) }) }) : R, sg); A.shaftGrp = sg; }
@@ -3293,7 +3436,7 @@ function buildWorld(m) {
   // Required models must all load (else the legacy primitives). The world dresses as soon as they are in; optional
   // ones (decor, LODs, the board model, kit variants) follow and trigger one rebuild; missing ones are skipped.
   // (the instanced geometries share the templates' attribute buffers: only their own VAO / instance buffers are freed)
-  const clearProps = () => { const keep = tplAttrs(); for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } if (sec) { sec.meshes.length = 0; for (const b of sec.box) b.makeEmpty(); sec.view = -1; } };
+  const clearProps = () => { const keep = tplAttrs(); props.userData.chests = null; for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } if (sec) { sec.meshes.length = 0; for (const b of sec.box) b.makeEmpty(); sec.view = -1; } };
   let have = null;
   const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq, sec); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
   const optional = lq => PROPS.manifest().then(() => { const { opt } = propIds(plan.items, lq); return Promise.all(opt.map(id => PROPS.load(id).catch(() => null))).then(() => opt); });
@@ -3327,7 +3470,7 @@ const WORLD_KEEP = () => ({ low: 2, medium: 3, high: 4, ultra: 5 }[GFX.quality] 
 function tplAttrs() {
   const k = new Set();
   const add = g => { if (!g) return; if (g.index) k.add(g.index); for (const n in g.attributes) k.add(g.attributes[n]); };
-  for (const id in PROPS.tpl) for (const pt of PROPS.tpl[id].parts) add(pt.geo);
+  for (const id in PROPS.tpl) { const t = PROPS.tpl[id]; for (const pt of t.parts) add(pt.geo); if (t.lidS) { for (const pt of t.lidS.body.parts) add(pt.geo); for (const pt of t.lidS.lid) add(pt.geo); } }
   add(GRASS.geo); add(BOARD.geo); add(BOARD.faceGeo);
   return k;
 }
@@ -3514,7 +3657,7 @@ function enterWorldNow(deferred) {
   for (const wp of map.warps) {
     const dk = doorKind(wp, map);
     if (!dk) LSRC.push({ x: wp.x + 0.5, y: wp.y + 0.5, h: groundH(wp.x + 0.5, wp.y + 0.5) + 1.2, c: linCol(Lc.warp[0]), i: Lc.warp[1], d: Lc.warp[2], fl: 0.3, ph: 2, warp: wp });
-    else if (dk !== 'mouth') { const D = doorDir(wp, map), ex = dk === 'exit', x = wp.x + 0.5 + D.nx * 0.6, y = wp.y + 0.5 + D.nz * 0.6; LSRC.push({ x, y, h: groundH(x, y) + 1.3, c: linCol(ex ? 0xd8e6ff : 0xffb870), i: ex ? 1.2 : 0.9, d: ex ? 6 : 4.5, fl: ex ? 0.02 : 0.15, ph: wp.x + wp.y, door: wp }); }
+    else if (dk !== 'mouth') { const D = doorDir(wp, map), ex = dk === 'exit', hd = !ex && !mapKind(map) ? houseDoorOf(wp, map) : null, x = hd ? hd.x + Math.sin(hd.rot) * 0.6 : wp.x + 0.5 + D.nx * 0.6, y = hd ? hd.z + Math.cos(hd.rot) * 0.6 : wp.y + 0.5 + D.nz * 0.6; LSRC.push({ x, y, h: groundH(x, y) + 1.3, c: linCol(ex ? 0xd8e6ff : 0xffb870), i: ex ? 1.2 : 0.9, d: ex ? 6 : 4.5, fl: ex ? 0.02 : 0.15, ph: wp.x + wp.y, door: wp }); }
   }
   for (const l of mapLights(map)) LSRC.push({ x: l.x, y: l.y, h: groundH(l.x, l.y) + l.h + 0.15, c: l.lin, i: l.i, d: l.r, fl: l.fl, ph: l.x * 2.1 + l.y, lamp: true });   // cycle 9
   for (const wv of (map.anim && map.anim.windows) || []) LSRC.push({ x: wv.x, y: wv.z, h: wv.h, c: linCol(0xffe8c8), i: 0.7, d: 4.5, fl: 0, ph: 0 });
@@ -3730,6 +3873,7 @@ function animateWorld(dt) {
   const TH = ctrlHero() || P, cave = mapKind(map) === 'cave'; torch.position.set(TH.x, groundH(TH.x, TH.y) + (cave ? 1.8 : 2.2), TH.y);
   const key = map.id + '|' + lit + '|' + !!(P.flags && P.flags.kingSlain); if (LT.key !== key) buildLightGrid();
   updateLights(); updateSun(); updateAtmosphere();
+  chestFrame(dt);
   kindFrame(A, cave);
 }
 // Cycle 9 per frame: interior cutaway direction + the pieces that hide with a cut wall (doors, windows), locked-door tint,

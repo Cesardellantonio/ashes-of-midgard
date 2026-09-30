@@ -18,6 +18,15 @@
      helheim_tent         Hlín's tent in the camp (a new tent set piece west of the Waystone)
      gloamheim_crypt      the keep's crypt (undead, the Hollow Castellan)
      gloamheim_library    Sir Gaunt's library behind the throne hall
+   Round 10 adds fourteen small rooms behind the world team's new town plots (see "Round 10" further down):
+     emberhold_row_a / row_b      the Smiths' Row workshops (Hrefna's nail-forge, Grani's lamp-shop)
+     emberhold_house_c / house_d  the cooper's house, the charcoal-burner's house
+     emberhold_house_e            the gravedigger's house by the chapel yard
+     emberhold_farm_a / b / c     farmhouses in the Farm Ward: a byre through the wall, a byre behind a rail, a hay loft
+     emberhold_house_f / house_g  the midwife's house, the thatcher's house (Tóki's family)
+     skaldhaven_net_a / net_b     Netmakers' Row: the net-shed, the rope-walk
+     skaldhaven_smokehouse        fish racks over two fires, and a packing room
+     skaldhaven_net_c             the sealer's house
 
    Blueprints (INT_ROOMS[id].rows, one string per tile row):
      '#' wall   '.' floor   ',' loft floor (raised, `loft`)   '/' stair (floor; the loft edge ramps down over it)
@@ -67,6 +76,23 @@ const INT_DOORS = {
   helheim_tent: { parent: 'helheim', door: [26, 50], step: [27, 50] },
   gloamheim_crypt: { parent: 'gloamheim', door: [24, 56], step: [25, 56] },
   gloamheim_library: { parent: 'gloamheim', door: [20, 5], step: [21, 5] },
+  // round 10: the world team's new town plots. door / step are placeholders (the street tile from the contract): the
+  // grow.layout wrapper below replaces them with the plot's own door read from m.houses (step = the plot's `door`,
+  // door = that tile clamped onto the building's edge), as for emberhold_temple.
+  emberhold_row_a: { parent: 'emberhold', door: [40, 8], step: [40, 8], plot: 'emberhold_row_a' },
+  emberhold_row_b: { parent: 'emberhold', door: [49, 8], step: [49, 8], plot: 'emberhold_row_b' },
+  emberhold_house_c: { parent: 'emberhold', door: [42, 11], step: [42, 11], plot: 'emberhold_house_c' },
+  emberhold_house_d: { parent: 'emberhold', door: [49, 11], step: [49, 11], plot: 'emberhold_house_d' },
+  emberhold_house_e: { parent: 'emberhold', door: [40, 26], step: [40, 26], plot: 'emberhold_house_e' },
+  emberhold_farm_a: { parent: 'emberhold', door: [6, 43], step: [6, 43], plot: 'emberhold_farm_a' },
+  emberhold_farm_b: { parent: 'emberhold', door: [26, 43], step: [26, 43], plot: 'emberhold_farm_b' },
+  emberhold_farm_c: { parent: 'emberhold', door: [6, 47], step: [6, 47], plot: 'emberhold_farm_c' },
+  emberhold_house_f: { parent: 'emberhold', door: [26, 47], step: [26, 47], plot: 'emberhold_house_f' },
+  emberhold_house_g: { parent: 'emberhold', door: [12, 47], step: [12, 47], plot: 'emberhold_house_g' },
+  skaldhaven_net_a: { parent: 'skaldhaven', door: [9, 44], step: [9, 44], plot: 'skaldhaven_net_a' },
+  skaldhaven_net_b: { parent: 'skaldhaven', door: [17, 44], step: [17, 44], plot: 'skaldhaven_net_b' },
+  skaldhaven_smokehouse: { parent: 'skaldhaven', door: [9, 50], step: [9, 50], plot: 'skaldhaven_smokehouse' },
+  skaldhaven_net_c: { parent: 'skaldhaven', door: [17, 50], step: [17, 50], plot: 'skaldhaven_net_c' },
 };
 
 /* ---------- Room builder ---------- */
@@ -99,7 +125,9 @@ function intBuild(m, K, B) {
   for (const [x, y] of rails) {
     // interior_railing: one tile along x with its post at -x; the last piece of a run turns round to close it
     const horiz = L.at(x - 1, y) === T.PROP || L.at(x + 1, y) === T.PROP || B.rows[y][x - 1] === '/' || B.rows[y][x + 1] === '/', last = horiz && B.rows[y][x + 1] !== 'r';
-    L.decor('interior_railing', null, x + 0.5, y + (B.loft ? 0.12 : 0.5), horiz ? (last ? Math.PI : 0) : Math.PI / 2, 1, Object.assign({ fp: [x, y, x, y] }, B.loft ? { y0: B.loft.h - 0.04 } : {}));
+    // (a railing on the loft's edge row stands at the loft's height; any other railing, e.g. stall fronts, on the floor)
+    const edge = B.loft && y === B.loft.y1 + 1;
+    L.decor('interior_railing', null, x + 0.5, y + (edge ? 0.12 : 0.5), horiz ? (last ? Math.PI : 0) : Math.PI / 2, 1, Object.assign({ fp: [x, y, x, y] }, edge ? { y0: B.loft.h - 0.04 } : {}));
   }
   // kit wall blocks on wall tiles (they replace the procedural wall there; gfx-world.js buildInteriorWalls): the window
   // tiles of render.interior.windows get the style's window wall, B.kitWalls adds feature walls ([kit, x, y])
@@ -735,6 +763,478 @@ intRoom('gloamheim_library', { name: 'Sir Gaunt’s Library', sub: 'Gloamheim Ke
     { kind: 'ichest', key: 'library_sliding_shelf', x: 1.5, y: 16.5, name: 'The Shelf That Slides' },
   ] });
 
+/* ---------- Round 10: the rooms behind the new town plots ----------
+   Fourteen small rooms (one or two rooms each) behind the world team's plots in Emberhold's Smiths' Row, chapel yard
+   and Farm Ward, and Skaldhaven's Netmakers' Row. Their doors are read from m.houses at layout time (INT_DOORS[id].plot),
+   and each blueprint's 'D' sits on the wall that faces the street, so you leave the way you came in. */
+const IR_BAR = (x, y, r, kit) => [kit || 'town_barrel', 'town_barrel', x, y, x, y, r || 0, 1];
+const IR_RACK = (x0, y0, x1, y1, r) => ['rimeshore_drying_rack', 'town_fence', x0, y0, x1, y1, r || 0, 1];
+const IR_HAY = (x0, y0, x1, y1, sc) => ['field_haystack', 'town_crates', x0, y0, x1, y1, 0, sc || 1];
+const IR_CAND = (x, y, l) => ['interior_candle_stand', 'town_lamp_post', x, y, (x * 1.7) % 6.28, 1, { light: l || LC() }];
+const IR_TUFT = (x, y, sc) => ['field_haystack', null, x, y, (x + y) % 6.28, sc || 0.5];   // loose hay: drawn once the field kit lands
+
+// ---- Emberhold, the Smiths' Row: Hrefna's nail-forge ----
+intRoom('emberhold_row_a', { name: 'Hrefna’s Nail-Forge', sub: 'Emberhold · The Smiths’ Row', seed: 9301, style: 'stone',
+  intro: 'Hrefna’s nail-forge. A thousand nails in a thousand barrels, and every one of them struck by hand. The air tastes of iron.',
+  interior: { floor: 'stone', wall: 'timber', trim: 0x3a2418, windows: [[6, 0], [14, 0], [0, 3], [17, 9]] }, amb: [['embers', 0.18]],
+  rows: [
+    '##################',
+    '#..........#.....#',
+    '#..........#.....#',
+    '#..........#.....#',
+    '#..........#.....#',
+    '#................#',
+    '#..........#.....#',
+    '#..........###.###',
+    '#................#',
+    '#................#',
+    '#................#',
+    '#####D############'],
+  F: [
+    ['interior_forge', 'nidavellir_forge', 2, 1, 3, 2, WN, 1, { light: LF() }], ['interior_dwarf_anvil', null, 3, 4, 3, 4, 0, 1], ['interior_dwarf_anvil', null, 7, 5, 7, 5, 0.3, 0.85],
+    IR_BAR(5, 1), IR_BAR(9, 1, 0.6), IR_BAR(10, 1, 1.4), IR_BAR(10, 2, 2.2),
+    ['interior_shelf', 'town_crates', 7, 1, 7, 1, WN, 1], ['interior_shelf', 'town_crates', 8, 1, 8, 1, WN, 1], ...TAB(8, 3),
+    ['interior_weapon_rack', 'town_fence', 1, 5, 1, 5, WW, 1], ['interior_weapon_rack', 'town_fence', 1, 6, 1, 6, WW, 1],
+    ...TAB(9, 9), ['town_crates', 'town_crates', 15, 10, 16, 10, 0, 1], ['town_crates', 'town_crates', 12, 8, 13, 8, 0, 0.9], IR_BAR(1, 10), IR_BAR(1, 9, 1),
+    // Hrefna's own room at the back
+    ['interior_bed', 'town_crates', 16, 1, 16, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 12, 1, 12, 1, 0, 1], ['interior_shelf', 'town_crates', 14, 1, 14, 1, WN, 1],
+    ['interior_pelts', 'town_crates', 16, 5, 16, 5, WE, 1], ...TAB(13, 3),
+  ],
+  S: [
+    ['nidavellir_ore_pile', 'dng_rubble_b', 5.6, 2.6, 0.4, 0.55], ['interior_stool', null, 4.4, 3.3, 0.3, 1], ['interior_stool', null, 13.6, 2.3, 1, 1],
+    ...BENCHES(9, 9), ['interior_rug', null, 14.2, 5.3, WW, 0.8], ['interior_herbs', null, 15.5, 1.5, WN, 1],
+    IR_CAND(1.6, 8.4), IR_CAND(16.4, 8.4), IR_CAND(12.6, 6.4, LC(0.8, 4)), IR_CAND(6.4, 6.6), ['town_barrel', 'town_barrel', 8.6, 7.6, 0.8, 0.7],
+    ['dng_banner', 'dng_banner', 4.5, 1.08, 0, 0.8],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'hrefna_tally', x: 14.5, y: 1.5, name: 'The Nail-Tally' },
+    { kind: 'ichest', key: 'hrefna_keg', x: 12.5, y: 1.5, name: 'A Keg of Bent Nails' },
+  ] });
+
+// ---- Emberhold, the Smiths' Row: Grani's lamp-shop ----
+intRoom('emberhold_row_b', { name: 'Grani’s Lamp-Shop', sub: 'Emberhold · The Smiths’ Row', seed: 9302, style: 'plank',
+  intro: 'Grani’s lamp-shop. Horn lanterns, iron lanterns, lamps with no oil in them yet, hanging from every beam like a harvest of small suns.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x4a2c16, windows: [[3, 0], [10, 0], [17, 8], [17, 2]] },
+  rows: [
+    '##################',
+    '#.....#..........#',
+    '#.....#..........#',
+    '#.....#..........#',
+    '#.....#..........#',
+    '#.....#..........#',
+    '#................#',
+    '#######..........#',
+    '#................#',
+    '#................#',
+    '#................#',
+    '############D#####'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 16, 4, 16, 5, WE, 1, { light: LH(2.0, 7) }], ['interior_long_table', 'town_crates', 9, 3, 12, 3, 0, 1], ...TAB(9, 7),
+    ['interior_shelf', 'town_crates', 8, 1, 8, 1, WN, 1], ['interior_shelf', 'town_crates', 9, 1, 9, 1, WN, 1], ['interior_bookshelf', 'rimeshore_crate', 11, 1, 11, 1, WN, 1, { sy: 0.7 }],
+    ['interior_shelf', 'town_crates', 13, 1, 13, 1, WN, 1], ['interior_shelf', 'town_crates', 14, 1, 14, 1, WN, 1],
+    IR_BAR(16, 8, 0, 'rimeshore_barrel'), IR_BAR(16, 9, 1.3, 'rimeshore_barrel'), IR_BAR(16, 10, 2.1, 'rimeshore_barrel'),
+    ['town_crates', 'town_crates', 1, 10, 2, 10, 0, 1], IR_BAR(1, 8), IR_BAR(4, 10, 1),
+    // Dalla's room: a bed, her wick-loom, a table
+    ['interior_bed', 'town_crates', 1, 1, 1, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 5, 1, 5, 1, 0, 1], ['interior_loom', 'rimeshore_drying_rack', 3, 1, 3, 1, WN, 1],
+    ['interior_shelf', 'town_crates', 1, 4, 1, 4, WW, 1], ...TAB(3, 4),
+  ],
+  S: [
+    ['interior_chandelier', null, 11.0, 5.5, 0, 1, { light: LCH(1.1, 7) }], IR_CAND(7.6, 1.6), IR_CAND(15.4, 1.6), IR_CAND(8.5, 9.5), IR_CAND(15.5, 7.5, LC(0.9, 4.5)), IR_CAND(1.6, 5.6, LC(0.8, 4)),
+    ['interior_stool', null, 9.5, 4.4, 0.2, 1], ['interior_stool', null, 11.5, 4.4, 1.1, 1], ['interior_stool', null, 10.5, 2.4, 2, 1], ...BENCHES(9, 7),
+    ['interior_rug', null, 2.8, 5.6, 0, 0.7], ['interior_herbs', null, 5.5, 3.5, WE, 1], ['town_crates', 'town_crates', 14.5, 9.6, 0.3, 0.6],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'grani_patterns', x: 13.5, y: 1.5, name: 'Grani’s Pattern-Board' },
+    { kind: 'ichest', key: 'grani_wickbox', x: 5.5, y: 1.5, name: 'Dalla’s Wick-Box' },
+  ] });
+
+// ---- Emberhold, the Smiths' Row: the cooper's house (door east) ----
+intRoom('emberhold_house_c', { name: 'The Cooper’s House', sub: 'Emberhold · Bolli’s home', seed: 9303, style: 'plank',
+  intro: 'The cooper’s house. Barrels finished, barrels half-finished, and barrel-staves stacked like the ribs of something large.',
+  interior: { floor: 'plank', wall: 'timber', windows: [[4, 0], [11, 0], [0, 3]] },
+  rows: [
+    '##############',
+    '#.......#....#',
+    '#.......#....#',
+    '#.......#....#',
+    '#............#',
+    '#............D',
+    '#............#',
+    '#............#',
+    '#............#',
+    '##############'],
+  F: [
+    IR_BAR(1, 1, 0.2), IR_BAR(2, 1, 1.1), IR_BAR(1, 2, 2.3), IR_BAR(6, 1, 0.7), ...TAB(3, 3), ['interior_shelf', 'town_crates', 5, 1, 5, 1, WN, 1],
+    ['interior_hearth', 'dng_brazier', 1, 6, 1, 7, WW, 1, { light: LH(1.8, 7) }], ['town_fence', 'town_fence', 4, 8, 6, 8, 0, 0.9], ...TAB(8, 6),
+    IR_BAR(12, 8, 0.5), IR_BAR(11, 8, 1.7),
+    ['interior_bed', 'town_crates', 12, 1, 12, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 9, 1, 9, 1, 0, 1], ['interior_pelts', 'town_crates', 12, 3, 12, 3, WE, 1],
+  ],
+  S: [
+    ['town_barrel', 'town_barrel', 6.5, 3.4, 0.4, 0.75], ['interior_stool', null, 2.4, 3.6, 0.5, 1], ...BENCHES(8, 6), ['interior_rug', null, 10.6, 2.3, 0, 0.7],
+    ['interior_herbs', null, 7.5, 1.5, WN, 1], IR_CAND(1.6, 4.4, LC(0.9, 4.5)), IR_CAND(11.4, 7.6, LC(0.9, 4.5)), IR_CAND(10.5, 3.4, LC(0.7, 3.5)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'cooper_marks', x: 5.5, y: 1.5, name: 'Bolli’s Cooper-Marks' },
+    { kind: 'ichest', key: 'cooper_nook', x: 9.5, y: 1.5, name: 'Under the Box-Bed' },
+  ] });
+
+// ---- Emberhold, the Smiths' Row: the charcoal-burner's house (door west) ----
+intRoom('emberhold_house_d', { name: 'The Charcoal-Burner’s House', sub: 'Emberhold · Svart’s home', seed: 9304, style: 'plank',
+  intro: 'The charcoal-burner’s house. Everything is black: the floor, the benches, the cat. You are fairly sure there was never a cat.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x2a1c14, windows: [[3, 0], [10, 0], [13, 6]] }, amb: [['ash', 0.14]], look: { tint: [0.96, 0.92, 0.88] },
+  rows: [
+    '##############',
+    '#....#.......#',
+    '#....#.......#',
+    '#....#.......#',
+    '#............#',
+    'D............#',
+    '#............#',
+    '#............#',
+    '#............#',
+    '##############'],
+  F: [
+    ['interior_bed', 'town_crates', 1, 1, 1, 2, WN, 1], ['interior_bed', 'town_crates', 2, 1, 2, 2, WN, 0.85], ['interior_chest', 'rimeshore_crate', 4, 1, 4, 1, 0, 1],
+    ['interior_hearth', 'dng_brazier', 8, 1, 9, 1, 0, 1, { light: LH(2.0, 7) }], ['interior_shelf', 'town_crates', 6, 1, 6, 1, WN, 1],
+    ['interior_weapon_rack', 'town_fence', 12, 2, 12, 2, WE, 1], ['interior_weapon_rack', 'town_fence', 12, 3, 12, 3, WE, 1],
+    ...TAB(7, 6), ['town_crates', 'town_crates', 11, 8, 12, 8, 0, 1], IR_BAR(12, 6, 0.3), ['field_log', 'mirewell_mossy_log', 1, 8, 3, 8, 0, 1],
+  ],
+  S: [
+    ['nidavellir_ore_pile', 'dng_rubble_b', 11.4, 4.6, 0.2, 0.7], ['nidavellir_ore_pile', 'dng_rubble_b', 10.4, 7.2, 1.3, 0.55], ...BENCHES(7, 6),
+    ['interior_stool', null, 10.5, 2.6, 0.4, 1], ['interior_rug', null, 3.2, 3.0, 0, 0.7], ['interior_pelts', null, 4.5, 3.5, WE, 1],
+    IR_CAND(6.5, 3.5, LC(0.8, 4.5)), IR_CAND(11.5, 6.5, LC(0.8, 4)), ['interior_herbs', null, 11.5, 1.5, WN, 1],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'burner_stick', x: 12.5, y: 2.5, name: 'Svart’s Notched Stick' },
+    { kind: 'ichest', key: 'burner_ashbox', x: 4.5, y: 1.5, name: 'The Ash-Box' },
+  ] });
+
+// ---- Emberhold, by the chapel yard: the gravedigger's house ----
+intRoom('emberhold_house_e', { name: 'The Gravedigger’s House', sub: 'Emberhold · Hrói’s home', seed: 9305, style: 'stone',
+  intro: 'The gravedigger’s house. Spades by the door, clay on the spades, and in the back room a girl carving names into stones that are not yet needed.',
+  interior: { floor: 'flag', wall: 'timber', trim: 0x3a3028, windows: [[4, 0], [11, 0], [15, 4], [0, 7]] }, props: POSTS,
+  rows: [
+    '################',
+    '#......#.......#',
+    '#......#.......#',
+    '#......#.......#',
+    '#......#.......#',
+    '#..............#',
+    '#......#.......#',
+    '#......#.......#',
+    '#......#.......#',
+    '#......#.......#',
+    '###########D####'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 14, 2, 14, 3, WE, 1, { light: LH(1.8, 7) }], ['interior_shelf', 'town_crates', 9, 1, 9, 1, WN, 1], ['interior_shelf', 'town_crates', 10, 1, 10, 1, WN, 1],
+    ...TAB(9, 6), ['interior_weapon_rack', 'town_fence', 14, 6, 14, 6, WE, 1], ['interior_weapon_rack', 'town_fence', 14, 7, 14, 7, WE, 1],
+    IR_BAR(8, 9, 0.6), ['town_fence', 'town_fence', 13, 9, 14, 9, 0, 0.85], ['interior_bed', 'town_crates', 12, 1, 12, 2, WN, 1],
+    // Álöf's carving room
+    ['dng_grave_a', 'dng_grave_a', 1, 6, 1, 6, WW, 0.8], ['dng_grave_b', 'dng_grave_b', 1, 8, 1, 8, WW, 0.8], ['dng_grave_a', 'dng_grave_a', 3, 9, 3, 9, 0, 0.75],
+    ...TAB(3, 3), ['interior_bed', 'town_crates', 1, 1, 1, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 6, 1, 6, 1, 0, 1],
+  ],
+  S: [
+    ['dng_rubble_a', 'dng_rubble_a', 4.6, 7.4, 0.4, 0.5], ['interior_stool', null, 5.5, 3.6, 0.2, 1], ...BENCHES(9, 6), ['interior_rug', null, 11.5, 4.5, 0, 0.8],
+    ['interior_herbs', null, 13.5, 1.5, WN, 1], IR_CAND(2.5, 5.4, LC(0.9, 4.5)), IR_CAND(8.6, 4.4), IR_CAND(13.5, 8.4, LC(0.8, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'hroi_roll', x: 9.5, y: 1.5, name: 'The Yard-Roll' },
+    { kind: 'ichest', key: 'hroi_box', x: 6.5, y: 1.5, name: 'A Box of Coffin-Nails' },
+  ] });
+
+// ---- Emberhold, the Farm Ward: Þórdís's farmhouse, the byre through the wall ----
+intRoom('emberhold_farm_a', { name: 'Þórdís’s Farmhouse', sub: 'Emberhold · The Farm Ward', seed: 9306, style: 'straw',
+  intro: 'A farmhouse, and through the wall a byre that has been swept for animals that are not here. The stalls still have names chalked over them.',
+  interior: { floor: 'straw', wall: 'timber', trim: 0x3a2a1c, windows: [[5, 0], [14, 0], [0, 8], [19, 5]] },
+  rows: [
+    '####################',
+    '#........#.........#',
+    '#........#.........#',
+    '#........#r.rr.rr.r#',
+    '#........#.........#',
+    '#..................#',
+    '#........#.........#',
+    '#........#.........#',
+    '#........#r.rr.rr.r#',
+    '#........#.........#',
+    '#........#.........#',
+    '####D###############'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 1, 4, 1, 5, WW, 1, { light: LH(2.0, 8) }], ...TAB(4, 6), ['interior_bed', 'town_crates', 7, 1, 7, 2, WN, 1], ['interior_bed', 'town_crates', 8, 1, 8, 2, WN, 1],
+    ['interior_shelf', 'town_crates', 3, 1, 3, 1, WN, 1], ['interior_shelf', 'town_crates', 4, 1, 4, 1, WN, 1], ['interior_loom', 'rimeshore_drying_rack', 1, 8, 1, 8, WW, 1], IR_BAR(8, 10, 0.4),
+    // the byre: four stalls, mangers, the hay
+    ['town_fence', 'town_fence', 12, 1, 12, 2, WW, 1], ['town_fence', 'town_fence', 15, 1, 15, 2, WW, 1], ['town_fence', 'town_fence', 12, 9, 12, 10, WW, 1], ['town_fence', 'town_fence', 15, 9, 15, 10, WW, 1],
+    ['town_crates', 'town_crates', 13, 1, 14, 1, 0, 0.8], ['town_crates', 'town_crates', 16, 1, 17, 1, 0, 0.8], ['town_crates', 'town_crates', 13, 10, 14, 10, 0, 0.8],
+    IR_HAY(17, 5, 18, 6, 1.1), IR_BAR(18, 1), IR_BAR(18, 10, 1), ['interior_pelts', 'town_crates', 18, 7, 18, 7, WE, 1], ['town_crates', 'town_crates', 16, 10, 17, 10, 0, 0.8], ['interior_weapon_rack', 'town_fence', 10, 6, 10, 6, WW, 1], ['interior_chest', 'rimeshore_crate', 10, 10, 10, 10, 0, 1],
+  ],
+  S: [
+    ['interior_rug', null, 4.8, 3.6, 0, 0.8], ['interior_herbs', null, 2.5, 1.5, WN, 1], ['interior_herbs', null, 5.5, 1.5, WN, 1], ['interior_stool', null, 2.6, 4.4, 0.3, 1], ...BENCHES(4, 6),
+    IR_TUFT(13.5, 2.2), IR_TUFT(16.5, 9.4), IR_TUFT(17.2, 2.0, 0.4), IR_TUFT(11.2, 6.5, 0.4), ['interior_stool', null, 15.5, 6.6, 0.8, 1], ['town_barrel', 'town_barrel', 10.6, 4.4, 0.4, 0.7],
+    IR_CAND(8.4, 4.4, LC(0.9, 4.5)), IR_CAND(6.5, 9.4, LC(0.9, 4.5)), IR_CAND(13.5, 5.6, LC(0.8, 4)), IR_CAND(16.4, 7.4, LC(0.7, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'thordis_almanac', x: 3.5, y: 1.5, name: 'The Farm-Almanac' },
+    { kind: 'ichest', key: 'byre_manger', x: 10.5, y: 10.5, name: 'Under the Manger' },
+  ] });
+
+// ---- Emberhold, the Farm Ward: Oddný's farmhouse, the byre behind a rail ----
+intRoom('emberhold_farm_b', { name: 'Oddný’s Farmhouse', sub: 'Emberhold · The Farm Ward', seed: 9307, style: 'straw',
+  intro: 'Oddný’s farmhouse: one long room, bread at one end and beasts at the other, and a rail between them that nobody on either side respects.',
+  interior: { floor: 'straw', wall: 'timber', trim: 0x3a2a1c, windows: [[3, 0], [9, 0], [16, 0], [19, 7]] },
+  rows: [
+    '####################',
+    '#............r.....#',
+    '#............r.....#',
+    '#............r.....#',
+    '#..................#',
+    '#..................#',
+    '#............r.....#',
+    '#............r.....#',
+    '#............r.....#',
+    '#............r.....#',
+    '######D#############'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 1, 2, 1, 3, WW, 1, { light: LH(2.2, 8) }], ['interior_chest', 'rimeshore_crate', 1, 5, 1, 5, 0, 1], ...TAB(4, 5),
+    ['interior_shelf', 'town_crates', 5, 1, 5, 1, WN, 1], ['interior_shelf', 'town_crates', 6, 1, 6, 1, WN, 1],
+    ['interior_bed', 'town_crates', 10, 1, 10, 2, WN, 1], ['interior_bed', 'town_crates', 11, 1, 11, 2, WN, 1],
+    IR_BAR(1, 8), IR_BAR(1, 9, 1.2), ['town_crates', 'town_crates', 2, 9, 3, 9, 0, 0.9],
+    // the byre
+    ['interior_weapon_rack', 'town_fence', 9, 9, 9, 9, WS, 1], ['interior_pelts', 'town_crates', 10, 9, 10, 9, WS, 1], IR_BAR(11, 9, 0.6), ['interior_loom', 'rimeshore_drying_rack', 1, 6, 1, 6, WW, 1],
+    IR_HAY(17, 1, 18, 2, 1.1), IR_HAY(17, 4, 18, 5, 0.9), ['town_fence', 'town_fence', 16, 8, 16, 9, WW, 1], ['town_crates', 'town_crates', 14, 1, 15, 1, 0, 0.8], ['town_crates', 'town_crates', 17, 9, 18, 9, 0, 0.8], IR_BAR(18, 7, 0.7),
+  ],
+  S: [
+    IR_TUFT(15.5, 2.5), IR_TUFT(15.2, 7.4), IR_TUFT(17.6, 6.6, 0.4), ...BENCHES(4, 5), ['interior_stool', null, 2.6, 4.6, 0.5, 1],
+    ['interior_rug', null, 8.5, 6.8, WW, 0.9], ['interior_herbs', null, 3.5, 1.5, WN, 1], ['interior_herbs', null, 8.5, 1.5, WN, 1],
+    IR_CAND(8.5, 4.4), IR_CAND(11.6, 8.6, LC(0.9, 4.5)), IR_CAND(15.5, 4.5, LC(0.8, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'oddny_pies', x: 5.5, y: 1.5, name: 'Oddný’s Pie-Book' },
+    { kind: 'ichest', key: 'oddny_crock', x: 1.5, y: 5.5, name: 'A Crock Behind the Oven' },
+  ] });
+
+// ---- Emberhold, the Farm Ward: Hallkell's farm, a byre under a hay loft (door north) ----
+intRoom('emberhold_farm_c', { name: 'Hallkell’s Farm', sub: 'Emberhold · The Farm Ward', seed: 9308, style: 'straw',
+  intro: 'Hallkell’s farm. The byre is under the hay loft, so the beasts are warm in winter and the farmhand sleeps in the hay and complains about the beasts.',
+  interior: { floor: 'straw', wall: 'timber', trim: 0x3a2a1c, windows: [[2, 0], [8, 0], [21, 8], [0, 8]] }, props: POSTS,
+  loft: { x0: 12, y0: 1, x1: 20, y1: 4, h: 0.8 },
+  rows: [
+    '####D#################',
+    '#.........##,,,,,,,,,#',
+    '#.........##,,,,,,,,,#',
+    '#.........##,,,,,,,,,#',
+    '#.........##,,,,,,,,,#',
+    '#.........##rrr//rrrr#',
+    '#....................#',
+    '#....................#',
+    '#...........r.rr.r.rr#',
+    '#....................#',
+    '#....................#',
+    '######################'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 1, 2, 1, 3, WW, 1, { light: LH(2.0, 8) }], ...TAB(5, 3), ['interior_bed', 'town_crates', 8, 1, 8, 2, WN, 1], ['interior_bed', 'town_crates', 9, 1, 9, 2, WN, 1],
+    ['interior_shelf', 'town_crates', 6, 1, 6, 1, WN, 1], ['interior_shelf', 'town_crates', 7, 1, 7, 1, WN, 1],
+    // the byre under the loft
+    ['town_fence', 'town_fence', 14, 9, 14, 10, WW, 1], ['town_fence', 'town_fence', 17, 9, 17, 10, WW, 1], IR_HAY(19, 9, 20, 10), ['town_crates', 'town_crates', 12, 10, 13, 10, 0, 0.8],
+    IR_BAR(20, 6, 0.4), ['interior_weapon_rack', 'town_fence', 1, 7, 1, 7, WW, 1], ['town_crates', 'town_crates', 1, 10, 2, 10, 0, 0.9], IR_BAR(9, 10, 1.1),
+    ...TAB(3, 8), IR_BAR(5, 10, 0.3), IR_HAY(7, 9, 8, 10, 0.9), ['interior_pelts', 'town_crates', 20, 7, 20, 7, WE, 1], ['town_crates', 'town_crates', 15, 10, 16, 10, 0, 0.8], IR_BAR(18, 10, 1.7),
+    // the hay loft
+    IR_HAY(18, 1, 20, 2, 1.2), IR_HAY(12, 1, 13, 2, 1.0), ['interior_bed', 'town_crates', 15, 1, 15, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 20, 4, 20, 4, 0, 1],
+  ],
+  S: [
+    ...BENCHES(5, 3), ...BENCHES(3, 8), ['interior_rug', null, 6.0, 7.2, 0, 0.8], ['interior_stool', null, 3.4, 4.4, 0.4, 1], ['interior_herbs', null, 16.5, 1.5, WN, 1], ['interior_herbs', null, 3.5, 1.5, WN, 1],
+    IR_TUFT(15.5, 9.4), IR_TUFT(12.6, 7.6, 0.4), IR_TUFT(18.6, 9.3, 0.45), IR_TUFT(17.2, 3.4, 0.45), IR_TUFT(13.8, 3.6, 0.4),
+    IR_CAND(7.5, 4.4, LC(0.9, 4.5)), IR_CAND(10.5, 8.4), IR_CAND(15.5, 7.4, LC(0.8, 4)), IR_CAND(17.6, 3.6, LC(0.7, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'hay_tally', x: 7.5, y: 1.5, name: 'The Hay-Tally' },
+    { kind: 'ichest', key: 'loft_hay', x: 20.5, y: 4.5, name: 'In the Hay' },
+  ] });
+
+// ---- Emberhold, the Farm Ward: the midwife's house (door north) ----
+intRoom('emberhold_house_f', { name: 'The Midwife’s House', sub: 'Emberhold · Yrsa’s home', seed: 9309, style: 'plank',
+  intro: 'The midwife’s house. Herbs from every beam, jars on every shelf, and in the back room a cradle that is never empty for long.',
+  interior: { floor: 'plank', wall: 'timber', windows: [[3, 0], [12, 0], [0, 8], [15, 8]] },
+  rows: [
+    '#######D########',
+    '#..............#',
+    '#..............#',
+    '#..............#',
+    '#..............#',
+    '#..............#',
+    '#######..#######',
+    '#..............#',
+    '#..............#',
+    '#..............#',
+    '################'],
+  F: [
+    ['interior_shelf', 'town_crates', 1, 2, 1, 2, WW, 1], ['interior_shelf', 'town_crates', 1, 3, 1, 3, WW, 1], ['interior_shelf', 'town_crates', 14, 2, 14, 2, WE, 1], ['interior_shelf', 'town_crates', 14, 3, 14, 3, WE, 1],
+    ['interior_bookshelf', 'rimeshore_crate', 11, 1, 11, 1, WN, 1, { sy: 0.7 }], ['interior_bookshelf', 'rimeshore_crate', 12, 1, 12, 1, WN, 1, { sy: 0.7 }],
+    ['interior_hearth', 'dng_brazier', 4, 4, 5, 4, 0, 1, { light: LH(1.9, 7) }], ...TAB(10, 4),
+    // the back room
+    ['interior_bed', 'town_crates', 2, 7, 2, 8, WN, 1], ['interior_bed', 'town_crates', 4, 7, 4, 8, WN, 1], ['interior_bed', 'town_crates', 11, 7, 11, 8, WN, 1],
+    ['interior_altar', 'dng_grave_b', 13, 7, 14, 7, 0, 0.7, { light: LC(1.0, 5) }], ['interior_chest', 'rimeshore_crate', 14, 9, 14, 9, 0, 1],
+  ],
+  S: [
+    ...[2.5, 3.5, 5.5, 9.5, 13.5].map(x => ['interior_herbs', null, x, 1.5, WN, 1]), ['interior_stool', null, 3.4, 4.6, 0.3, 1], ['interior_stool', null, 10.5, 5.3, 1.2, 1],
+    ['interior_rug', null, 8.0, 8.4, WW, 0.9], ['interior_bed', null, 6.2, 7.6, 0.2, 0.45],
+    IR_CAND(13.4, 5.4, LC(0.9, 4.5)), IR_CAND(1.6, 5.4, LC(0.9, 4.5)), IR_CAND(9.4, 8.6, LC(0.8, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'yrsa_roll', x: 14.5, y: 2.5, name: 'The Birth-Roll' },
+    { kind: 'ichest', key: 'yrsa_frigg', x: 14.5, y: 9.5, name: 'Under Frigg’s Shelf' },
+  ] });
+
+// ---- Emberhold, the Farm Ward: the thatcher's house, where Tóki lives (door north) ----
+intRoom('emberhold_house_g', { name: 'The Thatcher’s House', sub: 'Emberhold · Álfr’s home', seed: 9310, style: 'plank',
+  intro: 'The thatcher’s house. Bundles of reed by the wall, a fire, three beds, and a small one pushed into the corner where a boy can see the door.',
+  interior: { floor: 'plank', wall: 'timber', windows: [[2, 0], [8, 0], [11, 4]] },
+  rows: [
+    '#####D######',
+    '#..........#',
+    '#..........#',
+    '#..........#',
+    '#..........#',
+    '#..........#',
+    '#..........#',
+    '#..........#',
+    '############'],
+  F: [
+    ['interior_hearth', 'dng_brazier', 1, 3, 1, 4, WW, 1, { light: LH(1.8, 7) }], ...TAB(4, 4), IR_HAY(9, 1, 10, 1, 0.8), ['interior_shelf', 'town_crates', 3, 1, 3, 1, WN, 1],
+    ['interior_bed', 'town_crates', 10, 6, 10, 7, WS, 1], ['interior_bed', 'town_crates', 9, 6, 9, 7, WS, 1], ['interior_bed', 'town_crates', 1, 6, 1, 7, WS, 0.8],
+    ['interior_chest', 'rimeshore_crate', 3, 7, 3, 7, 0, 0.75],
+  ],
+  S: [
+    ...BENCHES(4, 4), ['interior_rug', null, 6.5, 6.4, 0, 0.8], ['interior_stool', null, 2.6, 5.6, 0.2, 1], ['interior_stool', null, 7.4, 3.4, 1.4, 1],
+    ['interior_herbs', null, 7.5, 1.5, WN, 1], IR_CAND(10.4, 3.6, LC(0.9, 4.5)), IR_CAND(6.4, 1.6, LC(0.8, 4)), IR_TUFT(8.4, 1.8, 0.4),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'toki_scratch', x: 3.5, y: 1.5, name: 'Scratches on the Shelf' },
+    { kind: 'ichest', key: 'toki_box', x: 3.5, y: 7.5, name: 'Tóki’s Treasure-Box' },
+  ] });
+
+// ---- Skaldhaven, Netmakers' Row: the net-shed (door east) ----
+intRoom('skaldhaven_net_a', { name: 'The Net-Shed', sub: 'Skaldhaven · Netmakers’ Row', seed: 9311, style: 'straw',
+  intro: 'The net-shed. Nets hang between the posts in grey curtains, heavy with salt, and the whole shed smells of tar and the sea.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x2e2016, windows: [[5, 0], [12, 0], [0, 7]] }, props: POSTS,
+  rows: [
+    '##################',
+    '#................#',
+    '#................#',
+    '#.....I....I.....#',
+    '#................D',
+    '#................#',
+    '#.....I....I.....#',
+    '#................#',
+    '#................#',
+    '##################'],
+  F: [
+    IR_RACK(7, 3, 8, 3), IR_RACK(9, 3, 10, 3), IR_RACK(7, 6, 8, 6), IR_RACK(9, 6, 10, 6),
+    ['interior_hearth', 'dng_brazier', 14, 1, 15, 1, 0, 0.8, { light: LH(1.6, 6) }], ['interior_chest', 'rimeshore_crate', 16, 1, 16, 1, 0, 1], ['interior_shelf', 'town_crates', 4, 1, 4, 1, WN, 1],
+    IR_BAR(1, 1, 0, 'rimeshore_barrel'), IR_BAR(2, 1, 1, 'rimeshore_barrel'), IR_BAR(1, 8, 2, 'rimeshore_barrel'),
+    ['interior_loom', 'rimeshore_drying_rack', 1, 4, 1, 4, WW, 1], ['interior_loom', 'rimeshore_drying_rack', 1, 5, 1, 5, WW, 1],
+    ['rimeshore_crate', 'town_crates', 15, 8, 16, 8, 0, 0.9], ['interior_pelts', 'town_crates', 16, 6, 16, 6, WE, 1], ...TAB(7, 8), IR_BAR(10, 8, 0.8, 'rimeshore_barrel'), IR_BAR(11, 8, 2, 'rimeshore_barrel'),
+    ['interior_pelts', 'town_crates', 1, 7, 1, 7, WW, 1],
+  ],
+  S: [
+    ['interior_stool', null, 13.5, 5.6, 0.2, 1], ['interior_bench', null, 4.5, 4.6, WW, 1], ['interior_stool', null, 8.0, 7.3, 0.5, 1], ['rimeshore_crate', 'town_crates', 4.5, 8.3, 0.3, 0.6], ['town_barrel', 'town_barrel', 12.6, 8.4, 1, 0.6],
+    IR_CAND(12.5, 1.6, LC(0.9, 4.5)), IR_CAND(3.5, 7.4, LC(0.9, 4.5)), IR_CAND(13.5, 7.4, LC(0.8, 4)),
+  ],
+  objs: [
+    { kind: 'ibook', key: 'net_knots', x: 4.5, y: 1.5, name: 'The Knot-Board' },
+    { kind: 'ichest', key: 'net_float', x: 16.5, y: 1.5, name: 'A Hollow Float' },
+  ] });
+
+// ---- Skaldhaven, Netmakers' Row: the rope-walk (door west) ----
+intRoom('skaldhaven_net_b', { name: 'The Rope-Walk', sub: 'Skaldhaven · Netmakers’ Row', seed: 9312, style: 'straw',
+  intro: 'The rope-walk: a shed as long as a rope, because that is how you make one. You walk backwards, twisting, until you meet the wall.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x2e2016, windows: [[4, 0], [11, 0], [18, 0], [21, 4]] },
+  rows: [
+    '######################',
+    '#....................#',
+    '#....................#',
+    '#....................#',
+    'D....................#',
+    '#....................#',
+    '#....................#',
+    '######################'],
+  F: [
+    IR_RACK(5, 2, 6, 2), IR_RACK(8, 2, 9, 2), IR_RACK(11, 2, 12, 2), IR_RACK(14, 2, 15, 2), IR_RACK(17, 2, 18, 2),
+    ['interior_loom', 'rimeshore_drying_rack', 20, 2, 20, 3, WE, 1], ['interior_bed', 'town_crates', 1, 1, 1, 2, WN, 1], ['interior_chest', 'rimeshore_crate', 3, 1, 3, 1, 0, 1],
+    ['interior_shelf', 'town_crates', 1, 6, 1, 6, WW, 1], IR_BAR(20, 5, 0, 'rimeshore_barrel'), IR_BAR(20, 6, 1, 'rimeshore_barrel'), IR_BAR(19, 6, 2, 'rimeshore_barrel'),
+    ['interior_hearth', 'dng_brazier', 10, 6, 11, 6, WS, 0.8, { light: LH(1.6, 6) }], ['rimeshore_crate', 'town_crates', 14, 6, 15, 6, 0, 0.9], ...TAB(5, 6),
+  ],
+  S: [
+    ['interior_stool', null, 7.5, 5.4, 0.3, 1], ['interior_stool', null, 12.4, 5.2, 1.2, 1], ['town_crates', 'town_crates', 17.5, 6.3, 0.4, 0.55],
+    IR_CAND(3.5, 3.4, LC(0.9, 4.5)), IR_CAND(8.5, 5.4, LC(0.8, 4.5)), IR_CAND(16.5, 4.6, LC(0.9, 4.5)), ['interior_pelts', null, 2.5, 6.4, WS, 1],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'solvi_tally', x: 1.5, y: 6.5, name: 'The Rope-Tally' },
+    { kind: 'ichest', key: 'solvi_coil', x: 3.5, y: 1.5, name: 'A Coil With a Hollow Heart' },
+  ] });
+
+// ---- Skaldhaven, Netmakers' Row: the smokehouse (door east) ----
+intRoom('skaldhaven_smokehouse', { name: 'The Smokehouse', sub: 'Skaldhaven · Netmakers’ Row', seed: 9313, style: 'straw',
+  intro: 'The smokehouse. Two slow fires, racks of split fish above them going gold and then brown, and smoke that gets into your clothes and stays for a week.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x241810, windows: [[8, 0], [0, 7]] }, amb: [['ash', 0.3]], dark: 0.58, look: { tint: [1.02, 0.95, 0.86] },
+  rows: [
+    '##################',
+    '#................#',
+    '#................#',
+    '#................#',
+    '#................#',
+    '#rrrrrr..rrrrrrrr#',
+    '#................#',
+    '#................D',
+    '#................#',
+    '##################'],
+  F: [
+    // the smoke room: fish racks on the walls and over the fires
+    IR_RACK(1, 1, 2, 1), IR_RACK(5, 1, 6, 1), IR_RACK(10, 1, 11, 1), IR_RACK(13, 1, 14, 1), IR_RACK(1, 2, 1, 3, WW), IR_RACK(16, 2, 16, 3, WE),
+    ['interior_hearth', 'dng_brazier', 4, 3, 5, 3, 0, 1, { light: LH(2.2, 7) }], ['interior_hearth', 'dng_brazier', 11, 3, 12, 3, 0, 1, { light: LH(2.2, 7) }],
+    IR_BAR(1, 4, 0.4, 'rimeshore_barrel'), IR_BAR(16, 4, 1.2, 'rimeshore_barrel'),
+    // the packing room
+    ...[1, 2, 4, 5].map((x, i) => IR_BAR(x, 8, i * 0.9, 'rimeshore_barrel')), ['rimeshore_crate', 'town_crates', 9, 8, 10, 8, 0, 0.9], ...TAB(12, 6),
+    ['interior_shelf', 'town_crates', 14, 6, 14, 6, WN, 1], ['interior_chest', 'rimeshore_crate', 1, 6, 1, 6, 0, 1],
+  ],
+  S: [
+    ['interior_stool', null, 12.5, 7.4, 0.3, 1], ['interior_stool', null, 3.4, 2.4, 1, 1], ['rimeshore_crate', 'town_crates', 7.5, 8.3, 0.2, 0.6], ['town_barrel', 'town_barrel', 15.4, 8.4, 0.7, 0.6],
+    IR_CAND(6.5, 7.6, LC(0.9, 4.5)), IR_CAND(15.4, 6.4, LC(0.9, 4.5)), ['interior_herbs', null, 8.5, 1.5, WN, 1],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'smoke_rule', x: 14.5, y: 6.5, name: 'The Smoker’s Rule' },
+    { kind: 'ichest', key: 'smoke_barrel', x: 1.5, y: 6.5, name: 'A Barrel That Is Not Fish' },
+  ] });
+
+// ---- Skaldhaven, Netmakers' Row: the sealer's house (door west) ----
+intRoom('skaldhaven_net_c', { name: 'The Sealer’s House', sub: 'Skaldhaven · Hildr’s home', seed: 9314, style: 'straw',
+  intro: 'The sealer’s house. Harpoons on the wall, seal-oil in the lamps, and pelts on every surface a pelt will lie on.',
+  interior: { floor: 'plank', wall: 'timber', trim: 0x2e2016, windows: [[4, 0], [11, 0], [15, 5]] },
+  rows: [
+    '################',
+    '#......#.......#',
+    '#......#.......#',
+    '#......#.......#',
+    '#..............#',
+    'D..............#',
+    '#..............#',
+    '#......#.......#',
+    '#......#.......#',
+    '################'],
+  F: [
+    ['interior_weapon_rack', 'town_fence', 3, 1, 3, 1, WN, 1], ['interior_weapon_rack', 'town_fence', 4, 1, 4, 1, WN, 1], ['interior_pelts', 'town_crates', 1, 2, 1, 2, WW, 1], ['interior_pelts', 'town_crates', 1, 3, 1, 3, WW, 1],
+    IR_BAR(1, 7, 0, 'rimeshore_barrel'), IR_BAR(1, 8, 1, 'rimeshore_barrel'), IR_BAR(2, 8, 2, 'rimeshore_barrel'), ['rimeshore_crate', 'town_crates', 5, 8, 6, 8, 0, 0.9],
+    ['interior_hearth', 'dng_brazier', 14, 2, 14, 3, WE, 1, { light: LH(1.9, 7) }], ['interior_bed', 'town_crates', 8, 1, 8, 2, WN, 1], ['interior_bed', 'town_crates', 9, 1, 9, 2, WN, 1],
+    ['interior_shelf', 'town_crates', 12, 1, 12, 1, WN, 1], ...TAB(10, 7), ['interior_chest', 'rimeshore_crate', 14, 8, 14, 8, 0, 1],
+  ],
+  S: [
+    ['interior_rug', null, 11.5, 4.6, 0, 0.9], ['interior_pelts', null, 5.5, 1.5, WN, 1], ...BENCHES(10, 7), ['interior_stool', null, 12.6, 3.4, 0.6, 1],
+    IR_CAND(7.5, 4.4, LC(0.9, 4.5)), IR_CAND(13.4, 5.6, LC(0.9, 4.5)), IR_CAND(3.5, 5.6, LC(0.8, 4)), ['rimeshore_drying_rack', null, 4.5, 3.2, 0, 0.6],
+  ],
+  objs: [
+    { kind: 'ibook', key: 'sealer_rings', x: 12.5, y: 1.5, name: 'A String of Copper Rings' },
+    { kind: 'ichest', key: 'sealer_oilskin', x: 14.5, y: 8.5, name: 'An Oilskin Bundle' },
+  ] });
+
 /* ---------- Doors on the parent maps ---------- */
 function intPlaceDoor(m, K, id) {
   const D = INT_DOORS[id], [x, y] = D.door, [sx, sy] = D.step, w = K.w;
@@ -1259,4 +1759,339 @@ RUMORS.push(
   { id: 'i_crypt', when: () => P.lvl >= 26 && !P.flags.talked.crypt_hallr, text: 'There’s a crypt under Gloamheim, behind a door in the entry hall. A gravewarden still keeps the lamps. He died thirty years ago. He keeps them anyway.' },
   { id: 'i_forge', when: () => P.lvl >= 42 && !P.flags.talked.forge_hjordis, text: 'The dwarves have a second forge in Nidavellir, behind a door off Sindri’s great hall. They say real work is done in there. Sindri says that isn’t true, very loudly.' },
   { id: 'i_caves', when: () => intCaves().some(k => !P.flags.seen[k]), get text() { return intCaveRumor('Word on the ice is there is a way down') || 'Nothing new.'; } },
+);
+
+/* ---------- Round 10: people, readables, errands for the new rooms ---------- */
+questItem('smoked_fish', 'Bundle of Smoked Fish', { icon: 'etc', color: '#b07a3a', desc: 'Split cod, smoked gold, wrapped in birch bark and tied with net-twine. Þórunn’s knot. Nobody else in Skaldhaven ties it that way.' });
+
+Object.assign(LORE, {
+  nail_tally: ['The Nail-Tally', 'Hrefna keeps count of every nail she has struck since the Ash: a notch for each hundred on a long iron bar. A longship takes six thousand. A coffin takes forty. The bar has more coffins in it than longships.'],
+  yard_roll: ['The Yard-Roll', 'Emberhold buries its dead in the chapel yard, under stones Álöf carves. The Roll keeps who lies where. The oldest names are not Emberhold names at all: they walked in from the Ash, died, and the town kept them anyway.'],
+  birth_roll: ['The Birth-Roll', 'Yrsa has written down every child born in Emberhold since the Ash: forty-one names. Beside each she draws a small flame, for the Waystone. The newest flame is still wet.'],
+  smoker_rule: ['The Smoker’s Rule', 'Skaldhaven’s smokers keep one rule above the others: the fire is never allowed to flame. A flame cooks; smoke keeps. The town has lived nine winters on that difference.'],
+});
+
+Object.assign(INT_BOOKS, {
+  hrefna_tally: { title: 'The Nail-Tally', lore: 'nail_tally', pages: ['<i>A bar of iron as long as your arm, notched along both edges. A notch for every hundred nails, Hrefna says. You stop counting at two hundred notches.</i>', '<i>Near the end, one notch is filed smooth and struck again, deeper. Scratched beside it: “the week of the Den.”</i>'] },
+  grani_patterns: { title: 'Grani’s Pattern-Board', pages: ['<i>Lantern patterns scratched into a board: horn panes, iron frames, a hook to hang it on. Each one has a name. “Bersi’s.” “The Salt Hall’s.” “Sigrun’s, which she will not take.”</i>', '<i>The last pattern is a lamp with no flame drawn in it at all, only a small green wisp. Under it: “will it burn in the Ash? — try.”</i>'] },
+  cooper_marks: { title: 'Bolli’s Cooper-Marks', pages: ['<i>A plank burned with cooper’s marks, one for each house that has bought a barrel. Next to Ragnhild’s mark there are so many notches the wood has split.</i>', '“A barrel is a promise that what goes in will still be there in spring. I have never broken one. The spring broke a few.”'] },
+  burner_stick: { title: 'Svart’s Notched Stick', pages: ['<i>A stick of black ash-wood, notched for every kiln Svart has burned. The last dozen notches have a small cross beside them.</i>', '<i>Kata, from the corner: “The crosses are the kilns where something came out of the trees to watch. He keeps burning anyway. The Wood likes the smell, he says.”</i>'] },
+  hroi_roll: { title: 'The Yard-Roll', lore: 'yard_roll', pages: ['<i>A roll of names in two hands: a slow, square one (Hrói) and a quick, neat one (Álöf). Each name has a row and a stone.</i>', '<i>Row nine: “A keeper of the Waystone, name not known. Tally-stick and flint. He went toward the farms the first winter.” The stone beside it is blank.</i>'] },
+  thordis_almanac: { title: 'The Farm-Almanac', pages: ['<i>A calendar stick, carved with the old farm year: sowing, lambing, the first cut, the slaughter-month. Most of the marks have been rubbed out and carved again, closer together.</i>', '<i>Þórdís has added a new mark between midsummer and harvest. It is a wolf’s head. It has no name, because it does not need one.</i>'] },
+  oddny_pies: { title: 'Oddný’s Pie-Book', pages: ['“Turnip pie. Turnip and onion pie. Turnip and whatever-Gunnar-brought pie.”', '“Apple pie (when there are apples). Clover-honey cake (when there are bees). Grief-bread: the plain loaf we leave at the door when someone has not come home. There is always a grief-bread.”'] },
+  hay_tally: { title: 'The Hay-Tally', pages: ['<i>A board of chalk marks: loads of hay in, loads of hay out. Hallkell’s marks are straight. Vébjörn’s lean to one side, like Vébjörn.</i>', '<i>At the bottom: “If the hay runs out before the thaw, eat the farmhand.” The chalk is fresh. Someone has written “NO” under it, then “maybe”.</i>'] },
+  yrsa_roll: { title: 'The Birth-Roll', lore: 'birth_roll', pages: ['<i>A long strip of birch bark, written close. A name, a day, and a small flame drawn beside each one.</i>', '<i>You find Egil. You find Tóki. You find, near the start, a name crossed out and written again with a flame bigger than the rest: “Astrid, who walked in on her own.”</i>'] },
+  toki_scratch: { title: 'Scratches on the Shelf', pages: ['<i>A boy has scratched a map into the shelf with a nail: the town, the gate, a big circle marked “WOLVES”, a smaller one marked “BATS”, and a long arrow off the edge of the shelf marked “WHERE I AM GOING”.</i>'] },
+  net_knots: { title: 'The Knot-Board', pages: ['<i>A board hung with knots, each tied round a peg, each with a name burned under it: the sheet-bend, the net-knot, the drowner’s hitch.</i>', '<i>The last peg holds a knot nobody can name. Ragna says a draugr tied it, in a net that came up out of the Rimeshore ice, and nobody has been able to untie it since.</i>'] },
+  solvi_tally: { title: 'The Rope-Tally', pages: ['<i>A slate, scratched with lengths of rope and who they went to. “Forty fathoms, anchor, the Sea-Snake.” “Twenty, well-rope, Emberhold.” “Two hundred, the new ship, Bárðr, not paid.”</i>', '<i>At the bottom, underlined twice: “Rime-glue: ask a hero. They like hitting porings.”</i>'] },
+  smoke_rule: { title: 'The Smoker’s Rule', lore: 'smoker_rule', pages: ['<i>Burned into a board over the packing table:</i> “SMOKE, NOT FLAME. OAK, NOT PINE. SALT FIRST, PRAY AFTER.”', '<i>Under it, smaller, in a child’s letters: “and do not let Búi eat the good ones.”</i>'] },
+  sealer_rings: { title: 'A String of Copper Rings', pages: ['<i>A cord hung with copper rings, green with age, one for every year. The family gives one to Njörðr every spring, and keeps one back to remember that they did.</i>', '<i>The last ring is not copper. It is a seal-hunter’s bone ring, cracked across. Hildr does not talk about that one.</i>'] },
+});
+Object.assign(INT_CHESTS, {
+  hrefna_keg: { items: [['orange_potion', 2]], zeny: 400, text: 'A keg of bent nails, and under the bent nails, straight coins. Hrefna says bent nails keep thieves honest: nobody steals bent nails.' },
+  grani_wickbox: { items: [['blue_potion', 2], ['fly_wing', 2]], zeny: 250, text: 'Wick-cord, beeswax ends, and a pair of wings tied up in a twist of cloth, as if someone meant to fly somewhere and changed their mind.' },
+  cooper_nook: { items: [['skald_ale', 2]], zeny: 350, text: 'Two small casks of ale, hidden under the box-bed where Vigdís will not look. Vigdís has looked. She left them there on purpose.' },
+  burner_ashbox: { items: [['red_potion', 4], ['wolf_claw', 3]], zeny: 200, text: 'A tin box full of ash, and in the ash three wolf claws and some coins. Kata says the claws are from the Wood. Svart says they are from the kiln. Neither of them says how.' },
+  hroi_box: { items: [['yellow_potion', 2]], zeny: 600, text: 'Coffin-nails, a spare chisel, and a purse the dead did not need. Hrói says he never takes from the dead. Álöf says he never has to: they leave it for him.' },
+  byre_manger: { items: [['apple', 4], ['orange_potion', 2]], zeny: 300, text: 'Under the manger straw: apples, still good, and a twist of coins. A cow cannot eat coins. Somebody hoped the cow would come back anyway.' },
+  oddny_crock: { items: [['honey_mead', 1]], zeny: 200, text: 'A crock of honey-mead behind the oven, where it keeps warm. Geirný’s. You can tell because it is nearly empty.' },
+  loft_hay: { items: [['butterfly_wing', 1], ['orange_potion', 3]], zeny: 450, text: 'A farmhand’s hoard, dug into the hay: potions he did not buy, a butterfly wing he did not earn, and coins he did not mention.' },
+  yrsa_frigg: { items: [['white_potion', 1], ['red_potion', 5]], zeny: 0, text: 'Clean linen, a birthing-knife, and potions for the nights that go wrong. Yrsa keeps more than she needs. She has had nights that went wrong.' },
+  toki_box: { items: [['shiny_trinket', 1], ['jellopy', 3]], zeny: 12, text: 'Tóki’s treasure: a shiny trinket, three jellopies, a bird’s skull, and twelve zeny counted out in a row. You take the trinket. You leave the skull. You put two of the zeny back.' },
+  net_float: { items: [['rime_essence', 2]], zeny: 500, text: 'A glass float, hollow, stoppered with wax. Inside, two flakes of rime and a rolled-up coin-purse. The oldest hiding place on the Row.' },
+  solvi_coil: { items: [['yellow_potion', 3]], zeny: 700, text: 'The middle of a coil of rope is hollow, if you coil it right. Sölvi coils it right.' },
+  smoke_barrel: { items: [['hermit_shell', 2], ['white_potion', 1]], zeny: 900, text: 'A barrel marked “COD” that is not cod: shells for buttons, a potion, and Þórunn’s savings, which smell very strongly of cod.' },
+  sealer_oilskin: { items: [['wolf_pelt', 2], ['blue_potion', 2]], zeny: 800, text: 'An oilskin bundle, tied with sinew: two good pelts, potions for the ice, and seal-money. A sealer never goes out without something wrapped up at home.' },
+});
+
+// Hrefna's nail-forge
+intNpc('row_hrefna', { map: 'emberhold_row_a', name: 'Hrefna', title: 'Nail-Smith', dname: 'Hrefna the Nail-Smith', x: 4.5, y: 4.5, dir: 1,
+  look: { body: '#5a4030', trim: '#b8402a', legs: '#2a1e16', skin: '#e0b894', hair: '#2a1a12', weapon: 'mace', wcol: '#777', wide: true },
+  greet: '<i>Tink. Tink. Tink.</i> Speak between the strokes.',
+  intro: ['Nails. Only nails. Brokkr does the swords, and Brokkr can keep them. Nobody ever held a town together with a sword.', 'Every roof in Emberhold, every coffin, every door the Ash has knocked on: my nails. Sit, if you can find a bench I have not nailed down.'],
+  lines: ['A longship takes six thousand nails. I am striking them for Bárðr in Skaldhaven, one at a time, and he will pay me for them one at a time, when he has a ship.',
+    'The week they found the Wolf Den, under the fields east of the old gate, I struck nothing but coffin-nails. Forty to a coffin. I do not want to strike another like that week.',
+    'Starri is a good lad. He sorts. He sorts very slowly. The nails do not mind, and I am learning not to.',
+    'Grani next door makes lamps. I make the nails he hangs them on. We are the two most useful people on the Row and the only two who admit it.'],
+  rumor: 'The carters who buy my nails say there is a way down' });
+intNpc('row_starri', { map: 'emberhold_row_a', name: 'Starri', title: 'Journeyman', dname: 'Starri the Journeyman', x: 6.5, y: 7.5, dir: -1,
+  look: { body: '#6a5a44', trim: '#3a2a1c', legs: '#3a3024', skin: '#f0d0b0', hair: '#d8a060', weapon: 'none', scale: 0.86 },
+  greet: 'Long ones in this barrel. Short ones in that one. Bent ones… I have not decided about the bent ones.',
+  lines: ['Hrefna says a bent nail is a nail that has been somewhere. I think it is a nail that has been hit badly.',
+    'My father went to the Barrow Downs to see the old stones. He came back with a sword off a dead man. Mother made him take it back. He took it to Hrefna instead.',
+    'I asked Hrefna if I could make a sword one day. She gave me a nail and said, “Make that a sword.” I am still thinking about it.'],
+  rumor: 'Father swears that past the Barrow Downs there is a way down' });
+
+// Grani's lamp-shop
+intNpc('row_grani', { map: 'emberhold_row_b', name: 'Grani', title: 'Lamp-Maker', dname: 'Grani the Lamp-Maker', x: 12.5, y: 5.2, dir: -1,
+  look: { body: '#4a4a3a', trim: '#e0b050', legs: '#2e2e24', skin: '#d8b090', hair: '#c8c0b0', beard: true, weapon: 'none', scale: 0.96 },
+  greet: 'Mind your head. And the lamps. Mostly the lamps: your head will mend.',
+  intro: ['Every lamp Bersi lights, I made. Forty-one of them, and three for the Salt Hall, and one for Sigrun that she will not take. She says the Waystone is light enough.', 'Oil comes up from Skaldhaven, and some winters it does not. A lamp without oil is a very sad piece of iron. I am trying to fix that.'],
+  lines: ['Horn panes for the wind, iron for the frame, a good hook. A lamp is simple. It is the light that is difficult.',
+    'The bog-folk in Mirewell say the wisps burn cold and never go out. A flame that never goes out! In a lamp! Think of the oil it would save. Think of Bersi’s face.',
+    'I tried a flame from the Ash once. It burned grey and it whispered. I put it out and did not sleep for a week.',
+    'Dalla twists the wicks. Forty years of wicks. She says the trick is to twist them the same way the sun goes round. Nobody has seen the sun properly in nine years, so she guesses.'],
+  rumor: 'The oil-carters talk about a way down' });
+intNpc('row_dalla', { map: 'emberhold_row_b', name: 'Dalla', title: 'Wick-Twister', dname: 'Dalla the Wick-Twister', x: 3.5, y: 2.6, dir: 1,
+  look: { body: '#7a5a6a', trim: '#e0c8a0', legs: '#4a3444', skin: '#f0d8c0', hair: '#d8d0c0', head: 'hood', robe: true, weapon: 'none', scale: 0.9 },
+  greet: '<i>Her fingers keep twisting.</i> Sit down, dear. You make the flames nervous.',
+  lines: ['Grani talks to his lamps. Hallvard the fletcher talks to his arrows. Nobody in this town talks to their wife, but they all talk to something.',
+    'When we were young there was a lamp in every window from here to Prontera-under-the-Tree. You could walk all night and never be in the dark. Now we walk all day and never quite leave it.',
+    'Grani wants a wisp in a lamp. I want a lamp in a wisp. That way the wisp can carry it and I can sit down.'],
+  rumor: 'My sister’s boy walks the bog-roads. He says there is a way down' });
+
+// the cooper's house
+intNpc('cooper_bolli', { map: 'emberhold_house_c', name: 'Bolli', title: 'Cooper', dname: 'Bolli the Cooper', x: 5.5, y: 2.6, dir: -1,
+  look: { body: '#6a4a2a', trim: '#8a6a3a', legs: '#3a2a1c', skin: '#d8b090', hair: '#8a5a2a', beard: true, weapon: 'mace', wcol: '#6b4a2a', wide: true },
+  greet: 'If it holds water, I made it. If it holds ale, I made it better.',
+  intro: ['Barrels. Staves, hoops, a head at each end. You would think the world could not end while there were still barrels to fill. It found a way.', 'Ragnhild at the Last Hearth buys more barrels than the rest of the town together. I do not ask what she does with them. I suspect they are full of ale, and then full of Emberhold.'],
+  lines: ['Oak for ale, ash for water, pine for the things you want to forget. That last one is a cooper’s joke. It is also true.',
+    'Svart next door burns the charcoal Hrefna forges with. Hrefna forges the hoops I bend. The Row is one long argument that makes things.',
+    'The hunters at the Lodge in the Withered Wood sent for water barrels. They said the brook runs clear again, down in Brook Hollow. Clear water in the Wood. I nearly wept into a stave.'],
+  rumor: 'The hunters who buy my barrels say there is a way down' });
+intNpc('cooper_vigdis', { map: 'emberhold_house_c', name: 'Vigdís', title: 'Cooper’s wife', dname: 'Vigdís', x: 6.5, y: 6.2, dir: 1,
+  look: { body: '#5a6a5a', trim: '#c8b890', legs: '#3a4034', skin: '#f0d8c0', hair: '#a06a3a', robe: true, weapon: 'none' },
+  greet: 'He’ll talk barrels at you until the Ash lifts. Sit here. I’ll talk about something else.',
+  lines: ['He thinks I do not know about the ale under the bed. I put it there. Let a man have one secret; it keeps him from looking for yours.',
+    'My brother went east on the new gate road to see the farm out past the fields. Hallbera’s. He came back and said she has a whole barley field and a wolf that watches it. He has not stopped talking about the wolf.',
+    'Everything smells of oak in this house. My hair smells of oak. The bread smells of oak. When I die, bury me in a barrel. I will feel at home.'],
+  rumor: 'My brother came back from the east saying there is a way down' });
+
+// the charcoal-burner's house
+intNpc('burner_svart', { map: 'emberhold_house_d', name: 'Svart', title: 'Charcoal-Burner', dname: 'Svart the Charcoal-Burner', x: 10.5, y: 3.5, dir: -1,
+  look: { body: '#2a2624', trim: '#4a3a2a', legs: '#1a1614', skin: '#a08070', hair: '#1a1410', beard: true, weapon: 'mace', wcol: '#555', wide: true },
+  greet: '<i>He coughs. It sounds like a kiln settling.</i> Don’t touch anything white. It won’t be, after.',
+  lines: ['I burn in the Withered Wood, past the woodcutters’ clearing. The trees there are already half charcoal. The Ash did most of my work for me. I resent it.',
+    'At night something comes out of the old barrow in the Wood and sits by my kiln. It does not come close. It just warms its hands. I let it. It is cold down there, I expect.',
+    'Hrefna says my charcoal is the best she has ever used. Then she says it is the only charcoal she has ever used. Both are true.'],
+  rumor: 'Round my kiln the Wood whispers of a way down' });
+intNpc('burner_kata', { map: 'emberhold_house_d', name: 'Kata', title: 'Burner’s daughter', dname: 'Kata', x: 3.5, y: 6.5, dir: 1,
+  look: { body: '#4a3a3a', trim: '#8a3a2a', legs: '#2a2020', skin: '#e0c0a0', hair: '#3a2a20', weapon: 'none', scale: 0.8 },
+  greet: 'Papa says I am not allowed to go to the kiln any more. So now I go when he is not looking.',
+  lines: ['There is a stone in the Wood, east, with a strip of hide tied round it. Ásvör the huntress ties a new one every time she wants something to die cleanly. I tied one for Papa’s cough.',
+    'I found wolf claws in the kiln ash. Papa says they were in the wood when he burned it. Wolves do not live in trees. I checked.',
+    'When I grow up I will not burn charcoal. I will be a huntress, or a gravedigger like Álöf. Somebody has to carve the names nicely.'],
+  rumor: 'Ásvör’s hunters say there is a way down' });
+
+// the gravedigger's house
+intNpc('grave_hroi', { map: 'emberhold_house_e', name: 'Hrói', title: 'Gravedigger', dname: 'Hrói the Gravedigger', x: 11.5, y: 4.2, dir: -1,
+  look: { body: '#4a4640', trim: '#6a5a4a', legs: '#2e2a26', skin: '#d0b098', hair: '#8a8a82', beard: true, weapon: 'fork', wcol: '#6b5033', scale: 1.02 },
+  greet: 'Not yet, I hope. You don’t look like you need me yet.',
+  intro: ['Hrói. I dig. Álöf carves. Ása keeps the coal and Sister Ingunn keeps the stone, and between the four of us the dead of Emberhold are kept as well as the living. Better, some winters.', 'Mind the clay on the floor. It is from the yard. Everything in this house is from the yard, one way or another.'],
+  lines: ['The first winter I buried a hundred and six. The ninth winter, eleven. The town is not getting safer. There are just fewer of us to lose.',
+    'The Old Barrow in the Withered Wood is full of the old dead: kings and their men, buried with their swords before anyone thought to write names down. Nobody digs for them. Nobody mourns them. It bothers me more than it should.',
+    'Álöf carves a stone for every name on the Roll, even the ones with no body. Especially those. A stone is a place to stand, she says, when there is nowhere else.',
+    'People ask me if the dead stay down. In the yard, yes. Out there, where Sigrun could not reach them… you have seen out there.'],
+  rumor: 'The dead are restless, and they say there is a way down' });
+intNpc('grave_alof', { map: 'emberhold_house_e', name: 'Álöf', title: 'Stone-Carver', dname: 'Álöf the Stone-Carver', x: 4.5, y: 5.2, dir: 1,
+  look: { body: '#5a5a62', trim: '#a8a098', legs: '#34343a', skin: '#e8d0b8', hair: '#c8a870', weapon: 'none', scale: 0.92 },
+  greet: '<i>She blows stone-dust off a name.</i> Careful. That one is not dry yet. Names take a while.',
+  lines: ['I carve the names before they are needed. It is not grim. It is tidy. When the day comes, the stone is ready, and nobody has to wait.',
+    'There is a blank stone in row nine. A Waystone-keeper who went toward the farms the first winter and never came back. Sigrun still lights a candle for him. I do not know what to carve until we know where he is.',
+    'Father says the Barrow Downs south of the fields were a burial ground before Emberhold was a town. Their stones are older than ours and nobody carved them properly. I would like to see them. I would like to fix them.'],
+  rumor: 'Father’s old friend saw it before he died: a way down' });
+
+// Þórdís's farmhouse
+intNpc('farm_thordis', { map: 'emberhold_farm_a', name: 'Þórdís', title: 'Farmwife', dname: 'Þórdís the Farmwife', x: 5.5, y: 3.5, dir: 1,
+  look: { body: '#6a5a3a', trim: '#c8a060', legs: '#3a3024', skin: '#e0b894', hair: '#b86a3a', robe: true, weapon: 'none', wide: true },
+  greet: 'Wipe your feet. Then wipe them again. The byre follows everyone in.',
+  intro: ['We walked in from the fields the second winter, with two cows, eleven sheep and a husband. We have the husband left.', 'The byre is swept every day, in case. Böðvarr says it is foolish. Böðvarr sweeps it himself when he thinks I am not looking.'],
+  lines: ['The wolves took the cows in the first Ash-winter and the sheep in the second. They took them from a byre with a door on it. Wolves do not open doors. These ones did.',
+    'Hallbera out at the old farmstead still grows barley. A whole field of it, east past the gate. The wolves sit at the edge and watch her. They do not touch the barley. It is not barley they want.',
+    'Oddný next door bakes. I spin. Hallkell across the lane grows turnips. Between us the Farm Ward eats. Just.'],
+  rumor: 'The field-folk say that under the old fields there is a way down' });
+intNpc('farm_bodvar', { map: 'emberhold_farm_a', name: 'Böðvarr', title: 'Byre-Man', dname: 'Böðvarr the Byre-Man', x: 13.5, y: 5.5, dir: -1,
+  look: { body: '#5a4a3a', trim: '#8a7a5a', legs: '#3a3024', skin: '#c8a080', hair: '#6a4a2a', beard: true, weapon: 'fork', wcol: '#6b4a2a', scale: 1.04 },
+  greet: 'Empty stalls. I keep them clean. A man has to keep something.',
+  lines: ['That one was Brenna’s stall. That one Kolla’s. I chalked the names over them so I would not forget which was which. Then I forgot why that mattered.',
+    'The wolves came in from the east, from the rocks past Grimsfield where the ground goes hollow. There is a den down there. You can smell it on the wind if the wind is wrong.',
+    'Haki at the new gate says we could have cows again, if the fields were safe. The fields will be safe when the wolves are fewer. Somebody should see to that.'],
+  rumor: 'On a still night I hear it under the fields: a way down' });
+
+// Oddný's farmhouse
+intNpc('farm_geirny', { map: 'emberhold_farm_b', name: 'Geirný', title: 'Baker', dname: 'Old Geirný', x: 3.5, y: 3.5, dir: 1,
+  look: { body: '#8a6a4a', trim: '#e8d8b0', legs: '#4a3a2a', skin: '#e8c8a8', hair: '#e0e0d8', robe: true, weapon: 'none', scale: 0.88 },
+  greet: 'Oddný’s out walking the Ward. I’m in. Somebody has to mind the oven, and the oven does not trust Oddný.',
+  intro: ['I am Oddný’s mother. She makes the pies; I make Oddný. Everything she knows about pastry she got from me, and everything she knows about people she got from her father, which is why she is better at pastry.', 'Sit. Eat. You look like the Ash had you for supper and spat you out.'],
+  lines: ['The rail is to keep the sheep out of the kitchen. The sheep have not read the rail.',
+    'We have two sheep. They are in the byre. You cannot see them because they are hiding. Sheep have learned to hide. Everything left in Midgard has learned to hide.',
+    'Grief-bread is the plain loaf. No salt, no butter. You leave it on the step when someone has not come home. I bake one every day. Someone always has not come home.'],
+  rumor: 'Gunnar in the fields told me there is a way down' });
+intNpc('farm_amundi', { map: 'emberhold_farm_b', name: 'Ámundi', title: 'Farmer', dname: 'Ámundi, Oddný’s husband', x: 15.5, y: 5.0, dir: -1,
+  look: { body: '#6a6a4a', trim: '#8a7a4a', legs: '#3a3a2a', skin: '#d8b090', hair: '#8a6a3a', beard: true, weapon: 'fork', wcol: '#6b4a2a' },
+  greet: 'Shh. You’ll frighten the sheep. They’re already frightened. It’s their whole personality now.',
+  lines: ['I married Oddný for her pies. I stayed for her temper. I would stay for Geirný too, if she ever let me win an argument.',
+    'Freyr’s shrine is south of the fields, past the barrow. Someone still leaves bread there. It is Geirný. She thinks nobody knows.',
+    'The hares in the fields eat the clover down to the root. The sheep eat what the hares leave. The wolves eat whoever is slowest. It is called a harvest.'],
+  rumor: 'The hares know it, and so do I: there is a way down' });
+
+// Hallkell's farm
+intNpc('farm_hallkell', { map: 'emberhold_farm_c', name: 'Hallkell', title: 'Farmer', dname: 'Hallkell the Farmer', x: 7.5, y: 7.5, dir: 1,
+  look: { body: '#5a6a3a', trim: '#a88a5a', legs: '#34402a', skin: '#d8b090', hair: '#b0a890', beard: true, weapon: 'fork', wcol: '#6b4a2a', scale: 1.0 },
+  greet: 'Turnips, hay, and a farmhand who sleeps in both. What can I do for you?',
+  lines: ['I built the loft over the byre so the beasts would keep the hay warm. We have no beasts now. The hay is cold, and so is Vébjörn, and he tells me so every morning.',
+    'The Mirewell folk live on stilts over the bog, out at Stilt-Home. I thought that was mad. Then the thaw flooded my lower field. I have been looking at stilts.',
+    'My father farmed where the East Reach is now, past the new gate. There is a watchtower out there, and a barrow, and a lot of nothing. The nothing is new.'],
+  rumor: 'My father’s old fields hide it: a way down' });
+intNpc('farm_vebjorn', { map: 'emberhold_farm_c', name: 'Vébjörn', title: 'Farmhand', dname: 'Vébjörn the Farmhand', x: 16.5, y: 3.2, dir: -1,
+  look: { body: '#7a6a4a', trim: '#5a4a2a', legs: '#3a3024', skin: '#e0c0a0', hair: '#e0c070', weapon: 'none', scale: 0.94 },
+  greet: '<i>He sits up in the hay.</i> I wasn’t sleeping. I was guarding the hay. From above.',
+  lines: ['The hay loft is the warmest place in Emberhold after the Last Hearth. It is also the only place Hallkell cannot shout up to without a ladder.',
+    'I found a way to see the Skerry beacon from up here, through the gap in the thatch. Skaldhaven is a long way. It is nice to know somebody else keeps a fire going.',
+    'Someone keeps leaving the hay-tally with “eat the farmhand” on it. I rub it out. It comes back. I think it is Hallkell. I hope it is Hallkell.'],
+  rumor: 'From up here I have seen the smoke from it: a way down' });
+
+// the midwife's house
+intNpc('midwife_yrsa', { map: 'emberhold_house_f', name: 'Yrsa', title: 'Midwife', dname: 'Yrsa the Midwife', x: 8.5, y: 3.2, dir: 1,
+  look: { body: '#6a4a5a', trim: '#e0c8a0', legs: '#3a2a34', skin: '#f0d8c8', hair: '#8a5a3a', robe: true, head: 'hood', weapon: 'none' },
+  greet: 'Quiet, please. There is someone asleep in the back who has only just learned how.',
+  intro: ['Yrsa. I bring them in. Hrói sees them out. We try not to meet too often.', 'Forty-one children born in Emberhold since the Ash. I have written every one of them down. The Waystone keeps the dead; somebody has to keep the new.'],
+  lines: ['Mirewell moss for the bleeding, willow for the fever, and for the fear, a hand to hold. The last one is hardest to find.',
+    'Eira in Mirewell sells me herbs that grow in the Flooded Grotto, down in the dark where the water glows. She says she does not go in herself. I have seen the mud on her boots.',
+    'Sister Ingunn blesses the children. I weigh them. Between us we know exactly what they are worth, and it is more than the Ash thinks.',
+    'Astrid is on my Roll, though she was not born here. She walked in on her own, carrying a stitched Poring. I wrote her down twice. I think she counts double.'],
+  rumor: 'Eira let slip that under the bog there is a way down' });
+intNpc('midwife_ljot', { map: 'emberhold_house_f', name: 'Ljót', title: 'New mother', dname: 'Ljót', x: 9.5, y: 8.2, dir: -1,
+  look: { body: '#8a7a6a', trim: '#e8e0d0', legs: '#5a4a40', skin: '#f0dcc8', hair: '#3a2a1a', robe: true, weapon: 'none', scale: 0.95 },
+  greet: '<i>She rocks the cradle with one foot.</i> He sleeps. Finally. Say something quietly.',
+  lines: ['His name is Eldr. Fire. Yrsa says every second child since the Ash has been called something to do with fire. We have not had many ideas lately.',
+    'His father is a guard at the new gate. He stands there all night so this one can sleep. When he comes home he sleeps and this one stands, in a way.',
+    'I wanted him born somewhere green. Yrsa says Frigg’s Garden on the Bifrost is still green. I told her to bring me a leaf. She laughed. She did not say no.'],
+  rumor: 'Hush. The guards say there is a way down' });
+
+// the thatcher's house
+intNpc('thatch_alfr', { map: 'emberhold_house_g', name: 'Álfr', title: 'Thatcher', dname: 'Álfr the Thatcher', x: 6.5, y: 2.5, dir: 1,
+  look: { body: '#7a6a3a', trim: '#c8a868', legs: '#3a3424', skin: '#d8b090', hair: '#e0c070', beard: true, weapon: 'none', scale: 1.0 },
+  greet: 'If you have seen a small boy running very fast, he is mine. If you have not, he is still mine, he is just faster than you.',
+  lines: ['Reed from the Mirewell edge, straw from the Ward. A roof that keeps out the Ash is a roof that keeps out the sun too. We gave up on the sun.',
+    'Tóki wants to guard the new gate. Haki says he must learn to stand still first. I have been trying to teach him that for seven years. Haki is braver than he looks.',
+    'I thatched the lodge the hunters built in the Withered Wood. Ásvör paid me in venison and a warning: do not go round the barrow the wrong way. I did not ask which way was wrong.'],
+  rumor: 'Up on a roof you hear everything, even about a way down' });
+intNpc('thatch_steinvor', { map: 'emberhold_house_g', name: 'Steinvör', title: 'Thatcher’s wife', dname: 'Steinvör', x: 7.5, y: 5.5, dir: -1,
+  look: { body: '#6a5a6a', trim: '#c8b890', legs: '#3a3440', skin: '#f0d8c0', hair: '#c05a2a', robe: true, weapon: 'none', scale: 0.96 },
+  greet: 'He’s not here. He’s never here. If you see him, tell him the soup is getting cold. Also that I love him. The soup first.',
+  lines: ['Tóki keeps a treasure-box under his bed. I know what is in it. I pretend I do not. It is the only thing in the house I cannot tidy.',
+    'He scratched a map on the shelf. A circle for the wolves, a circle for the bats, and an arrow going off the edge. I have not had the heart to sand it off.',
+    'The bats are in the old dens under the fields, Tóki says. How he knows, I do not want to know. I want him to be seven for a little longer.'],
+  rumor: 'Tóki swears, with his whole face, that there is a way down' });
+
+// the net-shed
+intNpc('net_ragna', { map: 'skaldhaven_net_a', name: 'Ragna', title: 'Net-Mender', dname: 'Ragna the Net-Mender', x: 8.5, y: 4.5, dir: 1,
+  look: { body: '#4a5a5a', trim: '#a8b8b0', legs: '#2e3434', skin: '#e0c8b0', hair: '#8a7a6a', head: 'hood', weapon: 'none' },
+  greet: 'Gyða makes them. I mend them. Between us there is always a net, and never quite a whole one.',
+  intro: ['Ragna. Gyða’s sister, older, wiser, worse knees. She walks the Row and I stay in the shed. The nets come to me.', 'That knot on the last peg? A draugr tied it, in a net that came up out of the ice with no fish in it. Nobody can untie it. I have stopped trying. It is a very good knot.'],
+  lines: ['Hrafn down in Rimeshore tears our nets fishing for draugr. He says he does not fish for them, they swim into the nets. That is fishing for them.',
+    'The Ice Cave in the Singing Berg sings at night. The sealers hear it from their camp. My mother said the sea sang like that the night it froze.',
+    'Tar, salt and patience. That is all a net-mender needs. I have plenty of the first two.'],
+  rumor: 'The sealers bring back word of a way down' });
+intNpc('net_hrafnkell', { map: 'skaldhaven_net_a', name: 'Hrafnkell', title: 'Old fisher', dname: 'Old Hrafnkell', x: 13.5, y: 6.6, dir: -1,
+  look: { body: '#3a4a5a', trim: '#6a7a8a', legs: '#2a3440', skin: '#c8a888', hair: '#e8e8e0', beard: true, weapon: 'none', scale: 0.9 },
+  greet: '<i>He is tarring a float very slowly.</i> Sit. The sea is not going anywhere. That is the problem.',
+  lines: ['Sixty years on the water. The last nine I have spent on a stool, tarring floats for a sea that is ice. The floats do not complain. I complain for them.',
+    'The Skerry beacon burns with no keeper. Eyvind rows the oil out. I rowed it before him, and there was a keeper then. He walked into the sea the night it froze. He did not sink.',
+    'Bárðr is building a ship at the stocks, the first since the Ash. I will not live to sail in her. I would like to see her float, though. Just once, on real water.'],
+  rumor: 'Down on the ice they whisper of a way down' });
+
+// the rope-walk
+intNpc('net_solvi', { map: 'skaldhaven_net_b', name: 'Sölvi', title: 'Rope-Maker', dname: 'Sölvi the Rope-Maker', x: 13.5, y: 4.5, dir: -1,
+  look: { body: '#5a4a3a', trim: '#a88a5a', legs: '#3a3024', skin: '#d8b090', hair: '#6a4a2a', beard: true, weapon: 'none', wide: true },
+  greet: 'Walk backwards. Everyone in here walks backwards. You’ll get the hang of it, or the rope will.',
+  intro: ['Sölvi. I make the rope for the Sea-Snake, the Salt Hall’s well, and now Bárðr’s new ship, which will need two hundred fathoms and has paid for none of it.', 'The rope-walk is long because rope is long. There is no deeper wisdom. Kári thinks there is. Let him.'],
+  lines: ['Hemp from the south, before the Ash. Now it is bark-fibre, seal-sinew and anything that will twist. Rope is like people. Anything will do if you twist it hard enough.',
+    'Salt eats the rope. Ice eats the rope. Draugr, strangely, do not. They like the knots.',
+    'Bárðr owes me for two hundred fathoms. Hrefna says he owes her for six thousand nails. We are going to own that ship between us, and neither of us can sail.'],
+  rumor: 'The ice-cutters say out past the lagoon there is a way down' });
+intNpc('net_kari', { map: 'skaldhaven_net_b', name: 'Kári', title: 'Apprentice', dname: 'Kári the Apprentice', x: 4.5, y: 3.5, dir: 1, route: [[4.5, 3.5], [18.5, 3.5]], pace: 0.7,
+  look: { body: '#6a6a5a', trim: '#8a7a5a', legs: '#3a3a30', skin: '#f0d0b0', hair: '#c8a870', weapon: 'none', scale: 0.84 },
+  greet: '<i>He is walking backwards, twisting.</i> Can’t stop. If I stop, it untwists. Talk while I walk.',
+  lines: ['Sölvi says the rope-walk teaches you patience. I think it teaches you to walk backwards into walls.',
+    'I want to sail on Bárðr’s ship when it is finished. I will be the one who knows every rope on it, because I made every rope on it. Well. Sölvi made them. I walked.',
+    'Litla, the girl who hides in the Sea-Snake’s hold, comes here sometimes to watch. She says one day she will need a very long rope. She will not say what for.'],
+  rumor: 'Litla told me she heard of a way down' });
+
+// the smokehouse
+intNpc('smoke_thorunn', { map: 'skaldhaven_smokehouse', name: 'Þórunn', title: 'Smoker', dname: 'Þórunn the Smoker', x: 8.5, y: 2.5, dir: 1,
+  look: { body: '#5a4030', trim: '#b88a4a', legs: '#2e2418', skin: '#d8a888', hair: '#6a3a1a', weapon: 'none', wide: true, scale: 1.02 },
+  greet: '<i>She waves smoke out of her face. It comes straight back.</i> Shut the door! The fish are shy.',
+  intro: ['Þórunn. I keep the smokehouse, which is to say I keep Skaldhaven alive through the winter one split cod at a time.', 'Smoke, not flame. Oak, not pine. Salt first, pray after. If you remember that you can have a job. If you do not, you can have a fish.'],
+  lines: ['The fish come in through holes cut in the lagoon ice. Brynja in the Salt Hall organises the cutting. She says the shell-knights are worse every year. I say the fish are smaller. Neither of us is happy.',
+    'Bárðr’s crew eat my fish while they build. Six men and a keel. Gyða says I spoil them. I say a man who is going to trust his life to a ship should at least be well fed.',
+    'Smoke gets into everything. My hair, my bed, my dreams. I dream in brown. I wake up hungry.'],
+  rumor: 'The ice-fishers swear there is a way down' });
+intNpc('smoke_bui', { map: 'skaldhaven_smokehouse', name: 'Búi', title: 'Smoker’s boy', dname: 'Búi', x: 6.5, y: 7.2, dir: -1,
+  look: { body: '#6a5040', trim: '#a08050', legs: '#3a2e26', skin: '#e8c0a0', hair: '#8a3a1a', weapon: 'none', scale: 0.74 },
+  greet: 'I am not eating the good ones. I am checking them. It is a job.',
+  lines: ['Mother wrote the rule on the board. I wrote the bit at the bottom. She has not noticed. Do not tell her.',
+    'The gulls sit on the roof all day waiting for a fish to fall out. I give them the burnt ones. They do not know the difference. Gulls are like Ormr.',
+    'Eyvind says the Skerry beacon has no keeper. I think it does and he is just shy. I would be shy if I lived on a rock.'],
+  rumor: 'The gulls told me (they did) there is a way down' });
+
+// the sealer's house
+intNpc('seal_hildr', { map: 'skaldhaven_net_c', name: 'Hildr', title: 'Sealer', dname: 'Hildr the Sealer', x: 11.5, y: 3.5, dir: -1,
+  look: { body: '#4a5460', trim: '#a8b8c8', legs: '#2e3440', skin: '#e0c8b0', hair: '#e8e0d0', head: 'hood', weapon: 'spear', wcol: '#8a8a8a' },
+  greet: 'Kolfinna is my sister. If she sent you, sit. If she did not, sit anyway. It is cold out.',
+  intro: ['Hildr. I hunt with Kolfinna in the season and come home to Skaldhaven for the dark months, when the seals are too clever and the ice is too thin.', 'The oil in that lamp is seal. The pelt under you is seal. The rope Sölvi sells has seal in it. We are a town built out of seals, and we are grateful to every one.'],
+  lines: ['Our brother went to see why the berg sings. Kolfinna waits for him at the camp. I wait for him here. Between us we have a whole shore of waiting.',
+    'The Frozen Reach runs south of the lagoon, a shelf of sea ice you can walk on for a day. The white ice holds. The grey ice lies. Remember that, and you might see the frozen ship.',
+    'Njörðr gets a copper ring every spring. The bone one on the end was our brother’s. I put it there when he did not come back. Njörðr can have it. He has everything else.'],
+  rumor: 'Out on the white ice they say there is a way down' });
+intNpc('seal_orri', { map: 'skaldhaven_net_c', name: 'Orri', title: 'Sealer’s boy', dname: 'Orri', x: 4.5, y: 5.5, dir: 1,
+  look: { body: '#5a6470', trim: '#8a9aa8', legs: '#34404a', skin: '#e8d0b8', hair: '#d8d0c0', head: 'hood', weapon: 'none', scale: 0.78 },
+  greet: 'Don’t touch the harpoons. They are sharp. I know because I touched them.',
+  lines: ['Aunt Kolfinna has a camp on the south shore with a whale-bone arch. You walk under it and Njörðr sees you. I walked under it nine times. He has not said anything yet.',
+    'I am going to be a sealer. Mother says I have to learn to be quiet on the ice first. I can be quiet. I am being quiet now. This is quiet.',
+    'Uncle went into the singing ice and did not come out. Mother says he is sailing. I asked where. She said somewhere the sea is not frozen. I would like to go there too.'],
+  rumor: 'Aunt Kolfinna says past the frozen ship there is a way down' });
+
+/* Errands (round 10): six small quests from the new rooms, each pointing somewhere the world grew. */
+quest('farm_clover', { giver: 'farm_geirny', name: 'Clover for Two Sheep', area: 'Ashen Fields', req: { lvl: 3 },
+  summary: 'Old Geirný has two sheep, hiding in the byre, and nothing sweet to feed them. The hollow hares in the Ashen Fields hoard clover.',
+  offer: ['Two sheep. The last two in the Ward. They will not come out of the straw, and I cannot blame them, but they will not eat either.', 'Clover would do it. Sheep will forgive anything for clover. The hares out in the Ashen Fields eat it all down to the root and carry the rest off. Take it back from them. Eight bunches.'],
+  progress: 'Eight bunches of clover, from the hollow hares of the Ashen Fields.',
+  done: ['<i>Geirný holds a bunch of clover over the rail. After a long moment, a grey nose comes out of the straw.</i>', 'There. There, you silly thing. <i>She does not look round.</i> Take the apples. And a loaf. Not the grief-bread. The good one.'],
+  obj: [{ type: 'collect', item: 'clover', n: 8 }],
+  reward: { exp: 450, jexp: 320, zeny: 250, items: [['apple', 5], ['red_potion', 6]] } });
+quest('byre_wolves', { giver: 'farm_bodvar', name: 'Empty Stalls', area: 'Ashen Fields', req: { lvl: 10 },
+  summary: 'The ash wolves emptied Böðvarr’s byre. He cannot have the beasts back, but he would like the wolves to be fewer before Haki brings new ones through the gate.',
+  offer: ['Brenna, Kolla, eleven sheep. The wolves took them through a shut door. I have been sweeping out their stalls for seven years.', 'Haki says there could be cows again, from the east, if the fields were safer. Thin the pack for me. Eight of them. They come up from the den in the rocks, south-east past Grimsfield. Do not go into the den. That is not a byre-man’s errand.'],
+  progress: 'Eight ash wolves in the Ashen Fields (their den is in the rocks south-east, past Grimsfield).',
+  done: ['<i>Böðvarr takes the chalk and, over the first empty stall, writes a new name.</i>', 'For the next one. There will be a next one, now. Take this: the Ward put it together. And if you do go down into that den, the Den-Mother is Hallbera’s errand, not mine. Ask her.'],
+  obj: [{ type: 'kill', mob: 'ash_wolf', n: 8 }],
+  reward: { exp: 2600, jexp: 1900, zeny: 800, items: [['orange_potion', 4], ['fly_wing', 2]], rep: { emberhold: 1 } } });
+quest('hroi_barrow', { giver: 'grave_hroi', name: 'The Nameless Kings', area: 'Withered Wood · the Old Barrow', req: { lvl: 18, test: () => !!P.flags.talked.grave_hroi },
+  summary: 'Hrói wants to know who lies in the Old Barrow under the Withered Wood, so Álöf can carve their names in the chapel yard. The oldest chamber has carvings nobody has read in centuries.',
+  offer: ['The Old Barrow under the Withered Wood. Kings, they say, and their men, buried with their swords before anyone wrote names down.', 'Nobody mourns them because nobody knows who they were. There is a side chamber past the first hall, north and to the east. Hunters say the walls are carved. Read the names for me. Álöf will cut them into a stone in the yard, and then they will be ours to keep.'],
+  progress: 'The carved chamber in the Old Barrow (the Withered Wood), north-east of the first hall. Then back to Hrói.',
+  done: ['<i>You tell him the names. Hrói writes each one down slowly in his square hand. Álöf, from the back room, is already carving.</i>', 'Kings and ferrymen and a cook. Good. A cook deserves a stone as much as a king. More. Take this for the walk, and my thanks for theirs.'],
+  obj: [{ type: 'inspect', map: 'withered_wood_cave_barrow', place: 'the carved chamber', r: 2.2, spots: [{ x: 33.5, y: 19.5, name: 'The carved chamber', text: ['<i>Names cut into the rock, worn almost smooth. You trace them with your fingers: Hrothgar; Eyvindr the Ferryman; Sváfa, who cooked for the king and was buried beside him.</i>', '<i>At the end, freshly scratched under the old names in a hunter’s hand: “Leif. We will come back for you.”</i>'] }] }],
+  reward: { exp: 11000, jexp: 8200, zeny: 2200, items: [['yellow_potion', 4]], lore: 'yard_roll' } });
+quest('grani_wisps', { giver: 'row_grani', name: 'A Lamp That Never Goes Out', area: 'Mirewell · the Flooded Grotto', req: { lvl: 38, test: () => !!P.flags.talked.row_grani },
+  summary: 'Grani the lamp-maker wants to put a wisp’s cold flame in a lamp, so Emberhold’s lamps burn when the oil carts do not come.',
+  offer: ['The wisps of Mirewell burn cold and never go out. A lamp with a wisp-flame in it would never need oil. Think of the winters when the carts do not come. Think of Bersi.', 'Six flames, if you can carry them. The wisps float over the bog, and more of them in the Flooded Grotto, under the black water. Mind your fingers. Cold flames still bite.'],
+  progress: 'Six Wisp Flames from the wisps of Mirewell or the Flooded Grotto.',
+  done: ['<i>Grani drops a wisp-flame into a horn lantern and shuts the door on it. It burns: green, cold and perfectly steady. He stares at it for a long time.</i>', 'It does not whisper. It does not flicker. It does not need anything. <i>He sounds almost disappointed.</i> Bersi will have to find something else to worry about. Here. You have earned a light of your own.'],
+  obj: [{ type: 'collect', item: 'wisp_flame', n: 6 }],
+  reward: { exp: 64000, jexp: 48000, zeny: 5500, items: [['white_potion', 3], ['blue_potion', 3]] } });
+quest('solvi_jelly', { giver: 'net_solvi', name: 'Rime-Glue', area: 'Rimeshore · the Ice Cave', req: { lvl: 28, test: () => !!P.flags.talked.net_solvi },
+  summary: 'Sölvi boils the jelly of rime porings into a glue that keeps rope from rotting in the salt. Bárðr’s ship needs two hundred fathoms of it.',
+  offer: ['Salt eats rope. Rime-glue stops it: the jelly of the frost porings, boiled down and painted on. It stinks worse than Þórunn’s smokehouse and it works better than anything.', 'Six jellies. The porings roll about on the Rimeshore ice, and there are more in the Ice Cave in the Singing Berg. It is for Bárðr’s ship. Bárðr will pay you. Bárðr will pay everyone, one day.'],
+  progress: 'Six Frost Jellies, from the rime porings of Rimeshore or the Ice Cave.',
+  done: ['<i>Sölvi drops the jellies into a pot. The smell is immediate and total. Kári walks backwards out of the door.</i>', 'That is the smell of a rope that will outlive us all. Here: from me, not from Bárðr. I have stopped waiting for Bárðr.'],
+  obj: [{ type: 'collect', item: 'frost_jelly', n: 6 }],
+  reward: { exp: 26000, jexp: 19000, zeny: 3200, items: [['yellow_potion', 5], ['fly_wing', 3]], rep: { rimeshore: 1 } } });
+quest('smoke_fish', { giver: 'smoke_thorunn', name: 'Fish for the Keel', area: 'Skaldhaven · Bárðr’s shipyard', req: { lvl: 26, test: () => !!P.flags.talked.smoke_thorunn },
+  summary: 'Þórunn’s smoked fish feed Bárðr’s shipwrights. Búi usually carries it, and Búi usually arrives with less than he left with.',
+  offer: ['Bárðr’s crew get a bundle of fish every day. Búi carries it. Búi arrives at the shipyard with a very full stomach and a very small bundle.', 'Take today’s to Bárðr at the stocks, south past the Row. Straight there. Do not let Búi walk with you.'],
+  progress: 'Take the smoked fish to Bárðr the Shipwright at the shipyard, then come back to Þórunn.',
+  done: ['A whole bundle? He counted? <i>She glares at Búi, who is suddenly very interested in a barrel.</i>', 'Good. The keel eats wood and the men eat fish, and between the two of them there might be a ship by spring. Here. Your share, and do not tell Búi.'],
+  give: [['smoked_fish', 1]],
+  obj: [{ type: 'deliver', item: 'smoked_fish', n: 1, npc: 'bardr', text: 'Bring the smoked fish to Bárðr at the shipyard (Skaldhaven)' }],
+  reward: { exp: 18000, jexp: 13000, zeny: 1800, items: [['yellow_potion', 3], ['skald_ale', 1]], lore: 'smoker_rule' } });
+
+/* ---------- Rumours (Ketill): the new rooms ---------- */
+RUMORS.push(
+  { id: 'i_rowlamps', when: () => P.lvl >= 36 && !P.quests.done.grani_wisps, text: 'Grani the lamp-maker on Emberhold’s Smiths’ Row wants to put a wisp in a lantern. A green light that never goes out. I have seen men like that before. Usually they end up in the bog.' },
+  { id: 'i_smoke', when: () => P.lvl >= 24 && !P.flags.talked.smoke_thorunn, text: 'Follow your nose down Netmakers’ Row to the smokehouse. Þórunn keeps the whole town fed and nobody thanks her, because nobody can get close enough for the smell.' },
+  { id: 'i_farms', when: () => P.lvl >= 8 && !P.quests.done.byre_wolves, text: 'The farmers in Emberhold’s new ward have byres and no beasts. The wolves saw to that. Böðvarr keeps sweeping the stalls. Somebody should give the man a reason.' },
+  { id: 'i_yard', when: () => P.lvl >= 18 && !P.quests.done.hroi_barrow, text: 'Emberhold’s gravedigger wants names for the kings in the Old Barrow. Imagine being dead a thousand years and still on somebody’s list.' },
 );

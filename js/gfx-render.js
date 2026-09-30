@@ -243,7 +243,7 @@ function sprLights() {
   const L = [];
   for (const b of map.braziers || []) L.push({ x: b.x, y: b.y, r: 4.6, c: [1.0, 0.58, 0.22], i: 0.62, h: 0.2 });
   if (map.way) L.push({ x: map.way.x, y: map.way.y, r: 5.5, c: [1.0, 0.62, 0.25], i: 0.7, h: 0.9, way: true });
-  for (const w of map.warps || []) { const dk = typeof doorKind === 'function' ? doorKind(w, map) : ''; if (dk === 'mouth') continue; L.push({ x: w.x + 0.5, y: w.y + 0.5, r: 3.2, c: dk === 'door' ? [1.0, 0.66, 0.34] : dk === 'exit' ? [0.82, 0.9, 1.0] : [0.55, 0.78, 1.0], i: 0.45, h: 0.1 }); }   // (cycle 9: doors)
+  for (const w of map.warps || []) { const dk = typeof doorKind === 'function' ? doorKind(w, map) : ''; if (dk === 'mouth') continue; const hd = dk === 'door' && typeof houseDoorOf === 'function' && !mapKind(map) ? houseDoorOf(w, map) : null; L.push({ x: hd ? hd.x + Math.sin(hd.rot) * 0.4 : w.x + 0.5, y: hd ? hd.z + Math.cos(hd.rot) * 0.4 : w.y + 0.5, r: 3.2, c: dk === 'door' ? [1.0, 0.66, 0.34] : dk === 'exit' ? [0.82, 0.9, 1.0] : [0.55, 0.78, 1.0], i: 0.45, h: 0.1 }); }   // (cycle 9: doors)
   if (typeof mapLights === 'function') for (const l of mapLights(map)) L.push({ x: l.x, y: l.y, r: Math.min(6, l.r * 0.8), c: [l.c.r, l.c.g, l.c.b], i: Math.min(0.8, 0.4 * l.i), h: 0.2 });
   SPRF.lights = L; SPRF.lightsMap = map; SPRF.lgrid = null; return L;
 }

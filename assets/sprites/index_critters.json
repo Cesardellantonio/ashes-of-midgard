@@ -1,0 +1,52 @@
+{
+ "sheets": [
+  {
+   "id": "critter_crow",
+   "layer": "pet",
+   "body": "critter_crow",
+   "variant": null
+  },
+  {
+   "id": "critter_raven",
+   "layer": "pet",
+   "body": "critter_raven",
+   "variant": null
+  },
+  {
+   "id": "critter_hare",
+   "layer": "mob",
+   "body": "critter_hare",
+   "variant": null
+  },
+  {
+   "id": "critter_deer",
+   "layer": "mob",
+   "body": "critter_deer",
+   "variant": null
+  },
+  {
+   "id": "critter_rat",
+   "layer": "mob",
+   "body": "critter_rat",
+   "variant": null
+  },
+  {
+   "id": "critter_toad",
+   "layer": "mob",
+   "body": "critter_toad",
+   "variant": null
+  },
+  {
+   "id": "critter_bat",
+   "layer": "mob",
+   "body": "critter_bat",
+   "variant": null
+  },
+  {
+   "id": "critter_gull",
+   "layer": "pet",
+   "body": "critter_gull",
+   "variant": null
+  }
+ ]
+}

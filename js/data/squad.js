@@ -405,3 +405,126 @@ for (const c of COMPANIONS_DATA) {
   Object.assign(b, { greet: r.greet, how: r.how_are_you, thanks: r.thanks.concat(r.praise), joke: r.joke, chat: r.unknown.concat(r.who_are_you, r.story, r.advice), farewell: r.farewell, low_hp_other: b.low_hp });
   for (const k of ['ack_hold', 'ack_follow', 'ack_passive', 'ack_aggressive', 'ack_defensive', 'ack_focus_boss', 'ack_focus', 'ack_free']) b[k] = r.order;
 }
+
+/* =========================================================
+   Leftovers round (round 10): companion potions and the eight personal quests.
+   ========================================================= */
+/* Potions (js/squad.js squadPotion): an AI-controlled hero drinks from the shared bag when its HP falls under the
+   stance's threshold in a fight, picks the smallest tier that covers what it is missing (else the biggest it may use),
+   waits `cd` seconds between two, and never takes the bag below its `reserve` of any potion (tactics: potions
+   'auto'|'off', reserve N, default 3; saved per hero). Tiers: plain healing potions only, weakest first. */
+const SQUAD_POTIONS = {
+  tiers: ['red_potion', 'orange_potion', 'yellow_potion', 'white_potion', 'honey_mead', 'gjoll_draught'],
+  thr: { aggressive: 0.30, defensive: 0.35, passive: 0.45 },   // drink under this share of Max HP (passive: earlier)
+  fill: 0.7,     // aim for this share of Max HP; a tier counts as enough when it heals 3/4 of the gap
+  cd: 3,         // seconds between two potions of the same hero
+  reserve: 3,    // default: leave at least this many of each potion in the bag
+};
+
+/* Personal quests: one per companion (quest ids sq_<companion>, kind 'squad', no NPC giver; js/squad.js offers and
+   closes them). Each entry:
+     unlock  { lvl, mins, now }: offered once your own hero is Base Lv `lvl` or more AND the companion has been in the
+             party for `mins` minutes (saved: P.flags.squadQ[id].bond), or after 90 s together from Base Lv `now`. Declining
+             ("Not now") asks again after 5 more minutes together.
+     bark    { offer, done }: the companion's line in the chat log when they bring it up and when it is done.
+     offer / progress / done: dialog pages (the companion speaks). Dismissing the companion pauses the quest (its
+             progress is kept in P.flags.squadQ[id].stash) until they rejoin.
+     reward  { title } (TITLES below) + perk { name, icon, bonus }: a permanent buff on that companion (stat bonus). */
+const SQUAD_QUESTS = {
+  hrafnkel: { id: 'sq_hrafnkel', name: 'A Wedge for the Hammer', area: 'Ashen Fields · the Wolf Den · Emberhold', unlock: { lvl: 12, mins: 6, now: 18 },
+    summary: 'Hrafnkel wants the Den-Mother’s fang for the wedge of the hammer he means to forge, and his uncle Brokkr to see it.',
+    bark: { offer: 'Cousin! I have had an idea. It involves wolves, and a hammer, and very probably bats.', done: 'Uncle Brokkr looked at the wedge for a whole minute. He did not say it was wrong. That is a hug, from him.' },
+    offer: ['Cousin, every smith in my family makes one hammer that is only theirs. Uncle Brokkr made his from a star. I have nothing. Yet.',
+      'The old wolf in the den past Grimsfield, the Den-Mother. A fang like hers would make a wedge that never works loose. There are bats in there. I do not want to talk about the bats.'],
+    progress: 'The Den-Mother, deep in the Wolf Den (south-east of the Ashen Fields), then Brokkr’s forge-house in Emberhold.',
+    done: ['<i>Brokkr turns the fang over in his burnt fingers, grunts, and sets it on the anvil beside his own hammer.</i>', 'He says it is “not bad”. Cousin, he has never said that to anyone. I am going to eat something enormous to celebrate.'],
+    obj: [{ type: 'reach', map: 'ashen_fields_cave_wolfden', text: 'Go into the Wolf Den with Hrafnkel (mind the bats)' },
+      { type: 'kill', mob: 'den_mother', n: 1, text: 'Kill the Den-Mother' },
+      { type: 'reach', map: 'emberhold_smithy', text: 'Bring the fang to Brokkr’s forge-house in Emberhold' }],
+    reward: { title: 'hammer_friend' }, perk: { name: 'Den-Fang Wedge', icon: 'endure', bonus: { vit: 3, def: 5 } } },
+  eydis: { id: 'sq_eydis', name: 'Ashes and Barley', area: 'Ashen Fields · Freyr’s shrine · the Ember Chapel', unlock: { lvl: 10, mins: 6, now: 16 },
+    summary: 'Eydís wants to clean the blight from her family’s old fields, pray at Freyr’s shrine and light a candle for them in the Ember Chapel.',
+    bark: { offer: 'Um. Could I ask you something? It is only small. Sorry. It is not small, actually.', done: 'I wrote their names in the chapel book. Sigrun says a name that is written down is a name that is kept.' },
+    offer: ['My family farmed the fields east of Gunnar’s. The blight came up through the barley and took the rest. I never went back. I am sorry, I am not good at this part.',
+      'If we cleared some of the blight porings, and I could say the harvest prayer at Freyr’s shrine, and light a candle in the new chapel… I think I could stop dreaming about it.'],
+    progress: 'Blight porings on the Ashen Fields, Freyr’s wayside shrine in the south, then a candle in the Ember Chapel in Emberhold.',
+    done: ['<i>Eydís sets a small candle among the others and whispers four names. Her hands have stopped shaking.</i>', 'Thank you. Truly. I feel… lighter. I think I will heal better for it, too. Is that silly? It is not silly.'],
+    obj: [{ type: 'kill', mob: 'blight_poring', n: 8, text: 'Clear 8 Blight Porings from the Ashen Fields' },
+      { type: 'inspect', map: 'ashen_fields', place: 'Freyr’s shrine', r: 2.4, spots: [{ x: 46.5, y: 71.5, name: 'Freyr’s Shrine', text: ['<i>Eydís kneels and says the harvest prayer, badly, then again, properly. A few green shoots stand in the ash at the foot of the stone.</i>'] }] },
+      { type: 'reach', map: 'emberhold_temple', text: 'Light a candle for her family in the Ember Chapel (Emberhold)' }],
+    reward: { title: 'small_flame' }, perk: { name: 'Freyr’s Blessing', icon: 'blessing', bonus: { int: 3, maxsp: 40 } } },
+  orvar: { id: 'sq_orvar', name: 'The Barrow Chapter', area: 'Withered Wood · the Old Barrow · Skaldhaven', unlock: { lvl: 20, mins: 8, now: 26 },
+    summary: 'Örvar’s master left a blank chapter headed “The Barrow-King”. He wants to see Hrothgar Bear-Arm fall and read the chapter in the Salt Hall.',
+    bark: { offer: 'I have found a blank page in my master’s notebook. Footnote: blank pages are the most dangerous kind.', done: 'They applauded. In the Salt Hall. The skalds. Someone wrote it down! Footnote: I am not crying, it is the smoke.' },
+    offer: ['My master’s notebook has a chapter heading and nothing under it: “The Barrow-King, who will not lie down.” The Old Barrow, in the south of the Withered Wood.',
+      'I need to see him. Hrothgar Bear-Arm, the wight they buried with his axe. Then I read the chapter aloud in the Salt Hall, where sagas are judged. It is very dark in a barrow, is it not? Never mind. Fire. I have fire.'],
+    progress: 'The Old Barrow in the Withered Wood, Hrothgar Bear-Arm, then the Salt Hall in Skaldhaven.',
+    done: ['<i>Örvar reads for a quarter of an hour. The skalds bang their cups at the part where the axe breaks.</i>', 'Chapter finished. My master would have corrected my spelling of “Hrothgar”. I left it wrong on purpose, so there is something of his in it.'],
+    obj: [{ type: 'reach', map: 'withered_wood_cave_barrow', text: 'Go into the Old Barrow (Withered Wood)' },
+      { type: 'kill', mob: 'barrow_wight', n: 1, text: 'Defeat Hrothgar Bear-Arm while Örvar takes notes' },
+      { type: 'reach', map: 'skaldhaven_salthall', text: 'Hear Örvar read the chapter in the Salt Hall (Skaldhaven)' }],
+    reward: { title: 'chapter_worthy' }, perk: { name: 'The Master’s Notebook', icon: 'fire_bolt', bonus: { matk: 12, dex: 2 } } },
+  bera: { id: 'sq_bera', name: 'The Knotted Cord', area: 'Gloamheim Keep · the library · Tyr’s Chapel', unlock: { lvl: 30, mins: 10, now: 36 },
+    summary: 'Bera’s cord carries one knot she never untied: her oath to Sir Gaunt. She wants his roll of oaths, the rest of his sworn dead, and Tyr’s chapel.',
+    bark: { offer: 'Oath-friend. One knot on this cord is older than the others. It is time I dealt with it.', done: 'Thirty-one knots. Thirty-one kept. The cord is lighter by one, and so am I.' },
+    offer: ['Thirty-two knots. One for every promise. This one is the oath I swore to Sir Gaunt, and I never untied it when I left him.',
+      'His roll of oaths is in the library behind the throne hall. His men are still on their posts in the new wings, dead, keeping his word for him. We free ten of them. Then Tyr’s chapel in the barracks, where a knot can be undone properly.'],
+    progress: 'Sir Gaunt’s library, ten of the keep’s sworn dead, then Tyr’s Chapel in the Barracks wing of Gloamheim Keep.',
+    done: ['<i>Bera kneels at Tyr’s altar, unpicks the oldest knot with her teeth and lays the loose cord on the stone.</i>', 'An oath that eats the people it guards is no oath. I say it here so Tyr hears it. You heard it too, oath-friend. That makes two witnesses. Enough.'],
+    obj: [{ type: 'reach', map: 'gloamheim_library', text: 'Find Sir Gaunt’s roll of oaths in his library (Gloamheim Keep)' },
+      { type: 'kill', mob: ['skeleton_soldier', 'rust_knight'], n: 10, text: 'Free 10 of the keep’s sworn dead (Skeleton Soldiers, Rust Knights)' },
+      { type: 'inspect', map: 'gloamheim', place: 'Tyr’s chapel', r: 2.6, spots: [{ x: 72.5, y: 40.5, name: 'Tyr’s Chapel', text: ['<i>A one-handed god carved in black oak. Bera sets the roll of oaths at its feet and counts under her breath, all the way to thirty-two.</i>'] }] }],
+    reward: { title: 'oath_friend' }, perk: { name: 'The Untied Knot', icon: 'auto_guard', bonus: { def: 6, maxhpPct: 4 } } },
+  saemund: { id: 'sq_saemund', name: 'What Was Left Undone', area: 'Gloamheim Keep · the crypt · the Lower Cells', unlock: { lvl: 30, mins: 10, now: 36 },
+    summary: 'Sæmund thinks the thing he left undone is in Gloamheim: the caravan guards he died beside were buried in the keep’s crypt, and one was never buried at all.',
+    bark: { offer: 'I think I have remembered what the Grey Lady sent me back for. Unhurried, mind. It has waited this long.', done: 'Done, I think. Ah. No knock at the door. Móðguðr will have to find another reason to argue with me.' },
+    offer: ['The caravan I died for was going to Gloamheim. The guards who fell beside me were carried there and laid in the crypt. All but one. Ketil the Younger. He was nineteen.',
+      'Walk the crypt with me, give a few restless ones their rest, and then we look for Ketil where the keep kept its prisoners. The Lower Cells. Slowly. The dead are not going anywhere.'],
+    progress: 'The Crypt of Gloamheim, six wraiths laid to rest, then the Lower Cells in the keep’s new wing.',
+    done: ['<i>In the last cell, a name scratched into the wall at the height of a young man’s shoulder. Sæmund traces it, and says the rite for the unburied, in tune for once.</i>', 'Ketil. There you are. Sorry I was late, lad. I had to die first.'],
+    obj: [{ type: 'reach', map: 'gloamheim_crypt', text: 'Walk the Crypt of Gloamheim with Sæmund' },
+      { type: 'kill', mob: 'wraith', n: 6, text: 'Lay 6 Wraiths to rest' },
+      { type: 'inspect', map: 'gloamheim', place: 'the Lower Cells', r: 2.6, spots: [{ x: 34.5, y: 64.5, name: 'The Lower Cells', text: ['<i>Rows of cells, doors rusted open. Sæmund reads every name scratched into the stone, and greets each one.</i>'] }] }],
+    reward: { title: 'grave_tender' }, perk: { name: 'Unfinished Business', icon: 'magnificat', bonus: { mdef: 6, int: 2 } } },
+  kolbrun: { id: 'sq_kolbrun', name: 'Hati’s Get', area: 'Rimeshore · Gloamheim Keep, the drill hall', unlock: { lvl: 32, mins: 10, now: 38 },
+    summary: 'Kolbrún bet an old soldier’s ghost in the keep’s drill hall that she could kill a dozen of Hati’s white get before he finished his drill. She means to collect.',
+    bark: { offer: 'I made a bet. Twelve wolves. You are in it now. You are welcome.', done: 'Twelve. He owes me a drink. He is dead, so I will drink it for him.' },
+    offer: ['Snow wolves on the Rimeshore ice. Hati’s get. The same white fur that came through Valhalla’s gate. Twelve of them.',
+      'Then the drill hall in Gloamheim’s barracks. There is a dead drill-master there who says no einherjar ever outran his count. I say he counts slow.'],
+    progress: 'Twelve Snow Wolves in Rimeshore, then the drill hall in the Barracks wing of Gloamheim Keep.',
+    done: ['<i>Kolbrún drops twelve white tails on the drill-hall floor and cracks her knuckles at the empty air. Somewhere a cold voice stops counting.</i>', 'Score: me twelve, wolves nothing. That is how it should always read.'],
+    obj: [{ type: 'kill', mob: 'snow_wolf', n: 12, text: 'Kill 12 Snow Wolves in Rimeshore' },
+      { type: 'inspect', map: 'gloamheim', place: 'the drill hall', r: 2.6, spots: [{ x: 69.5, y: 13.5, name: 'The Drill Hall', text: ['<i>Straw targets, a rack of practice spears, a chalk tally on the wall that stops at forty. Kolbrún adds twelve strokes under it.</i>'] }] }],
+    reward: { title: 'wolf_breaker' }, perk: { name: 'Gate-Holder’s Fists', icon: 'summon_sphere', bonus: { aspd: 4, crit: 3 } } },
+  signy: { id: 'sq_signy', name: 'The Helmsman’s Debt', area: 'Rimeshore · Njörðr’s altar · the Ice Cave · the Ormsvín', unlock: { lvl: 34, mins: 10, now: 40 },
+    summary: 'The Frozen Helmsman steered the Drowned Jarl’s ship the night frost took Signý’s eye. She wants to settle it, properly, the Rimeshore way.',
+    bark: { offer: 'Huginn has been staring at the Singing Berg for three days. So have I. Want to bet on why?', done: 'Paid. Huginn says I should feel better. Huginn is a bird.' },
+    offer: ['The Jarl’s helmsman did not drown with the rest. He froze at his oar and walked into the berg. Ragna saw him. I did not. I had other things on my face.',
+      'First an offering at Njörðr’s altar in the south, so the sea knows it is not personal. Then the Ice Cave. Then the Ormsvín, to give his torc back to the ship he left.'],
+    progress: 'Njörðr’s altar on the south shore, the Frozen Helmsman in the Ice Cave, then the frozen ship Ormsvín.',
+    done: ['<i>Signý lays the helmsman’s torc on the Ormsvín’s steering oar, looks at it with her good eye for a long moment, and walks away without looking back.</i>', 'Ship, helmsman, debt. All in one place now. Huginn, stop that.'],
+    obj: [{ type: 'inspect', map: 'rimeshore', place: 'Njörðr’s altar', r: 2.6, spots: [{ x: 12.5, y: 83.5, name: 'Njörðr’s Altar', text: ['<i>Signý pours a measure of ale on the salt-white stone and says nothing at all. The raven on her bow bows its head.</i>'] }] },
+      { type: 'kill', mob: 'frozen_helmsman', n: 1, text: 'Kill the Frozen Helmsman in the Ice Cave' },
+      { type: 'inspect', map: 'rimeshore', place: 'the Ormsvín', r: 2.5, spots: [{ x: 77.5, y: 46.5, name: 'The Ormsvín', text: ['<i>The frozen longship creaks as the torc touches the oar, as if something on board had been waiting for it.</i>'] }] }],
+    reward: { title: 'rime_sighted' }, perk: { name: 'Raven’s Eye', icon: 'double_strafe', bonus: { dex: 3, hit: 8 } } },
+  starkad: { id: 'sq_starkad', name: 'The Third Thread', area: 'Ashen Fields, Grimsfield · Nidavellir Deep, the Hall of Ancestors', unlock: { lvl: 44, mins: 10, now: 50 },
+    summary: 'Starkad remembers two deaths: one on a field of ash, one in a dwarf-king’s hall. He wants to stand in both places while he still has a third life to do it with.',
+    bark: { offer: 'Last time, I never went back to the places I died. This time I would like to. Will you walk with an old ghost?', done: 'Two graves visited. The third is not dug yet. Good. Let it wait a long while.' },
+    offer: ['In my first life I fell at a place like Grimsfield, in the south of the Ashen Fields. I remember the crows. I think it was Grimsfield.',
+      'In my second, I served a king of the Dvergar, and died in his hall with his dead around me. The Hall of Ancestors, in Nidavellir, under the Deep Mines. His guard still walks there. We will let them rest first.'],
+    progress: 'Grimsfield in the Ashen Fields, ten dwarf revenants in Nidavellir Deep, then the Hall of Ancestors.',
+    done: ['<i>Among the carved kings Starkad stops before one with a broken nose and a spear across his knees, and bows the way the old sagas say men bowed.</i>', 'He looks like the man I died for. Perhaps he is. This time I will choose who I die for. Perhaps no one. That would be new.'],
+    obj: [{ type: 'inspect', map: 'ashen_fields', place: 'Grimsfield', r: 2.6, spots: [{ x: 66.5, y: 84.5, name: 'Grimsfield', text: ['<i>Rusted blades in the ash, and crows. Starkad touches the scar over his heart and hums three bars of a lay no one else remembers.</i>'] }] },
+      { type: 'kill', mob: 'dwarf_revenant', n: 10, text: 'Lay 10 Dwarf Revenants to rest (Nidavellir Deep)' },
+      { type: 'inspect', map: 'nidavellir', place: 'the Hall of Ancestors', r: 2.6, spots: [{ x: 48.5, y: 73.5, name: 'The Hall of Ancestors', text: ['<i>Pillars of dwarf-kings in carved stone, each with his hands on his weapon. Dust lies thick on all of them but one.</i>'] }] }],
+    reward: { title: 'thrice_remembered' }, perk: { name: 'The Third Thread', icon: 'brandish_spear', bonus: { atk: 10, hit: 5 } } },
+};
+Object.assign(TITLES, { hammer_friend: 'Hammer-Friend', small_flame: 'Keeper of the Small Flame', chapter_worthy: 'Worthy of a Chapter', oath_friend: 'Oath-Friend',
+  grave_tender: 'Grave-Tender', wolf_breaker: 'Wolf-Breaker', rime_sighted: 'Rime-Sighted', thrice_remembered: 'Thrice-Remembered' });
+// Registered like any quest (docs/CONTENT.md, "Add a quest"): no NPC giver and no turn-in (they complete when the last
+// objective is done); `req.test` is true only while the companion is offering it (squadQuestOffering in js/squad.js).
+for (const cid in SQUAD_QUESTS) {
+  const Q = SQUAD_QUESTS[cid];
+  quest(Q.id, { giver: null, turnIn: null, kind: 'squad', squad: cid, seq: true, name: Q.name, area: Q.area, summary: Q.summary, offer: Q.offer, progress: Q.progress, done: Q.done, obj: Q.obj, reward: Q.reward,
+    req: { test: () => typeof squadQuestOffering === 'function' && squadQuestOffering(Q.id) } });
+}

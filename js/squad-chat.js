@@ -569,6 +569,8 @@
 
   window.SQUAD_CHAT = {
     version: 1, send, onLine, onStatus, status, statusInfo, event,
+    // a companion line from game code (e.g. squad quest barks): shown like any offline line, no request
+    say: (who, text) => { if (typeof who === 'string' && who && who !== 'you' && who !== 'system' && typeof text === 'string') emit(who, text, 'local'); },
     history: () => ST.log.map(l => ({ who: l.who, text: l.text, t: l.t, src: l.src })),
     get config() { return cfg(); },
     parseOrders, intentOf,

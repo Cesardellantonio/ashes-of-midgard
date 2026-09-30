@@ -33,7 +33,8 @@
 const SHEET_BASE = (typeof window !== 'undefined' && window.AOM_SPRITE_BASE) || 'assets/sprites/';
 // Missing index files are harmless. The same sheet id may appear in several files (index.json also lists the
 // index_classes2b.json sheets): the first file in this list that names an id wins, whatever order the XHRs finish in.
-const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json', 'index_npcs3.json', 'index_headgear.json', 'index_pets.json', 'index_tier3a.json', 'index_tier3b.json', 'index_npcs4.json', 'index_helheim.json'];
+const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json', 'index_npcs3.json', 'index_headgear.json', 'index_pets.json', 'index_tier3a.json', 'index_tier3b.json', 'index_npcs4.json', 'index_helheim.json',
+  'index_critters.json', 'index_npcs5.json'];   // round 10: critter_* (explicit layers: pet for the birds, mob for the rest) and the 13+ new npc_* sheets; a missing index file is skipped (fin on failure)
 const SHEETS = {
   byId: {},          // id -> load record (created on first request)
   entries: {},       // id -> { id, layer, body, variant } from the index files
@@ -1087,8 +1088,17 @@ function compList() { return typeof COMPANIONS !== 'undefined' && Array.isArray(
 function sheetRecById(id) { return SHEETS.entries[id] ? sheetTag(SHEETS.byId[id] || loadSheet(id)) : null; }
 function huginnRec() { return SHEETS.indexReady ? (sheetRecById('pet_huginn') || sheetRec('huginn', 'pet', null)) : null; }
 // Load record of a companion's sheet: a sheet id, else a pet or MOBS key. Cached on the entry per sheet value.
+// Round 10: a critter (core.js CRITTERS) draws with the first of CRITTERS[kind].sheets the index has (critter_<kind>
+// before its pet / mob fallback); with none it stays hidden (no record: nothing drawn, never a box).
+function critterSheet(c) {
+  const C = typeof CRITTERS !== 'undefined' && CRITTERS[c.critter], L = C && Array.isArray(C.sheets) ? C.sheets : null; if (!L) return c.sheet;
+  for (let i = 0; i < L.length; i++) if (SHEETS.entries[L[i]]) return L[i];
+  return null;
+}
 function compRec(c) {
-  if (!SHEETS.indexReady || !c || !c.sheet) return null;
+  if (!SHEETS.indexReady || !c) return null;
+  if (c.critter) { if (c._cg !== SHEETS.gen || c._cs !== c.sheet) { c._cg = SHEETS.gen; c._cs = c.sheet; c._cw = critterSheet(c); } if (!c._cw) return null; if (c._gs !== c._cw) { c._gs = c._cw; c._gid = c._cw; } return sheetRecById(c._gid); }
+  if (!c.sheet) return null;
   if (c._gs !== c.sheet) { c._gs = c.sheet; c._gid = SHEETS.entries[c.sheet] ? c.sheet : sheetId(c.sheet, 'pet', null) || sheetId(c.sheet, 'mob', null) || sheetId(String(c.sheet).replace(/^mob_/, ''), 'mob', null); }
   return c._gid ? sheetRecById(c._gid) : null;
 }
@@ -1215,7 +1225,7 @@ function syncCompanion(c, rec) {
   else { if (v.act !== act) { v.act = act; v.actT = time; } f = Math.floor(time * actFps(A, act) + (c.x || 0) * 0.37); }
   if (act !== 'attack') v.act = act;
   const mobSheet = rec.entry && rec.entry.layer === 'mob';
-  _CO.tint = c.tint; _CO.opacity = c.opacity; _CO.scl = c.scale || (mobSheet && c.kind !== 'raven' ? 0.6 : c.kind === 'raven' ? HUG_SCALE : 1);
+  _CO.tint = /^critter_/.test(rec.id) ? undefined : c.tint; _CO.opacity = c.opacity; _CO.scl = c.scale || (mobSheet && c.kind !== 'raven' ? 0.6 : c.kind === 'raven' ? HUG_SCALE : 1);
   const st = sprFrame(v, c, _CO), k = st.scl;
   const sl = perch ? 0 : c._sepL || 0, sh = perch ? 0 : c._sepH || 0;   // screen-space separation (compSeparate)
   let x = c.x + SPRF.rx * sl, y = c.y + SPRF.ry * sl, h;

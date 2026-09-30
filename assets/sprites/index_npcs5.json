@@ -1,0 +1,112 @@
+{
+ "sheets": [
+  {
+   "id": "npc_asa",
+   "layer": "npc",
+   "body": "asa",
+   "variant": null
+  },
+  {
+   "id": "npc_haki",
+   "layer": "npc",
+   "body": "haki",
+   "variant": null
+  },
+  {
+   "id": "npc_bersi",
+   "layer": "npc",
+   "body": "bersi",
+   "variant": null
+  },
+  {
+   "id": "npc_oddny",
+   "layer": "npc",
+   "body": "oddny",
+   "variant": null
+  },
+  {
+   "id": "npc_toki",
+   "layer": "npc",
+   "body": "toki",
+   "variant": null
+  },
+  {
+   "id": "npc_bardr",
+   "layer": "npc",
+   "body": "bardr",
+   "variant": null
+  },
+  {
+   "id": "npc_eyvind",
+   "layer": "npc",
+   "body": "eyvind",
+   "variant": null
+  },
+  {
+   "id": "npc_gyda",
+   "layer": "npc",
+   "body": "gyda",
+   "variant": null
+  },
+  {
+   "id": "npc_thorgeir",
+   "layer": "npc",
+   "body": "thorgeir",
+   "variant": null
+  },
+  {
+   "id": "npc_hallbera",
+   "layer": "npc",
+   "body": "hallbera",
+   "variant": null
+  },
+  {
+   "id": "npc_asvor",
+   "layer": "npc",
+   "body": "asvor",
+   "variant": null
+  },
+  {
+   "id": "npc_kolfinna",
+   "layer": "npc",
+   "body": "kolfinna",
+   "variant": null
+  },
+  {
+   "id": "npc_unnr",
+   "layer": "npc",
+   "body": "unnr",
+   "variant": null
+  },
+  {
+   "id": "npc_hearth_oddny",
+   "layer": "npc",
+   "body": "hearth_oddny",
+   "variant": null
+  },
+  {
+   "id": "npc_hearth_hjalti",
+   "layer": "npc",
+   "body": "hearth_hjalti",
+   "variant": null
+  },
+  {
+   "id": "npc_temple_ingunn",
+   "layer": "npc",
+   "body": "temple_ingunn",
+   "variant": null
+  },
+  {
+   "id": "npc_salt_steward",
+   "layer": "npc",
+   "body": "salt_steward",
+   "variant": null
+  },
+  {
+   "id": "npc_forge_hjordis",
+   "layer": "npc",
+   "body": "forge_hjordis",
+   "variant": null
+  }
+ ]
+}

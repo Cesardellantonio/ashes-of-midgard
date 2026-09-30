@@ -194,12 +194,38 @@ function actBlock(on) {
   if (on) { if (P.dead || P.dodgeT > 0 || P.stamina <= 0) return; P.blocking = true; P.blockStart = time; P.charge = -1; P.sitting = false; const t = softTarget(5, -0.2); if (t) face(P, t); }
   else P.blocking = false;
 }
-function actInteract() {
+// What the interact key (F / pad A) would use right now: { k: 'npc' | 'obj' | 'drop' | 'door', r, d } or null.
+// UI round 11: a door or cave-mouth warp (wp.door) within DOOR_REACH tiles counts too, unless something is closer;
+// ui.js reads the same pick for its "Read" / "Open" / door key hints, so the prompt always shows what F does.
+const DOOR_REACH = 1.2;
+function nearDoor(r) {
+  let best = null, bd = r;
+  for (const wp of map.warps) { if (!wp.door) continue; const d = hyp(P.x - wp.x - 0.5, P.y - wp.y - 0.5); if (d < bd) { bd = d; best = wp; } }
+  return best ? { wp: best, d: bd } : null;
+}
+function actPick() {
+  if (!P || !map) return null;
   let best = null, bd = 2.4;
   for (const n of map.npcs) { const d = dist(n, P); if (d < bd) { bd = d; best = { k: 'npc', r: n }; } }
   for (const o of map.objs) { if (o.kind === 'anvil') continue; const d = dist(o, P); if (d < bd + 0.6) { bd = d; best = { k: 'obj', r: o }; } }
   for (const d_ of drops) { const d = dist(d_, P); if (d < Math.min(bd, 1.8)) { bd = d; best = { k: 'drop', r: d_ }; } }
+  const dr = nearDoor(DOOR_REACH);
+  if (dr && (!best || dr.d <= bd)) return { k: 'door', r: dr.wp, d: dr.d };
+  if (best) best.d = bd;
+  return best;
+}
+// Walk the last step onto the door's tile: core postMove fires the warp (or, when it is sealed, says why and steps back).
+function enterDoor(wp) {
+  if (!wp || !P || P.dead) return false;
+  const x = wp.x + 0.5, y = wp.y + 0.5;
+  face(P, { x, y }); P.target = null; P.goal = null; P.pending = null; P.sitting = false;
+  P.path = [{ x, y }];
+  return true;
+}
+function actInteract() {
+  const best = actPick();
   if (!best) { floatText(P, '...', 'miss'); return; }
+  if (best.k === 'door') { enterDoor(best.r); return; }
   face(P, best.r); if (best.k === 'npc') talkTo(best.r); else if (best.k === 'obj') useObj(best.r); else pickup(best.r);
 }
 

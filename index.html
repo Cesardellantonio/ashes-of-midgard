@@ -529,6 +529,31 @@ button.fc.cp:hover{background:#eaf0ff}
 .doorp.cave.below>div::after{border-bottom-color:#8a8072}.doorp.locked.below>div::after{border-bottom-color:#b04030}
 .doorp .di svg,.wms svg,.wmleg svg{width:13px;height:13px;display:block}
 .wmleg{display:inline-block;vertical-align:-2px;color:#a0701c}.wms i{display:inline-flex}
+/* UI round 11: key hints on the door / object prompts, the object prompt's states, minimap landmarks, tactics potions */
+.doorp kbd{margin-left:7px;min-width:17px;height:17px;padding:0 4px;box-sizing:border-box;display:inline-grid;place-items:center;font:900 10.5px var(--ui);color:#2a1a08;background:linear-gradient(#fff4d6,#dcb872);border:1px solid #5a3c14;border-radius:3px;box-shadow:0 1px 0 #2a1a08,inset 0 1px 0 #fff;text-shadow:none;letter-spacing:0}
+.doorp kbd.mk{font:800 9px var(--ui);text-transform:uppercase;letter-spacing:.06em;color:#f4e4c0;background:rgba(255,230,170,.12);border-color:rgba(255,220,150,.45);box-shadow:none}
+.objp.read .di{color:#e8d8b0}
+.objp.chest .di{color:#ffcf70}
+.objp.done>div{opacity:.7;border-color:#7a6a50}.objp.done>div::after{border-top-color:#7a6a50}.objp.done.below>div::after{border-bottom-color:#7a6a50}
+.objp.done .dv{color:#b8ac94}.objp.done .di{color:#a89878}.objp.done b{font-weight:700;color:#d8ccb4}
+.objp .ok{color:#a8e080;font-size:11px;margin-left:1px}
+.mml{position:absolute;inset:0;pointer-events:none;z-index:1}
+.lmk{position:absolute;width:0;height:0}
+.lmk i{position:absolute;left:-3.5px;top:-3.5px;width:5px;height:5px;background:#ffe6a8;border:1px solid #2a1a08;transform:rotate(45deg);box-shadow:0 0 3px rgba(255,210,120,.8)}
+.lmk b{position:absolute;white-space:nowrap;font:800 8.5px/10.5px var(--ui);color:#fff2d0;letter-spacing:0;text-shadow:0 0 2px #000,0 0 2px #000,0 1px 1px #000}
+.mml.loc .lmk b{font-size:9.5px;line-height:11.5px}
+.lmk.q{width:auto;height:auto;transform:translate(-50%,-50%);font:900 11px/1 var(--ui);color:rgba(255,238,196,.78);text-shadow:0 0 2px #000,0 0 3px #000,0 0 1px #000}
+.tach .tq{margin-left:auto;font:700 10px var(--ui);color:var(--faint);white-space:nowrap}
+.tach .btn.tq{padding:1px 7px;font-size:10.5px;color:#26304a}
+.tach .btn.tq.ready{color:#5a3200;border-color:#c07a10;background:linear-gradient(#fff4d0,#f4cf78);box-shadow:0 0 6px rgba(240,170,40,.55)}
+.tach .tq.on{color:#2f6fc0}.tach .tq.done{color:#6a8a3a}
+.pfq{position:absolute;right:-3px;top:-3px;z-index:2;width:14px;height:14px;border-radius:50%;display:grid;place-items:center;font:900 10px/1 var(--ui);color:#3a2000;background:radial-gradient(#fff2b0,#f0b030);border:1px solid #7a4a00;box-shadow:0 0 5px rgba(255,190,60,.8);animation:pfq 1.6s ease-in-out infinite}
+@keyframes pfq{50%{transform:scale(1.15)}}
+.tacpot{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.tacres{display:inline-flex;align-items:center;gap:0;font:700 10.5px var(--ui);color:var(--faint)}
+.tacres>span{margin-right:5px;font:800 9px var(--ui);text-transform:uppercase;letter-spacing:.07em}
+.tacres .btn{padding:0 6px;font-size:11px;line-height:17px;border-radius:0}.tacres .btn:first-of-type{border-radius:3px 0 0 3px}.tacres .btn:last-of-type{border-radius:0 3px 3px 0}
+.tacres b{min-width:22px;height:19px;box-sizing:border-box;display:inline-grid;place-items:center;border-top:1px solid #8290ae;border-bottom:1px solid #8290ae;background:#fff;color:#26304a;font:800 11px var(--ui)}
 @keyframes doorp{0%{opacity:0;transform:translate(-50%,4px)}100%{opacity:1;transform:translate(-50%,0)}}
 #dialog.sign{grid-template-columns:1fr;width:min(520px,calc(100vw - 24px))}
 #dialog.sign #dport{display:none}
@@ -847,7 +872,7 @@ button.fc.cp:hover{background:#eaf0ff}
       <div id="party" class="rwin" hidden><div class="rtb"><span>Party</span><span id="pcount"></span></div><div class="rbd"><div id="pfr"></div><div class="pff"><button class="btn" data-win="tactics">Tactics<kbd>T</kbd></button><button class="btn" data-sqchat="1">Chat<kbd>Enter</kbd></button></div></div></div>
     </div>
     <div id="tr">
-      <div id="mapbox" class="rwin"><div class="rtb"><span>Map</span></div><div class="mapw" id="mapw"><div class="mmw" id="mmw"><canvas id="minibase" width="300" height="300"></canvas><canvas id="mini" width="300" height="300"></canvas></div><div class="mmp" id="mmp"><i><svg viewBox="-8 -8 16 16" aria-hidden="true"><path d="M7 0L-5-5L-2 0L-5 5Z"/></svg></i></div><button class="mmz" id="mmz" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10L14.5 14.5M4.5 6.5H8.5"/><path class="pl" d="M6.5 4.5V8.5"/></svg></button></div><div id="mapname"><b id="mapn"></b><small id="mapc"></small></div></div>
+      <div id="mapbox" class="rwin"><div class="rtb"><span>Map</span></div><div class="mapw" id="mapw"><div class="mmw" id="mmw"><canvas id="minibase" width="300" height="300"></canvas><canvas id="mini" width="300" height="300"></canvas><div class="mml" id="mml" aria-hidden="true"></div></div><div class="mmp" id="mmp"><i><svg viewBox="-8 -8 16 16" aria-hidden="true"><path d="M7 0L-5-5L-2 0L-5 5Z"/></svg></i></div><button class="mmz" id="mmz" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10L14.5 14.5M4.5 6.5H8.5"/><path class="pl" d="M6.5 4.5V8.5"/></svg></button></div><div id="mapname"><b id="mapn"></b><small id="mapc"></small></div></div>
       <div id="deepcard" class="rwin" data-win="deep" title="The Deep Roots" hidden></div>
     </div>
     <div id="chatbox">
@@ -865,6 +890,7 @@ button.fc.cp:hover{background:#eaf0ff}
   <div id="banner"></div>
   <div id="rgnt"></div>
   <div id="doorp" class="doorp" hidden></div>
+  <div id="objp" class="doorp objp" hidden></div>
   <div id="dialog" class="rwin" hidden><div id="dtb" class="rtb" hidden><span id="dtbt"></span><button class="x" data-dclose="1" aria-label="Close">×</button></div><div id="dport" class="well"></div><div class="dmain"><div id="dplate"><span id="dname"></span><span id="dsub"></span></div><div id="dtext"></div><div id="dopts"></div></div></div>
   <div id="death" class="rwin" hidden><div class="rtb"><span>Notice</span></div><div class="rbd"><p><b>You have died.</b></p><p class="muted" id="deathz"></p><button class="btn big" id="bRespawn">Return to Save Point</button></div></div>
   <div id="title"></div>

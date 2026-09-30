@@ -1,0 +1,53 @@
+{
+ "id": "critter_gull",
+ "layer": "pet",
+ "body": "critter_gull",
+ "variant": null,
+ "layout": "blocks",
+ "blocksPerRow": 5,
+ "frameW": 96,
+ "frameH": 112,
+ "maxFrames": 6,
+ "anchor": [
+  48,
+  92
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "fly": {
+   "row": 1,
+   "frames": 6,
+   "fps": 12,
+   "loop": true
+  },
+  "attack": {
+   "row": 2,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "perch": {
+   "row": 3,
+   "frames": 2,
+   "fps": 2,
+   "loop": true
+  }
+ },
+ "hit": {
+  "attack": 3
+ },
+ "critter": "gull",
+ "flyZ": 30.0
+}

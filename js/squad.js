@@ -9,6 +9,8 @@
      - the companion AI (squadUpdate -> squadAllyTick -> squadThink): role gambits, formation, leash, dodging, kiting
      - saves (squadSerialize / squadRestore, called by js/ui.js serialize / applySave)
      - events (squadDispatch: rate limits, then squadEvent listeners and SQUAD_CHAT.event; offline barks)
+     - round 10: potions from the shared bag (squadPotion), parrying telegraphed lunges (squadParry*), and the eight
+       personal quests the companions offer (squadQuestTick / squadQuestOffer; data SQUAD_QUESTS in js/data/squad.js)
    Other teams' globals (SQUAD_CHAT, renderHotbar, CTRL, ...) are guarded with typeof.
    ========================================================= */
 const SQUAD_KEYS = ['F1', 'F2', 'F3', 'F4'];   // swap to party member 1-4 (the UI shows these labels); ` cycles
@@ -32,6 +34,7 @@ function squadEnsure() {
   if (!P) return null;
   if (PARTY && PARTY.members.indexOf(P) >= 0) return PARTY;
   PARTY = { members: [P], lead: 0, owner: P, fightT: time, idleT: time, ev: {}, wantLead: null };
+  SQQ.thanks.length = 0; SQQ.acc = 0;
   P.id = P.id || 'hero'; P.persona = null; squadAiInit(P, SQUAD_ROLE_OF[P.cls]);
   squadHookUI(); squadHookQuests();
   return PARTY;
@@ -39,8 +42,9 @@ function squadEnsure() {
 function squadAiInit(h, role) {
   const A = h.ai && typeof h.ai === 'object' ? h.ai : {};
   h.ai = Object.assign(A, { role: role || A.role || SQUAD_ROLE_OF[h.cls] || 'melee', stance: A.stance || 'aggressive', focus: null, focusMode: A.focusMode || null, hold: !!A.hold, follow: A.follow !== false,
-    t: 0, skT: 0, moveUntil: 0, pathT: 0, tauntT: 0, blockUntil: 0, flankT: 0, regroupT: 0, holdAt: null });
-  if (!SQUAD_ROLES[h.ai.role]) h.ai.role = 'melee';
+    potions: A.potions === 'off' ? 'off' : 'auto', reserve: squadReserve(A.reserve),
+    t: 0, skT: 0, moveUntil: 0, pathT: 0, tauntT: 0, blockUntil: 0, flankT: 0, regroupT: 0, holdAt: null, potT: 0, parryAt: 0, parryM: null, parryT: null });
+  if (!SQUAD_ROLES[h.ai.role]) h.ai.role = 'melee';   // (round 10: potions 'auto'|'off' and the bag reserve are tactics too)
   if (!SQUAD_STANCES[h.ai.stance]) h.ai.stance = 'aggressive';
   return h.ai;
 }
@@ -52,6 +56,7 @@ const squadHero = id => PARTY ? PARTY.members.find(h => h.id === id || h.persona
 const squadIndex = h => PARTY ? PARTY.members.indexOf(h) : 0;
 const squadLive = () => PARTY ? PARTY.members.filter(h => !h.dead) : (P && !P.dead ? [P] : []);
 function slog(msg, cls) { const q = HCTX.quiet; HCTX.quiet = 0; try { log(msg, cls); } finally { HCTX.quiet = q; } }
+const squadReserve = v => (v === undefined || v === null || v === '' || !Number.isFinite(+v)) ? (typeof SQUAD_POTIONS !== 'undefined' ? SQUAD_POTIONS.reserve : 3) : clamp(Math.round(+v), 0, 99);
 const squadBench = () => { const f = PARTY ? PARTY.owner.flags : P.flags; if (!f.squadBench || typeof f.squadBench !== 'object') f.squadBench = {}; return f.squadBench; };
 
 /* ---------- Building a companion ---------- */
@@ -143,6 +148,7 @@ function squadRecruit(id, o = {}) {
   else h = squadMakeHero(cd, lvl);
   const s = squadSlot(PARTY.members.length - 1, P); h.x = s.x; h.y = s.y; h.fx = P.fx; h.fy = P.fy;
   PARTY.members.push(h);
+  squadQuestResume(id, o.quiet); squadPerk(h);   // round 10: a paused personal quest picks up again; a perk earned
   withHero(h, compSyncOne, true);
   pillar(h, '#ffe8a0', true); burst(h.x, h.y, 30, '#ffe8a0', 20, 2.5); floatText(h, cd.name + '!', 'lvl'); Sfx.level();
   slog(`${cd.name} ${cd.title ? cd.title + ' ' : ''}joins your party (${CLASSES[h.cls].name}, Base Lv ${h.lvl}, ${SQUAD_ROLES[cd.role].name}). F${PARTY.members.length} takes control of them.`, 'lvl');
@@ -155,6 +161,7 @@ function squadDismiss(id, o = {}) {
   if (!PARTY) return squadFail('You travel alone.', o.quiet);
   const h = squadHero(id); if (!h || h === PARTY.owner) return squadFail('You cannot dismiss yourself.', o.quiet);
   if (h === P) { const to = PARTY.members.findIndex(x => x !== h && !x.dead); if (to < 0) return squadFail('Nobody else is standing to take over.', o.quiet); squadSwap(to, { quiet: true }); }
+  squadQuestPause(h, o.quiet);   // round 10: their personal quest waits (progress kept) until they rejoin
   const save = squadHeroSave(h); delete save.down; save.hp = null; squadBench()[h.persona] = save;
   const i = PARTY.members.indexOf(h); PARTY.members.splice(i, 1); PARTY.lead = PARTY.members.indexOf(P);
   for (const m of mobs) { if (m.target === h) m.target = null; if (m.taunt && m.taunt.h === h) m.taunt = null; }
@@ -205,7 +212,8 @@ function squadAutoSwap() {
 }
 
 /* ---------- Orders and tactics ---------- */
-// squadOrder(heroId | 'all', { stance?, focus?: 'target'|'nearest'|'boss'|null, hold?, follow? }). Returns how many heard it.
+// squadOrder(heroId | 'all', { stance?, focus?: 'target'|'nearest'|'boss'|null, hold?, follow?, potions?: 'auto'|'off', reserve?: 0-99 }).
+// Returns how many heard it.
 function squadOrder(id, o = {}) {
   if (!PARTY) return 0;
   const list = id === 'all' ? PARTY.members.filter(h => h !== P) : [squadHero(id)].filter(Boolean);
@@ -218,13 +226,16 @@ function squadOrder(id, o = {}) {
     if (o.hold === false) { A.hold = false; A.holdAt = null; }
     if (o.follow === true) { A.follow = true; A.hold = false; A.holdAt = null; A.regroupT = time + 2.5; A.t = 0; if (h !== P) { h.target = null; if (h.pending && h.pending.target && h.pending.target.kind === 'mob') h.pending = null; } }
     if (o.follow === false) A.follow = false;
+    if (o.potions === 'auto' || o.potions === 'off') A.potions = o.potions;   // round 10: potions from the shared bag
+    if ('reserve' in o && o.reserve !== null && o.reserve !== '' && Number.isFinite(+o.reserve)) A.reserve = squadReserve(+o.reserve);
   }
   UI.dirty = true;
   return n;
 }
 function squadTactics(id) {
   const h = squadHero(id); if (!h) return null; const A = h.ai || squadAiInit(h);
-  return { id: h.id, name: h.name, role: A.role, stance: A.stance, focus: A.focusMode || null, hold: !!A.hold, follow: A.follow !== false, controlled: h === P, dead: !!h.dead };
+  return { id: h.id, name: h.name, role: A.role, stance: A.stance, focus: A.focusMode || null, hold: !!A.hold, follow: A.follow !== false, controlled: h === P, dead: !!h.dead,
+    potions: A.potions === 'off' ? 'off' : 'auto', reserve: squadReserve(A.reserve) };
 }
 // Order words in a chat line -> a squadOrder object (or null). The offline chat uses it (SQUAD_ORDER_WORDS).
 function squadParseOrder(text) {
@@ -343,6 +354,7 @@ function squadUpdate(dt) {
   }
   for (const m of mobs) if (m.state === 'chase' && !m.dead && m.target) { PARTY.fightT = time; break; }
   if (time - PARTY.fightT > 45 && time - (PARTY.idleT || 0) > 120) { PARTY.idleT = time; squadEmit('idle', {}); }
+  SQQ.acc += dt; if (SQQ.acc >= 1) { const el = SQQ.acc; SQQ.acc = 0; squadQuestTick(el); }   // round 10: bond time, offers, perks (1 Hz)
 }
 // Songs are auras: allies within the singer's aura (+1 cell) share the song while they stay in it.
 function squadSongs() {
@@ -372,6 +384,7 @@ function squadAllyTick(dt, slot) {
   if (P.dash) { updateDash(dt); return; }
   heroRegen(dt);
   A.t -= dt; if (A.t <= 0) { A.t = SQUAD_AI.think; squadThink(A, slot); }
+  if (A.parryAt && squadParryTick(A)) { P.moving = false; return; }   // round 10: standing for a planned parry
   if (P.blocking) { P.moving = false; return; }
   const spd = S.move * surfMul(P);
   if (A.moveUntil > time && P.path && P.path.length && !P.casting) { followPath(P, dt, spd * 1.1); return; }
@@ -386,6 +399,7 @@ function squadThink(A, slot) {
   A.lastD = dl;
   if ((dl > SQUAD_AI.tele || A.stuckT > 2) && !(A.hold && A.holdAt)) { A.stuckT = 0; const s = squadSlot(slot, lead); P.x = s.x; P.y = s.y; P.path = null; P.target = null; P.pending = null; P.casting = null; burst(P.x, P.y, 20, '#c8d8ff', 10, 2); return; }
   if (squadDodge(A)) return;
+  if (A.potions !== 'off' && P.hp < S.maxhp * 0.5) squadPotion(A);   // round 10 (it does not use up the think)
   if (P.casting) return;
   if (P.pending && (A.pendT || 0) < time) P.pending = null;   // a skill it could not reach in time
   const regroup = !A.hold && (dl > SQUAD_AI.leash || A.regroupT > time);
@@ -641,6 +655,7 @@ function squadAway(fx, fy, d, lead) {
 function squadDodge(A) {
   let hit = null;
   for (const t of teles) { if (!t.m || t.m.dead) continue; const left = t.dur - t.t; if (left < 0.1) continue; if (hyp(P.x - t.x, P.y - t.y) <= t.r + 0.4) { hit = t; break; } }
+  if (hit && squadParryOk(A, hit)) { squadParryPlan(A, hit); return true; }   // round 10: front-liners parry a lunge instead
   let zx = 0, zy = 0, zr = 0;
   if (!hit) for (const z of zones) if (z.hostile && hyp(P.x - z.x, P.y - z.y) <= z.r + 0.2) { zx = z.x; zy = z.y; zr = z.r; break; }
   if (!hit && !zr) return false;
@@ -663,10 +678,205 @@ function squadFollow(A, slot, lead, force) {
   else { goNear(P, gx, gy); if (!P.path) goNear(P, lead.x, lead.y); }
 }
 
+/* =========================================================
+   Round 10: potions, parries, personal quests
+   ========================================================= */
+/* ---------- Potions from the shared bag ----------
+   (In the companion's context, from squadThink.) Under the stance's threshold (SQUAD_POTIONS.thr: aggressive 30 %,
+   defensive 35 %, passive 45 %) and in a fight, an AI-controlled hero drinks the smallest healing potion that covers
+   3/4 of the way back to 70 % (else the biggest it may use), at most one every SQUAD_POTIONS.cd seconds, and never
+   takes the bag below its reserve of that potion. Tactics: potions 'auto'|'off', reserve N (squadOrder). */
+function squadPotion(A) {
+  if (A.potions === 'off' || time < (A.potT || 0) || P.potCD > 0 || P.dead) return false;
+  const C = typeof SQUAD_POTIONS !== 'undefined' ? SQUAD_POTIONS : null; if (!C) return false;
+  if (P.hp >= S.maxhp * (C.thr[A.stance] || 0.3) || time - PARTY.fightT > 5) return false;   // (only when hurt in a fight)
+  const id = squadPotionPick(P.hp, S.maxhp, squadReserve(A.reserve));
+  A.potT = time + (id ? C.cd : 1);
+  const it = id && P.inv.find(x => x.id === id); if (!it) return false;
+  const hp0 = P.hp; useItem(it);
+  if (P.hp <= hp0) return false;
+  const n = ITEMS[id].name; slog(`${P.name} drinks ${/^[AEIOU]/.test(n) ? 'an' : 'a'} ${n}.`, 'sys');
+  return true;
+}
+// The potion for a hero at hp of mh: the weakest tier that heals 3/4 of the gap to SQUAD_POTIONS.fill, else the
+// strongest one there is; only tiers with more than `reserve` in the bag.
+function squadPotionPick(hp, mh, reserve) {
+  const C = SQUAD_POTIONS, want = Math.max(1, mh * C.fill - hp); let big = null;
+  for (const id of C.tiers) {
+    const t = ITEMS[id]; if (!t || !t.heal || countItem(id) <= reserve) continue;
+    if ((t.heal[0] + t.heal[1]) / 2 >= want * 0.75) return id;
+    big = id;
+  }
+  return big;
+}
+
+/* ---------- Parrying a telegraphed lunge ----------
+   A tank or melee companion standing in a lunge's path (a telegraph with a.parry that is not unblockable) plans a
+   parry instead of stepping out: it waits in place and raises its guard 0.1 s before its part of the lunge lands,
+   facing where the beast will be (the lunge carries it past), which is the player's parry window (block < 0.2 s
+   before the blow: the beast is staggered for a.parry seconds). Deterministic; one comparison per tick while planned. */
+function squadParryOk(A, t) {
+  const a = t.a; if (!a || a.id !== 'lunge' || !a.parry || (a.hit && a.hit.unblockable)) return false;
+  return (A.role === 'tank' || A.role === 'melee') && P.stamina >= 25 && !P.casting && !P.dash;
+}
+function squadParryPlan(A, t) {
+  A.parryAt = time + Math.max(0, t.dur - t.t - 0.1); A.parryM = t.m; A.parryT = t;
+  P.path = null; A.moveUntil = 0; P.pending = null;
+}
+// (Per tick while a parry is planned.) True while the hero should stand still.
+function squadParryTick(A) {
+  const t = A.parryT, m = A.parryM;
+  if (!m || m.dead || !t || teles.indexOf(t) < 0) { A.parryAt = 0; A.parryM = A.parryT = null; return false; }
+  if (time < A.parryAt) return true;
+  A.parryAt = 0; A.parryM = A.parryT = null;
+  let fx = m.x, fy = m.y;
+  if (m.leap) { const L = m.leap, k = Math.min(1, (L.t + Math.max(0, t.dur - t.t)) / (L.dur || 1)); fx = L.sx + (L.tx - L.sx) * k; fy = L.sy + (L.ty - L.sy) * k; }
+  face(P, { x: fx, y: fy }); P.blocking = true; P.blockStart = time; A.blockUntil = time + 0.45; P.path = null;
+  return true;
+}
+
+/* ---------- Personal quests (SQUAD_QUESTS in js/data/squad.js; quest ids sq_<companion>) ----------
+   Saved state per companion in the party's flags: P.flags.squadQ[id] = { bond (seconds in the party), snooze (bond
+   seconds before asking again after "Not now"), stash (the paused quest's progress while they are dismissed) }.
+   The companion brings it up (a bark, then a dialog: Accept / Not now) when you are out of a fight; the quest
+   completes itself on its last objective (turnIn null), their perk is applied, and they thank you (a bark and the
+   closing pages). Dismissing them pauses it; recruiting them again resumes it where it was. */
+const SQQ = { acc: 0, offering: null, busy: false, gap: 0, thanks: [] };
+const squadQuestDef = id => typeof SQUAD_QUESTS !== 'undefined' && id ? SQUAD_QUESTS[id] || null : null;
+function squadQState(cid, make) {
+  const own = PARTY ? PARTY.owner : P, f = own && own.flags; if (!f) return null;
+  if (!f.squadQ || typeof f.squadQ !== 'object') { if (!make) return null; f.squadQ = {}; }
+  return f.squadQ[cid] || (make ? (f.squadQ[cid] = { bond: 0 }) : null);
+}
+// req.test of the sq_* quests: only while their companion is offering them.
+function squadQuestOffering(qid) { return !!qid && SQQ.offering === qid; }
+// 'locked' (not yet: level or bond time) | 'ready' (they will offer it) | 'active' | 'paused' | 'done' | null.
+function squadQuestInfo(cid) {
+  const q = squadQuestDef(cid), own = PARTY ? PARTY.owner : P; if (!q || !own || !own.quests) return null;
+  const st = squadQState(cid) || { bond: 0 }, u = q.unlock;
+  const status = own.quests.done[q.id] ? 'done' : own.quests.active[q.id] ? 'active' : st.stash ? 'paused' : squadQuestDue(q, st) ? 'ready' : 'locked';
+  return { id: q.id, name: q.name, status, bond: Math.floor(st.bond || 0), needLvl: u.lvl, needMins: u.mins, nowLvl: u.now, perk: q.perk.name, title: q.reward.title };
+}
+function squadQuestDue(q, st) {
+  const lv = (PARTY ? PARTY.owner : P).lvl, u = q.unlock, b = st.bond || 0;
+  return lv >= u.lvl && b >= (st.snooze || 0) && (b >= u.mins * 60 || (lv >= u.now && b >= 90));   // (never in the first 90 s)
+}
+// Out of a fight (nothing chasing for 4 s, no monster within 7 cells), nothing else on screen: a moment to speak up.
+function squadQuestCalm() {
+  if (SQQ.busy || !started || !P || P.dead || time < SQQ.gap || time - PARTY.fightT < 4 || typeof dialog !== 'function') return false;
+  if (typeof CINE !== 'undefined' && CINE && (CINE.active || CINE.busy)) return false;
+  for (const m of mobsNear(P.x, P.y, 7)) if (!m.dead && !m.d.inert) return false;   // (not in the middle of a hunt either)
+  const d = typeof $ === 'function' ? $('dialog') : null; return !d || d.hidden;
+}
+// (1 Hz, from squadUpdate.) Bond time, resuming, perks, then at most one offer or one thank-you.
+function squadQuestTick(el) {
+  if (typeof SQUAD_QUESTS === 'undefined' || !P.quests) return;
+  let offer = null;
+  for (const h of PARTY.members) {
+    const q = squadQuestDef(h.persona); if (!q) continue;
+    const st = squadQState(h.persona, true); st.bond = (st.bond || 0) + el;
+    if (P.quests.done[q.id]) { squadPerk(h); continue; }
+    if (st.stash) { squadQuestResume(h.persona); continue; }
+    if (!offer && !h.dead && !P.quests.active[q.id] && squadQuestDue(q, st)) offer = h.persona;
+  }
+  if (typeof window !== 'undefined' && window.AOM_SQUAD_QUESTS === false) return;   // (tests: no offers, no thank-yous)
+  if (!squadQuestCalm()) return;
+  if (SQQ.thanks.length) squadQuestThanks(SQQ.thanks.shift());
+  else if (offer) squadQuestOffer(offer);
+}
+// A companion's line in the log and over their head (the squad chat gets it too when js/squad-chat.js offers `say`).
+function squadSay(h, text) {
+  if (!h || !text) return; const t = squadFill(text).slice(0, 160);
+  slog(`${h.name}: ${t}`, 'party'); floatText(h, '💬', 'info', true);
+  if (typeof SQUAD_CHAT !== 'undefined' && SQUAD_CHAT && typeof SQUAD_CHAT.say === 'function') { try { SQUAD_CHAT.say(h.id, t); } catch (e) { console.error(e); } }
+}
+// The companion offers their quest: a bark, the offer pages, Accept / Not now. force: skip the bond / level check.
+// Resolves true when accepted.
+async function squadQuestOffer(cid, o = {}) {
+  const q = squadQuestDef(cid), h = squadHero(cid), cd = typeof COMPANION_BY_ID !== 'undefined' ? COMPANION_BY_ID[cid] : null;
+  if (!q || !h || !cd || !PARTY || SQQ.busy || P.quests.done[q.id] || P.quests.active[q.id]) return false;
+  const st = squadQState(cid, true); if (st.stash) return squadQuestResume(cid);
+  if (!o.force && !squadQuestDue(q, st)) return false;
+  SQQ.busy = true; SQQ.gap = time + 20;
+  const N = `${cd.name} ${cd.title}`, pages = q.offer.slice();
+  try {
+    squadSay(h, q.bark.offer);
+    for (let i = 0; i < pages.length - 1; i++) { const r = await dialog(N, pages[i], ['Next']); if (r < 0) { squadQuestSnooze(st); return false; } }
+    const perk = `Perk for ${esc(cd.name)}: ${esc(q.perk.name)} (${squadBonusText(q.perk.bonus)})`, title = TITLES[q.reward.title] ? `Title: ${esc(TITLES[q.reward.title])} · ` : '';
+    const r = await dialog(N, `${pages[pages.length - 1]}<br><br><b>${esc(q.name)}</b>${typeof questObjHTML === 'function' ? questObjHTML(q.id).replace(/<b>0\/\d+<\/b>/g, '') : ''}<br><i>Reward: ${title}${perk}</i>`, ['Accept', 'Not now']);
+    if (typeof $ === 'function' && $('dialog')) $('dialog').hidden = true;
+    if (r !== 0) { squadQuestSnooze(st); slog(`${cd.name} nods. “Later, then.”`, 'party'); return false; }
+    SQQ.offering = q.id; const ok = questAccept(q.id); SQQ.offering = null;
+    return ok;
+  } finally { SQQ.busy = false; SQQ.offering = null; }
+}
+function squadQuestSnooze(st) { st.snooze = (st.bond || 0) + 300; SQQ.gap = time + 20; }
+function squadBonusText(b) { return Object.keys(b).map(k => typeof bonusLine === 'function' ? bonusLine(k, b[k]) : `+${b[k]} ${k}`).join(', '); }
+// Dismissed: the quest leaves the log with its progress (P.flags.squadQ[id].stash) until the companion comes back.
+function squadQuestPause(h, quiet) {
+  const q = h && squadQuestDef(h.persona); if (!q || !P || !P.quests || !P.quests.active[q.id]) return false;
+  squadQState(h.persona, true).stash = P.quests.active[q.id]; delete P.quests.active[q.id];
+  if (P.quests.track === q.id) P.quests.track = typeof questPickTrack === 'function' ? questPickTrack() : null;
+  if (!quiet) slog(`${q.name} is paused until ${h.name} rejoins you.`, 'quest');
+  UI.dirty = true; return true;
+}
+function squadQuestResume(cid, quiet) {
+  const q = squadQuestDef(cid), st = squadQState(cid); if (!q || !st || !st.stash) return false;
+  const a = st.stash; delete st.stash;
+  if (P.quests.done[q.id] || P.quests.active[q.id] || !a || typeof a !== 'object') return false;
+  a.p = Array.isArray(a.p) ? a.p : []; a.d = Array.isArray(a.d) ? a.d : []; P.quests.active[q.id] = a;
+  if (!P.quests.track) P.quests.track = q.id;
+  if (!quiet) slog(`${q.name} continues: ${COMPANION_BY_ID[cid].name} is back.`, 'quest');
+  UI.dirty = true; if (typeof questRefresh === 'function') questRefresh({ silent: !!quiet });
+  return true;
+}
+// After a load: a personal quest whose companion is not in the party is paused, and one whose companion is, resumed.
+function squadQuestSync() {
+  if (typeof SQUAD_QUESTS === 'undefined' || !P || !P.quests || !P.flags) return;
+  for (const cid in SQUAD_QUESTS) {
+    const q = SQUAD_QUESTS[cid], here = PARTY && PARTY.members.find(h => h.persona === cid), st = squadQState(cid);
+    if (P.quests.active[q.id] && !here) { squadQState(cid, true).stash = P.quests.active[q.id]; delete P.quests.active[q.id]; if (P.quests.track === q.id) P.quests.track = null; }
+    else if (st && st.stash && here) squadQuestResume(cid, true);
+  }
+}
+// The perk: a permanent buff (perm, never elapses) on the companion once their quest is done. Buffs are runtime, so
+// it is re-applied after a load, a recruit or anything that clears buffs (checked once a second).
+function squadPerk(h) {
+  const q = h && squadQuestDef(h.persona), own = PARTY ? PARTY.owner : P;
+  if (!q || !q.perk || !h.buffs || h.buffs.sq_perk || !own || !own.quests || !own.quests.done[q.id]) return false;
+  h.buffs.sq_perk = { name: q.perk.name, icon: q.perk.icon, t: 1e9, max: 1e9, bonus: Object.assign({}, q.perk.bonus), perm: true, perk: h.persona };
+  withHero(h, calcStats); if (h === P && typeof renderBuffs === 'function') renderBuffs();
+  return true;
+}
+// A companion's thanks after their quest: the closing pages (queued until you are out of a fight).
+async function squadQuestThanks(cid) {
+  const q = squadQuestDef(cid), cd = COMPANION_BY_ID[cid]; if (!q || !cd || SQQ.busy) return false;
+  SQQ.busy = true; SQQ.gap = time + 10;
+  try {
+    const N = `${cd.name} ${cd.title}`, pages = q.done;
+    for (let i = 0; i < pages.length; i++) { const r = await dialog(N, pages[i] + (i === pages.length - 1 ? `<br><br><i>${esc(cd.name)} gains ${esc(q.perk.name)}: ${squadBonusText(q.perk.bonus)} (permanent).</i>` : ''), [i < pages.length - 1 ? 'Next' : 'Close']); if (r < 0) break; }
+    if (typeof $ === 'function' && $('dialog')) $('dialog').hidden = true;
+    return true;
+  } finally { SQQ.busy = false; }
+}
+// questOn('complete'): the perk, the title on your own hero, the companion's bark, their thanks.
+function squadHookPersonal() {
+  if (squadHookPersonal.done || typeof questOn !== 'function') return; squadHookPersonal.done = true;
+  questOn('complete', (q, o) => {
+    if (!q || !q.squad || !PARTY) return;
+    const h = squadHero(q.squad), own = PARTY.owner, t = q.reward && q.reward.title;
+    if (h) squadPerk(h);
+    if (t && P !== own && P.title === t) { P.title = null; if (!own.title) own.title = t; }   // grantTitle wears it on whoever you control
+    if (o && (o.silent || o.noReward)) return;
+    const d = squadQuestDef(q.squad); if (h && d) squadSay(h, d.bark.done);
+    SQQ.thanks.push(q.squad);
+  });
+}
+
 /* ---------- Saves (js/ui.js serialize / applySave call these) ---------- */
 function squadHeroSave(h) {
   const o = {}; for (const k of SQUAD_HERO_KEYS) o[k] = h[k];
-  const A = h.ai || {}; o.ai = { role: A.role, stance: A.stance, focus: A.focusMode || null, hold: !!A.hold, follow: A.follow !== false };
+  const A = h.ai || {}; o.ai = { role: A.role, stance: A.stance, focus: A.focusMode || null, hold: !!A.hold, follow: A.follow !== false, potions: A.potions === 'off' ? 'off' : 'auto', reserve: squadReserve(A.reserve) };
   if (h.dead) o.down = true;
   if (h === (PARTY && PARTY.owner)) o.owner = true;
   return o;
@@ -682,15 +892,16 @@ function squadSerialize(o) {
 // applySave(o): rebuild the party around the hero applySave just made (P). An old save (no party) is a party of one.
 function squadRestore(o) {
   PARTY = null;
-  if (!o || !Array.isArray(o.party) || o.party.length < 2 || !P) return;
+  if (!o || !Array.isArray(o.party) || o.party.length < 2 || !P) { squadQuestSync(); return; }
   squadEnsure();
-  const own = o.party.find(e => e && e.owner); if (own && own.ai) Object.assign(P.ai, { stance: own.ai.stance || 'aggressive', focusMode: own.ai.focus || null });
+  const own = o.party.find(e => e && e.owner); if (own && own.ai) Object.assign(P.ai, { stance: own.ai.stance || 'aggressive', focusMode: own.ai.focus || null, potions: own.ai.potions === 'off' ? 'off' : 'auto', reserve: squadReserve(own.ai.reserve) });
   for (const e of o.party) {
     if (!e || e.owner || PARTY.members.length >= SQUAD_MAX) continue;
     try { const h = squadHeroFrom(e); if (h) PARTY.members.push(h); } catch (err) { console.error(err); }
   }
   const lead = clamp(o.lead | 0, 0, PARTY.members.length - 1);
   if (lead && !PARTY.members[lead].dead) PARTY.wantLead = lead;
+  squadQuestSync(); for (const h of PARTY.members) squadPerk(h);   // round 10: personal quests paused / resumed, perks
 }
 function squadHeroFrom(e) {
   const cd = typeof COMPANION_BY_ID !== 'undefined' ? COMPANION_BY_ID[e.persona || e.id] : null; if (!cd && !e.name) return null;
@@ -704,7 +915,7 @@ function squadHeroFrom(e) {
   h.hot = Array.isArray(h.hot) ? h.hot.slice(0, 9) : []; while (h.hot.length < 9) h.hot.push(null);
   const op = e.pet; h.pet = op && typeof PETS !== 'undefined' && PETS[op.type] ? { type: op.type, name: String(op.name || MOBS[op.type].name).slice(0, 16), hunger: clamp(+op.hunger || 0, 0, 100), intim: clamp(+op.intim || 1, 1, 1000), t: +op.t || 0 } : null;
   h.mounted = !!e.mounted && !!PARTY.owner.flags.warg && MOUNT_CLASSES.includes(h.cls);
-  squadAiInit(h, (e.ai && e.ai.role) || (cd && cd.role)); if (e.ai) Object.assign(h.ai, { stance: SQUAD_STANCES[e.ai.stance] ? e.ai.stance : 'aggressive', focusMode: SQUAD_FOCUS.includes(e.ai.focus) ? e.ai.focus : null, hold: !!e.ai.hold, follow: e.ai.follow !== false });
+  squadAiInit(h, (e.ai && e.ai.role) || (cd && cd.role)); if (e.ai) Object.assign(h.ai, { stance: SQUAD_STANCES[e.ai.stance] ? e.ai.stance : 'aggressive', focusMode: SQUAD_FOCUS.includes(e.ai.focus) ? e.ai.focus : null, hold: !!e.ai.hold, follow: e.ai.follow !== false, potions: e.ai.potions === 'off' ? 'off' : 'auto', reserve: squadReserve(e.ai.reserve) });
   withHero(h, () => { resetRuntime(); calcStats(); P.hp = clamp(+e.hp || S.maxhp, 1, S.maxhp); P.sp = clamp(e.sp === undefined || e.sp === null ? S.maxsp : +e.sp, 0, S.maxsp); if (e.down) { P.dead = true; P.hp = 0; P.deathShown = true; } });
   return h;
 }
@@ -717,7 +928,7 @@ function squadHookUI() {
 }
 // Quest completions become 'quest_done' events.
 function squadHookQuests() { if (squadHookQuests.done || typeof questOn !== 'function') return; squadHookQuests.done = true; questOn('complete', q => squadEmit('quest_done', { quest: q })); }
-if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => { squadHookUI(); squadHookQuests(); });
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => { squadHookUI(); squadHookQuests(); squadHookPersonal(); });
 
 /* ---------- Events ---------- */
 // Minimum seconds between two events of a type (low_hp is also once per dip per hero, idle once per 2 min).

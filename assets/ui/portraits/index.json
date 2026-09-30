@@ -243,6 +243,132 @@
    "sad": "hrodny_sad.png",
    "angry": "hrodny_angry.png",
    "surprised": "hrodny_surprised.png"
+  },
+  "asa": {
+   "neutral": "asa_neutral.png",
+   "happy": "asa_happy.png",
+   "sad": "asa_sad.png",
+   "angry": "asa_angry.png",
+   "surprised": "asa_surprised.png"
+  },
+  "haki": {
+   "neutral": "haki_neutral.png",
+   "happy": "haki_happy.png",
+   "sad": "haki_sad.png",
+   "angry": "haki_angry.png",
+   "surprised": "haki_surprised.png"
+  },
+  "bersi": {
+   "neutral": "bersi_neutral.png",
+   "happy": "bersi_happy.png",
+   "sad": "bersi_sad.png",
+   "angry": "bersi_angry.png",
+   "surprised": "bersi_surprised.png"
+  },
+  "oddny": {
+   "neutral": "oddny_neutral.png",
+   "happy": "oddny_happy.png",
+   "sad": "oddny_sad.png",
+   "angry": "oddny_angry.png",
+   "surprised": "oddny_surprised.png"
+  },
+  "toki": {
+   "neutral": "toki_neutral.png",
+   "happy": "toki_happy.png",
+   "sad": "toki_sad.png",
+   "angry": "toki_angry.png",
+   "surprised": "toki_surprised.png"
+  },
+  "bardr": {
+   "neutral": "bardr_neutral.png",
+   "happy": "bardr_happy.png",
+   "sad": "bardr_sad.png",
+   "angry": "bardr_angry.png",
+   "surprised": "bardr_surprised.png"
+  },
+  "eyvind": {
+   "neutral": "eyvind_neutral.png",
+   "happy": "eyvind_happy.png",
+   "sad": "eyvind_sad.png",
+   "angry": "eyvind_angry.png",
+   "surprised": "eyvind_surprised.png"
+  },
+  "gyda": {
+   "neutral": "gyda_neutral.png",
+   "happy": "gyda_happy.png",
+   "sad": "gyda_sad.png",
+   "angry": "gyda_angry.png",
+   "surprised": "gyda_surprised.png"
+  },
+  "thorgeir": {
+   "neutral": "thorgeir_neutral.png",
+   "happy": "thorgeir_happy.png",
+   "sad": "thorgeir_sad.png",
+   "angry": "thorgeir_angry.png",
+   "surprised": "thorgeir_surprised.png"
+  },
+  "hallbera": {
+   "neutral": "hallbera_neutral.png",
+   "happy": "hallbera_happy.png",
+   "sad": "hallbera_sad.png",
+   "angry": "hallbera_angry.png",
+   "surprised": "hallbera_surprised.png"
+  },
+  "asvor": {
+   "neutral": "asvor_neutral.png",
+   "happy": "asvor_happy.png",
+   "sad": "asvor_sad.png",
+   "angry": "asvor_angry.png",
+   "surprised": "asvor_surprised.png"
+  },
+  "kolfinna": {
+   "neutral": "kolfinna_neutral.png",
+   "happy": "kolfinna_happy.png",
+   "sad": "kolfinna_sad.png",
+   "angry": "kolfinna_angry.png",
+   "surprised": "kolfinna_surprised.png"
+  },
+  "unnr": {
+   "neutral": "unnr_neutral.png",
+   "happy": "unnr_happy.png",
+   "sad": "unnr_sad.png",
+   "angry": "unnr_angry.png",
+   "surprised": "unnr_surprised.png"
+  },
+  "hearth_oddny": {
+   "neutral": "hearth_oddny_neutral.png",
+   "happy": "hearth_oddny_happy.png",
+   "sad": "hearth_oddny_sad.png",
+   "angry": "hearth_oddny_angry.png",
+   "surprised": "hearth_oddny_surprised.png"
+  },
+  "hearth_hjalti": {
+   "neutral": "hearth_hjalti_neutral.png",
+   "happy": "hearth_hjalti_happy.png",
+   "sad": "hearth_hjalti_sad.png",
+   "angry": "hearth_hjalti_angry.png",
+   "surprised": "hearth_hjalti_surprised.png"
+  },
+  "temple_ingunn": {
+   "neutral": "temple_ingunn_neutral.png",
+   "happy": "temple_ingunn_happy.png",
+   "sad": "temple_ingunn_sad.png",
+   "angry": "temple_ingunn_angry.png",
+   "surprised": "temple_ingunn_surprised.png"
+  },
+  "salt_steward": {
+   "neutral": "salt_steward_neutral.png",
+   "happy": "salt_steward_happy.png",
+   "sad": "salt_steward_sad.png",
+   "angry": "salt_steward_angry.png",
+   "surprised": "salt_steward_surprised.png"
+  },
+  "forge_hjordis": {
+   "neutral": "forge_hjordis_neutral.png",
+   "happy": "forge_hjordis_happy.png",
+   "sad": "forge_hjordis_sad.png",
+   "angry": "forge_hjordis_angry.png",
+   "surprised": "forge_hjordis_surprised.png"
   }
  },
  "classes": {
