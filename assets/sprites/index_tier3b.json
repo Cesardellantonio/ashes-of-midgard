@@ -1,0 +1,280 @@
+{
+ "sheets": [
+  {
+   "id": "fenris_stalker_f.body",
+   "layer": "body",
+   "body": "fenris_stalker_f",
+   "variant": null
+  },
+  {
+   "id": "fenris_stalker_f.hair_long",
+   "layer": "hair",
+   "body": "fenris_stalker_f",
+   "variant": "long"
+  },
+  {
+   "id": "fenris_stalker_f.hair_spiky",
+   "layer": "hair",
+   "body": "fenris_stalker_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "fenris_stalker_f.weapon_bow",
+   "layer": "weapon",
+   "body": "fenris_stalker_f",
+   "variant": "bow"
+  },
+  {
+   "id": "fenris_stalker_f.weapon_dagger",
+   "layer": "weapon",
+   "body": "fenris_stalker_f",
+   "variant": "dagger"
+  },
+  {
+   "id": "fenris_stalker_m.body",
+   "layer": "body",
+   "body": "fenris_stalker_m",
+   "variant": null
+  },
+  {
+   "id": "fenris_stalker_m.hair_long",
+   "layer": "hair",
+   "body": "fenris_stalker_m",
+   "variant": "long"
+  },
+  {
+   "id": "fenris_stalker_m.hair_spiky",
+   "layer": "hair",
+   "body": "fenris_stalker_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "fenris_stalker_m.weapon_bow",
+   "layer": "weapon",
+   "body": "fenris_stalker_m",
+   "variant": "bow"
+  },
+  {
+   "id": "fenris_stalker_m.weapon_dagger",
+   "layer": "weapon",
+   "body": "fenris_stalker_m",
+   "variant": "dagger"
+  },
+  {
+   "id": "bragi_voice_f.body",
+   "layer": "body",
+   "body": "bragi_voice_f",
+   "variant": null
+  },
+  {
+   "id": "bragi_voice_f.hair_long",
+   "layer": "hair",
+   "body": "bragi_voice_f",
+   "variant": "long"
+  },
+  {
+   "id": "bragi_voice_f.hair_spiky",
+   "layer": "hair",
+   "body": "bragi_voice_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "bragi_voice_f.weapon_bow",
+   "layer": "weapon",
+   "body": "bragi_voice_f",
+   "variant": "bow"
+  },
+  {
+   "id": "bragi_voice_f.weapon_lute",
+   "layer": "weapon",
+   "body": "bragi_voice_f",
+   "variant": "lute"
+  },
+  {
+   "id": "bragi_voice_f.weapon_whip",
+   "layer": "weapon",
+   "body": "bragi_voice_f",
+   "variant": "whip"
+  },
+  {
+   "id": "bragi_voice_m.body",
+   "layer": "body",
+   "body": "bragi_voice_m",
+   "variant": null
+  },
+  {
+   "id": "bragi_voice_m.hair_long",
+   "layer": "hair",
+   "body": "bragi_voice_m",
+   "variant": "long"
+  },
+  {
+   "id": "bragi_voice_m.hair_spiky",
+   "layer": "hair",
+   "body": "bragi_voice_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "bragi_voice_m.weapon_bow",
+   "layer": "weapon",
+   "body": "bragi_voice_m",
+   "variant": "bow"
+  },
+  {
+   "id": "bragi_voice_m.weapon_lute",
+   "layer": "weapon",
+   "body": "bragi_voice_m",
+   "variant": "lute"
+  },
+  {
+   "id": "bragi_voice_m.weapon_whip",
+   "layer": "weapon",
+   "body": "bragi_voice_m",
+   "variant": "whip"
+  },
+  {
+   "id": "valkyrie_f.body",
+   "layer": "body",
+   "body": "valkyrie_f",
+   "variant": null
+  },
+  {
+   "id": "valkyrie_f.hair_long",
+   "layer": "hair",
+   "body": "valkyrie_f",
+   "variant": "long"
+  },
+  {
+   "id": "valkyrie_f.hair_spiky",
+   "layer": "hair",
+   "body": "valkyrie_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "valkyrie_f.weapon_book",
+   "layer": "weapon",
+   "body": "valkyrie_f",
+   "variant": "book"
+  },
+  {
+   "id": "valkyrie_f.weapon_mace",
+   "layer": "weapon",
+   "body": "valkyrie_f",
+   "variant": "mace"
+  },
+  {
+   "id": "valkyrie_f.weapon_spear",
+   "layer": "weapon",
+   "body": "valkyrie_f",
+   "variant": "spear"
+  },
+  {
+   "id": "valkyrie_f.weapon_staff",
+   "layer": "weapon",
+   "body": "valkyrie_f",
+   "variant": "staff"
+  },
+  {
+   "id": "valkyrie_m.body",
+   "layer": "body",
+   "body": "valkyrie_m",
+   "variant": null
+  },
+  {
+   "id": "valkyrie_m.hair_long",
+   "layer": "hair",
+   "body": "valkyrie_m",
+   "variant": "long"
+  },
+  {
+   "id": "valkyrie_m.hair_spiky",
+   "layer": "hair",
+   "body": "valkyrie_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "valkyrie_m.weapon_book",
+   "layer": "weapon",
+   "body": "valkyrie_m",
+   "variant": "book"
+  },
+  {
+   "id": "valkyrie_m.weapon_mace",
+   "layer": "weapon",
+   "body": "valkyrie_m",
+   "variant": "mace"
+  },
+  {
+   "id": "valkyrie_m.weapon_spear",
+   "layer": "weapon",
+   "body": "valkyrie_m",
+   "variant": "spear"
+  },
+  {
+   "id": "valkyrie_m.weapon_staff",
+   "layer": "weapon",
+   "body": "valkyrie_m",
+   "variant": "staff"
+  },
+  {
+   "id": "berserkr_f.body",
+   "layer": "body",
+   "body": "berserkr_f",
+   "variant": null
+  },
+  {
+   "id": "berserkr_f.hair_long",
+   "layer": "hair",
+   "body": "berserkr_f",
+   "variant": "long"
+  },
+  {
+   "id": "berserkr_f.hair_spiky",
+   "layer": "hair",
+   "body": "berserkr_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "berserkr_f.weapon_knuckle",
+   "layer": "weapon",
+   "body": "berserkr_f",
+   "variant": "knuckle"
+  },
+  {
+   "id": "berserkr_f.weapon_mace",
+   "layer": "weapon",
+   "body": "berserkr_f",
+   "variant": "mace"
+  },
+  {
+   "id": "berserkr_m.body",
+   "layer": "body",
+   "body": "berserkr_m",
+   "variant": null
+  },
+  {
+   "id": "berserkr_m.hair_long",
+   "layer": "hair",
+   "body": "berserkr_m",
+   "variant": "long"
+  },
+  {
+   "id": "berserkr_m.hair_spiky",
+   "layer": "hair",
+   "body": "berserkr_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "berserkr_m.weapon_knuckle",
+   "layer": "weapon",
+   "body": "berserkr_m",
+   "variant": "knuckle"
+  },
+  {
+   "id": "berserkr_m.weapon_mace",
+   "layer": "weapon",
+   "body": "berserkr_m",
+   "variant": "mace"
+  }
+ ]
+}

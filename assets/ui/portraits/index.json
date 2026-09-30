@@ -124,6 +124,118 @@
    "sad": "hel_sad.png",
    "angry": "hel_angry.png",
    "surprised": "hel_surprised.png"
+  },
+  "fulla": {
+   "neutral": "fulla_neutral.png",
+   "happy": "fulla_happy.png",
+   "sad": "fulla_sad.png",
+   "angry": "fulla_angry.png",
+   "surprised": "fulla_surprised.png"
+  },
+  "gna": {
+   "neutral": "gna_neutral.png",
+   "happy": "gna_happy.png",
+   "sad": "gna_sad.png",
+   "angry": "gna_angry.png",
+   "surprised": "gna_surprised.png"
+  },
+  "grimr": {
+   "neutral": "grimr_neutral.png",
+   "happy": "grimr_happy.png",
+   "sad": "grimr_sad.png",
+   "angry": "grimr_angry.png",
+   "surprised": "grimr_surprised.png"
+  },
+  "thordis": {
+   "neutral": "thordis_neutral.png",
+   "happy": "thordis_happy.png",
+   "sad": "thordis_sad.png",
+   "angry": "thordis_angry.png",
+   "surprised": "thordis_surprised.png"
+  },
+  "ulfar": {
+   "neutral": "ulfar_neutral.png",
+   "happy": "ulfar_happy.png",
+   "sad": "ulfar_sad.png",
+   "angry": "ulfar_angry.png",
+   "surprised": "ulfar_surprised.png"
+  },
+  "hallgerd": {
+   "neutral": "hallgerd_neutral.png",
+   "happy": "hallgerd_happy.png",
+   "sad": "hallgerd_sad.png",
+   "angry": "hallgerd_angry.png",
+   "surprised": "hallgerd_surprised.png"
+  },
+  "ketill": {
+   "neutral": "ketill_neutral.png",
+   "happy": "ketill_happy.png",
+   "sad": "ketill_sad.png",
+   "angry": "ketill_angry.png",
+   "surprised": "ketill_surprised.png"
+  },
+  "orm": {
+   "neutral": "orm_neutral.png",
+   "happy": "orm_happy.png",
+   "sad": "orm_sad.png",
+   "angry": "orm_angry.png",
+   "surprised": "orm_surprised.png"
+  },
+  "ylva": {
+   "neutral": "ylva_neutral.png",
+   "happy": "ylva_happy.png",
+   "sad": "ylva_sad.png",
+   "angry": "ylva_angry.png",
+   "surprised": "ylva_surprised.png"
+  },
+  "hlin": {
+   "neutral": "hlin_neutral.png",
+   "happy": "hlin_happy.png",
+   "sad": "hlin_sad.png",
+   "angry": "hlin_angry.png",
+   "surprised": "hlin_surprised.png"
+  },
+  "eir": {
+   "neutral": "eir_neutral.png",
+   "happy": "eir_happy.png",
+   "sad": "eir_sad.png",
+   "angry": "eir_angry.png",
+   "surprised": "eir_surprised.png"
+  },
+  "gauti": {
+   "neutral": "gauti_neutral.png",
+   "happy": "gauti_happy.png",
+   "sad": "gauti_sad.png",
+   "angry": "gauti_angry.png",
+   "surprised": "gauti_surprised.png"
+  },
+  "ganglati": {
+   "neutral": "ganglati_neutral.png",
+   "happy": "ganglati_happy.png",
+   "sad": "ganglati_sad.png",
+   "angry": "ganglati_angry.png",
+   "surprised": "ganglati_surprised.png"
+  },
+  "ganglot": {
+   "neutral": "ganglot_neutral.png",
+   "happy": "ganglot_happy.png",
+   "sad": "ganglot_sad.png",
+   "angry": "ganglot_angry.png",
+   "surprised": "ganglot_surprised.png"
+  },
+  "lost_child": {
+   "neutral": "lost_child_neutral.png",
+   "happy": "lost_child_happy.png",
+   "sad": "lost_child_sad.png",
+   "angry": "lost_child_angry.png",
+   "surprised": "lost_child_surprised.png"
+  },
+  "modgud_hel": {
+   "neutral": "modgud_neutral.png",
+   "happy": "modgud_happy.png",
+   "sad": "modgud_sad.png",
+   "angry": "modgud_angry.png",
+   "surprised": "modgud_surprised.png"
   }
  },
  "classes": {

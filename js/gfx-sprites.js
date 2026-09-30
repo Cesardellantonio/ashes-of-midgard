@@ -231,7 +231,8 @@ function buildFrames(key, spr, look, s, hPx) {
   const cw = Math.ceil((human ? 104 : 84) * s), ch = Math.ceil((human ? 96 : 80) * s), fx = cw / 2, fy = ch - 6 * s;
   const oc = hex2rgb(look.outline || '#24181a');
   const F = { wu: cw / PXU, hu: ch / PXU, feetU: 6 * s / PXU, headU: hPx / PXU, shadowR: (human ? 0.45 : 0.5) * Math.max(1, s * (human ? 0.8 : 0.85)) };
-  const make = (anim, i, n, back) => { const c = mkCanvas(cw, ch); G = c.getContext('2d'); G.translate(fx, fy); G.scale(s, s); G.lineJoin = 'round'; paint(look, anim, i, n, back); pixelize(c, oc); return canvasTex(c, { pixel: true }); };
+  // willReadFrequently: a CPU-backed canvas, so pixelize()'s getImageData is a memcpy (not a GPU readback) and the upload is cheap
+  const make = (anim, i, n, back) => { const c = mkCanvas(cw, ch); G = c.getContext('2d', { willReadFrequently: true }); G.translate(fx, fy); G.scale(s, s); G.lineJoin = 'round'; paint(look, anim, i, n, back); pixelize(c, oc); return canvasTex(c, { pixel: true }); };
   for (const a in ANIMS) { F[a] = []; for (let i = 0; i < ANIMS[a]; i++) F[a].push({ f: make(a, i, ANIMS[a], false), b: human ? make(a, i, ANIMS[a], true) : null }); }
   return (FRAMES[key] = F);
 }

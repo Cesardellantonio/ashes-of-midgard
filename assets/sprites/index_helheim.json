@@ -1,0 +1,94 @@
+{
+ "sheets": [
+  {
+   "id": "mob_hel_draugr",
+   "layer": "mob",
+   "body": "hel_draugr",
+   "variant": null
+  },
+  {
+   "id": "mob_soul_wisp",
+   "layer": "mob",
+   "body": "soul_wisp",
+   "variant": null
+  },
+  {
+   "id": "mob_corpse_bride",
+   "layer": "mob",
+   "body": "corpse_bride",
+   "variant": null
+  },
+  {
+   "id": "mob_bone_colossus",
+   "layer": "mob",
+   "body": "bone_colossus",
+   "variant": null
+  },
+  {
+   "id": "mob_nidhogg_spawn",
+   "layer": "mob",
+   "body": "nidhogg_spawn",
+   "variant": null
+  },
+  {
+   "id": "mob_hel_hound",
+   "layer": "mob",
+   "body": "hel_hound",
+   "variant": null
+  },
+  {
+   "id": "mob_garmr",
+   "layer": "mob",
+   "body": "garmr",
+   "variant": null
+  },
+  {
+   "id": "mob_nidhogg",
+   "layer": "mob",
+   "body": "nidhogg",
+   "variant": null
+  },
+  {
+   "id": "npc_hlin",
+   "layer": "npc",
+   "body": "hlin",
+   "variant": null
+  },
+  {
+   "id": "npc_eir",
+   "layer": "npc",
+   "body": "eir",
+   "variant": null
+  },
+  {
+   "id": "npc_gauti",
+   "layer": "npc",
+   "body": "gauti",
+   "variant": null
+  },
+  {
+   "id": "npc_ganglati",
+   "layer": "npc",
+   "body": "ganglati",
+   "variant": null
+  },
+  {
+   "id": "npc_ganglot",
+   "layer": "npc",
+   "body": "ganglot",
+   "variant": null
+  },
+  {
+   "id": "npc_lost_child",
+   "layer": "npc",
+   "body": "lost_child",
+   "variant": null
+  },
+  {
+   "id": "npc_modgud_hel",
+   "layer": "npc",
+   "body": "modgud_hel",
+   "variant": null
+  }
+ ]
+}

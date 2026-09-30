@@ -104,19 +104,91 @@ const MOBS = {
     intro: '“Odin’s son sends a corpse to finish his work?” The wolf laughs, and the chains laugh with him. “Come, little ember. I have swallowed bigger fires than you.”',
     outro: 'Fenrir falls across the broken bridge, and for a moment the Bifrost glows every colour at once. Far away, an old man with one eye closes it.' },
 };
+/* =========================================================
+   Content round 7 (content cycle 7, the cycle-9 endgame): Helheim, design/helheim.md. Sheets mob_<id> are in
+   assets/sprites/index_helheim.json. Tuned for reborn heroes at Base Lv 70-99 (MAXLV_REBORN).
+   New monster fields (all optional, read by js/core.js):
+     hitFx: 'chill' | 'hex' | 'rot' | 'stagger'   what a landed blow does to you (slow, slow, poison, a stumble)
+     chain: r        chained to its spawn point: it cannot move more than r cells from it (Garmr, until phase 1)
+     respawn: secs   an MVP that comes back after this many seconds of play (P.flags.bossAt), for farming
+     phases: [{ at, name, sub, log, unchain, speed, cdMul, summon: [mob, n], trail, gnaw: { secs, adds, heal } }]
+                     one-time changes when HP drops below `at` (fraction); m.phase counts them, and an ability
+                     with `phase: n` only fires from phase n on
+   New ability fields (doAbility in core.js):
+     { id: 'lunge', cd, len, w, mul, delay, parry, col }  a telegraphed charge along a line toward you; `parry` =
+                     seconds the boss is staggered (and exposed: +30 % damage taken) when you parry the blow
+     hit: { unblockable, magic }   options for the blast (unblockable: only a dodge roll or stepping out saves you)
+     back: true      a breath cone that goes out behind the monster (a tail sweep)
+     zone: { dur, tick, slow, r, n, col }   the breath leaves n lingering hostile patches (rot)
+   Sizes: the MVP sheets are 272 px tall frames (frameH / 36 = 7.6 world units, the same frame class as Fenrir,
+   Fafnir and the Jarl); `size` is the art scale of the rig (Garmr 2.6 like Fenrir, Níðhöggr 3.0), which sets the
+   hit radius, shadow and fallback sprite exactly as for the other MVPs.
+   ========================================================= */
+Object.assign(MOBS, {
+  hel_draugr: { name: 'Hel’s Draugr', lvl: 74, hp: 11000, atk: [560, 690], def: 38, mdef: 22, elem: 'undead', race: 'undead', aggro: true, sight: 8, speed: 2.3, aspd: 1.6, range: 1.8, hitFx: 'chill', spr: 'human',
+    look: { body: '#6a7a8a', trim: '#b8d8e8', legs: '#3a4450', skin: '#8a9a98', head: 'helm', beard: true, weapon: 'greatsword', wcol: '#9aa8b0', eye: '#7affb4', cape: '#2a3440', scale: 1.35 },
+    drops: [['gjoll_ice', .45], ['bone_shard', .25], ['gjoll_draught', .03]] },
+  soul_wisp: { name: 'Lost Soul', lvl: 72, hp: 8000, atk: [470, 580], def: 6, mdef: 55, elem: 'ghost', race: 'undead', sight: 7, speed: 3.0, aspd: 1.9, range: 5, ranged: true, shot: 'soul', magic: true, flee: 35,
+    spr: 'ghost', col: '#c8ffe8', size: 0.95, glow: '#8affc0', drops: [['soul_ember', .45], ['soul_tonic', .02]] },
+  hel_hound: { name: 'Hound of Hel', lvl: 76, hp: 10500, atk: [560, 680], def: 28, mdef: 18, elem: 'undead', race: 'brute', aggro: true, sight: 10, speed: 4.4, aspd: 1.1, range: 1.4,
+    spr: 'wolf', col: '#d8d0c0', size: 1.08, eye: '#7affb4', drops: [['hel_chain', .45], ['bone_shard', .2]] },
+  corpse_bride: { name: 'Corpse Bride', lvl: 79, hp: 12500, atk: [540, 660], def: 16, mdef: 50, elem: 'shadow', race: 'undead', aggro: true, sight: 8, speed: 2.2, aspd: 1.9, range: 4.5, ranged: true, shot: 'soul', magic: true, flee: 20, hitFx: 'hex',
+    spr: 'ghost', col: '#ece4ec', size: 1.1, glow: '#c8a8ff', drops: [['grave_rose', .45], ['soul_tonic', .03]] },
+  nidhogg_spawn: { name: 'Níðhöggr Spawn', lvl: 81, hp: 14500, atk: [620, 760], def: 34, mdef: 30, elem: 'shadow', race: 'brute', aggro: true, sight: 9, speed: 3.4, aspd: 1.3, range: 1.6, hitFx: 'rot',
+    spr: 'wolf', col: '#1e1c22', size: 1.2, eye: '#d8ff4a', drops: [['rot_scale', .45], ['gjoll_draught', .03]] },
+  bone_colossus: { name: 'Bone Colossus', lvl: 85, hp: 22000, atk: [760, 920], def: 48, mdef: 16, elem: 'undead', race: 'undead', aggro: true, sight: 6, speed: 1.6, aspd: 2.3, range: 2.3, hitFx: 'stagger', spr: 'human',
+    look: { body: '#d8d0bc', trim: '#8a8270', legs: '#c8c0ac', skin: '#e0d8c4', head: 'skull', ribs: true, weapon: 'mace', wcol: '#d0c8b4', eye: '#7affb4', scale: 1.8, wide: true },
+    drops: [['colossus_marrow', .45], ['bone_shard', .4]] },
+  // MVP: Garmr, the hound chained before Hel's hall (Act II fought him at Helgrind as the variant garmr_gate).
+  garmr: { name: 'Garmr', title: 'The Hound Before Eljudnir', lore: 'garmr', lvl: 88, hp: 320000, atk: [820, 1020], def: 45, mdef: 38, elem: 'undead', race: 'brute', boss: true, aggro: true, sight: 10,
+    speed: 3.8, aspd: 1.15, range: 3.0, spr: 'wolf', col: '#3a2222', size: 2.6, eye: '#ff3a2a', expMul: 16, chain: 7, respawn: 1800,
+    abil: [{ id: 'lunge', cd: 7, len: 8, w: 1.3, mul: 2.2, delay: 1.05, parry: 2.6, col: '#ff4a2a', shout: '!' },
+      { id: 'breath', cd: 10, len: 7, arc: 0.5, rays: 3, mul: 1.9, delay: 1.2, col: '#ff3a2a', shout: 'GRRRH!' },
+      { id: 'nova', key: 'howl', cd: 14, r: 5.2, mul: 1.7, delay: 1.6, col: '#ff6a4a', hit: { unblockable: true }, shout: 'AROOOO!' },
+      { id: 'summon', cd: 20, mob: 'hel_hound', n: 2, max: 4, shout: 'The pack!' }],
+    phases: [
+      { at: 0.7, name: 'The Chain Snaps', sub: 'Garmr is loose', unchain: true, speed: 1.2, log: 'The chain that held Garmr to Hel’s door parts with a sound like a bell breaking. Nothing holds him to the gate now.' },
+      { at: 0.35, name: 'Four Eyes Open', sub: 'The hound of the dead sees you', cdMul: 0.75, summon: ['hel_hound', 3], trail: true, log: 'Garmr’s second pair of eyes opens. Blood-fire runs down his mane, and wherever he lunges, the ash burns.' }],
+    drops: [['hel_chain', 1], ['gjoll_ice', 1]],
+    intro: 'Hel sewed him back together and chained him again, this time before her own door. His chest is still open. “Living,” say the four eyes. “Again.”',
+    outro: 'Garmr lies down across Eljudnir’s threshold, the way a dog lies down at the end of a long day. Behind him, Hel’s door swings open on its own.' },
+  // Superboss: Níðhöggr, gnawing the root of the World Tree at Hvergelmir (map helheim_hvergelmir).
+  nidhogg: { name: 'Níðhöggr', title: 'Malice-Striker, Gnawer of the Root', lore: 'nidhogg', lvl: 99, hp: 600000, atk: [860, 1080], def: 52, mdef: 48, elem: 'shadow', race: 'brute', boss: true, aggro: true, sight: 12,
+    speed: 2.6, aspd: 1.5, range: 3.6, spr: 'wolf', col: '#3a3446', size: 3.0, eye: '#9aff6a', expMul: 20, respawn: 3600,
+    abil: [{ id: 'breath', cd: 9, len: 8, arc: 0.55, rays: 3, mul: 2.2, delay: 1.3, col: '#8aff3a', shout: 'HHHRRR…', zone: { dur: 7, tick: 0.3, slow: 30, r: 1.3, n: 3, col: '#7aff3a' } },
+      { id: 'breath', key: 'tail', back: true, cd: 8, len: 5, arc: 0.9, rays: 3, mul: 1.8, delay: 0.9, col: '#c8b8a0', shout: '!' },
+      { id: 'nova', key: 'wing', cd: 13, r: 5.5, mul: 1.6, delay: 1.5, col: '#b8b0c8', shout: '!!' },
+      { id: 'rain', cd: 12, n: 7, r: 1.6, mul: 1.5, delay: 1.5 },
+      { id: 'summon', cd: 22, mob: 'nidhogg_spawn', n: 2, max: 4, shout: 'Brood!' },
+      { id: 'lunge', key: 'devour', phase: 2, cd: 11, len: 9, w: 1.6, mul: 3.4, delay: 1.25, col: '#aaff5a', hit: { unblockable: true }, shout: 'DEVOUR' }],
+    phases: [
+      { at: 0.66, name: 'The Gnawing', sub: 'Kill the sap-swollen brood', gnaw: { secs: 32, adds: 3, heal: 0.004 }, log: 'Níðhöggr coils back around the root and bites down. The bark closes over its hide: nothing you do can reach it while it feeds. Its sap-swollen brood crawl out of the wound.' },
+      { at: 0.33, name: 'The Corpse-Dragon Rises', sub: 'Malice-Striker', cdMul: 0.7, speed: 1.25, log: 'Níðhöggr tears itself off the root and rears up, wings wide, every skull in its hide screaming. It is done eating the dead. It wants you.' }],
+    drops: [['rot_scale', 1], ['black_sun_shard', 2], ['soul_ember', 1]],
+    intro: 'Something the size of a longhouse is chewing on the root of the world. It stops. The skulls in its hide turn, one by one, to look at you. “Warm,” says Níðhöggr. “I have eaten nothing warm in ten thousand years.”',
+    outro: 'Níðhöggr slides off the root and into the black water of Hvergelmir, and the spring goes still. For the first time since the Tree burned, nothing is gnawing on it.' },
+});
 for (const k in MOBS) { const d = MOBS[k]; d.id = k; const base = { blob: 30, grub: 18, hare: 32, wolf: 30, human: 58, ghost: 46, tree: 62, shroom: 32 }[d.spr]; d.h = base * (d.look && d.look.scale ? d.look.scale : (d.size || 1)); }
 const mobExp = d => Math.round((4 * Math.pow(d.lvl, 2.1) + 6) * (d.expMul || 1));
-const expNeed = l => Math.floor(20 * Math.pow(l, 2.2)) + 10;
-const jexpNeed = l => Math.floor(12 * Math.pow(l, 2.1)) + 10;
+// Round 6: a reborn hero (P.flags.reborn) levels on a faster curve: REBORN_EXP of the usual EXP per level (base and job).
+const REBORN_EXP = 0.6;
+const rebornExpMul = () => (typeof P !== 'undefined' && P && P.flags && P.flags.reborn) ? REBORN_EXP : 1;
+// Round 7: past Base Lv 59 (only a reborn hero gets there: MAXLV_REBORN) each level costs a little more on top of the curve.
+const expPast60 = l => l >= 60 ? 1 + (l - 59) * 0.12 : 1;
+const expNeed = l => Math.floor((Math.floor(20 * Math.pow(l, 2.2)) + 10) * rebornExpMul() * expPast60(l));
+const jexpNeed = l => Math.floor((Math.floor(12 * Math.pow(l, 2.1)) + 10) * rebornExpMul());
 const MAXLV = 60;
+// Round 7: a reborn hero (P.flags.reborn) climbs on past 60 to MAXLV_REBORN; the endgame (Helheim) is tuned for Base 70-99.
+const MAXLV_REBORN = 99;
+const maxLv = () => (typeof P !== 'undefined' && P && P.flags && P.flags.reborn) ? MAXLV_REBORN : MAXLV;
 
 /* ---------- Content round 4: named variants ----------
    variant(key, base, overrides) copies a monster and marks it { base, variant: true }. A variant is spawned by a
    quest's `hunt` objective (js/quests.js), never by a map's spawns. In play the monster keeps m.type = base (so it
    uses the base's sprite sheet mob_<base> and card) and m.variant = key; m.d is the variant's data (name, stats,
    drops, abilities). `elite: true` shows the boss bar without the MVP rules; `boss: true` variants (the echoes,
-   Garmr, Fenrir Risen) use the MVP rules but never set P.flags.bosses. `tint` / `scaleMul` are hints for the
-   renderer (not read yet; see docs/CONTENT.md, hooks). `inert: true` monsters never move, attack or take damage. */
+   Garmr, Fenrir Risen) use the MVP rules but never set P.flags.bosses. `tint` / `scaleMul` are read by the
+   renderer (named monsters are tinted and scaled; see docs/CONTENT.md, hooks). `inert: true` monsters never move, attack or take damage. */
 function variant(key, base, o) {
   const b = MOBS[base], look = b.look ? Object.assign({}, b.look, o.look || {}) : undefined;
   const d = Object.assign({}, b, { shard: undefined, lore: undefined, phase2: undefined, phase2Sub: undefined, outro: undefined, intro: undefined }, o, { base, variant: true, id: key });
@@ -146,7 +218,10 @@ variant('cinder_pretender', 'cinder_thrall', { name: 'The Cinder Pretender', tit
   abil: [{ id: 'slam', cd: 6, r: 2.6, mul: 1.5, delay: 1.0 }, { id: 'rain', cd: 9, n: 5, r: 1.6, mul: 1.3, delay: 1.4 }, { id: 'summon', cd: 18, mob: 'cinder_thrall', n: 2, max: 3, shout: 'Kneel to ME!' }],
   drops: [['u_cinder_signet', 1], ['cinder_ash', 1], ['cinder_circlet', 1]],
   intro: '“The crown was meant for one of US.” The thrall has hammered a circlet out of the King’s broken throne. “Take it off, corpse, or I take it off with your head.”' });
-variant('garmr', 'snow_wolf', { name: 'Garmr', title: 'Hound of Helgrind', lvl: 58, hp: 120000, atk: [255, 320], def: 42, mdef: 30, elem: 'undead', race: 'undead', boss: true, size: 2.3, col: '#6a2a2a', eye: '#ff3a2a', glow: '#ff5a3a', tint: '#ff8a7a', scaleMul: 2.1, expMul: 10,
+// Garmr at Helgrind (Act II, act2_10): the same hound as the Helheim MVP (sheet mob_garmr), weaker, still chained to the
+// gate. Round 7 made `garmr` the real MVP; this variant keeps Act II's fight (hunt objective, boss rules without the
+// slain flag). Saves that fought him before only hold kill counts, so nothing else changes.
+variant('garmr_gate', 'garmr', { name: 'Garmr', title: 'Hound of Helgrind', lvl: 58, hp: 120000, atk: [255, 320], def: 42, mdef: 30, chain: 0, respawn: 0, phases: undefined, expMul: 10, scaleMul: 1,
   abil: [{ id: 'leap', cd: 7, r: 2.2, mul: 1.8, delay: 1.0 }, { id: 'breath', cd: 9, len: 6.5, arc: 0.5, rays: 3, mul: 2.0, delay: 1.2, col: '#ff5a3a', shout: 'GRRRH!' }, { id: 'summon', cd: 18, mob: 'skeleton_soldier', n: 2, max: 4, shout: 'The dead!' }],
   drops: [['u_garm_collar', 1], ['bone_shard', 1]],
   intro: 'Chest bloody, chain broken, the hound that bays at the gate of the dead. It has been waiting for someone living to come close enough.' });
@@ -162,3 +237,9 @@ ECHO('echo_gaunt', 'sir_gaunt', 'Echo of Sir Gaunt', { hp: 170000, atk: [260, 33
 ECHO('echo_jarl', 'drowned_jarl', 'Echo of the Drowned Jarl', { hp: 190000, atk: [260, 330], def: 45, mdef: 35, intro: 'The Jarl rows up out of the ice again, and his crew rows with him. None of them are breathing.' });
 ECHO('echo_crone', 'bog_crone', 'Echo of the Bog Crone', { hp: 200000, atk: [265, 335], def: 45, mdef: 45, intro: '“Soup’s gone cold, dear.” The cauldron walks out of the bog, dripping. “Let’s warm it up.”' });
 ECHO('echo_fafnir', 'fafnir', 'Echo of Fafnir', { hp: 220000, atk: [270, 345], def: 55, mdef: 40, intro: 'The hoard stirs. Fafnir’s bones rise out of it, gold still stuck between the ribs.' });
+// Round 7: the named draugr of the Helheim side quest ganglati_nameless (elite: boss bar, guaranteed unique drop;
+// `useAbil` lets an elite use its abilities, which only bosses do otherwise).
+variant('nameless_jarl', 'hel_draugr', { name: 'The Nameless Jarl', title: 'Who Forgot His Name on the Bridge', lvl: 86, hp: 90000, atk: [700, 860], def: 45, elite: true, useAbil: true, tint: '#a8ffd8', scaleMul: 1.4, expMul: 8,
+  abil: [{ id: 'slam', cd: 7, r: 2.6, mul: 1.5, delay: 1.1 }, { id: 'lunge', cd: 9, len: 6, w: 1.1, mul: 1.8, delay: 1.0, parry: 2, col: '#8affd0' }],
+  drops: [['u_nameless_helm', 1], ['gjoll_ice', 1], ['black_sun_shard', 1]],
+  intro: 'A draugr king in a crown of river-ice, standing waist-deep in the ash. He told Móðguðr his name ten thousand years ago, and she forgot it, and so did he. He has been angry about it ever since.' });

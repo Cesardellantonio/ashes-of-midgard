@@ -1,0 +1,1403 @@
+{
+ "size": [
+  64,
+  64
+ ],
+ "view": "square, painted cel, frame = element colour (passive: bronze rim, tier 3: gold studs)",
+ "icons": {
+  "basic": "basic.png",
+  "craftsmanship": "craftsmanship.png",
+  "first_aid": "first_aid.png",
+  "sword_mastery": "sword_mastery.png",
+  "bash": "bash.png",
+  "magnum": "magnum.png",
+  "endure": "endure.png",
+  "hp_recovery": "hp_recovery.png",
+  "fire_bolt": "fire_bolt.png",
+  "cold_bolt": "cold_bolt.png",
+  "lightning_bolt": "lightning_bolt.png",
+  "soul_strike": "soul_strike.png",
+  "frost_diver": "frost_diver.png",
+  "thunderstorm": "thunderstorm.png",
+  "sp_recovery": "sp_recovery.png",
+  "owls_eye": "owls_eye.png",
+  "vultures_eye": "vultures_eye.png",
+  "double_strafe": "double_strafe.png",
+  "arrow_shower": "arrow_shower.png",
+  "concentration": "concentration.png",
+  "heal": "heal.png",
+  "blessing": "blessing.png",
+  "inc_agi": "inc_agi.png",
+  "holy_light": "holy_light.png",
+  "divine_protection": "divine_protection.png",
+  "demon_bane": "demon_bane.png",
+  "spear_mastery": "spear_mastery.png",
+  "pierce": "pierce.png",
+  "spear_boomerang": "spear_boomerang.png",
+  "brandish_spear": "brandish_spear.png",
+  "two_hand_quicken": "two_hand_quicken.png",
+  "bowling_bash": "bowling_bash.png",
+  "faith": "faith.png",
+  "holy_cross": "holy_cross.png",
+  "grand_cross": "grand_cross.png",
+  "auto_guard": "auto_guard.png",
+  "oath_of_tyr": "oath_of_tyr.png",
+  "shield_charge": "shield_charge.png",
+  "storm_gust": "storm_gust.png",
+  "meteor_storm": "meteor_storm.png",
+  "lord_of_vermilion": "lord_of_vermilion.png",
+  "jupitel_thunder": "jupitel_thunder.png",
+  "rune_attunement": "rune_attunement.png",
+  "quagmire": "quagmire.png",
+  "endow_blaze": "endow_blaze.png",
+  "endow_frost": "endow_frost.png",
+  "endow_lightning": "endow_lightning.png",
+  "endow_quake": "endow_quake.png",
+  "dispel": "dispel.png",
+  "magic_rod": "magic_rod.png",
+  "norn_ward": "norn_ward.png",
+  "blitz_beat": "blitz_beat.png",
+  "ankle_snare": "ankle_snare.png",
+  "blast_mine": "blast_mine.png",
+  "freezing_trap": "freezing_trap.png",
+  "detect": "detect.png",
+  "beast_bane": "beast_bane.png",
+  "music_lessons": "music_lessons.png",
+  "poem_of_bragi": "poem_of_bragi.png",
+  "apple_of_idun": "apple_of_idun.png",
+  "sunset_dirge": "sunset_dirge.png",
+  "arrow_vulcan": "arrow_vulcan.png",
+  "frost_joker": "frost_joker.png",
+  "resurrection": "resurrection.png",
+  "magnificat": "magnificat.png",
+  "sanctuary": "sanctuary.png",
+  "kyrie_eleison": "kyrie_eleison.png",
+  "magnus_exorcismus": "magnus_exorcismus.png",
+  "lex_aeterna": "lex_aeterna.png",
+  "iron_fists": "iron_fists.png",
+  "summon_sphere": "summon_sphere.png",
+  "triple_attack": "triple_attack.png",
+  "investigate": "investigate.png",
+  "finger_offensive": "finger_offensive.png",
+  "asura_strike": "asura_strike.png",
+  "body_relocation": "body_relocation.png",
+  "spiral_pierce": "spiral_pierce.png",
+  "einherjar_fury": "einherjar_fury.png",
+  "gungnir_charge": "gungnir_charge.png",
+  "thurisaz_rune": "thurisaz_rune.png",
+  "warg_mastery": "warg_mastery.png",
+  "gloria": "gloria.png",
+  "shield_chain": "shield_chain.png",
+  "pressure": "pressure.png",
+  "tyrs_sacrifice": "tyrs_sacrifice.png",
+  "tyrs_aegis": "tyrs_aegis.png",
+  "muspel_vulcan": "muspel_vulcan.png",
+  "unmake": "unmake.png",
+  "soul_drain": "soul_drain.png",
+  "ginnungagap": "ginnungagap.png",
+  "galdr_amplify": "galdr_amplify.png",
+  "foresight": "foresight.png",
+  "spell_breaker": "spell_breaker.png",
+  "seidr_hex": "seidr_hex.png",
+  "vardlokkur": "vardlokkur.png",
+  "volva_sight": "volva_sight.png",
+  "sharp_shooting": "sharp_shooting.png",
+  "huginn_muninn": "huginn_muninn.png",
+  "gleipnir_snare": "gleipnir_snare.png",
+  "fenris_howl": "fenris_howl.png",
+  "wolf_instinct": "wolf_instinct.png",
+  "norns_draw": "norns_draw.png",
+  "harmonize": "harmonize.png",
+  "song_of_valhalla": "song_of_valhalla.png",
+  "bragis_verse": "bragis_verse.png",
+  "skald_volley": "skald_volley.png",
+  "assumptio": "assumptio.png",
+  "basilica": "basilica.png",
+  "einherjar_call": "einherjar_call.png",
+  "chooser_spear": "chooser_spear.png",
+  "wings_of_valhalla": "wings_of_valhalla.png",
+  "blade_stop": "blade_stop.png",
+  "chain_crush": "chain_crush.png",
+  "asura_plus": "asura_plus.png",
+  "bear_rage": "bear_rage.png",
+  "thors_palm": "thors_palm.png"
+ },
+ "skills": [
+  {
+   "id": "basic",
+   "name": "Basic Skill",
+   "el": "neutral",
+   "passive": true,
+   "tier": 0,
+   "cls": [
+    "novice",
+    "high_novice"
+   ],
+   "file": "basic.png"
+  },
+  {
+   "id": "craftsmanship",
+   "name": "Craftsmanship",
+   "el": "fire",
+   "passive": true,
+   "tier": 0,
+   "cls": [],
+   "file": "craftsmanship.png"
+  },
+  {
+   "id": "first_aid",
+   "name": "First Aid",
+   "el": "holy",
+   "passive": false,
+   "tier": 0,
+   "cls": [
+    "novice",
+    "high_novice"
+   ],
+   "file": "first_aid.png"
+  },
+  {
+   "id": "sword_mastery",
+   "name": "Sword Mastery",
+   "el": "neutral",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "swordsman"
+   ],
+   "file": "sword_mastery.png"
+  },
+  {
+   "id": "bash",
+   "name": "Bash",
+   "el": "neutral",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "swordsman"
+   ],
+   "file": "bash.png"
+  },
+  {
+   "id": "magnum",
+   "name": "Magnum Break",
+   "el": "fire",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "swordsman"
+   ],
+   "file": "magnum.png"
+  },
+  {
+   "id": "endure",
+   "name": "Endure",
+   "el": "earth",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "swordsman"
+   ],
+   "file": "endure.png"
+  },
+  {
+   "id": "hp_recovery",
+   "name": "Increase HP Recovery",
+   "el": "earth",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "swordsman"
+   ],
+   "file": "hp_recovery.png"
+  },
+  {
+   "id": "fire_bolt",
+   "name": "Fire Bolt",
+   "el": "fire",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "fire_bolt.png"
+  },
+  {
+   "id": "cold_bolt",
+   "name": "Cold Bolt",
+   "el": "water",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "cold_bolt.png"
+  },
+  {
+   "id": "lightning_bolt",
+   "name": "Lightning Bolt",
+   "el": "wind",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "lightning_bolt.png"
+  },
+  {
+   "id": "soul_strike",
+   "name": "Soul Strike",
+   "el": "ghost",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "soul_strike.png"
+  },
+  {
+   "id": "frost_diver",
+   "name": "Frost Diver",
+   "el": "water",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "frost_diver.png"
+  },
+  {
+   "id": "thunderstorm",
+   "name": "Thunderstorm",
+   "el": "wind",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "thunderstorm.png"
+  },
+  {
+   "id": "sp_recovery",
+   "name": "Increase SP Recovery",
+   "el": "water",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "mage"
+   ],
+   "file": "sp_recovery.png"
+  },
+  {
+   "id": "owls_eye",
+   "name": "Owl’s Eye",
+   "el": "wind",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "archer"
+   ],
+   "file": "owls_eye.png"
+  },
+  {
+   "id": "vultures_eye",
+   "name": "Vulture’s Eye",
+   "el": "wind",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "archer"
+   ],
+   "file": "vultures_eye.png"
+  },
+  {
+   "id": "double_strafe",
+   "name": "Double Strafe",
+   "el": "neutral",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "archer"
+   ],
+   "file": "double_strafe.png"
+  },
+  {
+   "id": "arrow_shower",
+   "name": "Arrow Shower",
+   "el": "neutral",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "archer"
+   ],
+   "file": "arrow_shower.png"
+  },
+  {
+   "id": "concentration",
+   "name": "Improve Concentration",
+   "el": "wind",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "archer"
+   ],
+   "file": "concentration.png"
+  },
+  {
+   "id": "heal",
+   "name": "Heal",
+   "el": "holy",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "heal.png"
+  },
+  {
+   "id": "blessing",
+   "name": "Blessing",
+   "el": "holy",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "blessing.png"
+  },
+  {
+   "id": "inc_agi",
+   "name": "Increase AGI",
+   "el": "holy",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "inc_agi.png"
+  },
+  {
+   "id": "holy_light",
+   "name": "Holy Light",
+   "el": "holy",
+   "passive": false,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "holy_light.png"
+  },
+  {
+   "id": "divine_protection",
+   "name": "Divine Protection",
+   "el": "holy",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "divine_protection.png"
+  },
+  {
+   "id": "demon_bane",
+   "name": "Demon Bane",
+   "el": "holy",
+   "passive": true,
+   "tier": 1,
+   "cls": [
+    "acolyte"
+   ],
+   "file": "demon_bane.png"
+  },
+  {
+   "id": "spear_mastery",
+   "name": "Spear Mastery",
+   "el": "neutral",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "spear_mastery.png"
+  },
+  {
+   "id": "pierce",
+   "name": "Pierce",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "pierce.png"
+  },
+  {
+   "id": "spear_boomerang",
+   "name": "Spear Boomerang",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "spear_boomerang.png"
+  },
+  {
+   "id": "brandish_spear",
+   "name": "Brandish Spear",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "brandish_spear.png"
+  },
+  {
+   "id": "two_hand_quicken",
+   "name": "Two-Hand Quicken",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "two_hand_quicken.png"
+  },
+  {
+   "id": "bowling_bash",
+   "name": "Bowling Bash",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "knight"
+   ],
+   "file": "bowling_bash.png"
+  },
+  {
+   "id": "faith",
+   "name": "Faith",
+   "el": "holy",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "faith.png"
+  },
+  {
+   "id": "holy_cross",
+   "name": "Holy Cross",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "holy_cross.png"
+  },
+  {
+   "id": "grand_cross",
+   "name": "Grand Cross",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "grand_cross.png"
+  },
+  {
+   "id": "auto_guard",
+   "name": "Auto Guard",
+   "el": "earth",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "auto_guard.png"
+  },
+  {
+   "id": "oath_of_tyr",
+   "name": "Oath of Tyr",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "oath_of_tyr.png"
+  },
+  {
+   "id": "shield_charge",
+   "name": "Shield Charge",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "oathkeeper"
+   ],
+   "file": "shield_charge.png"
+  },
+  {
+   "id": "storm_gust",
+   "name": "Storm Gust",
+   "el": "water",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "storm_gust.png"
+  },
+  {
+   "id": "meteor_storm",
+   "name": "Meteor Storm",
+   "el": "fire",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "meteor_storm.png"
+  },
+  {
+   "id": "lord_of_vermilion",
+   "name": "Lord of Vermilion",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "lord_of_vermilion.png"
+  },
+  {
+   "id": "jupitel_thunder",
+   "name": "Jupitel Thunder",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "jupitel_thunder.png"
+  },
+  {
+   "id": "rune_attunement",
+   "name": "Runic Attunement",
+   "el": "ghost",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "rune_attunement.png"
+  },
+  {
+   "id": "quagmire",
+   "name": "Quagmire",
+   "el": "earth",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "runecaster"
+   ],
+   "file": "quagmire.png"
+  },
+  {
+   "id": "endow_blaze",
+   "name": "Endow Blaze",
+   "el": "fire",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "endow_blaze.png"
+  },
+  {
+   "id": "endow_frost",
+   "name": "Endow Frost",
+   "el": "water",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "endow_frost.png"
+  },
+  {
+   "id": "endow_lightning",
+   "name": "Endow Lightning",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "endow_lightning.png"
+  },
+  {
+   "id": "endow_quake",
+   "name": "Endow Quake",
+   "el": "earth",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "endow_quake.png"
+  },
+  {
+   "id": "dispel",
+   "name": "Dispel",
+   "el": "ghost",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "dispel.png"
+  },
+  {
+   "id": "magic_rod",
+   "name": "Magic Rod",
+   "el": "ghost",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "magic_rod.png"
+  },
+  {
+   "id": "norn_ward",
+   "name": "Ward of the Norns",
+   "el": "earth",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "sage"
+   ],
+   "file": "norn_ward.png"
+  },
+  {
+   "id": "blitz_beat",
+   "name": "Blitz Beat",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "blitz_beat.png"
+  },
+  {
+   "id": "ankle_snare",
+   "name": "Ankle Snare",
+   "el": "earth",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "ankle_snare.png"
+  },
+  {
+   "id": "blast_mine",
+   "name": "Blast Mine",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "blast_mine.png"
+  },
+  {
+   "id": "freezing_trap",
+   "name": "Freezing Trap",
+   "el": "water",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "freezing_trap.png"
+  },
+  {
+   "id": "detect",
+   "name": "Huginn’s Eye",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "detect.png"
+  },
+  {
+   "id": "beast_bane",
+   "name": "Beast Bane",
+   "el": "earth",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "wolfhunter"
+   ],
+   "file": "beast_bane.png"
+  },
+  {
+   "id": "music_lessons",
+   "name": "Music Lessons",
+   "el": "wind",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "music_lessons.png"
+  },
+  {
+   "id": "poem_of_bragi",
+   "name": "Poem of Bragi",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "poem_of_bragi.png"
+  },
+  {
+   "id": "apple_of_idun",
+   "name": "Apple of Iðunn",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "apple_of_idun.png"
+  },
+  {
+   "id": "sunset_dirge",
+   "name": "Dirge of the Setting Sun",
+   "el": "wind",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "sunset_dirge.png"
+  },
+  {
+   "id": "arrow_vulcan",
+   "name": "Arrow Vulcan",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "arrow_vulcan.png"
+  },
+  {
+   "id": "frost_joker",
+   "name": "Frost Joker",
+   "el": "water",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "skald"
+   ],
+   "file": "frost_joker.png"
+  },
+  {
+   "id": "resurrection",
+   "name": "Resurrection",
+   "el": "holy",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "resurrection.png"
+  },
+  {
+   "id": "magnificat",
+   "name": "Magnificat",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "magnificat.png"
+  },
+  {
+   "id": "sanctuary",
+   "name": "Sanctuary",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "sanctuary.png"
+  },
+  {
+   "id": "kyrie_eleison",
+   "name": "Kyrie Eleison",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "kyrie_eleison.png"
+  },
+  {
+   "id": "magnus_exorcismus",
+   "name": "Magnus Exorcismus",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "magnus_exorcismus.png"
+  },
+  {
+   "id": "lex_aeterna",
+   "name": "Lex Aeterna",
+   "el": "holy",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "priest"
+   ],
+   "file": "lex_aeterna.png"
+  },
+  {
+   "id": "iron_fists",
+   "name": "Iron Fists",
+   "el": "neutral",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "iron_fists.png"
+  },
+  {
+   "id": "summon_sphere",
+   "name": "Summon Spirit Sphere",
+   "el": "ghost",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "summon_sphere.png"
+  },
+  {
+   "id": "triple_attack",
+   "name": "Triple Attack",
+   "el": "neutral",
+   "passive": true,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "triple_attack.png"
+  },
+  {
+   "id": "investigate",
+   "name": "Investigate",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "investigate.png"
+  },
+  {
+   "id": "finger_offensive",
+   "name": "Finger Offensive",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "finger_offensive.png"
+  },
+  {
+   "id": "asura_strike",
+   "name": "Asura Strike",
+   "el": "neutral",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "asura_strike.png"
+  },
+  {
+   "id": "body_relocation",
+   "name": "Body Relocation",
+   "el": "ghost",
+   "passive": false,
+   "tier": 2,
+   "cls": [
+    "monk"
+   ],
+   "file": "body_relocation.png"
+  },
+  {
+   "id": "spiral_pierce",
+   "name": "Spiral Pierce",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "rune_jarl"
+   ],
+   "file": "spiral_pierce.png"
+  },
+  {
+   "id": "einherjar_fury",
+   "name": "Einherjar’s Fury",
+   "el": "fire",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "rune_jarl"
+   ],
+   "file": "einherjar_fury.png"
+  },
+  {
+   "id": "gungnir_charge",
+   "name": "Gungnir Charge",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "rune_jarl"
+   ],
+   "file": "gungnir_charge.png"
+  },
+  {
+   "id": "thurisaz_rune",
+   "name": "Thurisaz Rune",
+   "el": "wind",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "rune_jarl"
+   ],
+   "file": "thurisaz_rune.png"
+  },
+  {
+   "id": "warg_mastery",
+   "name": "Warg Riding",
+   "el": "earth",
+   "passive": true,
+   "tier": 3,
+   "cls": [
+    "rune_jarl"
+   ],
+   "file": "warg_mastery.png"
+  },
+  {
+   "id": "gloria",
+   "name": "Gloria",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "tyr_paladin"
+   ],
+   "file": "gloria.png"
+  },
+  {
+   "id": "shield_chain",
+   "name": "Shield Chain",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "tyr_paladin"
+   ],
+   "file": "shield_chain.png"
+  },
+  {
+   "id": "pressure",
+   "name": "Pressure",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "tyr_paladin"
+   ],
+   "file": "pressure.png"
+  },
+  {
+   "id": "tyrs_sacrifice",
+   "name": "Tyr’s Sacrifice",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "tyr_paladin"
+   ],
+   "file": "tyrs_sacrifice.png"
+  },
+  {
+   "id": "tyrs_aegis",
+   "name": "Tyr’s Aegis",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "tyr_paladin"
+   ],
+   "file": "tyrs_aegis.png"
+  },
+  {
+   "id": "muspel_vulcan",
+   "name": "Muspel’s Vulcan",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "galdr_master"
+   ],
+   "file": "muspel_vulcan.png"
+  },
+  {
+   "id": "unmake",
+   "name": "Unmake",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "galdr_master"
+   ],
+   "file": "unmake.png"
+  },
+  {
+   "id": "soul_drain",
+   "name": "Soul Drain",
+   "el": "ghost",
+   "passive": true,
+   "tier": 3,
+   "cls": [
+    "galdr_master"
+   ],
+   "file": "soul_drain.png"
+  },
+  {
+   "id": "ginnungagap",
+   "name": "Ginnungagap",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "galdr_master"
+   ],
+   "file": "ginnungagap.png"
+  },
+  {
+   "id": "galdr_amplify",
+   "name": "Galdr Amplify",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "galdr_master"
+   ],
+   "file": "galdr_amplify.png"
+  },
+  {
+   "id": "foresight",
+   "name": "Foresight",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "volva"
+   ],
+   "file": "foresight.png"
+  },
+  {
+   "id": "spell_breaker",
+   "name": "Spell Breaker",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "volva"
+   ],
+   "file": "spell_breaker.png"
+  },
+  {
+   "id": "seidr_hex",
+   "name": "Seiðr Hex",
+   "el": "shadow",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "volva"
+   ],
+   "file": "seidr_hex.png"
+  },
+  {
+   "id": "vardlokkur",
+   "name": "Varðlokkur",
+   "el": "water",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "volva"
+   ],
+   "file": "vardlokkur.png"
+  },
+  {
+   "id": "volva_sight",
+   "name": "Völva’s Sight",
+   "el": "wind",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "volva"
+   ],
+   "file": "volva_sight.png"
+  },
+  {
+   "id": "sharp_shooting",
+   "name": "Sharp Shooting",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "fenris_stalker"
+   ],
+   "file": "sharp_shooting.png"
+  },
+  {
+   "id": "huginn_muninn",
+   "name": "Huginn & Muninn",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "fenris_stalker"
+   ],
+   "file": "huginn_muninn.png"
+  },
+  {
+   "id": "gleipnir_snare",
+   "name": "Gleipnir Snare",
+   "el": "shadow",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "fenris_stalker"
+   ],
+   "file": "gleipnir_snare.png"
+  },
+  {
+   "id": "fenris_howl",
+   "name": "Fenrir’s Howl",
+   "el": "shadow",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "fenris_stalker"
+   ],
+   "file": "fenris_howl.png"
+  },
+  {
+   "id": "wolf_instinct",
+   "name": "Wolf’s Instinct",
+   "el": "earth",
+   "passive": true,
+   "tier": 3,
+   "cls": [
+    "fenris_stalker"
+   ],
+   "file": "wolf_instinct.png"
+  },
+  {
+   "id": "norns_draw",
+   "name": "Norns’ Draw",
+   "el": "ghost",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "bragi_voice"
+   ],
+   "file": "norns_draw.png"
+  },
+  {
+   "id": "harmonize",
+   "name": "Harmonize",
+   "el": "wind",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "bragi_voice"
+   ],
+   "file": "harmonize.png"
+  },
+  {
+   "id": "song_of_valhalla",
+   "name": "Song of Valhalla",
+   "el": "wind",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "bragi_voice"
+   ],
+   "file": "song_of_valhalla.png"
+  },
+  {
+   "id": "bragis_verse",
+   "name": "Bragi’s Verse",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "bragi_voice"
+   ],
+   "file": "bragis_verse.png"
+  },
+  {
+   "id": "skald_volley",
+   "name": "Rune-Strung Volley",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "bragi_voice"
+   ],
+   "file": "skald_volley.png"
+  },
+  {
+   "id": "assumptio",
+   "name": "Assumptio",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "valkyrie"
+   ],
+   "file": "assumptio.png"
+  },
+  {
+   "id": "basilica",
+   "name": "Basilica",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "valkyrie"
+   ],
+   "file": "basilica.png"
+  },
+  {
+   "id": "einherjar_call",
+   "name": "Einherjar’s Call",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "valkyrie"
+   ],
+   "file": "einherjar_call.png"
+  },
+  {
+   "id": "chooser_spear",
+   "name": "Spear of the Chooser",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "valkyrie"
+   ],
+   "file": "chooser_spear.png"
+  },
+  {
+   "id": "wings_of_valhalla",
+   "name": "Wings of Valhalla",
+   "el": "holy",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "valkyrie"
+   ],
+   "file": "wings_of_valhalla.png"
+  },
+  {
+   "id": "blade_stop",
+   "name": "Blade Stop",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "berserkr"
+   ],
+   "file": "blade_stop.png"
+  },
+  {
+   "id": "chain_crush",
+   "name": "Chain Crush Combo",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "berserkr"
+   ],
+   "file": "chain_crush.png"
+  },
+  {
+   "id": "asura_plus",
+   "name": "Asura Strike: Ragnarök",
+   "el": "neutral",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "berserkr"
+   ],
+   "file": "asura_plus.png"
+  },
+  {
+   "id": "bear_rage",
+   "name": "Bear-Skin Rage",
+   "el": "fire",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "berserkr"
+   ],
+   "file": "bear_rage.png"
+  },
+  {
+   "id": "thors_palm",
+   "name": "Thor’s Palm",
+   "el": "wind",
+   "passive": false,
+   "tier": 3,
+   "cls": [
+    "berserkr"
+   ],
+   "file": "thors_palm.png"
+  }
+ ]
+}

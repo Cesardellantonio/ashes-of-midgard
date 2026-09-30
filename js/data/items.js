@@ -320,6 +320,112 @@ arm('cr_harpy_mantle', 'Harpy-Feather Mantle', 'body', 12, 10, 52, 36000, 1, nul
 weap('cr_skybreaker', 'Skybreaker', 'twohand', 272, 0, 54, 52000, 1, CR({ bonus: { str: 4, crit: 5 } }));
 arm('cr_aesir_band', 'Band of the Aesir', 'acc', 0, 4, 55, 52000, 0, null, CR({ bonus: { str: 2, agi: 2, vit: 2, int: 2, dex: 2, luk: 2 } }));
 // The material quests' outputs are crafting materials now too.
-for (const id of ['star_iron', 'rune_thread', 'gold_leaf']) ITEMS[id].desc += ' It can be crafted.';
+for (const id of ['star_iron', 'rune_thread', 'gold_leaf']) { ITEMS[id].desc += ' It can be crafted.'; ITEMS[id].refinedMat = true; }   // never sold as junk
 // Every material says what it is for.
 for (const id in ITEMS) { const t = ITEMS[id]; if (t.type === 'etc' && !t.stone && t.desc === 'A material. Brokkr pays for these.') t.desc = 'A crafting material. Smiths buy it, and crafters use it (see the Crafting window at Brokkr or Sindri).'; }
+
+/* =========================================================
+   Content round 6: pets (RO-style taming), the rebirth chain's key item
+   PETS[mobKey]: tame = the taming item, rate = base capture % (see tameChance in js/core.js), bonus = what the pet
+   gives while intimacy is Cordial or better (PET_BONUS_AT), trick = its happy emote. The pet itself is drawn from
+   the monster's own sheet (mob_<key>) at 0.6 scale through COMPANIONS (js/gfx-sheets.js).
+   Eggs are one item per pet (`nostack`): the pet's name, hunger and intimacy ride on the egg item (it.pet) while it
+   sleeps, and on P.pet while it is out. Taming items and Pet Food are sold by Ylva's stable in Skaldhaven.
+   ========================================================= */
+const PETS = {
+  blight_poring: { tame: 'poring_candy', rate: 30, bonus: { luk: 2, crit: 1 }, trick: 'bounces in a happy circle' },
+  hollow_hare: { tame: 'moon_carrot', rate: 28, bonus: { agi: 2, flee: 3 }, trick: 'thumps a hind foot' },
+  cinder_drop: { tame: 'ember_sugar', rate: 25, bonus: { maxhp: 150, maxsp: 20 }, trick: 'glows a little warmer' },
+  ash_wolf: { tame: 'marrow_bone', rate: 18, bonus: { atk: 8, crit: 1 }, trick: 'howls at nothing in particular' },
+  rotwood_kobold: { tame: 'shiny_trinket', rate: 16, bonus: { str: 2, hit: 4 }, trick: 'shows you something shiny it found' },
+  rime_poring: { tame: 'frost_candy', rate: 14, bonus: { int: 2, mdef: 2 }, trick: 'leaves a little trail of frost' },
+  bog_toad: { tame: 'jar_of_midges', rate: 12, bonus: { vit: 2, maxhpPct: 3 }, trick: 'catches a fly out of the air' },
+  prism_poring: { tame: 'prism_candy', rate: 8, bonus: { dex: 2, matk: 10 }, trick: 'splits the light into a rainbow' },
+};
+const PET_HUNGER_SECS = 60;     // hunger falls 1 point (of 100) per minute while the pet is out
+const PET_BONUS_AT = 750;       // intimacy (of 1000) at which the pet's bonus applies (Cordial)
+const PET_START = { hunger: 60, intim: 250 };
+function tameItem(id, name, mob, price, color, desc) { use_(id, name, { effect: 'tame', tames: mob, price, icon: 'candy', color, desc: `${desc} Use it near a ${MOBS[mob].name} to try to tame it (a weaker one is easier). Consumed either way.` }); }
+tameItem('poring_candy', 'Poring Candy', 'blight_poring', 400, '#f08aa8', 'A pink boiled sweet. Blight Porings cannot resist sugar, even now.');
+tameItem('moon_carrot', 'Moon Carrot', 'hollow_hare', 600, '#e8d8a0', 'A pale carrot grown by moonlight.');
+tameItem('ember_sugar', 'Ember Sugar', 'cinder_drop', 800, '#ff9a4a', 'Sugar burned just enough to smoke.');
+tameItem('marrow_bone', 'Bitter Marrowbone', 'ash_wolf', 1500, '#e8e0d0', 'A bone with the marrow still in it. Bitter to men, sweet to wolves.');
+tameItem('shiny_trinket', 'Shiny Trinket', 'rotwood_kobold', 1800, '#e8c050', 'A brass button polished until it could blind a kobold.');
+tameItem('frost_candy', 'Frost Candy', 'rime_poring', 3500, '#bfe6ff', 'Candy that never melts. Rime Porings think it is their mother.');
+tameItem('jar_of_midges', 'Jar of Midges', 'bog_toad', 4500, '#8aa05a', 'A jar full of whining midges. Delicious, apparently.');
+tameItem('prism_candy', 'Prism Candy', 'prism_poring', 9000, '#f0d0ff', 'A sweet that holds every colour at once, cut from Bifrost glass.');
+use_('pet_food', 'Pet Food', { effect: 'petfood', price: 60, icon: 'bowl', color: '#c8a070', desc: 'Feeds the pet you have out (the Pet window, P, feeds it too). A hungry pet grows fond of you; an overfed one sulks.' });
+for (const k in PETS) use_('egg_' + k, `${MOBS[k].name} Egg`, { effect: 'egg', pet: k, nostack: true, price: 200, icon: 'egg', color: (MOBS[k].look && MOBS[k].look.body) || MOBS[k].col || '#e8d8c0',
+  desc: `A tamed ${MOBS[k].name}, asleep in its egg. Use it to hatch it (one pet at a time). While out it gives ${Object.entries(PETS[k].bonus).map(([a, v]) => bonusLine(a, v)).join(', ')} once it is Cordial.` });
+// Rebirth chain (js/data/quests.js reborn_1..3): the water of the Norns' well, poured on the Heart of Yggdrasil.
+questItem('urd_water', 'Water of Urðr', { icon: 'potion', color: '#d8f0ff', desc: 'Water from the Norns’ well at the root of the sky. It is heavier than water should be, and it remembers everything that ever happened. Pour it on the Heart of Yggdrasil.' });
+
+/* =========================================================
+   Content round 7: Helheim (materials, endgame consumables, the Obol currency, Garmr's and Níðhöggr's uniques,
+   the Helheim cards, quest rewards). Tuned for reborn heroes at Base Lv 70-99.
+   ========================================================= */
+etc('gjoll_ice', 'Gjöll Ice', 420, '#bcd8e0'); etc('soul_ember', 'Lost Soul’s Ember', 400, '#9affc8'); etc('hel_chain', 'Hound-Chain Link', 440, '#8a8278');
+etc('grave_rose', 'Grave Rose', 460, '#c8a0c8'); etc('rot_scale', 'Rot-Wyrm Scale', 500, '#4a5a2a'); etc('colossus_marrow', 'Giant’s Marrow', 520, '#e8dcc0');
+Object.assign(ITEMS.gjoll_ice, { desc: 'A crafting material. River-ice from Gjöll that never melts; faces move under it. From Hel’s draugr.' });
+Object.assign(ITEMS.soul_ember, { desc: 'A crafting material. The last warm thing a lost soul carried. It is not sad about being used. It is relieved.' });
+Object.assign(ITEMS.hel_chain, { desc: 'A crafting material. A link of the chains the hounds of Hel wear, and snap, and wear again.' });
+Object.assign(ITEMS.grave_rose, { desc: 'A crafting material. A rose from a corpse bride’s bouquet. It will not wilt. It is already dead.' });
+Object.assign(ITEMS.rot_scale, { desc: 'A crafting material. A scale from Níðhöggr’s brood, green on the underside, and warm.' });
+Object.assign(ITEMS.colossus_marrow, { desc: 'A crafting material. Marrow from the fused bones of a colossus of the dead. Sindri says it takes an edge like dragon-horn.' });
+etc('black_sun_shard', 'Shard of the Black Sun', 3200, '#1a1a1e');
+Object.assign(ITEMS.black_sun_shard, { rareMat: true, desc: 'A rare crafting material. A splinter of the lightless sun over Helheim. Its corona burns cold. From the creatures of Helheim (and every one of Hel’s great beasts).' });
+// Hel's Obol: the coin the dead carry. Earned in the Deep, the Gauntlet and from Helheim's bounties; Gauti trades them.
+etc('hel_obol', 'Hel’s Obol', 1, '#c8b890');
+Object.assign(ITEMS.hel_obol, { obol: true, desc: 'A coin of the dead, stamped with Hel’s half-face. The living cannot spend it. Gauti the Grave-Trader, in Helheim’s camp, can.' });
+// Endgame consumables (Gauti's stall in Helheim, crafting, drops)
+use_('gjoll_draught', 'Draught of Gjöll', { heal: [1500, 1900], price: 4200, icon: 'potion', color: '#bfe8f0', desc: 'Restores 1,500–1,900 HP. River water from Gjöll, cold enough to stop your heart for a moment. It starts again, stronger.' });
+use_('soul_tonic', 'Soul Tonic', { sp: [250, 320], price: 5200, icon: 'potion', color: '#8affc0', desc: 'Restores 250–320 SP. Distilled from what the lost souls leave behind.' });
+buffUse('grave_bread', 'Grave-Bread', 6000, '#b8a88a', 'bowl', { secs: 600, bonus: { maxhpPct: 8, vit: 4 } }, '+8 % Max HP and +4 VIT for 10 minutes. Hel’s cooks bake it for the dead, who cannot taste it. You can. It is terrible.');
+buffUse('warding_ash', 'Warding Ash', 9000, '#9a9890', 'potion', { secs: 300, bonus: { dmgRed: 8, mdef: 6 } }, '8 % less damage taken and +6 MDEF for 5 minutes. Ash from Móðguðr’s lantern, rubbed into the skin.');
+buffUse('eljudnir_mead', 'Mead of Eljudnir', 12000, '#7affb4', 'mug', { secs: 300, bonus: { atk: 40, matk: 40, aspd: 8 } }, 'Restores 800–1,000 HP. +40 ATK and MATK and +8 % attack speed for 5 minutes. Poured at Hel’s own table.', { heal: [800, 1000] });
+use_('golden_apple', 'Golden Apple', { effect: 'full', price: 15000, icon: 'apple', color: '#f0c850', desc: 'Fully restores HP and SP. One of Iðunn’s apples, found in the roots. The gods grew old without them.', noshop: true });
+// Quest items (Act III)
+questItem('root_splinter', 'Splinter of the World-Root', { icon: 'etc', color: '#c8a870', desc: 'A splinter of Yggdrasil’s root, gnawed off by Níðhöggr’s brood. It is still alive. It is trying to grow back.' });
+// Garmr (Helheim MVP, Lv 88): uniques for every family his usable pool reaches
+const UG = o => U(Object.assign({ boss: 'garmr' }, o)), UN = o => U(Object.assign({ boss: 'nidhogg' }, o));
+weap('u_garm_fang', 'Fang of Garmr', 'dagger', 205, 0, 82, 0, 1, UG({ bonus: { agi: 7, crit: 18, leech: 2 }, lore: 'He bit the chain for ten thousand years. The chain lost.' }));
+weap('u_garm_tooth', 'Hound-Tooth Blade', 'sword', 272, 0, 82, 0, 1, UG({ bonus: { str: 7, hit: 20 }, lore: 'A sword ground from one of Garmr’s eye-teeth. It still bays in the scabbard.' }));
+weap('u_garm_chain', 'Chain of Eljudnir', 'whip', 246, 0, 82, 0, 1, UG({ bonus: { dex: 7, aspd: 10 }, lore: 'The chain that held him to Hel’s door. You snapped it. It holds a grudge.' }));
+weap('u_garm_maw', 'Maw of the Gate', 'knuckle', 256, 0, 82, 0, 1, UG({ bonus: { str: 7, crit: 10 }, lore: 'Two jawbones, worn like gauntlets. They bite on their own.' }));
+weap('u_bloodhowl_bow', 'Bloodhowl', 'bow', 252, 0, 82, 0, 1, UG({ bonus: { dex: 8, crit: 8 }, lore: 'Strung with a gut from the open chest. Every arrow howls.' }));
+weap('u_bloodhowl_staff', 'Staff of the Four Eyes', 'staff', 84, 302, 82, 0, 1, UG({ bonus: { int: 8, matk: 40 }, lore: 'Four red stones at the head. They blink, one pair at a time.' }));
+arm('u_garm_mantle', 'Mantle of the Hound', 'body', 22, 12, 82, 0, 1, null, UG({ bonus: { vit: 6, maxhpPct: 8 }, lore: 'The blood-red mane, tanned. It is never quite dry.' }));
+Object.assign(ITEMS.u_garm_collar, { bosses: [] });   // the Act II collar stays the quest hunt's own drop
+// Níðhöggr (superboss, Lv 99)
+weap('u_rootgnawer', 'Rootgnawer', 'twohand', 348, 0, 92, 0, 1, UN({ bonus: { str: 9, crit: 12 }, lore: 'A blade of the dragon’s own tooth. It ate through the root of the world. It will get through you.' }));
+weap('u_malice_striker', 'Malice-Striker', 'spear', 332, 0, 92, 0, 1, UN({ bonus: { str: 8, agi: 5 }, lore: 'Níðhöggr’s name means Malice-Striker. So does this spear’s. They argue about it.' }));
+weap('u_nidhogg_fang', 'Fang of the Corpse-Wyrm', 'dagger', 228, 0, 92, 0, 1, UN({ bonus: { agi: 8, crit: 22 }, lore: 'It weeps green. The wound it leaves does not close until you say sorry to it.' }));
+weap('u_hvergelmir', 'Hvergelmir', 'staff', 92, 342, 92, 0, 1, UN({ bonus: { int: 10, matk: 60 }, lore: 'A root-staff dipped in the roaring kettle, where every river of the dead begins.' }));
+weap('u_corpse_lyre', 'Corpse-Wyrm’s Lyre', 'lute', 272, 0, 92, 0, 1, UN({ bonus: { dex: 8, int: 4 }, lore: 'Strung with the wyrm’s sinews. The songs are not happy.' }));
+weap('u_wyrmbone_bow', 'Wyrmbone Bow', 'bow', 282, 0, 92, 0, 1, UN({ bonus: { dex: 9, aspd: 12 }, lore: 'A rib, bent until it agreed.' }));
+weap('u_skullmace', 'Skull of Náströnd', 'mace', 286, 60, 92, 0, 1, UN({ bonus: { str: 6, int: 6 }, lore: 'One of the skulls from the dragon’s hide. It still screams, very quietly, when it hits.' }));
+arm('u_nidhogg_hide', 'Hide of Níðhöggr', 'body', 26, 16, 92, 0, 1, null, UN({ bonus: { vit: 8, dmgRed: 8 }, lore: 'Rot-green on the underside. Skulls in it. Nothing gets through.' }));
+arm('u_black_sun', 'Heart of the Black Sun', 'acc', 0, 6, 90, 0, 0, null, UN({ bonus: { str: 4, agi: 4, vit: 4, int: 4, dex: 4, luk: 4 }, lore: 'The dragon swallowed a sliver of Hel’s sun. It is cold and it is heavy and it is yours.' }));
+// Side-quest rewards in Helheim
+arm('u_hlin_brooch', 'Hlín’s Brooch', 'acc', 0, 4, 72, 0, 0, null, UQ({ bonus: { maxhpPct: 5, mdef: 4, luk: 3 }, lore: 'Frigg gave it to her handmaiden so the goddess could always find her. Hlín gave it to you for the same reason.' }));
+arm('u_modgud_lantern', 'Móðguðr’s Lantern', 'acc', 0, 5, 76, 0, 0, null, UQ({ bonus: { int: 3, mdef: 5, maxsp: 200 }, lore: 'The flameless lantern of the bridge. It lights now, when you hold it, and only then.' }));
+arm('u_nameless_helm', 'Crown of the Nameless', 'head', 12, 6, 84, 0, 1, null, UQ(HEAD('jarl_crown', { bonus: { vit: 5, str: 3, dmgRed: 4 }, lore: 'A crown of river-ice. The king who wore it forgot his name. You will remember yours better for it.' })));
+// Cards (every monster has a card; the bonus comes from CARDS)
+Object.assign(CARDS, {
+  hel_draugr: { vit: 3, def: 4 }, soul_wisp: { int: 3, matk: 40 }, hel_hound: { agi: 3, aspd: 6 }, corpse_bride: { mdef: 6, maxsp: 150 },
+  nidhogg_spawn: { str: 3, crit: 8 }, bone_colossus: { maxhpPct: 12, vit: 2 },
+  garmr: { str: 5, agi: 5, atk: 50, leech: 3 }, nidhogg: { str: 6, int: 6, atk: 70, matk: 70, maxhpPct: 10 },
+});
+for (const k of ['hel_draugr', 'soul_wisp', 'hel_hound', 'corpse_bride', 'nidhogg_spawn', 'bone_colossus', 'garmr', 'nidhogg'])
+  ITEMS['c_' + k] = { id: 'c_' + k, name: MOBS[k].name + ' Card', type: 'card', bonus: CARDS[k], price: MOBS[k].boss ? 4000 : 40, icon: 'card', color: MOBS[k].col || (MOBS[k].look && MOBS[k].look.body) || '#888', mob: k, desc: 'Insert into equipment with a free slot. Cannot be removed.' };
+// Crafted Gjöll-forged gear (Sindri; js/data/recipes.js)
+arm('cr_gjoll_plate', 'Gjöll-Forged Plate', 'body', 24, 6, 80, 62000, 1, ['swordsman', 'acolyte'], CR({ bonus: { vit: 4, maxhpPct: 5 } }));
+arm('cr_soul_robe', 'Soulweave Robe', 'body', 12, 32, 80, 62000, 1, ['mage', 'acolyte'], CR({ bonus: { int: 5, maxsp: 200 } }));
+arm('cr_hound_hide', 'Houndhide Jerkin', 'body', 18, 14, 80, 60000, 1, null, CR({ bonus: { agi: 4, flee: 12 } }));
+arm('cr_hound_boots', 'Hound-Chain Boots', 'boots', 11, 3, 78, 48000, 1, null, CR({ bonus: { agi: 3, move: 6 } }));
+arm('cr_bone_shield', 'Colossus-Bone Shield', 'shield', 16, 3, 80, 52000, 1, null, CR({ bonus: { vit: 3, maxhp: 600 } }));
+arm('cr_grave_circlet', 'Grave-Rose Circlet', 'head', 6, 10, 78, 46000, 1, null, CR(HEAD('rime_circlet', { bonus: { int: 3, mdef: 3 } })));
+// Act III: what Hel pays (act3_6, the choice in her hall)
+arm('u_hel_mercy', 'Hel’s Mercy', 'acc', 0, 6, 90, 0, 0, null, UQ({ bonus: { vit: 6, maxhpPct: 10, mdef: 4 }, lore: 'A plain iron ring from Hel’s own hand. The dead of Midgard lie still because of it. Sometimes you can hear them sleeping.' }));
+arm('u_vidar_shoe', 'Víðarr’s Shoe', 'boots', 14, 4, 90, 0, 1, null, UQ({ bonus: { str: 5, agi: 5, move: 6 }, lore: 'The thick shoe Vidar was to wear at the end of the world, pieced from every scrap of leather ever trimmed from a shoe. Hel kept it for him. He does not need it now.' }));
+arm('u_hel_seal', 'Heart of Níðhöggr', 'acc', 0, 4, 90, 0, 0, null, UQ({ bonus: { str: 5, int: 5, dex: 5, atk: 30, matk: 30 }, lore: 'Still beating, slowly, cold. Nothing that crawls under the Tree will mistake you for food again.' }));

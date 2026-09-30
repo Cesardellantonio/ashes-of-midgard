@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · Ashes of Midgard</title>
+<meta name="description" content="What Ashes of Midgard stores about you, and what it does not.">
+<style>
+:root{--win:#fbfcff;--win2:#eaeff8;--edge2:#55678f;--edge3:#2e3a5a;--tb1:#7f97cc;--tb2:#4a63a3;--tbgold:#d9b565;--ink:#1f2638;--dim:#56627e;--line:#d3dae8;--link:#2446d0;
+  --ui:Tahoma,Verdana,'Segoe UI',sans-serif;--disp:'IM Fell English SC',Georgia,'Times New Roman',serif}
+html{background:#0c0e14}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#2a2030 0,#0c0e14 70%);color:var(--ink);font:14px/1.6 var(--ui);padding:32px 16px 48px;box-sizing:border-box}
+h1{font:400 clamp(30px,6vw,46px)/1.1 var(--disp);color:#fff4d8;text-align:center;margin:0 0 4px;letter-spacing:.04em;text-shadow:0 3px 0 #5a3010,0 0 24px rgba(255,160,60,.45)}
+.sub{color:#dfe6f4;text-align:center;margin:0 0 22px;font-size:13px;letter-spacing:.06em}
+.rwin{max-width:720px;margin:0 auto;background:linear-gradient(180deg,var(--win),var(--win2));border:1px solid var(--edge2);border-radius:6px;box-shadow:0 0 0 1px rgba(10,14,28,.35),inset 0 1px 0 #fff,0 8px 22px rgba(0,0,0,.38)}
+.rtb{display:flex;align-items:center;gap:6px;padding:4px 10px;background:linear-gradient(180deg,var(--tb1),var(--tb2));border-bottom:1px solid var(--edge3);border-radius:5px 5px 0 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 0 -1px 0 rgba(217,181,101,.55);font:800 12.5px var(--ui);color:#fff;letter-spacing:.03em;text-shadow:0 1px 1px rgba(10,20,50,.6)}
+.rtb::before{content:'';width:6px;height:6px;transform:rotate(45deg);background:var(--tbgold);box-shadow:0 0 0 1px rgba(40,24,0,.45)}
+.rbd{padding:14px 20px 18px}
+h2{font-size:14.5px;color:#34426a;margin:20px 0 6px;padding-bottom:3px;border-bottom:1px solid #c0cadf;display:flex;align-items:baseline;gap:7px}
+h2::before{content:'';width:5px;height:5px;transform:rotate(45deg) translateY(-2px);background:#c89a40;flex:none}
+h2:first-child{margin-top:0}
+p,li{margin:0 0 8px}
+ul{padding-left:20px;margin:0 0 8px}
+a{color:var(--link)}
+.note{padding:8px 11px;background:#fff8e0;border:1px solid #d8c070;border-radius:4px}
+.muted{color:var(--dim);font-size:12.5px}
+.foot{max-width:720px;margin:14px auto 0;text-align:center;color:#a9b3cc;font-size:12.5px}
+.foot a{color:#c8d6ff}
+code{font-size:12.5px;background:#eef1f7;padding:0 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<h1>Ashes of Midgard</h1>
+<p class="sub">Privacy</p>
+<div class="rwin"><div class="rtb">What we keep, and what we do not</div><div class="rbd">
+<p class="note"><b>In short:</b> Ashes of Midgard is a single-player browser game with no ads, no analytics and no tracking. If you play as a guest, your saves never leave your browser. If you choose to sign in, we keep only what is needed to give you your saves back on another device.</p>
+
+<h2>Playing as a guest</h2>
+<p>Your character and settings are saved in your browser's local storage on your device. Nothing about your game is sent to us.</p>
+
+<h2>If you sign in (optional)</h2>
+<p>Signing in with Google, Facebook, X, GitHub, Microsoft, Apple or an email link turns on cloud saves. Sign-in and storage are provided by Google Firebase (Firebase Authentication and Cloud Firestore). We then store:</p>
+<ul>
+  <li><b>Your account record</b> in Firebase Authentication: a user id, the id your sign-in provider gives you, your display name and the link to your avatar picture as the provider shares them, your email address if the provider shares it (or the one you typed for an email link), which providers you linked, and when the account was created and last signed in.</li>
+  <li><b>Your save data</b> in Cloud Firestore: the same save the game keeps in your browser (character name and look, levels, stats, skills, items, quests, play time and similar game progress), plus the time it was saved, the game version and a checksum.</li>
+</ul>
+<p>The display name and avatar are shown only to you, on the title screen and in the game menu. The game has no multiplayer, no leaderboards and no public profiles.</p>
+<p>We do not ask your sign-in provider for your friends, contacts, posts or anything else, and we never post on your behalf.</p>
+
+<h2>What we do not do</h2>
+<ul>
+  <li>No advertising, no analytics, no tracking pixels, no cookies of our own.</li>
+  <li>We do not sell, rent or share your data with anyone.</li>
+  <li>We do not use your data for anything except giving you your saves.</li>
+</ul>
+
+<h2>Other services the page uses</h2>
+<p>Like any website, the services that deliver the game see your IP address and browser details when they send you files: GitHub Pages (hosting the game), jsDelivr and cdnjs (code libraries), Google Fonts (lettering) and, if you sign in, Google Firebase and the sign-in provider you pick. Their own privacy policies apply to those requests. Firebase's privacy information is at <a href="https://firebase.google.com/support/privacy" rel="noopener">firebase.google.com/support/privacy</a>.</p>
+
+<h2>How long we keep it, and how to delete it</h2>
+<p>Your cloud saves and account stay until you delete them. You can delete them yourself at any time from inside the game: <a href="data-deletion.html">here is how</a>. Signing out keeps your saves in this browser and leaves the cloud copy as it is.</p>
+
+<h2>Contact</h2>
+<p>[CONTACT: add how players can reach you here, for example a link to the project's GitHub issues page or a contact form.]</p>
+<p class="muted">Last updated: 29 September 2026.</p>
+</div></div>
+<p class="foot"><a href="./">Back to the game</a> · <a href="data-deletion.html">Deleting your data</a></p>
+</body>
+</html>

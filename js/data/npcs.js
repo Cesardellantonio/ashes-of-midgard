@@ -32,7 +32,7 @@ const NPCS = {
     get dname() { return typeof P !== 'undefined' && P && P.flags.odin ? 'Odin, the Wanderer' : 'Vidar the Wanderer'; },
     nameFn: () => P && P.flags.odin ? 'Odin' : 'Vidar', titleFn: () => P && P.flags.odin ? 'All-Father' : 'Wanderer',
     talk: () => talkVidar(), get greet() { return typeof P !== 'undefined' && P && P.flags.odin ? '<i>Odin pulls his hood back up out of habit, then lets it fall.</i> Well?' : '<i>The old man’s one eye finds you before you speak.</i> Well?'; }, talkLabel: 'Talk',
-    urgent: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic >= 9 },
+    urgent: () => (P.cls === 'novice' || P.cls === 'high_novice') && P.jlvl >= 10 && P.skills.basic >= 9 },
   astrid: { map: 'emberhold', name: 'Astrid', title: 'Orphan', x: 12.5, y: 23.5, dir: 1,
     look: { body: '#6d5a4a', trim: '#4a3a2a', legs: '#3a2e26', skin: '#efd9c4', hair: '#d8c38a', weapon: 'none', scale: 0.7 },
     dname: 'Astrid', talk: () => talkAstrid(), greet: 'Oh! It’s you. Did you come to play?', talkLabel: 'Chat',
@@ -174,6 +174,7 @@ async function talkBrokkr() {
 }
 async function talkVidar() {
   const N = NPCS.vidar.dname;
+  if (P.cls === 'high_novice') { await talkVidarReborn(); return; }   // round 6: the reborn path comes first
   if (P.flags.odin) { await say(N, [pick(['I told Sigrun everything. She made me tea. I do not know what I expected.', 'Mímir used to say the price of wisdom is always an eye. He never mentioned the son. I think he was being kind.', P.flags.fenrirFate === 'bound' ? 'The wolf sleeps on his island. I went to look at him. He opened one eye at me. I think we are even now.' : P.flags.fenrirFate === 'freed' ? 'There is a new sun. She is very young. She does not know who I am, and I have decided not to tell her.' : 'Hel is sewing. Heimdall is listening. And I am sitting by a fire, being honest. It is harder than it looks.'])]); return; }
   if (P.cls === 'novice') {
     if (P.jlvl < 10 || P.skills.basic < 9) { await say(N, ['<i>An old man in a grey hood. One eye catches the firelight. The other is not there.</i>', 'A Novice. You do not know which end of the sword to hold. Come back when you do.', `Reach Job Level 10 and learn Basic Skill to level 9. <i>(Job Lv ${P.jlvl}/10, Basic Skill ${P.skills.basic}/9.)</i>`]); return; }
@@ -251,6 +252,7 @@ async function talkAstrid() {
 async function talkHeart() {
   const N = 'The Heart of Yggdrasil';
   if (!P.flags.kingSlain) { await say(N, ['<i>A knot of burned root as big as a house. Something inside it is not quite dead. The King stands between you and it.</i>']); return; }
+  if (P.flags.ending && P.quests.active.reborn_3 && !P.flags.reborn) { await heartRebirth(); return; }   // round 6: the rebirth
   if (P.flags.ending) { await say(N, [P.flags.ending === 'embers' ? '<i>The Heart glows softly. Somewhere far below, a root has turned green.</i>' : '<i>The Heart is cold. It answers to you now.</i>']); return; }
   const r = await dialog(N, '<i>The Heart pulses once, very faintly, like something asking permission. The King’s crown lies in the ash at your feet, still warm.</i><br><br>You could give the Tree the ember that would not go out, the one inside you. Or you could pick up the crown.', ['Relight the Tree', 'Take the Crown of Cinders', 'Not yet']);
   $('dialog').hidden = true;
@@ -497,3 +499,265 @@ const SCENES = {
     after(0.4, () => epilogueAct2(P.flags.fenrirFate));
   },
 };
+
+
+/* =========================================================
+   Content round 6: rebirth, the stable, pets
+   ========================================================= */
+// Ylva's stable (Skaldhaven, south of the plaza): warg rental for Ash Knights and Rune Jarls, taming sweets and pet food.
+NPCS.ylva = { map: 'skaldhaven', name: 'Ylva', title: 'Warg-Mother', x: 18.5, y: 31.5, dir: -1,
+  look: { body: '#5a4a3a', trim: '#c8c0b0', legs: '#3a3028', skin: '#e0c0a0', hair: '#d8d0c0', head: 'hood', weapon: 'none', cape: '#7a7a80', wide: true },
+  dname: 'Ylva the Warg-Mother', talk: () => talkYlva(), greet: 'Mind your fingers. The wargs bite, and so do I.', talkLabel: 'Stable' };
+Object.assign(LORE, {
+  norns: ['The Norns', 'Urðr, Verðandi and Skuld: what was, what is becoming, what shall be. They sit at the well under the root of the sky and water the Tree from it, and they spin every life in the nine realms. When the Tree burned, they kept spinning. Nobody asked them to stop.'],
+  roots: ['The Three Roots', 'Yggdrasil stands on three roots. One drinks from Mímir’s well, where wisdom is paid for in eyes. One from Hvergelmir, under Hel’s gate, where the rivers of the dead begin. One from Urðr’s well at the edge of the sky, where the Norns spin. All three still drink. That is why the Tree is not quite dead.'],
+  reborn: ['Born Again', 'You poured the Norns’ water on the Heart of Yggdrasil and the Tree took you back into itself, and then gave you back to the world, young and remembering. The Norns spun your thread again from the start. It is thicker this time.'],
+  stable: ['Ylva’s Wargs', 'The wargs of Skaldhaven were Fenrir’s cousins before they were anybody’s mounts. Ylva raised the first litter by hand when the sea froze and the horses died. They let knights ride them because she asks them to.'],
+});
+RUMORS.push(
+  { id: 'warg', when: () => MOUNT_CLASSES.includes(P.cls) && !P.flags.warg, text: 'Ylva the Warg-Mother, down by the south gate, hires out wargs to knights. A knight on a warg moves like the wind and hits like a falling tree.' },
+  { id: 'pets', when: () => P.lvl >= 5 && !P.pet && !(P.flags.tamed && Object.keys(P.flags.tamed).length), text: 'Ylva sells sweets that tame the little beasts of the Ash. Feed a Blight Poring a Poring Candy when it is half dead and it might just follow you home.' },
+  { id: 'reborn', when: () => P.lvl >= 55 && CLASSES[P.cls].tier === 2 && !P.flags.reborn, text: 'They say the old man in Emberhold knows a way to be born again at the Heart of the Tree. Young, strong, and remembering everything. He only tells it to heroes at the top of their craft.' },
+);
+async function talkYlva() {
+  const N = NPCS.ylva.dname, fee = WARG_FEE, rider = MOUNT_CLASSES.includes(P.cls);
+  if (!P.flags.talked.ylva) { P.flags.talked.ylva = true; P.flags.lore.stable = true; await say(N, ['<i>A broad grey-haired woman in a wolfskin hood. Three wargs the size of ponies lie around her feet, and all three open one eye at you.</i>', 'Wargs to ride, for those who can sit one. Sweets and food for the little beasts, for those who want a friend that does not talk back.']); }
+  const r = await dialog(N, 'What will it be?', ['Trade (taming sweets, pet food)', P.flags.warg ? 'About my warg' : `Rent a warg (${fmt(fee)}z)`, 'Tell me about taming', 'Farewell']); $('dialog').hidden = true;
+  if (r === 0) { UI.shopBy = 'ylva'; UI.shopMode = 'buy'; UI.shopTab = 'supplies'; openWin('shop'); renderWin('shop'); }
+  else if (r === 1) {
+    if (P.flags.warg) await say(N, [rider ? `Your warg follows your whistle. <i>(Press R or use the button in the Equipment window to ride or dismount.)</i> Fall in battle and it will throw you off and wait. It always waits.` : 'Your warg is waiting in my yard. It will not carry anyone but a knight, and neither will I let it.']);
+    else if (!rider) await say(N, ['A warg carries a knight in armour, not a ' + CLASSES[P.cls].name.toLowerCase() + ' in a hurry. Ash Knights and Rune Jarls only.']);
+    else if (rentWarg()) await say(N, ['<i>She whistles. The biggest of the three gets up, walks over and puts its head under your hand.</i> His name is Grár. He likes you. Do not make me regret it.']);
+  }
+  else if (r === 2) await say(N, ['Each little beast has its weakness. Porings love candy, hares moon-carrots, wolves a bitter marrowbone. Use the sweet close by, when the beast is worn down: a beast at full strength just eats it and laughs at you.', 'If it takes, you get an egg. Hatch it, feed it when it is hungry and it grows fond of you. A pet that loves you gives you a little of its strength. Overfeed it and it sulks. Starve it and one day it is gone. <i>(The Pet window: P.)</i>']);
+}
+// Vidar and the High Novice: at Job Lv 10 the old path takes you back, as its reborn class (REBORN_OF).
+async function talkVidarReborn() {
+  const N = NPCS.vidar.dname, from = P.flags.reborn && P.flags.reborn.from;
+  if (P.jlvl < 10 || (P.skills.basic || 0) < 9) { await say(N, ['<i>He looks at you for a long time.</i> Young again. And you remember all of it, don’t you. The Norns were generous. They are never generous.', `Walk the fields again until the body remembers what the mind never forgot. <i>(Job Lv ${P.jlvl}/10, Basic Skill ${P.skills.basic || 0}/9.)</i> Then come back, and I will give you back your path, higher than before.`]); return; }
+  let to = REBORN_OF[from];
+  if (!to) {   // a save without a remembered path: choose any reborn class
+    const all = Object.values(REBORN_OF), k = await dialog(N, 'The Norns did not say which path you walked. Choose.', [...all.map(c => CLASSES[c].name), 'Not yet']); $('dialog').hidden = true;
+    if (k < 0 || k >= all.length) return; to = all[k];
+  }
+  const C = CLASSES[to];
+  const r = await dialog(N, `The ${from && CLASSES[from] ? CLASSES[from].name : 'old path'} remembers you. It will take you back as something more.<br><br><b>${C.name}.</b> ${C.blurb}<br><br>Your old skills wake up again, and five new ones wait.`, [`Become a ${C.name}`, 'Not yet']);
+  $('dialog').hidden = true; if (r !== 0) return;
+  jobChange(to);
+}
+// The Heart of Yggdrasil, with reborn_3 active: the Norns, then the choice.
+async function heartRebirth() {
+  const N = 'The Heart of Yggdrasil';
+  if (!hasItem('urd_water')) { await say(N, ['<i>The Heart pulses under your hand, and waits. Without the Water of Urðr it cannot hear what you are asking.</i>']); return; }
+  if (!rebornReady()) { await say(N, ['<i>The Heart is warm, but it does not open. Only a hero at the top of a second path, Base Lv 60 and Job Lv 50, can be spun again.</i>']); return; }
+  const f = P.flags, age = f.ending === 'embers' ? 'The Tree is breathing again because you gave it your ember.' : 'The Tree obeys a crown now. It still drinks from our well. It cannot help it.';
+  const wolf = f.fenrirFate === 'bound' ? 'The Wolf sleeps in a ribbon of impossible things, and dreams of nothing.' : f.fenrirFate === 'freed' ? 'The Wolf ate the dead sun, and a young one rose behind him. We did not spin that. You did.' : 'The Wolf pulls at his chain on the broken bridge. The chain is thinning.';
+  const gate = f.gateShut ? 'Móðguðr’s lantern burns at Helgrind, and the dead lie down again one by one.' : 'Hel’s gate still breathes under Gloamheim.';
+  const odin = f.odin ? 'The one-eyed wanderer told you his true name. He asked us once how to die well. We told him. He did not listen.' : 'The one-eyed wanderer by the fire has not told you his name. He will.';
+  await say('The Norns', [
+    '<i>You pour the Water of Urðr over the Heart. It does not run off. It sinks in, and the steam that rises is three women: one old, one young, one with no face at all.</i>',
+    `<b>Urðr</b>, what was: You died in the Ash and the Tree would not take you. We know why now. It was not finished with you. ${age}`,
+    `<b>Verðandi</b>, what is becoming: ${wolf} ${gate} ${odin}`,
+    '<b>Skuld</b>, what shall be: The thread you are spinning is strong, and it is nearly spun out. There is more coming than it can carry. Let us spin it again from the beginning, thicker, with everything you are woven in.',
+  ]);
+  const to = REBORN_OF[P.cls], C = to && CLASSES[to];
+  const r = await dialog('Skuld', `Will you be born again?<br><br><b>You return as a High Novice at Base Lv 1.</b> You keep your gear, zeny, storage, quests and deeds, and part of your strength as status points. Your skills sleep until your path wakes them: at Job Lv 10 Vidar sets you on it again${C ? ` as a <b>${C.name}</b>` : ''} (tier 3, Job Lv 70). A reborn hero learns faster.`, ['Be born again', 'Not yet']);
+  $('dialog').hidden = true; if (r !== 0) return;
+  rebirth();
+}
+
+/* =========================================================
+   Content round 7: Helheim. The camp by the Helgrind road (Hlín: storage and travel; Eir: healing; Gauti: the
+   grave-trader; Ganglati: the Deep Roots), Móðguðr at Gjallarbrú, Ganglöt in Eljudnir (the Gauntlet), a lost soul
+   for Eir's escort, Act III scenes and Helheim lore. No npc_<id> sheets exist yet: the procedural `look` is used.
+   ========================================================= */
+Object.assign(NPCS, {
+  modgud_hel: { map: 'helheim', name: 'Móðguðr', title: 'Keeper of Gjallarbrú', x: 30.5, y: 37.6, dir: 1,
+    look: NPCS.modgud.look, dname: 'Móðguðr, Keeper of Gjallarbrú', talk: () => talkModgudHel(), greet: 'Name and business. Yes, again. It is the job.', talkLabel: 'Talk' },
+  hlin: { map: 'helheim', name: 'Hlín', title: 'Keeper of the Chest', x: 27.5, y: 48.5, dir: 1,
+    look: { body: '#4a5a7a', trim: '#e0c070', legs: '#2e3650', skin: '#e8d8cc', hair: '#c8b8a0', robe: true, weapon: 'none', scale: 0.95 },
+    dname: 'Hlín, Frigg’s Handmaiden', talk: () => talkHlin(), greet: 'Frigg sent me down with the chest. She did not say for whom. I think she meant you.', talkLabel: 'Storage and travel' },
+  eir: { map: 'helheim', name: 'Eir', title: 'Healer', x: 37.5, y: 48.5, dir: -1,
+    look: { body: '#e8e4dc', trim: '#8ab8a0', legs: '#b8b4ac', skin: '#f0dcd0', hair: '#e8d8a8', robe: true, weapon: 'staffv', wcol: '#c8b890', scale: 0.98 },
+    dname: 'Eir the Healer', talk: () => talkEir(), greet: 'Sit. Nobody bleeds in my camp. The dead have tried.', talkLabel: 'Healing' },
+  gauti: { map: 'helheim', name: 'Gauti', title: 'Grave-Trader', x: 36.5, y: 53.5, dir: -1,
+    look: { body: '#4a4440', trim: '#c8b890', legs: '#2e2a26', skin: '#9aa8a0', hair: '#d8d8d0', beard: true, head: 'hood', weapon: 'none', wide: true },
+    dname: 'Gauti the Grave-Trader', talk: () => talkGauti(), greet: '<i>A draugr with a merchant’s scales hanging from his belt.</i> Buying? Selling? I take zeny from the living and Obols from everyone.', talkLabel: 'Trade' },
+  ganglati: { map: 'helheim', name: 'Ganglati', title: 'Keeper of the Deep', x: 45.5, y: 51.8, dir: 1,
+    look: { body: '#3a3634', trim: '#8a8070', legs: '#24201e', skin: '#b8b0a8', hair: '#6a6660', head: 'hood', robe: true, weapon: 'staffv', wcol: '#5a5048' },
+    dname: 'Ganglati, Hel’s Servant', talk: () => talkGanglati(), greet: '<i>He speaks very slowly.</i> Down… is… this way.', talkLabel: 'The Deep Roots' },
+  ganglot: { map: 'helheim_arena', name: 'Ganglöt', title: 'Herald of the Gauntlet', x: 19.5, y: 31.5, dir: 1,
+    look: { body: '#4a3a44', trim: '#9affc8', legs: '#2a2028', skin: '#c8c0c8', hair: '#2a2428', robe: true, weapon: 'staffv', wcol: '#8a8090' },
+    dname: 'Ganglöt, Hel’s Handmaid', talk: () => talkGanglot(), greet: '<i>She walks toward you for a long time without getting any closer.</i> A contestant. How nice. The benches are hungry.', talkLabel: 'The Gauntlet' },
+  lost_child: { map: 'helheim', name: 'Lost Soul', title: 'Weeping Child', x: 13.5, y: 45.5, dir: 1,
+    look: { body: '#bfeede', trim: '#e8fff4', legs: '#a8d8c8', skin: '#e0fff0', hair: '#c8f0e0', weapon: 'none', scale: 0.62 },
+    show: () => { const st = questStatus('eir_child'); return st === 'ready' || st === 'done'; }, at: () => [30.5, 51.5],
+    dname: 'A Lost Soul', talk: () => say('A Lost Soul', [pick(['Eir says I can stay by the fire until I remember my name. I think it was something with an R.', 'The lantern stopped crying when you carried me. I didn’t know lanterns could stop.', 'Are you dead too? You’re too warm. Eir says you’re a “visitor”. I don’t know what that means but I like it.'])]),
+    escortLine: '<i>The child holds the lantern very tight.</i> Don’t walk so fast. The dogs are watching.' },
+});
+OBJ_TALK.deepstair = async () => { const n = map && map.npcs.find(e => e.id === 'ganglati'); if (n && typeof talkNPC !== 'undefined') talkNPC = n; try { await talkGanglati(); } finally { if (typeof talkNPC !== 'undefined' && talkNPC === n) talkNPC = null; } };
+Object.assign(LORE, {
+  helheim: ['Helheim', 'The realm of those who died of sickness and age, not in battle. Grey plains, a frozen river, a hall of rotten timber, and a sun that gives no light. The dead here do not suffer. They wait. It was quiet, before something started eating them.'],
+  gjallarbru: LORE.gjallarbru,
+  eljudnir: ['Eljudnir', 'Hel’s hall: its name means “rain-damp”. Its plate is Hunger, its knife Famine, its bed Sickbed. The dead eat at her benches and are never full, and Hel sits at the head of the table, half of her face beautiful and half of it not.'],
+  gjoll: ['Gjöll', 'The river that runs between the living and the dead. It froze when the Tree burned, and the dead who were crossing froze into it. You can see their faces under the ice, still swimming.'],
+  nidhogg: ['Níðhöggr', 'Malice-Striker. The dragon at the bottom of the world who gnaws the root of Yggdrasil and feeds on the corpses of oath-breakers at Náströnd. When the Tree burned, the dead stopped coming, and he started on the root instead. You stopped him. For now.'],
+  hvergelmir: ['Hvergelmir', 'The roaring kettle under the second root, where every river of the dead begins. The Norns’ root drinks from Urðr’s well, Mímir’s from wisdom, and this one from the dead. Something has to.'],
+  ganglati: ['Ganglati and Ganglöt', 'Hel’s servants: a man and a woman who walk so slowly that nobody has ever seen them move. They were the first dead. They have been walking toward the same door for ten thousand years, and they are very nearly there.'],
+  hlin: ['Hlín', 'Frigg’s handmaiden, the protector: the one the goddess sent to anyone she wanted kept safe. Frigg is gone. Hlín kept the chest and the orders, and came down to Hel with both.'],
+  eir: ['Eir', 'The best of healers, the old poems say, and a Valkyrie once. She came down to Hel of her own will when the Tree burned, because the dead were hurting and nobody else would.'],
+  deep: ['The Deep Roots', 'Under Helheim the roots of the Tree go down and down, and every hollow between them is full of the dead who got lost on the way to Hel’s table. Ganglati keeps the stair. He has never been to the bottom. Neither has anyone.'],
+  gauntlet: ['The Gauntlet of Eljudnir', 'Hel keeps the great beasts that fell in Midgard. When a living guest comes to her hall, she lets them out, one after another, and the dead on the benches bet their Obols. The house always wins. Almost always.'],
+  hel_pact: ['What Hel Owes', 'Hel pays her debts. She is the only one of the gods who always did.'],
+});
+RUMORS.push(
+  { id: 'helheim', when: () => !!P.quests.done.act2_12 && !P.flags.seen.helheim, text: 'The gate-maiden at Helgrind lets nobody through. Except, they say, someone the Norns have spun twice. Hel’s law does not know what to do with a reborn soul.' },
+  { id: 'deep', when: () => !!P.flags.seen.helheim && !(P.flags.deep && P.flags.deep.best), text: 'Under Hel there are more roots, and under those, more. A slow old man keeps the stair down. Every floor you clear, the dead pay you in their own coin.' },
+  { id: 'gauntlet', when: () => !!(P.flags.bosses && P.flags.bosses.garmr) && !(P.flags.rush && P.flags.rush.clears), text: 'Hel keeps every great beast you ever killed. In her hall she lets them out again, one after another, and the dead bet on who falls first. I would not bet on you. No offence.' },
+);
+// Móðguðr at the bridge (Act III giver; the Gjallarbrú defence)
+async function talkModgudHel() {
+  const N = NPCS.modgud_hel.dname;
+  await say(N, [pick(['I ask the dead their names on this bridge. I ask the living too, now. There are more of you than there used to be. There were none.', 'Hel says you are a guest. Guests do not stay. Remember that, when the benches in her hall start to look comfortable.', 'The ice under the bridge used to move. Now only the faces in it do.', P.flags.bosses.nidhogg ? 'The gnawing stopped. I did not know how loud it was until it stopped.' : 'Listen. Under the river. That is not the ice cracking.'])]);
+}
+// Hlín: the shared chest (Frigg's), and travel back to any kindled Waystone for a fee (the Kafra of the dead)
+const HLIN_FEE = () => 800 + 20 * P.lvl;
+async function talkHlin() {
+  const N = NPCS.hlin.dname;
+  if (!P.flags.talked.hlin) { P.flags.talked.hlin = true; P.flags.lore.hlin = true; await say(N, ['<i>A woman in blue with a chest at her feet: the same chest Fulla keeps in Skaldhaven, and Gná in Emberhold. The lid has Frigg’s mark on it.</i>', 'Put a thing in the chest here and my sisters have it up there. Frigg built it so nothing she loved could ever be lost. It works on the dead’s side too. I checked.', 'And if the grey gets into your bones, I can send you home. Any Waystone you have lit. Hel does not mind: you are only a guest.']); }
+  const fee = HLIN_FEE(), r = await dialog(N, 'What do you need?', ['Open the chest (storage)', `Travel to a kindled Waystone (${fmt(fee)}z)`, 'Remember this camp (return here when you fall)', 'Farewell']); $('dialog').hidden = true;
+  if (r === 0) { UI.stTab = UI.stTab || 'all'; openWin('storage'); renderWin('storage'); }
+  else if (r === 1) {
+    const list = (typeof travelList === 'function' ? travelList() : MAP_ORDER.filter(k => P.kindled[k])).filter(k => k !== map.id && MAPDEFS[k] && genMap(k).way);
+    if (!list.length) { await say(N, ['You have not lit any other Waystone. I cannot send you somewhere that does not remember you.']); return; }
+    const k = await dialog(N, 'Where to? The fee is for the chest’s upkeep. Frigg was very particular.', [...list.map(id => MAPDEFS[id].name), 'Stay']); $('dialog').hidden = true;
+    if (k < 0 || k >= list.length) return;
+    if (P.zeny < fee) { log(`You need ${fmt(fee)} zeny.`, 'warn'); return; }
+    P.zeny -= fee; Sfx.warp(); const dm = genMap(list[k]); gotoMap(list[k], dm.way.x, dm.way.y + 1.5); log(`Hlín opens the chest, and you step out of it somewhere else.`, 'npc');
+  }
+  else if (r === 2) { P.lastWay = { map: 'helheim', x: 32.5, y: 51.0 }; saveGame(); await say(N, ['Done. If you fall down here, you will wake by my chest. It is not as warm as a Waystone. It is closer.']); }
+}
+// Eir: free healing (HP, SP, rot, chill, hexes) and a blessing, for anyone in the camp
+async function talkEir() {
+  const N = NPCS.eir.dname;
+  if (!P.flags.talked.eir) { P.flags.talked.eir = true; P.flags.lore.eir = true; await say(N, ['<i>A tall woman in white with a healer’s satchel and a Valkyrie’s shoulders.</i> Eir. I carried the chosen to Valhalla once. Then I carried the dying to their beds. Now I sit in Hel and mend the ones who come back up the road.', 'You are alive, which makes you my easiest patient in a thousand years. Come to me when they have chewed on you.']); }
+  const r = await dialog(N, 'Where does it hurt?', ['Heal me', 'Bless me (Eir’s Blessing, 10 minutes)', 'Farewell']); $('dialog').hidden = true;
+  if (r === 0 || r === 1) {
+    for (const k of ['rot', 'chill', 'hexed', 'stagger']) delete P.buffs[k];
+    if (r === 1) addBuff('eir_blessing', 'Eir’s Blessing', 'rested', 600, { str: 6, agi: 6, int: 6, dex: 6, maxhpPct: 5 });
+    calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; renderBuffs(); pillar(P, '#bfffe0', true); Sfx.heal(); log(r === 1 ? 'Eir lays two fingers on your brow. Something old and bright settles in your blood.' : 'Eir closes your wounds with a word and a hard look.', 'npc');
+  }
+}
+// Gauti: supplies for zeny, rarer things for Hel's Obols
+const OBOL_OFFERS = [['golden_apple', 1, 12], ['eljudnir_mead', 1, 8], ['black_sun_shard', 1, 15], ['warding_stone', 1, 20], ['dvergr_whetstone', 1, 10], ['ygg_ember', 1, 10], ['soul_tonic', 5, 6], ['grave_bread', 3, 6]];
+async function talkGauti() {
+  const N = NPCS.gauti.dname;
+  if (!P.flags.talked.gauti) { P.flags.talked.gauti = true; await say(N, ['I sold salt fish in Skaldhaven for forty years. I died of it, in a way. Down here nobody eats, so I sell other things.', 'The dead pay in Obols: the coin they were buried with. The Deep coughs them up, Ganglöt pays them out, the bounties too. Bring them to me. The living pay in zeny, which I take because it is shiny.']); }
+  const obols = countItem('hel_obol');
+  const r = await dialog(N, `What will it be? <i>(You carry ${obols} Obol${obols === 1 ? '' : 's'}.)</i>`, ['Trade (supplies)', 'Trade Obols', 'Farewell']); $('dialog').hidden = true;
+  if (r === 0) { UI.shopBy = 'gauti'; UI.shopMode = 'buy'; UI.shopTab = 'supplies'; openWin('shop'); renderWin('shop'); }
+  else if (r === 1) {
+    const offers = OBOL_OFFERS.concat([['card', 1, 40]]);
+    const k = await dialog(N, 'Obols for goods. The price is on the tag. The tag is on my finger.', [...offers.map(([id, n, c]) => id === 'card' ? `A Helheim card, sight unseen · ${c} Obols` : `${ITEMS[id].name}${n > 1 ? ' ×' + n : ''} · ${c} Obols`), 'Nothing']); $('dialog').hidden = true;
+    if (k >= 0 && k < offers.length) obolBuy(offers[k]);
+  }
+}
+function obolBuy([id, n, cost]) {
+  if (countItem('hel_obol') < cost) { log(`Gauti taps the tag: ${cost} Obols. You have ${countItem('hel_obol')}.`, 'warn'); return false; }
+  const give = id === 'card' ? 'c_' + pick(['hel_draugr', 'soul_wisp', 'hel_hound', 'corpse_bride', 'nidhogg_spawn', 'bone_colossus']) : id;
+  if (!bagRoom(give, n)) { log('Your bag is full.', 'warn'); return false; }
+  takeItem('hel_obol', cost); addItem(makeItem(give, { qty: n })); Sfx.coin(); log(`Gauti weighs the Obols, bites one, and hands over ${ITEMS[give].name}${n > 1 ? ' ×' + n : ''}.`, 'npc'); UI.dirty = true; return true;
+}
+// Ganglati: the Deep Roots (floor select, checkpoints, records)
+async function talkGanglati() {
+  const N = NPCS.ganglati.dname, D = deepState(), run = D.run;
+  if (!P.flags.talked.ganglati) { P.flags.talked.ganglati = true; P.flags.lore.ganglati = true; P.flags.lore.deep = true; await say(N, ['<i>An old man, so slow that the ash has settled on his shoulders.</i> I… am Ganglati. I… keep… the stair.', 'Under Hel… the roots go down. Every hollow… is full of the lost. They move. The halls… are never the same… twice. <i>He thinks about it.</i> Except… when they are.', 'Clear a floor… or kill its warden… and the way down opens. Every fifth floor… something old waits. Beat it… and I can send you back… that deep. The dead… pay in Obols.']); }
+  const opts = [], acts = [];
+  opts.push('Begin a new descent (floor 1)'); acts.push(() => deepGo(1, true));
+  if (run && run.cp > 1) { opts.push(`Return to floor ${run.cp} (checkpoint)`); acts.push(() => deepGo(run.cp)); }
+  opts.push('Records'); acts.push(async () => { await say(N, [`Deepest floor… ${D.best || 0}. Floors cleared… ${D.floors}. Descents… ${D.runs}. Old beasts beaten below… ${D.bosses}.`, run ? `This descent: floor ${run.floor || 0} reached, ${run.cleared || 0} cleared, checkpoint ${run.cp || 1}. <i>(Descent ${String(run.seed).slice(-5)})</i>` : 'No descent… yet.']); });
+  opts.push('Tell me about the Deep'); acts.push(async () => { await say(N, ['Each descent… is a new Deep. The same floor… is the same… until you start again.', 'Some floors… are Frozen, or Ashen. Some… are Soul-Rich, or Restless, or Gilded. You will… feel it.', 'Deeper… the dead are stronger. And richer. <i>He almost smiles.</i> Mostly… stronger.']); });
+  opts.push('Farewell'); acts.push(() => {});
+  const r = await dialog(N, `The stair goes down.${D.best ? ` <i>(Deepest: floor ${D.best}.)</i>` : ''}`, opts); $('dialog').hidden = true;
+  if (r >= 0 && r < acts.length) await acts[r]();
+}
+// Ganglöt: the Gauntlet
+async function talkGanglot() {
+  const N = NPCS.ganglot.dname, R = rushState();
+  if (!P.flags.talked.ganglot) { P.flags.talked.ganglot = true; P.flags.lore.gauntlet = true; await say(N, ['The Gauntlet. My lady keeps every great beast that ever fell in Midgard. Nine of them, tonight, one after another. The benches bet on how long you last.', 'The clock runs from the first to the last. Fall, or leave the hall, and it is over. Win, and the benches pay: in Obols. Faster pays more.']); }
+  if (RUSH.on) { await say(N, ['<i>She is watching the fight, and does not look at you.</i> Busy.']); return; }
+  const r = await dialog(N, R.best ? `Your best: ${rushClock(R.best)}. The benches remember.` : 'Well? The benches are waiting.', ['Begin the Gauntlet', 'Personal bests', 'Farewell']); $('dialog').hidden = true;
+  if (r === 0) rushStart();
+  else if (r === 1) await say(N, [R.board.length ? R.board.map((e, i) => `${i + 1}. ${rushClock(e.t)} · ${CLASSES[e.cls] ? CLASSES[e.cls].name : e.cls}, Lv ${e.lvl} · ${e.day}`).join('<br>') + `<br><br><i>Runs: ${R.runs} · clears: ${R.clears}.</i>` : 'Nothing yet. The benches are patient. They are dead.']);
+}
+
+/* ---------- Act III scenes: The Roots of Hel ---------- */
+const helWx = (k, i) => { if (typeof GFX !== 'undefined' && GFX && typeof GFX.setWeather === 'function') GFX.setWeather(k, i); };
+const helTime = p => { if (typeof GFX !== 'undefined' && GFX && typeof GFX.lockTime === 'function') GFX.lockTime(p); };
+Object.assign(SCENES, {
+  async a3_modgud() {
+    await line('modgud', ['<i>Móðguðr’s lantern is lit, as you left it. The dead are not coming out of Helgrind any more. They are pressing against the crack from this side, trying to get back in.</i>', '<!--sad-->Something below is eating them. Not the living: the dead. They come up the road to get away from it, and then they remember they have nowhere to go.',
+      P.flags.fenrirFate === 'bound' ? 'The wolf sleeps in his ribbon. It is not him.' : 'The wolf ran into the sky. It is not him.', 'It is the old one. Níðhöggr, at the bottom of the root. When the Tree burned he ran out of the dead to eat, and he started on the Tree. Now the Tree is ' + (embersAge() ? 'alive again, and he can taste it.' : 'yours, and he does not care.')]);
+    await line('modgud', ['<!--sad-->Hel will not ask you for help. She never asks. But I am asking. <i>She almost smiles.</i> Ten thousand years, and I have never asked anybody for anything.',
+      'Here is the law. Whoever crosses Gjallarbrú alive stays in Hel. The dead cannot fight him, and the living cannot come back. ' + (P.flags.reborn ? 'But you have been spun twice. The Norns wove you into their own thread. Hel’s law does not know what to do with you.' : 'Unless the Norns have spun you twice. Be born again at the Heart, and Hel’s law will not know what to do with you.'),
+      P.flags.reborn && P.lvl >= 70 ? 'The crack will let you through. Go carefully. The dead below are hungrier than the ones you know.' : 'Grow strong on the far side of your second life (Base Lv 70), and the crack will let you through.']);
+  },
+  async a3_bridge() {
+    helWx('souls', 1.2);
+    await line('modgud_hel', ['<!--neutral--><i>Móðguðr is waiting on the far bank, lantern in hand, as if she had always been there. Maybe she has.</i> Name and business. <i>You give her both.</i> Good. The dead are listening. They like to know who is walking over them.',
+      'This is Gjallarbrú. Gold, because the gods thought the dead should cross something beautiful. The river under it is Gjöll. Do not look at the faces in the ice. They will look back.']);
+    await line({ x: GJALL.x0 + 1.5, y: GJALL.y0 + 5, name: 'A voice from the hall' }, ['<i>From the far end of the plain, from the hall of rotten timber, a woman’s voice. It is warm on one side and cold on the other.</i>', '<!--surprised-->“A living guest. Móðguðr, you let one through again.” <i>A pause.</i> “Good. Bring them to my door, if my hound lets them.”']);
+    helWx(null, 0);
+  },
+  async a3_hel() {
+    helWx('souls', 1.4);
+    actor('hel', 32.5, 11.5, { col: '#8aff9a' });
+    await line('hel', ['<i>Hel stands in the door of Eljudnir. Half of her is a queen. The other half has been in the ground for a long time.</i><!--angry--> You killed my hound. Twice. He will be back. He always comes back. He is a good dog.',
+      P.flags.fenrirFate === 'freed' ? 'You set my brother free. He ate the sun, and then he came home to me and slept for a week. I have not decided whether to thank you.' : 'You bound my brother in his ribbon. I have not forgiven you. I have not decided not to.',
+      '<!--sad-->But I have a guest who is eating my guests. Níðhöggr. He gnaws the root below my hall, and every bite, a thousand of my dead go into his belly and do not come out anywhere. I cannot reach him. The dead cannot fight. And the living cannot come here. Except, it seems, you.']);
+    await line('hel', ['Go down. Under my plain the roots go down forever, and Ganglati keeps the stair. Find the way to Hvergelmir from below: his brood carry pieces of the root they have chewed. Bring them to the old man, and he will know the way.', '<!--happy-->Kill the dragon, and I will pay. Hel pays her debts. Ask anyone. <i>She looks at the plain full of the dead.</i> Well. Ask anyone here.']);
+    helWx(null, 0);
+  },
+  async a3_roots() {
+    await line('ganglati', ['<!--surprised--><i>Ganglati turns the splinters of root over in his hands. It takes a very long time.</i> These… are fresh. He bit them… yesterday.', 'The Root Road… west of the plain… goes under the great root… to Hvergelmir. It was choked… with the dead. They have run away… from him. <i>He nods, slowly.</i> It is open.', 'Go. I will… still be here. I am… always… still here.']);
+    P.flags.lore.hvergelmir = true;
+  },
+  async a3_hvergelmir() {
+    helWx('ash', 1.3);
+    await line({ x: 20.5, y: 12.5, name: 'Níðhöggr' }, ['<i>Under the arch of the root, black water, and in it something the size of a longhouse, chewing. Every bite, the root shivers, and the shiver goes all the way up to the sky.</i>', '“Warm,” says Níðhöggr, without turning. “I can smell the Tree on you. You have been at its Heart.”', embersAge() ? '“You lit it again. It tastes of spring now. I had forgotten spring.”' : '“You wear its crown. It tastes of ash and obedience. I have eaten worse.”', '<!--angry-->“Come closer. I have eaten gods’ oath-breakers for ten thousand years. I would like to try a hero.”']);
+    helWx(null, 0);
+  },
+  async a3_payment() {
+    helWx('souls', 1.6); helTime(0.5);
+    actor('hel', 22.5, 9.5, { col: '#8aff9a' });
+    await line('hel', ['<i>Hel sits at the head of her table, and the dead on the benches stand up when you come in, all of them, very slowly.</i> <!--happy-->The gnawing has stopped. My hall is quiet. I did not know it could be.',
+      'I said I would pay. Hel pays her debts. Choose.']);
+    let r = -1;
+    while (r < 0) r = await ask('hel', 'What does Hel owe you?', ['Let the dead of Midgard lie still', 'Let Vidar go to the Tree (Odin’s son, the one the wolf took)', 'Give me Níðhöggr’s heart']);
+    P.flags.helPact = ['rest', 'vidar', 'seal'][r]; P.flags.lore.hel_pact = true;
+    if (r === 0) await line('hel', ['<!--surprised--><i>She looks at you for a long moment.</i> All of them? You could have had anything. <i>Then, almost gently:</i> Very well. The dead of Midgard will stay down. Mostly. Some of them never did listen.', '<!--happy-->Go home and tell the Valkyrie with the lantern. She lights Waystones for them. She can rest too.']);
+    else if (r === 1) await line('hel', ['<!--sad--><i>Hel is quiet.</i> Vidar. The one who stepped between the wolf and his father. He sits at my table and he does not eat. He is waiting for someone.', 'Very well. The Norns may spin him again. He will not remember any of it. <i>The dead half of her mouth smiles.</i> His father will. That is the price, and it is not yours to pay.']);
+    else await line('hel', ['<!--happy--><i>She laughs, and the benches laugh with her.</i> A practical guest. Here. It is still beating. It always will. Wear it close, and nothing that crawls under the Tree will ever mistake you for food again.']);
+    helTime(null); helWx(null, 0);
+    after(0.4, () => epilogueAct3(P.flags.helPact));
+  },
+});
+// Act III epilogue: what Hel paid, told through the Age and the wolf's fate.
+function epilogueAct3(pact) {
+  const el = $('ending'); if (!el) return; el.hidden = false; const emb = P.flags.ending !== 'ash';
+  const T = pact === 'rest' ? ['The Dead Lie Still', 'In Emberhold, Sigrun lights the last Waystone she will ever need to light, and sits down beside it, and falls asleep for the first time since the Tree burned.', emb ? 'The relit Tree sends a root down past Hel’s hall. Nothing gnaws it. It grows.' : 'The Ash obeys its crown, and now the dead obey Hel. Midgard is very quiet. Some of your subjects find it restful.']
+    : pact === 'vidar' ? ['The Son Is Spun Again', 'Somewhere in the nine realms a child is born with a grey hood of hair and very serious eyes. He does not remember a wolf. He does not remember anything.', 'In Emberhold, an old man with one eye stops in the middle of a sentence, and looks toward the north for a long time, and then goes on talking as if nothing happened. He is smiling.']
+      : ['The Heart of the Dragon', 'Níðhöggr’s heart beats against your chest, cold and slow. The things under the Tree smell it on you and turn away.', emb ? 'The Tree does not mind. It has a thousand years now, and a guard it did not ask for.' : 'The Ash does not mind. It has a ruler now who is feared above and below.'];
+  el.innerHTML = `<div class="e-in"><h2>${T[0]}</h2>${T.slice(1).map(p => `<p>${p}</p>`).join('')}<p class="muted" style="font-size:13px;margin-top:22px">Act III complete · ${esc(P.name)} · ${CLASSES[P.cls].name} · Base Lv ${P.lvl}${P.title && TITLES[P.title] ? ' · ' + esc(TITLES[P.title]) : ''}</p><button class="btn big" id="bEnd3" style="margin-top:12px">Continue wandering</button></div>`;
+  $('bEnd3').onclick = () => { el.hidden = true; log('Hel’s hall is quiet. Under it, the roots still go down, and Ganglati is still keeping the stair. The Gauntlet waits in Eljudnir.', 'lvl'); };
+  Sfx.victory();
+}
+// The Norns remember Hel's law (the rebirth chain meets Act III): one more line at the Heart once Act II is done.
+{
+  const origHeart = heartRebirth;
+  // eslint-disable-next-line no-func-assign
+  heartRebirth = async function () {
+    if (P.quests.done.act2_12 && !P.flags.reborn && hasItem('urd_water') && rebornReady()) await say('The Norns', ['<i>Before they speak, the three shadows turn their heads toward the ground, as if listening to something far below.</i>', '<b>Skuld</b>: Something is gnawing at our root under Hel. We feel its teeth in every thread. Hel’s law keeps the living out of her hall. It does not know what to do with one we have spun twice.']);
+    return origHeart.apply(this, arguments);
+  };
+}

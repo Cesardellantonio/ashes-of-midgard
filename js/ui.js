@@ -1,4 +1,11 @@
 'use strict';
+/* UI round 8 (content round 7's endgame), in this file:
+   - skill / buff icons: painted assets/ui/skills/* when its index lists them, else a CSS tile (skillTile, SKART);
+   - Ganglati's and Ganglöt's menus render as window panels inside the dialog (DLG_PANELS next to dialog());
+   - windows 'deep' (a floor's affixes, progress and rewards; records) and 'gauntlet' (live clock, the nine, bests),
+     a Deep card under the minimap, the pet's portrait from its monster sheet (PETSPR), the Reborn ceremony;
+   - hooks by wrapping globals (rushStart, talkGanglot, rebirth): see "UI round 8" at the end of the file.
+   Harness: shots/ui8/cdp.py + scenes.js. */
 /* =========================================================
    Icons
    ========================================================= */
@@ -17,6 +24,8 @@ function iconURL(t) {
     case 'ember': { const gr = g.createRadialGradient(32, 34, 2, 32, 34, 24); gr.addColorStop(0, '#fff4c0'); gr.addColorStop(0.4, '#ffa040'); gr.addColorStop(1, 'rgba(200,60,10,0)'); g.fillStyle = gr; g.beginPath(); g.arc(32, 34, 24, 0, 7); g.fill(); g.fillStyle = '#5a2a10'; g.beginPath(); g.ellipse(32, 44, 12, 7, 0, 0, 7); g.fill(); break; }
     case 'etc': { const gr = g.createRadialGradient(26, 26, 2, 32, 34, 22); gr.addColorStop(0, shade(col, 0.4)); gr.addColorStop(1, shade(col, -0.45)); g.fillStyle = gr; g.beginPath(); g.moveTo(14, 40); g.quadraticCurveTo(14, 16, 34, 14); g.quadraticCurveTo(54, 18, 50, 40); g.quadraticCurveTo(44, 54, 30, 52); g.quadraticCurveTo(16, 50, 14, 40); g.fill(); break; }
     case 'shard': { g.fillStyle = col; g.beginPath(); g.moveTo(32, 4); g.lineTo(46, 26); g.lineTo(36, 60); g.lineTo(20, 34); g.closePath(); g.fill(); g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.moveTo(32, 4); g.lineTo(36, 60); g.lineTo(20, 34); g.closePath(); g.fill(); g.font = "22px 'Noto Sans Runic', sans-serif"; g.fillStyle = 'rgba(40,20,10,.7)'; g.textAlign = 'center'; g.fillText('ᛟ', 33, 38); break; }
+    case 'egg': { const gr = g.createRadialGradient(26, 26, 2, 32, 36, 24); gr.addColorStop(0, '#fffaf0'); gr.addColorStop(0.7, '#e8dcc8'); gr.addColorStop(1, '#a89a84'); g.fillStyle = gr; g.beginPath(); g.ellipse(32, 36, 17, 22, 0, 0, 7); g.fill(); g.fillStyle = col; for (const [sx, sy, sr] of [[26, 30, 5], [38, 40, 6], [30, 48, 4], [40, 26, 3.5]]) { g.beginPath(); g.arc(sx, sy, sr, 0, 7); g.fill(); } g.strokeStyle = 'rgba(60,40,20,.5)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(32, 36, 17, 22, 0, 0, 7); g.stroke(); break; }   // round 6: pet eggs
+    case 'candy': { g.fillStyle = shade(col, -0.2); g.beginPath(); g.moveTo(10, 22); g.lineTo(22, 32); g.lineTo(10, 42); g.closePath(); g.fill(); g.beginPath(); g.moveTo(54, 22); g.lineTo(42, 32); g.lineTo(54, 42); g.closePath(); g.fill(); const gr = g.createRadialGradient(28, 28, 2, 32, 32, 13); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.35, col); gr.addColorStop(1, shade(col, -0.4)); g.fillStyle = gr; g.beginPath(); g.arc(32, 32, 12, 0, 7); g.fill(); g.strokeStyle = 'rgba(255,255,255,.6)'; g.lineWidth = 2; g.beginPath(); g.arc(32, 32, 7, 3.6, 5.2); g.stroke(); break; }   // round 6: taming sweets
     case 'plush': { g.fillStyle = col; g.beginPath(); g.moveTo(10, 50); g.quadraticCurveTo(8, 16, 32, 14); g.quadraticCurveTo(56, 16, 54, 50); g.closePath(); g.fill(); g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(24, 26, 6, 4, -0.5, 0, 7); g.fill(); g.fillStyle = '#2a1a1a'; g.beginPath(); g.arc(24, 36, 3.5, 0, 7); g.fill(); g.fillStyle = '#e8d8b0'; g.beginPath(); g.arc(40, 36, 4.5, 0, 7); g.fill(); g.strokeStyle = '#6a3a3a'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(37, 33); g.lineTo(43, 39); g.moveTo(43, 33); g.lineTo(37, 39); g.stroke(); g.strokeStyle = '#7a2a3a'; g.lineWidth = 2; g.beginPath(); g.arc(32, 42, 5, 0.3, 2.8); g.stroke(); break; }
     case 'letter': { g.fillStyle = col; g.fillRect(10, 18, 44, 30); g.strokeStyle = '#8a7a5a'; g.lineWidth = 1.5; g.strokeRect(10.5, 18.5, 43, 29); g.beginPath(); g.moveTo(10, 18); g.lineTo(32, 36); g.lineTo(54, 18); g.stroke(); g.fillStyle = '#8a1a1a'; g.beginPath(); g.arc(32, 36, 6, 0, 7); g.fill(); g.strokeStyle = '#f0c0a0'; g.lineWidth = 1.2; g.beginPath(); g.ellipse(32, 36, 3, 1.6, 0, 0, 7); g.stroke(); break; }
     case 'card': { g.fillStyle = '#e8dcc0'; g.fillRect(14, 6, 36, 52); g.strokeStyle = '#8a6a3a'; g.lineWidth = 2; g.strokeRect(15, 7, 34, 50); g.fillStyle = col; g.beginPath(); g.arc(32, 28, 11, 0, 7); g.fill(); g.fillStyle = '#1a1010'; g.fillRect(28, 26, 2, 3); g.fillRect(34, 26, 2, 3); g.fillStyle = '#8a6a3a'; g.fillRect(19, 44, 26, 2); g.fillRect(19, 49, 18, 2); break; }
@@ -46,7 +55,7 @@ function iconURL(t) {
 const ICONCV = {};
 function iconCanvas(t) { iconURL(t); return ICONCV[t.icon + '|' + (t.color || '')]; }
 // Icons for buffs and debuffs that are not skills (the Bog Crone's hex).
-const BUFF_ICONS = { hex: { el: 'shadow', rune: 'ᚺ' }, food: { el: 'fire', rune: 'ᚠ' }, rested: { el: 'holy', rune: 'ᛃ' } };
+const BUFF_ICONS = { hex: { el: 'shadow', rune: 'ᚺ' }, food: { el: 'fire', rune: 'ᚠ' }, rested: { el: 'holy', rune: 'ᛃ' }, reborn: { el: 'holy', rune: 'ᛃ' } };
 function skillIcon(id) {
   const key = 'sk|' + id; if (iconCache[key]) return iconCache[key];
   const sk = SKILLS[id] || BUFF_ICONS[id] || { el: 'neutral', rune: '?' }; const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g = c.getContext('2d');
@@ -58,12 +67,131 @@ function skillIcon(id) {
   g.fillStyle = 'rgba(0,0,0,.5)'; g.fillText(sk.rune, 33, 35); g.fillStyle = '#fff4e0'; g.fillText(sk.rune, 32, 33);
   return (iconCache[key] = c.toDataURL());
 }
-function iconFor(ref) { return ref.k === 'skill' ? skillIcon(ref.id) : iconURL(ITEMS[ref.id]); }
+function iconFor(ref) { return ref.k === 'skill' ? skillIcon(ref.id) : itemIconURL(ref.id); }
+/* UI round 8: skill and buff icons as HTML. Painted icons (assets/ui/skills/<skill id>.png, 64x64; that folder's
+   index.json: { size, view, icons: { id: file }, skills: [{ id, name, el, passive, tier, cls, file }] }) are used once
+   the index says they exist, so a missing file is never
+   requested; an image that still fails falls back for good. Otherwise a CSS tile: a gold (active) or iron (passive)
+   bevel frame, the element's colour, and the rune as text, so it stays crisp at every size and zoom (index.html,
+   ".skt"). skillIcon() above (a canvas data URL) is kept for anything that still wants a bitmap. */
+const SKART = { dir: 'assets/ui/skills/', idx: null, bad: new Set() };
+artJSON(SKART.dir + 'index.json', d => {
+  const isMap = o => !!o && typeof o === 'object' && !Array.isArray(o);
+  const m = !d ? null : isMap(d.icons) ? d.icons : Array.isArray(d.skills) ? Object.fromEntries(d.skills.filter(k => k && k.id && k.file).map(k => [k.id, k.file])) : isMap(d.skills) ? d.skills : null;
+  if (!m || !Object.keys(m).length) return;
+  SKART.idx = m; if (typeof UI !== 'undefined') { UI.dirty = true; UI.hotSig = null; }
+  if (typeof P !== 'undefined' && P && typeof started !== 'undefined' && started) renderBuffs();
+});
+function skillArtURL(id) { if (!SKART.idx || SKART.bad.has(id)) return null; const f = SKART.idx[id]; return typeof f === 'string' && f ? artKeep(SKART.dir + f) : null; }
+const SKEL = new Set(['neutral', 'fire', 'water', 'wind', 'earth', 'holy', 'ghost', 'shadow', 'undead', 'poison']);
+function skillTile(id, cls) {
+  const sk = SKILLS[id] || BUFF_ICONS[id] || { el: 'neutral', rune: '?' }, u = skillArtURL(id), c = 'skt' + (cls ? ' ' + cls : '');
+  if (u) return `<img class="${c} art" src="${u}" data-skico="${esc(id)}" data-skcls="${cls || ''}" alt="" draggable="false">`;
+  return `<span class="${c} el-${SKEL.has(sk.el) ? sk.el : 'neutral'}${sk.passive ? ' pas' : ''}"><b>${esc(sk.rune || '?')}</b></span>`;
+}
+
+/* =========================================================
+   UI round 7: painted UI art. Item icons (assets/ui/icons/<item id>.png, 64x64) and portraits
+   (assets/ui/portraits: NPC busts x 5 moods, class bodies + grey hair layers). Both indexes load once, in the
+   background; until they arrive the files are tried by name, and any image that fails falls back for good
+   (items: the canvas icon above; portraits: a monogram medallion). Images load only when a window shows them
+   and are kept decoded (ART.keep), so re-rendering a window never flickers or refetches.
+   ========================================================= */
+const ART = { ico: 'assets/ui/icons/', por: 'assets/ui/portraits/', icoIdx: null, porIdx: null, bad: new Set(), keep: new Map(), porHTML: {} };
+// Fallback lists for when the index files cannot be read (file:// without file access): what the art team shipped.
+const PORT_NPCS = new Set('sigrun brokkr vidar astrid ragna hrafn eira bolli sindri nyr heimdall gunnar einar modgud kari tofa hel fulla gna grimr thordis ulfar hallgerd ketill orm ylva hlin eir gauti ganglati ganglot lost_child modgud_hel'.split(' '));
+const PORT_CLASSES = new Set('novice swordsman mage archer acolyte knight oathkeeper runecaster sage wolfhunter skald priest monk'.split(' '));
+const MOODS = ['neutral', 'happy', 'sad', 'angry', 'surprised'];
+function artJSON(url, ok) {
+  try {
+    const x = new XMLHttpRequest(); x.open('GET', url, true);
+    x.onload = () => { if ((x.status === 200 || x.status === 0) && x.responseText) { try { ok(JSON.parse(x.responseText)); } catch (e) { /* keep the name-based fallback */ } } };
+    x.onerror = () => {}; x.send();
+  } catch (e) { /* no XHR (sandboxed file://): names only */ }
+}
+artJSON(ART.ico + 'index.json', d => { if (d && d.items) { ART.icoIdx = d.items; ART.icoGroups = d.groups && typeof d.groups === 'object' ? d.groups : null; if (typeof UI !== 'undefined') { UI.dirty = true; UI.hotSig = null; } } });
+artJSON(ART.por + 'index.json', d => { if (d && d.npcs && d.classes) { ART.porIdx = d; ART.porHTML = {}; if (typeof HUDA !== 'undefined') delete HUDA.por; if (typeof UI !== 'undefined') UI.dirty = true; } });
+function artKeep(url) { if (!ART.keep.has(url)) { const im = new Image(); im.decoding = 'async'; im.src = url; ART.keep.set(url, im); } return url; }
+function itemIconURL(id) {
+  const t = ITEMS[id]; if (!t) return '';
+  if (!ART.bad.has(id)) {
+    if (ART.icoIdx) { const f = ART.icoIdx[id]; if (f) return artKeep(ART.ico + f); }
+    else return artKeep(ART.ico + id + '.png');
+  }
+  return iconURL(t);
+}
+// <img> for an item: data-ico lets the capture listener below swap in the canvas icon if the file is missing.
+function icoTag(id, cls) { return `<img class="ic${cls ? ' ' + cls : ''}" src="${itemIconURL(id)}" data-ico="${id}" alt="" decoding="async" draggable="false">`; }
+const icoBox = id => `<span class="ico">${icoTag(id)}</span>`;
+// A painted icon for an icon kind (index.json "groups": sword, potion, card...), else the canvas one (round 8).
+const groupIconURL = k => ART.icoGroups && ART.icoGroups[k] && !ART.bad.has('grp:' + k) ? artKeep(ART.ico + ART.icoGroups[k]) : iconURL({ icon: k });
+document.addEventListener('error', e => {
+  const t = e.target; if (!t || t.tagName !== 'IMG' || !t.dataset) return;
+  const id = t.dataset.ico;
+  if (t.dataset.skico) { SKART.bad.add(t.dataset.skico); t.insertAdjacentHTML('afterend', skillTile(t.dataset.skico, t.dataset.skcls)); t.remove(); if (typeof UI !== 'undefined') UI.hotSig = null; return; }
+  if (id && ITEMS[id] && !ART.bad.has(id)) { ART.bad.add(id); t.src = iconURL(ITEMS[id]); if (typeof UI !== 'undefined') UI.hotSig = null; return; }
+  if (t.dataset.por) {
+    ART.bad.add('por:' + t.getAttribute('src')); ART.porHTML = {}; t.style.visibility = 'hidden';
+    if (t.closest('#dport')) { DLGP.key = null; setDialogPortrait(DLGP.name, DLGP.text); }
+    if (typeof HUDA !== 'undefined') delete HUDA.por;
+  }
+}, true);
+const porOK = f => !ART.bad.has('por:' + ART.por + f);
+const monogram = name => { const s = String(name || '?').replace(/^(the|old)\s+/i, '').trim(); return `<div class="pt none"><b>${esc((s[0] || '?').toUpperCase())}</b></div>`; };
+// Class portrait for a class + body; tier-3 and High Novice use the body they grew from (CLASSES[..].base).
+function portraitClassKey(cls, g) {
+  const has = k => ART.porIdx ? !!ART.porIdx.classes[k] : PORT_CLASSES.has(k.slice(0, -2));
+  let c = cls; for (let n = 0; c && n < 6; n++) { if (has(c + '_' + g)) return c + '_' + g; const C = CLASSES[c]; c = C && (C.base || C.from); }
+  return has('novice_' + g) ? 'novice_' + g : null;
+}
+// Body, then the grey hair layer multiplied by the hair colour / 0.72 (art/LOG.md): brightness(1/0.72) on the layer, then
+// a multiply-blended colour masked by the same layer. Pure CSS, so no canvas reads (file:// images would taint one).
+function classPortraitHTML(cls, g, style, hair) {
+  g = g === 'f' ? 'f' : 'm'; style = style === 'long' ? 'long' : 'spiky'; hair = /^#[0-9a-f]{3,8}$/i.test(hair || '') ? hair : null;
+  const ck = cls + '|' + g + '|' + style + '|' + hair; if (ART.porHTML[ck]) return ART.porHTML[ck];
+  const key = portraitClassKey(cls, g), e = key && ART.porIdx && ART.porIdx.classes[key];
+  let h;
+  if (!key) h = monogram(CLASSES[cls] ? CLASSES[cls].name : '?');
+  else {
+    const defStyle = e ? e.hairDefault : (g === 'f' ? 'long' : 'spiky'), defTint = e ? e.hairTint : (g === 'f' ? '#caa04f' : '#a4532a');
+    const comp = e ? e.neutral : key + '_neutral.png', lay = e && e.layers && e.layers.neutral;
+    const body = lay ? lay.body : key + '_neutral.body.png', hf = lay ? lay['hair_' + style] : `${key}_neutral.hair_${style}.png`;
+    if (style === defStyle && (!hair || hair.toLowerCase() === defTint.toLowerCase()) && porOK(comp)) h = `<div class="pt"><img src="${artKeep(ART.por + comp)}" alt="" data-por="1" draggable="false"></div>`;
+    else if (porOK(body) && hf && porOK(hf)) {
+      const u = artKeep(ART.por + hf);
+      h = `<div class="pt"><img src="${artKeep(ART.por + body)}" alt="" data-por="1" draggable="false"><img class="hl" src="${u}" alt="" data-por="1" draggable="false"><i class="ht" style="background:${hair || defTint};-webkit-mask-image:url('${u}');mask-image:url('${u}')"></i></div>`;
+    } else h = porOK(comp) ? `<div class="pt"><img src="${artKeep(ART.por + comp)}" alt="" data-por="1" draggable="false"></div>` : monogram(CLASSES[cls] ? CLASSES[cls].name : '?');
+  }
+  return (ART.porHTML[ck] = h);
+}
+const playerPortrait = () => classPortraitHTML(P.cls, P.gender, P.hairStyle, P.hair);
+// Which NPC portrait a speaker uses: the entity talking (talkNPC / scene speaker), else a match on the name.
+const PORT_ALIAS = { odin: 'vidar', 'the wanderer': 'vidar' };
+const normName = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[ðđ]/g, 'd').replace(/þ/g, 'th').replace(/^(the|old)\s+/, '').trim();
+function npcPortraitId(name, ent) {
+  const ok = id => !!id && (ART.porIdx ? !!ART.porIdx.npcs[id] : PORT_NPCS.has(id));
+  if (ent && ok(ent.id)) return ent.id;
+  const n = normName(name); if (!n) return null;
+  if (PORT_ALIAS[n] && ok(PORT_ALIAS[n])) return PORT_ALIAS[n];
+  const first = n.split(/[\s,]+/)[0];
+  if (PORT_ALIAS[first] && ok(PORT_ALIAS[first])) return PORT_ALIAS[first];
+  for (const id in NPCS) {
+    if (!ok(id)) continue; const D = NPCS[id]; let dn = ''; try { dn = D.dname || ''; } catch (e) { /* getter */ }
+    const nn = normName(D.name);
+    if (n === nn || n === normName(dn) || first === nn || first === nn.split(' ')[0] || n === id) return id;
+  }
+  return ok(first) ? first : null;
+}
+function npcPortraitHTML(id, mood) {
+  const set = ART.porIdx && ART.porIdx.npcs[id], m = MOODS.includes(mood) ? mood : 'neutral';
+  let f = set ? (set[m] || set.neutral) : `${id}_${m}.png`; if (!porOK(f)) f = set ? set.neutral : `${id}_neutral.png`;
+  return porOK(f) ? `<div class="pt"><img src="${artKeep(ART.por + f)}" alt="" data-por="1" draggable="false"></div>` : null;
+}
 
 /* =========================================================
    UI: HUD
    ========================================================= */
-const UI = { open: {}, dirty: true, z: 10, shopTab: 'supplies', shopMode: 'buy', refineArm: null, socketCard: null, hoverBind: null, jobPick: null };
+const UI = { open: {}, dirty: true, z: 10, shopTab: 'supplies', shopMode: 'buy', refineArm: null, socketCard: null, hoverBind: null, jobPick: null, hotSig: null };
 const cache = {};
 function setText(id, v) { if (cache[id] !== v) { cache[id] = v; $(id).textContent = v; } }
 // Widths are compared as integers (tenths of a percent), so an unchanged bar costs no string work.
@@ -72,48 +200,86 @@ function setW(id, pct) { const v = Math.round(clamp(pct, 0, 100) * 10); if (cach
 const HUDA = {}, HUDB = {};
 function chg(k, a, b) { if (HUDA[k] === a && HUDB[k] === b) return false; HUDA[k] = a; HUDB[k] = b; return true; }
 let HOTEL = [], BUFFEL = [], tipT = -1, tipHTML = null;
+// UI scale on big screens: the HUD, windows, dialog and tooltips zoom together (CSS --uiz); window positions and
+// drags are kept in unzoomed "UI px" (screen px / UIZ).
+let UIZ = 1;
+function applyUIZ() {
+  const w = W || innerWidth, h = H || innerHeight, k = Math.min(w / 1600, h / 900);
+  const z = k < 1.12 ? 1 : Math.min(1.5, Math.round(k * 20) / 20);
+  if (z !== UIZ || !applyUIZ.done) { UIZ = z; applyUIZ.done = true; document.documentElement.style.setProperty('--uiz', String(z)); }
+}
+const vw = () => (W || innerWidth) / UIZ, vh = () => (H || innerHeight) / UIZ;
+applyUIZ();
+// Keyboard (action) mode moves HP/SP/ST down to the hotbar and folds the menu buttons away; classic keeps RO's Basic Info.
+function setHudMode(act) {
+  const hud = $('hud'), v = $('vitals'); if (!hud || !v) return;
+  hud.classList.toggle('act', act);
+  if (act) { if (v.parentNode !== $('dockvit')) $('dockvit').appendChild(v); }
+  else { const who = $('info').querySelector('.who'); if (who && v.previousElementSibling !== who) who.after(v); }
+}
+function syncMenus() { const h = $('hud'); if (h) h.classList.toggle('menus', Object.keys(UI.open).some(k => UI.open[k])); }
 function renderHUD() {
+  if (chg('act', typeof isAction === 'function' && isAction(), 0)) setHudMode(HUDA.act);
   if (chg('name', P.name, P.cls)) { setText('pname', P.name); setText('pclass', CLASSES[P.cls].name); }
+  if (chg('por', P.cls + '|' + P.gender + '|' + P.hairStyle, P.hair)) $('pport').innerHTML = playerPortrait();
   if (chg('title', P.title, 0)) { const t = P.title && TITLES[P.title]; setText('ptitle', t ? `« ${t} »` : ''); $('ptitle').hidden = !t; }
   const hp = Math.ceil(P.hp), sp = Math.floor(P.sp), mh = S.maxhp, ms = S.maxsp;
   setW('hpb', P.hp / mh * 100); const low = P.hp / mh < 0.25; if (chg('low', low, 0)) $('hpbar').classList.toggle('low', low);
   if (chg('hp', hp, mh)) setText('hpt', hp + ' / ' + mh);
   const st = Math.floor(P.stamina); setW('stb', P.stamina); if (chg('st', st, 0)) setText('stt', String(st));
   setW('spb', P.sp / ms * 100); if (chg('sp', sp, ms)) setText('spt', sp + ' / ' + ms);
-  if (chg('lv', P.lvl, P.jlvl)) { setText('blv', String(P.lvl)); setText('jlv', String(P.jlvl)); }
-  setW('bxp', P.lvl >= MAXLV ? 100 : P.exp / expNeed(P.lvl) * 100); setW('jxp', P.jlvl >= CLASSES[P.cls].maxJob ? 100 : P.jexp / jexpNeed(P.jlvl) * 100);
+  if (chg('lv', P.lvl, P.jlvl)) { setText('blv', String(P.lvl)); setText('jlv', String(P.jlvl)); setText('blv2', String(P.lvl)); setText('jlv2', String(P.jlvl)); }
+  const bp = P.lvl >= (typeof maxLv === 'function' ? maxLv() : MAXLV) ? 100 : P.exp / expNeed(P.lvl) * 100, jp = P.jlvl >= CLASSES[P.cls].maxJob ? 100 : P.jexp / jexpNeed(P.jlvl) * 100;
+  setW('bxp', bp); setW('jxp', jp);
+  const bt = Math.floor(clamp(bp, 0, 100) * 10), jt = Math.floor(clamp(jp, 0, 100) * 10);
+  if (chg('xpp', bt, jt)) { setText('bxpp', (bt / 10).toFixed(1) + '%'); setText('jxpp', (jt / 10).toFixed(1) + '%'); }
   if (chg('zeny', P.zeny, 0)) setText('zeny', fmt(P.zeny));
   const sc = shardCount(); if (chg('shards', sc, 0)) setText('shardct', sc ? `Shards ${sc}/3` : '');
   if (chg('pips', P.statPts > 0, P.skillPts > 0)) { $('pipS').className = P.statPts > 0 ? 'pip' : ''; $('pipK').className = P.skillPts > 0 ? 'pip' : ''; }
   if (chg('map', map.id, 0)) setText('mapn', map.d.name);
   const cx = Math.floor(P.x), cy = Math.floor(P.y); if (chg('mapc', cx, cy)) setText('mapc', cx + ', ' + cy);
-  // Hotbar cooldowns (element refs are cached by renderHotbar)
+  // Hotbar cooldowns and counts (element refs are cached by renderHotbar)
   for (let i = 0; i < HOTEL.length; i++) {
     const h = HOTEL[i], ref = P.hot[i]; if (!h) continue;
     let pct = 0, nosp = false;
-    if (ref && ref.k === 'skill') { const sk = SKILLS[ref.id], lv = P.skills[ref.id]; const c = P.cd[ref.id] || 0; if (c > 0) pct = Math.round(c / (sk.cd || 0.3) * 100); if (lv && (P.sp < sk.sp(lv) || (sk.need && sk.need(lv)))) nosp = true; }
+    if (ref && ref.k === 'skill') { const sk = SKILLS[ref.id], lv = P.skills[ref.id]; if (!sk) continue; const c = P.cd[ref.id] || 0; if (c > 0) pct = Math.min(100, Math.round(c / (sk.cd || 0.3) * 100)); if (lv && (P.sp < sk.sp(lv) || (sk.need && sk.need(lv)))) nosp = true; }
     if (ref && ref.k === 'item') { const n = countItem(ref.id); if (h.n && h.cnt !== n) { h.cnt = n; h.n.textContent = n; } nosp = n === 0; }
-    if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.height = pct + '%'; }
+    if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.setProperty('--p', pct); }
     if (h.nosp !== nosp) { h.nosp = nosp; h.el.classList.toggle('nosp', nosp); }
   }
   // Boss bar
   if (bossShown) { const k = Math.max(0, bossShown.hp / bossShown.maxhp); bossLag += (k - bossLag) * 0.03; if (bossLag < k) bossLag = k; setW('bossfill', k * 100); setW('bosslag', bossLag * 100); }
+  // Target frame: the locked (Tab) or attacked monster, unless the boss bar already shows it
+  const lk = typeof CTRL !== 'undefined' && CTRL.lock && !CTRL.lock.dead ? CTRL.lock : null;
+  let tg = lk || (P.target && P.target.kind === 'mob' && !P.target.dead ? P.target : null); if (tg && tg === bossShown) tg = null;
+  if (chg('tg', tg, !!lk)) {
+    const tf = $('tframe'); tf.hidden = !tg;
+    if (tg) { const d = tg.d || {}; $('tname').innerHTML = (lk ? '<b class="lk">⌖</b>' : '') + esc(d.name || tg.type || ''); setText('tlv', d.lvl ? 'Lv ' + d.lvl : ''); tf.classList.toggle('named', !!(tg.variant || d.boss)); delete cache.wtbar; }
+  }
+  if (tg) setW('tbar', tg.hp / (tg.maxhp || 1) * 100);
   // Tips (rebuilt 4 times a second)
   if (time - tipT > 0.25 || time < tipT) { tipT = time; tipHTML = currentTip(); const te = $('tip'); if (tipHTML) { if (cache.tip !== tipHTML) { cache.tip = tipHTML; te.innerHTML = tipHTML; } te.hidden = false; } else if (!te.hidden) te.hidden = true; }
-  renderTracker();
+  renderTracker(); renderDeepCard(); if (UI.open.gauntlet) rushTickUI();   // round 8
+  if (UI.open.help && (time - (UI.gfxT || 0) > 1 || time < UI.gfxT)) { UI.gfxT = time; const gi = $('gfxinfo'); if (gi) gi.textContent = gfxInfoText(); }   // round 6
   // Buff timers (or counters, e.g. spirit spheres)
-  for (let i = 0; i < BUFFEL.length; i++) { const e = BUFFEL[i], b = P.buffs[e.k]; if (!b) continue; const v = b.count !== undefined ? b.count : Math.ceil(b.t); if (e.v !== v) { e.v = v; e.sp.textContent = v; } }
+  for (let i = 0; i < BUFFEL.length; i++) { const e = BUFFEL[i], b = P.buffs[e.k]; if (!b) continue; const v = b.count !== undefined ? b.count : buffT(b.t); if (e.v !== v) { e.v = v; e.sp.textContent = v; } }
 }
+// Buff time as RO shows it: seconds under a minute, then minutes.
+const buffT = t => t >= 3600 * 24 ? '' : t >= 60 ? Math.ceil(t / 60) + 'm' : String(Math.ceil(t));
 function renderBuffs() {
   const ks = Object.keys(P.buffs);
-  $('buffs').innerHTML = ks.map(k => `<div class="buff${P.buffs[k].song ? ' song' : ''}" data-tip="buff:${k}"><img src="${skillIcon(P.buffs[k].icon)}" alt=""><span></span></div>`).join('');
-  const els = $('buffs').children; BUFFEL = ks.map((k, i) => ({ k, sp: els[i].querySelector('span'), v: null }));
+  $('buffs').innerHTML = ks.map(k => `<div class="buff${P.buffs[k].song ? ' song' : ''}${P.buffs[k].perm ? ' perm' : ''}" data-tip="buff:${k}">${skillTile(P.buffs[k].icon)}<span class="bt"></span></div>`).join('');
+  const els = $('buffs').children; BUFFEL = ks.map((k, i) => ({ k, sp: els[i].querySelector('.bt'), v: null }));
 }
+// The hotbar is rebuilt only when its bindings (or a learned/unlearned skill) change; counts and cooldowns are patched per frame.
 function renderHotbar() {
+  const sig = P.hot.map(r => r ? r.k + ':' + r.id + (r.k === 'skill' && !P.skills[r.id] ? '!' : '') : '').join('|') + '|' + (ART.icoIdx ? 1 : 0) + (SKART.idx ? 1 : 0);
+  if (sig === UI.hotSig && HOTEL.length) return; UI.hotSig = sig;
   $('hotbar').innerHTML = P.hot.map((ref, i) => {
-    if (!ref || (ref.k === 'skill' && !P.skills[ref.id])) return `<button class="hs" data-hot="${i}" aria-label="Empty slot ${i + 1}"><span class="k">${i + 1}</span></button>`;
-    const n = ref.k === 'item' ? `<span class="n">${countItem(ref.id)}</span>` : '';
-    return `<button class="hs" data-hot="${i}" data-tip="${ref.k}:${ref.id}" aria-label="Slot ${i + 1}"><img src="${iconFor(ref)}" alt=""><span class="k">${i + 1}</span>${n}<span class="cd" style="height:0"></span></button>`;
+    if (!ref || (ref.k === 'skill' && (!P.skills[ref.id] || !SKILLS[ref.id])) || (ref.k === 'item' && !ITEMS[ref.id])) return `<button class="hs empty" data-hot="${i}" aria-label="Empty slot ${i + 1}"><span class="k">${i + 1}</span></button>`;
+    const it = ref.k === 'item', n = it ? `<span class="n">${countItem(ref.id)}</span>` : '';
+    const img = it ? `<img src="${itemIconURL(ref.id)}" data-ico="${ref.id}" alt="" draggable="false">` : skillTile(ref.id);
+    return `<button class="hs" data-hot="${i}" data-tip="${it ? 'hotitem' : 'skill'}:${ref.id}" aria-label="Slot ${i + 1}: ${esc(it ? ITEMS[ref.id].name : SKILLS[ref.id].name)}">${img}<span class="k">${i + 1}</span>${n}<span class="cd"></span></button>`;
   }).join('');
   const hs = $('hotbar').children; HOTEL = [];
   for (let i = 0; i < 9; i++) { const el = hs[i]; HOTEL.push(el ? { el, cd: el.querySelector('.cd'), n: el.querySelector('.n'), pct: 0, nosp: false, cnt: -1 } : null); }
@@ -140,47 +306,73 @@ function currentTip() { if (!started || P.dead) return null; for (const t of TIP
    UI: windows
    ========================================================= */
 const WIN = {
-  status: { title: 'Status', w: 380, pos: () => [16, 250] },
-  inv: { title: 'Items', w: 360, pos: () => [W - 380, 150] },
-  equip: { title: 'Equipment', w: 380, pos: () => [W - 400, 150] },
-  skills: { title: 'Skills', w: 380, pos: () => [16, 250] },
-  journal: { title: 'Journal', w: 460, pos: () => [W / 2 - 230, 70] },
-  help: { title: 'How to Play', w: 440, pos: () => [W / 2 - 220, 70] },
-  shop: { title: 'Brokkr’s Forge', w: 420, pos: () => [W / 2 - 440, 90] },
-  way: { title: 'Waystone', w: 320, pos: () => [W / 2 - 160, H / 2 - 190] },
-  worldmap: { title: 'World Map', w: 640, pos: () => [W / 2 - 320, 60] },
+  status: { title: 'Status', w: 400, pos: () => [16, 250] },
+  inv: { title: 'Items', w: 372, pos: () => [vw() - 392, 150] },
+  // Equipment sits just left of Items (372 wide at vw - 392) with a 12px gap, and never over Basic Info (x < 270).
+  equip: { title: 'Equipment', w: 500, pos: () => [Math.max(270, vw() - 392 - 12 - 500), 150] },
+  skills: { title: 'Skills', w: 400, pos: () => [16, 250] },
+  journal: { title: 'Journal', w: 460, pos: () => [vw() / 2 - 230, 70] },
+  help: { title: 'How to Play', w: 440, pos: () => [vw() / 2 - 220, 70] },
+  shop: { title: 'Brokkr’s Forge', w: 440, pos: () => [vw() / 2 - 460, 90] },
+  way: { title: 'Waystone', w: 330, pos: () => [vw() / 2 - 165, vh() / 2 - 190] },
+  worldmap: { title: 'World Map', w: 660, pos: () => [vw() / 2 - 330, 60] },
   // Content round 5: services
-  storage: { title: 'Storage', w: 560, pos: () => [W / 2 - 280, 60] },
-  craft: { title: 'Crafting', w: 560, pos: () => [W / 2 - 280, 60] },
-  enchant: { title: 'Seiðr Enchanting', w: 460, pos: () => [W / 2 - 230, 70] },
-  cardsage: { title: 'Card Removal', w: 440, pos: () => [W / 2 - 220, 70] },
+  storage: { title: 'Storage', w: 560, pos: () => [vw() / 2 - 280, 60] },
+  craft: { title: 'Crafting', w: 580, pos: () => [vw() / 2 - 290, 60] },
+  enchant: { title: 'Seiðr Enchanting', w: 480, pos: () => [vw() / 2 - 240, 70] },
+  cardsage: { title: 'Card Removal', w: 440, pos: () => [vw() / 2 - 220, 70] },
+  // Content round 6
+  pet: { title: 'Pet', w: 400, pos: () => [vw() - 420, 150] },
+  // UI round 8: the Deep Roots (status on a floor, records at the camp) and the Gauntlet (live run, bests)
+  deep: { title: 'The Deep Roots', w: 440, pos: () => [vw() - 660, 64] },
+  gauntlet: { title: 'The Gauntlet', w: 340, pos: () => [vw() - 560, 64] },
 };
+// Window positions are remembered per window (localStorage 'aom-winpos', UI px). Phones ignore them: windows open centred.
+let WINPOS = {};
+try { const s = store('aom-winpos'); const o = s ? JSON.parse(s) : null; if (o && typeof o === 'object') WINPOS = o; } catch (e) { WINPOS = {}; }
+function saveWinPos() { try { store('aom-winpos', JSON.stringify(WINPOS)); } catch (e) { /* storage full or blocked */ } }
+const phoneUI = () => vw() <= 760;
+function placeWin(id, el, fresh) {
+  const w = Math.min(WIN[id].w, vw() - 20), sv = WINPOS[id];
+  let x, y;
+  if (phoneUI()) { x = (vw() - w) / 2; y = 8; }
+  else if (sv && isFinite(sv[0]) && isFinite(sv[1]) && !fresh) { x = sv[0]; y = sv[1]; }
+  else [x, y] = WIN[id].pos();
+  x = clamp(x, 6, Math.max(6, vw() - w - 6)); y = clamp(y, 6, Math.max(6, vh() - 120));
+  el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px';
+}
 function openWin(id) {
+  if (!WIN[id]) return;
   let el = $('w-' + id);
   if (!el) {
-    el = document.createElement('div'); el.className = 'win'; el.id = 'w-' + id; el.style.width = `min(${WIN[id].w}px, calc(100vw - 20px))`;
-    el.innerHTML = `<div class="tb"><span>${WIN[id].title}</span><button class="x" data-close="${id}" aria-label="Close">×</button></div><div class="bd"></div>`;
+    el = document.createElement('div'); el.className = 'win'; el.id = 'w-' + id; el.style.width = `min(${WIN[id].w}px, calc(100vw / var(--uiz) - 20px))`;
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', WIN[id].title);
+    el.innerHTML = `<div class="tb" title="Drag to move · double-click to reset"><span>${WIN[id].title}</span><button class="x" data-close="${id}" aria-label="Close">×</button></div><div class="bd"></div>`;
     $('wins').appendChild(el);
-    let [x, y] = WIN[id].pos(); x = clamp(x, 10, Math.max(10, W - Math.min(WIN[id].w, W - 20) - 10)); y = clamp(y, 10, Math.max(10, H - 200));
-    el.style.left = x + 'px'; el.style.top = y + 'px';
-    dragify(el);
+    dragify(el, id);
   }
-  el.hidden = false; UI.open[id] = true; el.style.zIndex = ++UI.z; renderWin(id);
+  if (!UI.open[id]) placeWin(id, el);
+  el.hidden = false; UI.open[id] = true; el.style.zIndex = ++UI.z; renderWin(id); syncMenus();
 }
-function closeWin(id) { const el = $('w-' + id); if (el) el.hidden = true; UI.open[id] = false; if (id === 'inv') UI.socketCard = null; if (id === 'shop') { UI.refineArm = null; UI.junkArm = false; } if (id === 'cardsage') UI.cardArm = null; hideTip(); }
+function closeWin(id) { const el = $('w-' + id); if (el) el.hidden = true; UI.open[id] = false; if (id === 'inv') UI.socketCard = null; if (id === 'shop') { UI.refineArm = null; UI.junkArm = false; } if (id === 'cardsage') UI.cardArm = null; hideTip(); syncMenus(); }
 function toggleWin(id) { UI.open[id] ? closeWin(id) : openWin(id); }
-function dragify(el) {
+function dragify(el, id) {
   const tb = el.querySelector('.tb');
   tb.addEventListener('pointerdown', e => {
-    if (e.target.closest('.x')) return; el.style.zIndex = ++UI.z;
+    if (e.target.closest('.x') || e.button > 0) return; el.style.zIndex = ++UI.z;
     const sx = e.clientX, sy = e.clientY, ox = el.offsetLeft, oy = el.offsetTop; tb.setPointerCapture(e.pointerId);
-    const mv = ev => { el.style.left = clamp(ox + ev.clientX - sx, -el.offsetWidth + 60, W - 60) + 'px'; el.style.top = clamp(oy + ev.clientY - sy, 0, H - 30) + 'px'; };
-    const up = () => { tb.removeEventListener('pointermove', mv); tb.removeEventListener('pointerup', up); };
-    tb.addEventListener('pointermove', mv); tb.addEventListener('pointerup', up);
+    let moved = false;
+    const mv = ev => { moved = true; el.style.left = Math.round(clamp(ox + (ev.clientX - sx) / UIZ, -el.offsetWidth + 60, vw() - 60)) + 'px'; el.style.top = Math.round(clamp(oy + (ev.clientY - sy) / UIZ, 0, vh() - 30)) + 'px'; };
+    const up = () => { tb.removeEventListener('pointermove', mv); tb.removeEventListener('pointerup', up); tb.removeEventListener('pointercancel', up); if (moved && !phoneUI()) { WINPOS[id] = [el.offsetLeft, el.offsetTop]; saveWinPos(); } };
+    tb.addEventListener('pointermove', mv); tb.addEventListener('pointerup', up); tb.addEventListener('pointercancel', up);
   });
+  tb.addEventListener('dblclick', e => { if (e.target.closest('.x')) return; delete WINPOS[id]; saveWinPos(); placeWin(id, el, true); });
   el.addEventListener('pointerdown', () => { el.style.zIndex = ++UI.z; });
 }
-function renderWin(id) { const el = $('w-' + id); if (!el || el.hidden) return; const bd = el.querySelector('.bd'); const st = bd.scrollTop; bd.innerHTML = RENDER[id](); bd.scrollTop = st; }
+// After a resize (or a UI zoom change) keep every open window on screen.
+function fitWins() { for (const id in UI.open) { if (!UI.open[id]) continue; const el = $('w-' + id); if (!el) continue; if (phoneUI()) { placeWin(id, el); continue; } const x = clamp(el.offsetLeft, 6 - el.offsetWidth + 60, Math.max(6, vw() - 60)), y = clamp(el.offsetTop, 0, Math.max(0, vh() - 60)); el.style.left = x + 'px'; el.style.top = y + 'px'; } }
+function renderWin(id) { const el = $('w-' + id); if (!el || el.hidden) return; const bd = el.querySelector('.bd'); const st = bd.scrollTop, fo = document.activeElement && bd.contains(document.activeElement) && document.activeElement.id; bd.innerHTML = RENDER[id](); bd.scrollTop = st; if (fo && $(fo)) $(fo).focus(); if (AFTER[id]) AFTER[id](bd); }   // round 6: an input keeps focus across re-renders; round 8: AFTER[id] mounts canvases
+const AFTER = {};
 function renderAll() { for (const id in UI.open) if (UI.open[id]) renderWin(id); renderHotbar(); renderTracker(true); UI.dirty = false; }
 
 const RENDER = {
@@ -190,7 +382,9 @@ const RENDER = {
       return `<div class="srow"><span class="l">${k.toUpperCase()}</span><span>${v}</span><span class="b">${bn ? '+' + bn : ''}</span><button class="btn plus" data-act="stat:${k}" ${can ? '' : 'disabled'} aria-label="Raise ${k}">+</button><span class="c">${c} pt</span></div>`;
     }).join('');
     const d = (a, b) => `<div class="drow"><span>${a}</span><span>${b}</span></div>`;
-    return `<div class="stats"><div>${rows}<div class="drow" style="margin-top:6px"><span>Status points</span><b style="color:${P.statPts ? 'var(--ember)' : 'inherit'}">${P.statPts}</b></div></div>
+    const t = P.title && TITLES[P.title];
+    const card = `<div class="pcard"><div class="well">${playerPortrait()}</div><div class="pinfo"><div class="pn">${esc(P.name)}</div>${t ? `<div class="muted" style="color:#a07000;font-weight:700;font-size:11px">« ${esc(t)} »</div>` : ''}<div class="pc">${esc(CLASSES[P.cls].name)}</div><div class="pl">Base Lv <b>${P.lvl}</b> · Job Lv <b>${P.jlvl}</b>/${CLASSES[P.cls].maxJob}</div><div class="pl">HP <b>${fmt(S.maxhp)}</b> · SP <b>${fmt(S.maxsp)}</b></div></div></div>`;
+    return `${card}<div class="stats"><div>${rows}<div class="drow" style="margin-top:6px"><span>Status points</span><b style="color:${P.statPts ? 'var(--ember)' : 'inherit'}">${P.statPts}</b></div></div>
       <div>${d('ATK', `${S.atkStatus + S.atkBonus} + ${S.watk}`)}${d('MATK', `${S.matkMin} ~ ${S.matkMax}`)}${d('HIT', S.hit)}${d('FLEE', S.flee)}${d('CRIT', S.crit.toFixed(1))}${d('ASPD', S.aspd.toFixed(2) + '/s')}${d('DEF', `${S.def} + ${S.softDef}`)}${d('MDEF', S.mdef)}</div></div>
       <div class="sec">Guidance</div><p class="muted" style="margin:0;line-height:1.45">STR raises melee damage. AGI raises FLEE and attack speed. VIT raises HP and defense. INT raises MATK and SP. DEX raises HIT, bow damage and cuts cast time. LUK raises critical chance. Higher stats cost more points to raise.</p>`;
   },
@@ -201,20 +395,26 @@ const RENDER = {
       if (!card) UI.socketCard = null;
       else {
         const targets = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => i.slotsN > (i.cards || []).length);
-        head = `<div class="banner-x">Insert <span class="r-card">${esc(ITEMS[card.id].name)}</span> into which item? This cannot be undone.</div><div class="list" style="margin-bottom:10px">${targets.length ? targets.map(i => `<div class="li"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}</span><button class="btn" data-act="socket:${i.uid}">Insert</button></div>`).join('') : '<div class="muted">No equipment with a free slot. Items with a [1] or [2] after the name have slots.</div>'}</div><button class="btn" data-act="socket-cancel">Cancel</button><div class="sec">Bag</div>`;
+        head = `<div class="banner-x">Insert <span class="r-card">${esc(ITEMS[card.id].name)}</span> into which item? This cannot be undone.</div><div class="list" style="margin-bottom:10px">${targets.length ? targets.map(i => `<div class="li" data-tip="item:${i.uid}">${icoBox(i.id)}<span class="r-${i.rarity}">${esc(itemName(i))}</span><button class="btn" data-act="socket:${i.uid}">Insert</button></div>`).join('') : '<div class="muted">No equipment with a free slot. Items with a [1] or [2] after the name have slots.</div>'}</div><button class="btn" data-act="socket-cancel">Cancel</button><div class="sec">Bag</div>`;
       }
     }
     // Round 5: filter tabs (view only), sort (reorders the bag and merges stacks), bag count, lock marks, mail notice.
     const tab = UI.invTab || 'all', shown = P.inv.filter(it => tab === 'all' || storageTabOf(it) === tab || (tab === 'etc' && ITEMS[it.id].type === 'key'));
     const tabs = `<div class="tabs inv-tabs">${STORAGE_TABS.map(([k, l]) => `<button class="btn ${tab === k ? 'on' : ''}" data-act="invtab:${k}">${l}</button>`).join('')}<button class="btn" data-act="sortbag" title="Sort by kind, slot and level; merge stacks" style="margin-left:auto">Sort</button></div>`;
-    const cells = []; for (const it of shown) { const r = rarityOf(it); cells.push(`<button class="cell r-${r}" data-act="inv:${it.uid}" data-tip="item:${it.uid}" data-bind="item:${it.id}" aria-label="${esc(itemName(it))}"><img src="${iconURL(ITEMS[it.id])}" alt="">${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}${it.lock ? '<span class="lk">🔒</span>' : ''}</button>`); }
+    const cells = []; for (const it of shown) cells.push(invCell(it, 'inv:' + it.uid, 'item:' + it.uid, true));
     for (let i = tab === 'all' ? shown.length : 0; i < BAG_SLOTS && (tab === 'all' || i < BAG_SLOTS - P.inv.length); i++) cells.push('<div class="cell empty"></div>');
     const mail = P.mail && P.mail.length ? `<div class="banner-x" style="margin:0 0 6px">You have ${P.mail.length} item${P.mail.length > 1 ? 's' : ''} in your mailbox. Claim ${P.mail.length > 1 ? 'them' : 'it'} at a storage keeper or any Waystone.</div>` : '';
-    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:6px"><span class="muted" style="font-size:11.5px">Bag ${P.inv.length}/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">Click to use or equip. Right-click to drop. Hover a potion and press 1–9 to put it on the hotbar. Hover gear to compare it with what you wear.</p>`;
+    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:7px"><span class="muted" style="font-size:11.5px">Bag <b style="color:var(--ink)">${P.inv.length}</b>/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11px;line-height:1.4">Click to use or equip. Right-click to drop. Hover a potion and press 1–9 to put it on the hotbar. Hover gear to compare it with what you wear.</p>`;
   },
+  // RO's equipment window: slots down both sides of the character.
   equip() {
-    const slots = SLOTS.map(s => { const it = P.equip[s]; return `<button class="eqs" data-act="uneq:${s}" ${it ? `data-tip="item:${it.uid}"` : ''}>${it ? `<img src="${iconURL(ITEMS[it.id])}" alt="">` : '<img alt="" style="opacity:0">'}<span><span class="sl">${SLOTNAME[s]}</span><span class="nm ${it ? 'r-' + it.rarity : 'muted'}">${it ? esc(itemName(it)) : 'Empty'}</span></span></button>`; }).join('');
-    return `<div class="eq">${slots}</div><p class="muted" style="margin:8px 0 0;font-size:11.5px">Click an equipped item to take it off. Weapon type: ${S.wtype === 'fist' ? 'bare hands' : WNAME[S.wtype]}. Range ${S.range.toFixed(1)} cells.</p>`;
+    const SG = { weapon: 'ᛏ', shield: 'ᛉ', head: 'ᛟ', body: 'ᛒ', boots: 'ᛖ', acc: 'ᛜ' };
+    const slot = s => { const it = P.equip[s]; return `<button class="eqs ${it ? 'full' : ''}" data-act="uneq:${s}" ${it ? `data-tip="item:${it.uid}"` : ''} aria-label="${SLOTNAME[s]}: ${it ? esc(itemName(it)) : 'empty'}"><span class="slotbox">${it ? icoTag(it.id) : `<span class="sg">${SG[s] || '·'}</span>`}</span><span><span class="sl">${SLOTNAME[s]}</span><span class="nm ${it ? 'r-' + it.rarity : 'muted'}">${it ? esc(itemName(it)) : 'Empty'}</span></span></button>`; };
+    const L = ['head', 'body', 'weapon'].filter(s => SLOTS.includes(s)), R = ['acc', 'shield', 'boots'].filter(s => SLOTS.includes(s)), rest = SLOTS.filter(s => !L.includes(s) && !R.includes(s));
+    // Round 6: the warg (Ash Knight / Rune Jarl) and the pet that is out
+    const ride = MOUNT_CLASSES.includes(P.cls) ? `<div class="row" style="margin-top:8px;justify-content:space-between;gap:8px"><span class="muted" style="font-size:11.5px">${P.flags.warg ? `Warg: Grár${P.mounted ? ' · riding (+35% speed, spear skills +25%)' : ''}` : 'No warg yet: Ylva in Skaldhaven rents them.'}</span><button class="btn ${P.mounted ? 'on' : ''}" data-act="mount" ${P.flags.warg && !P.dead ? '' : 'disabled'}>${P.mounted ? 'Dismount' : 'Ride'} <kbd>R</kbd></button></div>` : '';
+    const pet = P.pet ? `<div class="row" style="margin-top:6px;justify-content:space-between"><span class="muted" style="font-size:11.5px">Pet: ${esc(P.pet.name)} · ${petWord(PET_INTIM_WORDS, P.pet.intim)}</span><button class="btn" data-win="pet">Pet <kbd>P</kbd></button></div>` : '';
+    return `<div class="eqw"><div class="eqcol">${L.map(slot).join('')}</div><div class="well" data-win="status" title="${esc(CLASSES[P.cls].name)}">${playerPortrait()}</div><div class="eqcol r">${R.map(slot).join('')}</div></div>${rest.length ? `<div class="eq" style="margin-top:5px">${rest.map(slot).join('')}</div>` : ''}${ride}${pet}<p class="muted eqfoot" style="font-size:11.5px;margin:8px 0 0">Click an equipped item to take it off. Weapon type: ${S.wtype === 'fist' ? 'bare hands' : WNAME[S.wtype]}. Range ${S.range.toFixed(1)} cells.</p>`;
   },
   skills() {
     // Current class first, then the classes it grew from (their skills stay learned and can still be raised).
@@ -222,19 +422,22 @@ const RENDER = {
     const row = id => {
       const sk = SKILLS[id], lv = P.skills[id] || 0, can = P.skillPts > 0 && lv < sk.max && id !== 'first_aid';
       const why = !sk.passive && lv && sk.need ? sk.need(lv) : null;
-      return `<div class="sk" data-bind="${sk.passive ? '' : 'skill:' + id}" data-tip="skill:${id}"><img src="${skillIcon(id)}" alt="" data-act="${sk.passive || !lv ? '' : 'cast:' + id}" style="${lv ? '' : 'opacity:.55;filter:grayscale(.6)'}"><div><div class="nm">${sk.name} <span class="lv">Lv ${lv}/${sk.max}${sk.passive ? ' · passive' : lv ? ` · ${sk.sp(lv)} SP` : ''}</span></div><div class="ds">${sk.desc(Math.max(1, lv))}${why ? ` <span style="color:#b02a1a">(${esc(why)})</span>` : ''}</div></div><button class="btn plus" data-act="learn:${id}" ${can ? '' : 'disabled'} aria-label="Learn ${sk.name}">+</button></div>`;
+      return `<div class="sk" data-bind="${sk.passive ? '' : 'skill:' + id}" data-tip="skill:${id}"><span class="skw${lv ? '' : ' off'}${sk.passive || !lv ? '' : ' use'}" data-act="${sk.passive || !lv ? '' : 'cast:' + id}">${skillTile(id)}</span><div><div class="nm">${sk.name} <span class="lv">Lv ${lv}/${sk.max}${sk.passive ? ' · passive' : lv ? ` · ${sk.sp(lv)} SP` : ''}</span></div><div class="ds">${sk.desc(Math.max(1, lv))}${why ? ` <span style="color:#b02a1a">(${esc(why)})</span>` : ''}</div></div><button class="btn plus" data-act="learn:${id}" ${can ? '' : 'disabled'} aria-label="Learn ${sk.name}">+</button></div>`;
     };
     let rows = '';
     for (const c of chain) {
       const ids = CLASSES[c].skills.filter(id => !seen.has(id) && SKILLS[id] && (c === P.cls || P.skills[id] !== undefined)); ids.forEach(id => seen.add(id));
       if (c === 'novice' && P.cls !== 'novice') { if (!seen.has('first_aid')) ids.push('first_aid'); ids.splice(ids.indexOf('basic'), ids.includes('basic') ? 1 : 0); }
-      if (c === 'novice' && P.skills.craftsmanship !== undefined && !seen.has('craftsmanship')) { ids.push('craftsmanship'); seen.add('craftsmanship'); }
+      if ((c === 'novice' || c === 'high_novice') && P.skills.craftsmanship !== undefined && !seen.has('craftsmanship')) { ids.push('craftsmanship'); seen.add('craftsmanship'); }
       if (!ids.length) continue;
       if (chain.length > 1) rows += `<div class="sec" style="margin-top:${c === chain[0] ? 0 : 10}px">${c === 'novice' ? 'Common' : CLASSES[c].name}${c === P.cls ? '' : ' <span class="muted" style="font-weight:400">· still learnable</span>'}</div>`;
       rows += ids.map(row).join('');
     }
     const nxt = nextClasses(P.cls), cap = CLASSES[P.cls].maxJob;
-    const hint = nxt.length && P.cls !== 'novice' ? `<p class="muted" style="margin:8px 0 0;font-size:11.5px">Next path: ${nxt.map(c => CLASSES[c].name).join(' or ')} · Job Lv 40 and Base Lv 30, then speak with Vidar.</p>` : '';
+    let hint = nxt.length && P.cls !== 'novice' ? `<p class="muted" style="margin:8px 0 0;font-size:11.5px">Next path: ${nxt.map(c => CLASSES[c].name).join(' or ')} · Job Lv 40 and Base Lv 30, then speak with Vidar.</p>` : '';
+    // Round 6: rebirth hints
+    if (CLASSES[P.cls].tier === 2 && !P.flags.reborn && REBORN_OF[P.cls]) hint = `<p class="muted" style="margin:8px 0 0;font-size:11.5px">Beyond this path: at Base Lv 60 and Job Lv 50, Vidar knows how the Tree can spin you again, as a ${CLASSES[REBORN_OF[P.cls]].name}.</p>`;
+    if (P.cls === 'high_novice') { const mem = (P.flags.reborn && P.flags.reborn.skills) || {}, to = P.flags.reborn && REBORN_OF[P.flags.reborn.from]; hint = `<p class="muted" style="margin:8px 0 0;font-size:11.5px">${Object.keys(mem).length} remembered skills sleep until your path wakes them. At Job Lv 10 and Basic Skill 9, Vidar sets you on the path of the ${to ? CLASSES[to].name : 'reborn'}.</p>`; }
     return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}/${cap}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}${hint}<p class="muted" style="margin:8px 0 0;font-size:11.5px">Hover a learned skill and press 1–9 to bind it. Click its icon to use it. ${isAction() ? 'With the keyboard, enemy skills take the enemy in front of you (Tab locks one); ground skills land in front of you.' : 'Enemy skills target what is under the cursor, then your current target. Ground skills land at the cursor.'}</p>`;
   },
   journal() {
@@ -246,10 +449,10 @@ const RENDER = {
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
     const act = isAction();
-    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>`;
+    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>` + gfxOptionsHTML();
     const keys = act
-      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
-      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
+      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}${k('Talk, use, pick up', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Ride / dismount a warg', 'R (Ash Knight, Rune Jarl)')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · P Pet · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
+      : `${k('Walk', 'Click the ground, or hold to keep walking')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, pick up', 'Click an NPC or an item on the ground')}${k('Hotbar', 'Keys 1–9')}${k('Ride / dismount a warg', 'R')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · P Pet · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
     return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
@@ -271,7 +474,7 @@ const RENDER = {
       // Round-3 gear (Lv 45+) only shows within 5 levels of your own, like second-class gear. Crafted gear is never sold.
       else ids = Object.values(ITEMS).filter(t => t.type === 'equip' && !t.unique && !t.crafted && t.lvl <= cap && (t.lvl < 45 || t.lvl <= P.lvl + 5) && (UI.shopTab === 'weapons' ? t.slot === 'weapon' : t.slot !== 'weapon') && (!tier2Item(t) || (t2 && jobOk(t, P.cls) && t.lvl <= P.lvl + 5))).sort((a, b) => (jobOk(b, P.cls) - jobOk(a, P.cls)) || a.lvl - b.lvl).map(t => t.id);
       const row = (id, sp) => { const t = ITEMS[id], ok = t.type !== 'equip' || jobOk(t, P.cls), stack = t.type !== 'equip', pr = vendorPrice(v, id), left = sp ? vendorLeft(v, id) : Infinity, n10 = Math.min(10, left);
-        return `<div class="li ${ok && left > 0 ? '' : 'off'}" data-tip="shop:${id}"><img src="${iconURL(t)}" alt=""><span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}${sp ? ` <span class="muted">· ${left > 0 ? left + ' left' : 'sold out'}</span>` : ''}</span><span class="row"><span class="p">${fmt(pr)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= pr && left > 0 ? '' : 'disabled'}>Buy</button>${stack && n10 > 1 ? `<button class="btn" data-act="buy:${id}:${n10}" ${P.zeny >= pr * n10 ? '' : 'disabled'}>×${n10}</button>` : ''}</span></div>`; };
+        return `<div class="li ${ok && left > 0 ? '' : 'off'}" data-tip="shop:${id}">${icoBox(id)}<span>${esc(t.name)}${t.type === 'equip' ? ` <span class="muted">Lv ${t.lvl}</span>` : ''}${sp ? ` <span class="muted">· ${left > 0 ? left + ' left' : 'sold out'}</span>` : ''}</span><span class="row"><span class="p">${fmt(pr)}z</span><button class="btn" data-act="buy:${id}:1" ${P.zeny >= pr && left > 0 ? '' : 'disabled'}>Buy</button>${stack && n10 > 1 ? `<button class="btn" data-act="buy:${id}:${n10}" ${P.zeny >= pr * n10 ? '' : 'disabled'}>×${n10}</button>` : ''}</span></div>`; };
       let rows = ids.map(id => row(id, false)).join('');
       if (UI.shopTab === 'supplies' && V.specials && V.specials.length) rows += `<div class="sec">Limited stock <span class="muted" style="font-weight:400">· restocks in ${Math.ceil(vendorRestockIn() / 60)} min</span></div>` + V.specials.filter(sp => ITEMS[sp[0]]).map(sp => row(sp[0], true)).join('');
       const note = v === 'brokkr' && sc < 3 && UI.shopTab !== 'supplies' ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">“Bring me proof the Shardbearers can die and I’ll open the good racks.” Stock rises with each Rune-Shard.</p>` : '';
@@ -282,9 +485,9 @@ const RENDER = {
       const opt = (k, l) => `<button class="btn ${J[k] ? 'on' : ''}" data-act="junkopt:${k}">${J[k] ? '☑' : '☐'} ${l}</button>`;
       const junk = `<div class="junk"><div class="row" style="gap:4px;flex-wrap:wrap">${opt('mats', 'Materials')}${opt('gear', 'Common gear')}${opt('magic', 'Magic gear')}${opt('keepCraft', 'Keep crafting materials')}</div>
         <div class="row" style="margin-top:6px;justify-content:space-between"><span class="muted" style="font-size:11.5px">${js.length ? `${js.length} item${js.length > 1 ? 's' : ''}: ${esc(js.slice(0, 5).map(i => itemName(i)).join(', '))}${js.length > 5 ? '…' : ''}` : 'No junk in your bag.'}</span><button class="btn ${UI.junkArm ? 'warn' : ''}" data-act="selljunk" ${js.length ? '' : 'disabled'}>${UI.junkArm ? `Confirm: sell for ${fmt(jz)}z` : `Sell junk (${fmt(jz)}z)`}</button></div>
-        <p class="muted" style="margin:4px 0 0;font-size:11px">Never sold as junk: locked (🔒), quest-needed, cards, consumables, upgrade stones, rare materials, unique, rare, crafted, refined or carded gear, and gear that would be an upgrade for you.</p></div>`;
+        <p class="muted" style="margin:4px 0 0;font-size:11px">Never sold as junk: locked (🔒), quest-needed, cards, consumables, upgrade stones, rare and refined materials, unique, rare, crafted, refined or carded gear, and gear that would be an upgrade for you.</p></div>`;
       const items = P.inv.filter(i => ITEMS[i.id].type !== 'key');
-      const rows = items.map(i => { const t = ITEMS[i.id]; const val = sellPrice(i); return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(t)}" alt=""><span class="r-${rarityOf(i)}">${esc(itemName(i))}${i.qty > 1 ? ' ×' + i.qty : ''}</span><span class="row"><span class="p">${fmt(val)}z</span><button class="btn lock ${i.lock ? 'on' : ''}" data-act="lock:${i.uid}" title="${i.lock ? 'Unlock' : 'Lock: never sold as junk or by accident'}">${i.lock ? '🔒' : '🔓'}</button><button class="btn" data-act="sell:${i.uid}" ${i.lock ? 'disabled' : ''}>Sell</button>${i.qty > 1 ? `<button class="btn" data-act="sellall:${i.uid}" ${i.lock ? 'disabled' : ''}>All</button>` : ''}</span></div>`; }).join('');
+      const rows = items.map(i => { const t = ITEMS[i.id]; const val = sellPrice(i); return `<div class="li" data-tip="item:${i.uid}">${icoBox(i.id)}<span class="r-${rarityOf(i)}">${esc(itemName(i))}${i.qty > 1 ? ' ×' + i.qty : ''}</span><span class="row"><span class="p">${fmt(val)}z${i.qty > 1 ? ' ea' : ''}</span><button class="btn lock ${i.lock ? 'on' : ''}" data-act="lock:${i.uid}" title="${i.lock ? 'Unlock' : 'Lock: never sold as junk or by accident'}">${i.lock ? '🔒' : '🔓'}</button><button class="btn" data-act="sell:${i.uid}" ${i.lock ? 'disabled' : ''}>Sell</button>${i.qty > 1 ? `<button class="btn" data-act="sellall:${i.uid}" ${i.lock ? 'disabled' : ''}>All</button>` : ''}</span></div>`; }).join('');
       return tabs + junk + `<div class="list">${rows || '<div class="muted">Nothing to sell.</div>'}</div>`;
     }
     const eqs = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => ITEMS[i.id].slot !== 'acc');
@@ -294,7 +497,7 @@ const RENDER = {
     const rows = eqs.map(i => {
       const r = i.refine || 0, cost = refineCost(i), ch = refineChanceWith(i, UI.refineStone), safe = ch >= 100, ward = UI.refineStone && ITEMS[UI.refineStone].stone.ward, armed = UI.refineArm === i.uid;
       const btn = r >= 10 ? '<span class="muted">Max</span>' : `<button class="btn ${safe || ward ? '' : 'warn'}" data-act="refine:${i.uid}" ${P.zeny >= cost ? '' : 'disabled'}>${armed ? `Confirm, ${ch}%` : safe ? 'Refine' : `Refine (${ch}%)`}</button>`;
-      return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}<br><span class="muted" style="font-size:11px">${r >= 10 ? '' : `+${r} → +${r + 1} · ${fmt(cost)}z${safe ? ' · safe' : ward ? ' · a failure drops one level' : ' · fails shatter it'}`}</span></span>${btn}</div>`;
+      return `<div class="li" data-tip="item:${i.uid}">${icoBox(i.id)}<span class="r-${i.rarity}">${esc(itemName(i))}<br><span class="muted" style="font-size:11px">${r >= 10 ? '' : `+${r} → +${r + 1} · ${fmt(cost)}z${safe ? ' · safe' : ward ? ' · a failure drops one level' : ' · fails shatter it'}`}</span></span>${btn}</div>`;
     }).join('');
     return tabs + `<p class="muted" style="margin:0 0 8px;line-height:1.4">“Up to +4, nothing breaks. Past that the metal gets proud, and proud metal shatters.”</p>${stoneBar}<div class="list">${rows || '<div class="muted">No equipment to refine. Accessories cannot be refined.</div>'}</div>`;
   },
@@ -341,11 +544,13 @@ function travelTo(k) {
   closeWin('way'); closeWin('worldmap'); Sfx.warp(); const m = genMap(k); gotoMap(k, m.way.x, m.way.y + 1.5);
 }
 /* ---------- Content round 5: service windows (storage, crafting, enchanting, card removal) ---------- */
-const matRow = (id, need) => { const h = countItem(id), ok = h >= need; return `<div class="mat ${ok ? 'ok' : 'no'}" data-tip="shop:${id}"><img src="${iconURL(ITEMS[id])}" alt=""><span>${esc(ITEMS[id].name)}</span><b>${fmt(h)}/${need}</b></div>`; };
-const miniCell = (it, act, tip) => `<button class="cell r-${rarityOf(it)}" data-act="${act}" data-tip="${tip}" aria-label="${esc(itemName(it))}"><img src="${iconURL(ITEMS[it.id])}" alt="">${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}${it.lock ? '<span class="lk">🔒</span>' : ''}</button>`;
+const matRow = (id, need) => { const h = countItem(id), ok = h >= need; return `<div class="mat ${ok ? 'ok' : 'no'}" data-tip="shop:${id}">${icoBox(id)}<span>${esc(ITEMS[id].name)}</span><b>${fmt(h)}/${need}</b></div>`; };
+// One bag/storage cell: icon, stack count, refine level, lock mark, rarity frame.
+function invCell(it, act, tip, bind) { return `<button class="cell r-${rarityOf(it)}" data-act="${act}" data-tip="${tip}"${bind ? ` data-bind="item:${it.id}"` : ''} aria-label="${esc(itemName(it))}">${icoTag(it.id)}${it.refine ? `<span class="rf">+${it.refine}</span>` : ''}${it.qty > 1 ? `<span class="q">${it.qty}</span>` : ''}${it.lock ? '<span class="lk">🔒</span>' : ''}</button>`; }
+const miniCell = (it, act, tip) => invCell(it, act, tip, false);
 function mailHTML() {
   if (!P.mail || !P.mail.length) return '';
-  return `<div class="sec">Mailbox (${P.mail.length}) <button class="btn" style="float:right;margin-top:-3px" data-act="mailall">Claim all</button></div><div class="list">${P.mail.map((m, i) => `<div class="li" data-tip="mail:${i}"><img src="${iconURL(ITEMS[m.item.id])}" alt=""><span class="r-${rarityOf(m.item)}">${esc(itemName(m.item))}${m.item.qty > 1 ? ' ×' + m.item.qty : ''} <span class="muted">· from ${esc(m.from)}</span></span><button class="btn" data-act="mail:${i}">Claim</button></div>`).join('')}</div>`;
+  return `<div class="sec">Mailbox (${P.mail.length}) <button class="btn" style="float:right;margin-top:-3px" data-act="mailall">Claim all</button></div><div class="list">${P.mail.map((m, i) => `<div class="li" data-tip="mail:${i}">${icoBox(m.item.id)}<span class="r-${rarityOf(m.item)}">${esc(itemName(m.item))}${m.item.qty > 1 ? ' ×' + m.item.qty : ''} <span class="muted">· from ${esc(m.from)}</span></span><button class="btn" data-act="mail:${i}">Claim</button></div>`).join('')}</div>`;
 }
 Object.assign(RENDER, {
   storage() {
@@ -361,12 +566,12 @@ Object.assign(RENDER, {
   },
   craft() {
     const by = craftStation(), L = craftLv(), tbs = $('w-craft') && $('w-craft').querySelector('.tb span'); if (tbs) tbs.textContent = `Crafting · ${NPCS[by] ? NPCS[by].name : ''}’s ${by === 'sindri' ? 'Deep Forge' : 'Forge'}`;
-    if (!L) return `<p class="lore">You do not know how to hold the tongs yet. <b>Craftsmanship</b> is a passive any path can learn: ask Brokkr in Emberhold for <i>The Smith’s Apprentice</i> (Base Lv 10).</p><div class="sec">What the smiths can make</div><div class="list">${recipesAt(by).slice(0, 8).map(r => `<div class="li off"><img src="${iconURL(ITEMS[r.out[0]])}" alt=""><span>${esc(r.name || ITEMS[r.out[0]].name)}</span><span class="muted">Lv ${r.lvl}</span></div>`).join('')}</div>`;
+    if (!L) return `<p class="lore">You do not know how to hold the tongs yet. <b>Craftsmanship</b> is a passive any path can learn: ask Brokkr in Emberhold for <i>The Smith’s Apprentice</i> (Base Lv 10).</p><div class="sec">What the smiths can make</div><div class="list">${recipesAt(by).slice(0, 8).map(r => `<div class="li off">${icoBox(r.out[0])}<span>${esc(r.name || ITEMS[r.out[0]].name)}</span><span class="muted">Lv ${r.lvl}</span></div>`).join('')}</div>`;
     const cat = UI.craftCat || 'all', list = recipesAt(by).filter(r => cat === 'all' || r.cat === cat);
     if (!UI.craftSel || !RECIPES[UI.craftSel] || !RECIPES[UI.craftSel].at.includes(by)) UI.craftSel = (list[0] || {}).id;
     const xp = L >= CRAFT_MAX ? 'max' : `${P.flags.craftXp || 0}/${CRAFT_XP(L)} practice`;
     const tabs = `<div class="tabs"><button class="btn ${cat === 'all' ? 'on' : ''}" data-act="ccat:all">All</button>${RECIPE_CATS.map(([k, l]) => `<button class="btn ${cat === k ? 'on' : ''}" data-act="ccat:${k}">${l}</button>`).join('')}</div>`;
-    const rows = list.map(r => { const why = craftWhy(r, by), t = ITEMS[r.out[0]]; return `<button class="li crow ${UI.craftSel === r.id ? 'sel' : ''} ${r.lvl > L ? 'off' : ''}" data-act="csel:${r.id}"><img src="${iconURL(t)}" alt=""><span>${esc(r.name || t.name)}${r.out[1] > 1 ? ' ×' + r.out[1] : ''}<br><span class="muted" style="font-size:10.5px">Lv ${r.lvl} · ${why ? (r.lvl > L ? 'locked' : 'missing materials') : craftChance(r) + '%'}</span></span><span class="${why ? 'muted' : 'ok'}">${why ? '·' : '✓'}</span></button>`; }).join('');
+    const rows = list.map(r => { const why = craftWhy(r, by), t = ITEMS[r.out[0]]; return `<button class="li crow ${UI.craftSel === r.id ? 'sel' : ''} ${r.lvl > L ? 'off' : ''}" data-act="csel:${r.id}">${icoBox(r.out[0])}<span>${esc(r.name || t.name)}${r.out[1] > 1 ? ' ×' + r.out[1] : ''}<br><span class="muted" style="font-size:10.5px">Lv ${r.lvl} · ${why ? (r.lvl > L ? 'locked' : 'missing materials') : craftChance(r) + '%'}</span></span><span class="${why ? 'muted' : 'ok'}">${why ? '·' : '✓'}</span></button>`; }).join('');
     const r = RECIPES[UI.craftSel]; let det = '<p class="muted">Choose a recipe.</p>';
     if (r) {
       const t = ITEMS[r.out[0]], why = craftWhy(r, by), ch = craftChance(r);
@@ -377,15 +582,15 @@ Object.assign(RENDER, {
         qual = `<div class="sec">Quality</div>${[1, 2, 3].map(q => `<div class="drow"><span>${QUALITY[q].name} <span class="muted">${o[q - 1]}%</span></span><span>${stat(q)}${QUALITY[q].slot ? ' · +1 slot' : ''}</span></div>`).join('')}`;
       }
       det = `<div class="cprev">${itemTooltip(prev, true)}</div><div class="sec">Materials <span class="muted" style="font-weight:400">(used up even if the work fails)</span></div>${r.mats.map(([id, n]) => matRow(id, n)).join('')}
-        <div class="drow"><span>Fee</span><b style="color:${P.zeny >= r.fee ? 'var(--gold)' : 'var(--bad)'}">${fmt(r.fee)}z</b></div><div class="drow"><span>Craftsmanship</span><b style="color:${L >= r.lvl ? 'inherit' : 'var(--bad)'}">Lv ${r.lvl} (yours ${L})</b></div><div class="drow"><span>Success</span><b>${ch}%</b></div>${qual}
-        ${why ? `<p class="tt-bad" style="margin:6px 0 0">${esc(why)}</p>` : ''}<div class="row" style="margin-top:8px"><button class="btn big" data-act="craft:${r.id}:1" ${why ? 'disabled' : ''}>Craft</button><button class="btn" data-act="craft:${r.id}:5" ${why ? 'disabled' : ''}>×5</button></div>`;
+        <div class="drow"><span>Fee</span><b style="color:${P.zeny >= r.fee ? 'var(--gold)' : 'var(--bad)'}">${fmt(r.fee)}z</b></div><div class="drow"><span>Craftsmanship</span><b style="color:${L >= r.lvl ? 'inherit' : 'var(--bad)'}">Lv ${r.lvl} (yours ${L})</b></div><div class="drow"><span>Success</span><b>${ch}%</b></div>
+        ${why ? `<p class="tt-bad" style="margin:6px 0 0">${esc(why)}</p>` : ''}<div class="row" style="margin-top:8px"><button class="btn big" data-act="craft:${r.id}:1" ${why ? 'disabled' : ''}>Craft</button><button class="btn" data-act="craft:${r.id}:5" ${why ? 'disabled' : ''}>×5</button></div>${qual}`;
     }
     return `<div class="row" style="justify-content:space-between;margin-bottom:6px"><span>Craftsmanship <b>Lv ${L}/${CRAFT_MAX}</b> <span class="muted">· ${xp}</span></span><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>${tabs}<div class="craft"><div class="list clist">${rows || '<div class="muted">Nothing here.</div>'}</div><div class="cdet">${det}</div></div><p class="muted" style="margin:6px 0 0;font-size:11px">Success grows with Craftsmanship (practice or skill points), DEX and LUK. Gear comes out Standard, Fine (+10 %) or Masterwork (+20 % and an extra slot).</p>`;
   },
   enchant() {
     const gear = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => !ITEMS[i.id].unique);
     if (!gear.some(i => i.uid === UI.enchSel)) UI.enchSel = gear[0] ? gear[0].uid : null;
-    const list = gear.map(i => `<button class="li crow ${UI.enchSel === i.uid ? 'sel' : ''}" data-act="esel:${i.uid}" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[i.id])}" alt=""><span class="r-${i.rarity}">${esc(itemName(i))}${SLOTS.some(s => P.equip[s] === i) ? ' <span class="muted">(worn)</span>' : ''}</span><span class="muted">Lv ${ITEMS[i.id].lvl}</span></button>`).join('');
+    const list = gear.map(i => `<button class="li crow ${UI.enchSel === i.uid ? 'sel' : ''}" data-act="esel:${i.uid}" data-tip="item:${i.uid}">${icoBox(i.id)}<span class="r-${i.rarity}">${esc(itemName(i))}${SLOTS.some(s => P.equip[s] === i) ? ' <span class="muted">(worn)</span>' : ''}</span><span class="muted">Lv ${ITEMS[i.id].lvl}</span></button>`).join('');
     const it = findItem(UI.enchSel); let det = '';
     if (it) {
       const t = ITEMS[it.id], T = enchantTier(it), rare = !!UI.enchRare && !!T.rare, why = enchantWhy(it, rare);
@@ -402,7 +607,7 @@ Object.assign(RENDER, {
   cardsage() {
     const C = CARD_REMOVAL, gear = [...SLOTS.map(s => P.equip[s]).filter(Boolean), ...P.inv.filter(i => ITEMS[i.id].type === 'equip')].filter(i => (i.cards || []).length);
     const rows = gear.map(i => i.cards.map((c, k) => { const fee = cardRemovalFee(i, c), arm = UI.cardArm === i.uid + ':' + k, why = cardRemoveWhy(i, k);
-      return `<div class="li" data-tip="item:${i.uid}"><img src="${iconURL(ITEMS[c])}" alt=""><span><span class="r-card">${esc(ITEMS[c].name)}</span><br><span class="muted" style="font-size:11px">in ${esc(itemName(i))} · ${fmt(fee)}z</span></span><button class="btn ${arm ? 'warn' : ''}" data-act="cardrm:${i.uid}:${k}" ${why ? `disabled title="${esc(why)}"` : ''}>${arm ? 'Confirm' : 'Remove'}</button></div>`; }).join('')).join('');
+      return `<div class="li" data-tip="item:${i.uid}">${icoBox(c)}<span><span class="r-card">${esc(ITEMS[c].name)}</span><br><span class="muted" style="font-size:11px">in ${esc(itemName(i))} · ${fmt(fee)}z</span></span><button class="btn ${arm ? 'warn' : ''}" data-act="cardrm:${i.uid}:${k}" ${why ? `disabled title="${esc(why)}"` : ''}>${arm ? 'Confirm' : 'Remove'}</button></div>`; }).join('')).join('');
     return `<p class="muted" style="margin:0 0 6px;line-height:1.45">“Cards go in easy. Coming out, they remember they were a monster.” The fee is paid whatever happens.</p>
       <div class="odds"><span class="good">Both whole ${C.success}%</span><span>Card breaks ${C.cardBreaks}%</span><span>Item breaks ${C.itemBreaks}% <span class="muted">(its cards come back)</span></span><span class="bad">Both lost ${C.bothBreak}%</span></div>
       <div class="list" style="margin-top:6px">${rows || '<div class="muted">None of your gear holds a card.</div>'}</div><div class="row" style="justify-content:flex-end;margin-top:6px"><span class="muted">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div>`;
@@ -444,14 +649,15 @@ function journalQuests() {
   h += `<div class="sec">Completed</div><p class="muted" style="margin:0;line-height:1.5">${done.length ? done.map(id => esc(QUESTS[id].name)).join(' · ') : 'Nothing yet.'}</p><p class="muted" style="font-size:11.5px;margin:6px 0 0">Side quests ${side}/${total} · Bounties claimed ${Object.keys(P.quests.done).filter(id => QUESTS[id] && QUESTS[id].kind === 'daily').reduce((a, id) => a + P.quests.done[id].n, 0)}</p>`;
   return h;
 }
+const ACT_NAMES = { 2: 'The Wolf and the Gate', 3: 'The Roots of Hel' };
 function journalChronicle() {
-  // Story quests in order; a branch quest (q.branch) only shows for the ending you chose. Act II gets its own heading.
+  // Story quests in order; a branch quest (q.branch) only shows for the ending you chose. Acts II and III are named.
   const main = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'main' && (!QUESTS[id].branch || QUESTS[id].branch === P.flags.ending || P.quests.done[id]));
   let nowSet = false, act = 1;
-  const rows = main.map(id => { const q = QUESTS[id], st = questStatus(id), d = st === 'done'; let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } const t = q.obj.map(o => objText(o)).join('; '); const head = (q.act || 1) !== act ? `<div class="sec">Act ${act = q.act || 1}${q.act === 2 ? ' · The Wolf and the Gate' : ''}</div>` : ''; return `${head}<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${esc(q.name)} <span class="muted">· ${esc(t)}</span></span></div>`; }).join('');
+  const rows = main.map(id => { const q = QUESTS[id], st = questStatus(id), d = st === 'done'; let cls = d ? 'done' : ''; if (!d && !nowSet) { cls = 'now'; nowSet = true; } const t = q.obj.map(o => objText(o)).join('; '); const head = (q.act || 1) !== act ? `<div class="sec">Act ${act = q.act || 1}${ACT_NAMES[q.act] ? ' · ' + ACT_NAMES[q.act] : ''}</div>` : ''; return `${head}<div class="obj ${cls}"><span class="m">${d ? '✓' : cls === 'now' ? '▸' : '·'}</span><span>${esc(q.name)} <span class="muted">· ${esc(t)}</span></span></div>`; }).join('');
   const lore = Object.keys(LORE).filter(k => P.flags.lore[k]).map(k => `<p class="lore"><b>${LORE[k][0]}</b>${LORE[k][1]}</p>`).join('');
   const pt = Math.floor(P.playTime / 60);
-  const path = classChain(P.cls).map(c => CLASSES[c].name).join(' → ');
+  const path = (P.flags.reborn ? 'Reborn · ' : '') + classChain(P.cls).map(c => CLASSES[c].name).join(' → ');
   return `<div class="sec">Path</div><p class="muted" style="margin:0 0 4px">${esc(path)}</p>${rows}<div class="sec">Chronicle</div>${lore}<p class="muted" style="font-size:11.5px;margin:6px 0 0">Time in the Ash: ${Math.floor(pt / 60)}h ${pt % 60}m</p>`;
 }
 // Journal: achievements, titles and standing (round 4).
@@ -475,32 +681,41 @@ function journalAch() {
 const refineCost = i => Math.round((200 + ITEMS[i.id].lvl * 40) * ((i.refine || 0) + 1));
 const refineChance = i => [100, 100, 100, 100, 60, 50, 40, 30, 20, 10][i.refine || 0];
 
+// RO's item description window: the icon and name up top, the description, then "Type / ATK / Required Level / Jobs"
+// rows, bonuses, cards, the comparison with what you wear, and the sell price.
 function itemTooltip(it, fromShop) {
   const t = ITEMS[it.id], r = fromShop ? (t.unique ? 'unique' : t.type === 'card' ? 'card' : 'common') : rarityOf(it);
-  let h = `<div class="tt-name r-${r}">${esc(fromShop ? t.name : itemName(it))}</div>`;
+  const kv = rows => `<div class="tt-kv">${rows.filter(Boolean).map(([k, v, c]) => `<span>${k}</span><b${c ? ` class="${c}"` : ''}>${v}</b>`).join('')}</div>`;
+  let sub, b = '';
   if (t.type === 'equip') {
-    const ib = itemBase(it);
-    h += `<div class="tt-sub">${it.name && !fromShop ? t.name + ' · ' : ''}${t.slot === 'weapon' ? WNAME[t.wtype] : SLOTNAME[t.slot]}${r !== 'common' ? ' · ' + r : ''}${t.crafted ? ' · crafted' : ''}</div>`;
-    if (t.slot === 'weapon') h += `<div class="tt-l">ATK ${ib.atk}${ib.matk ? ` · MATK ${ib.matk}` : ''}</div>`;
-    else if (t.def || t.mdef) h += `<div class="tt-l">${t.def ? `DEF ${ib.def}` : ''}${t.def && t.mdef ? ' · ' : ''}${t.mdef ? `MDEF ${ib.mdef}` : ''}</div>`;
-    if (it.q && QUALITY[it.q] && !fromShop) h += `<div class="tt-u">${QUALITY[it.q].name}${it.q > 1 ? ` (+${Math.round((QUALITY[it.q].mul - 1) * 100)} % base)` : ''}${it.maker ? ` · made by ${esc(it.maker)}` : ''}</div>`;
-    for (const k in (t.bonus || {})) h += `<div class="${t.unique ? 'tt-u' : 'tt-l'}">${bonusLine(k, t.bonus[k])}</div>`;
-    if (!fromShop) { for (const a of it.affixes || []) h += `<div class="tt-b">${bonusLine(a.s, a.v)}</div>`; for (const c of it.cards || []) h += `<div class="tt-c">✦ ${ITEMS[c].name}: ${Object.entries(ITEMS[c].bonus).map(([k, v]) => bonusLine(k, v)).join(', ')}</div>`; }
-    const sN = fromShop ? t.slots : it.slotsN; if (sN) h += `<div class="tt-l">Slots ${'◆'.repeat(fromShop ? 0 : (it.cards || []).length)}${'◇'.repeat(sN - (fromShop ? 0 : (it.cards || []).length))}</div>`;
-    h += `<div class="${P.lvl < t.lvl ? 'tt-bad' : 'muted'}">Requires Lv ${t.lvl}</div>`;
-    h += `<div class="${jobOk(t, P.cls) ? 'muted' : 'tt-bad'}">${t.jobs === ALLJ || t.jobs.length === ALLJ.length ? 'All paths' : t.jobs.map(j => CLASSES[j].name).join(', ')}</div>`;
-    if (t.lore) h += `<div class="tt-lore">${esc(t.lore)}</div>`;
-    h += compareHTML(it, fromShop);
+    const ib = itemBase(it), kind = t.slot === 'weapon' ? WNAME[t.wtype] : SLOTNAME[t.slot];
+    sub = `${it.name && !fromShop ? esc(t.name) + ' · ' : ''}${kind}${r !== 'common' ? ' · ' + r : ''}${t.crafted ? ' · crafted' : ''}`;
+    const sN = fromShop ? t.slots : it.slotsN, used = fromShop ? 0 : (it.cards || []).length;
+    b += kv([
+      t.slot === 'weapon' ? ['ATK', ib.atk] : null, t.slot === 'weapon' && ib.matk ? ['MATK', ib.matk] : null,
+      t.slot !== 'weapon' && t.def ? ['DEF', ib.def] : null, t.slot !== 'weapon' && t.mdef ? ['MDEF', ib.mdef] : null,
+      !fromShop && it.refine ? ['Refine', '+' + it.refine] : null,
+      sN ? ['Slots', `<span class="tt-c">${'◆'.repeat(used)}</span>${'◇'.repeat(Math.max(0, sN - used))}`] : null,
+      ['Required Lv', t.lvl, P.lvl < t.lvl ? 'tt-bad' : ''],
+      ['Jobs', t.jobs === ALLJ || t.jobs.length === ALLJ.length ? 'All paths' : t.jobs.map(j => CLASSES[j].name).join(', '), jobOk(t, P.cls) ? '' : 'tt-bad'],
+    ]);
+    if (it.q && QUALITY[it.q] && !fromShop) b += `<div class="tt-u">${QUALITY[it.q].name}${it.q > 1 ? ` (+${Math.round((QUALITY[it.q].mul - 1) * 100)} % base)` : ''}${it.maker ? ` · made by ${esc(it.maker)}` : ''}</div>`;
+    for (const k in (t.bonus || {})) b += `<div class="${t.unique ? 'tt-u' : 'tt-l'}">${bonusLine(k, t.bonus[k])}</div>`;
+    if (!fromShop) { for (const a of it.affixes || []) b += `<div class="tt-b">${bonusLine(a.s, a.v)}</div>`; for (const c of it.cards || []) b += `<div class="tt-c">✦ ${ITEMS[c].name}: ${Object.entries(ITEMS[c].bonus).map(([k, v]) => bonusLine(k, v)).join(', ')}</div>`; }
+    if (t.lore) b += `<div class="tt-lore">${esc(t.lore)}</div>`;
+    b += compareHTML(it, fromShop);
   } else {
-    h += `<div class="tt-sub">${t.quest ? 'Quest item' : t.stone ? 'Upgrade stone' : t.rareMat ? 'Rare material' : { use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type]}</div>`;
-    if (t.type === 'card') h += `<div class="tt-c">${Object.entries(t.bonus).map(([k, v]) => bonusLine(k, v)).join('<br>')}</div>`;
-    if (t.desc) h += `<div class="tt-l" style="margin-top:3px">${esc(t.desc)}</div>`;
-    if (t.type === 'etc' && !t.stone) { const n = Object.values(RECIPES).filter(rr => rr.mats.some(m => m[0] === it.id)).length; if (n) h += `<div class="muted">Used in ${n} recipe${n > 1 ? 's' : ''}.</div>`; }
-    if (!fromShop && countItem(it.id) > (it.qty || 1)) h += `<div class="muted">${fmt(countItem(it.id))} in your bag</div>`;
+    sub = t.quest ? 'Quest item' : t.stone ? 'Upgrade stone' : t.rareMat ? 'Rare material' : { use: 'Consumable', etc: 'Material', card: 'Card', key: 'Rune-Shard' }[t.type] || '';
+    if (t.desc) b += `<div class="tt-l">${esc(t.desc)}</div>`;
+    if (t.type === 'card') b += `<div class="tt-c" style="margin-top:3px">${Object.entries(t.bonus).map(([k, v]) => bonusLine(k, v)).join('<br>')}</div>`;
+    if (t.type === 'etc' && !t.stone) { const n = Object.values(RECIPES).filter(rr => rr.mats.some(m => m[0] === it.id)).length; if (n) b += `<div class="muted" style="margin-top:3px">Used in ${n} recipe${n > 1 ? 's' : ''}.</div>`; }
+    if (!fromShop && countItem(it.id) > (it.qty || 1)) b += `<div class="muted">${fmt(countItem(it.id))} in your bag</div>`;
+    else if (fromShop && countItem(it.id)) b += `<div class="muted">${fmt(countItem(it.id))} in your bag</div>`;
   }
-  if (!fromShop && it.lock) h += '<div class="muted">🔒 Locked: never sold as junk</div>';
-  if (!fromShop && t.type !== 'key') h += `<div class="tt-p">Sells for ${fmt(sellPrice(it))}z${it.qty > 1 ? ` each · ${fmt(sellPrice(it) * it.qty)}z all` : ''}</div>`;
-  return h;
+  if (!fromShop && it.lock) b += '<div class="muted">🔒 Locked: never sold as junk</div>';
+  if (!fromShop && t.type !== 'key') b += `<div class="tt-p">Sells for ${fmt(sellPrice(it))}z${it.qty > 1 ? ` each · ${fmt(sellPrice(it) * it.qty)}z all` : ''}</div>`;
+  const name = esc(fromShop ? t.name : itemName(it)) + (!fromShop && it.qty > 1 ? ` <span class="muted" style="font-weight:700">×${fmt(it.qty)}</span>` : '');
+  return `<div class="tt-head"><div class="tt-ico r-${r}">${icoTag(it.id)}</div><div><div class="tt-name r-${r}">${name}</div><div class="tt-sub">${sub}</div></div></div><div class="tt-body">${b}</div>`;
 }
 // Compared with what you wear in that slot (round 5): every number that would change if you swapped.
 function itemStatsMap(it) {
@@ -533,27 +748,30 @@ function buffLines(b) {
 const TGTTEXT = { enemy: 'Targets an enemy', self: 'Self', ground: 'Targets the ground (cursor, or in front of you)', heal: 'Self, or an undead enemy', dir: 'Aimed where you face, or at the cursor' };
 function skillTooltip(id) {
   const sk = SKILLS[id], lv = P.skills[id] || 0;
-  let h = `<div class="tt-name">${sk.name}</div><div class="tt-sub">${sk.passive ? 'Passive' : TGTTEXT[sk.tgt]} · Lv ${lv}/${sk.max}</div>`;
+  let h = `<div class="tt-head"><div class="tt-ico skic">${skillTile(id)}</div><div><div class="tt-name">${sk.name}</div><div class="tt-sub">${sk.passive ? 'Passive' : TGTTEXT[sk.tgt]} · Lv ${lv}/${sk.max}</div></div></div><div class="tt-body">`;
   h += `<div class="tt-l">${sk.desc(Math.max(1, lv))}</div>`;
   if (!sk.passive && lv) { const r = sk.tgt === 'self' ? 0 : skillRange(sk, lv); h += `<div class="muted" style="margin-top:3px">${sk.sp(lv)} SP${sk.cast ? ` · ${castTime(sk, lv).toFixed(1)}s cast` : ''}${r ? ` · range ${+r.toFixed(1)}` : ''}</div>`; }
   if (!sk.passive && lv && sk.need && sk.need(lv)) h += `<div class="tt-bad" style="margin-top:3px">${esc(sk.need(lv))}</div>`;
   if (lv < sk.max && lv > 0) h += `<div class="muted" style="margin-top:3px">Next level: ${sk.desc(lv + 1)}</div>`;
-  return h;
+  return h + '</div>';
 }
-function showTip(html, x, y) { const el = $('tooltip'); el.innerHTML = html; el.hidden = false; const r = el.getBoundingClientRect(); let tx = x + 16, ty = y + 12; if (tx + r.width > W - 8) tx = x - r.width - 12; if (ty + r.height > H - 8) ty = H - r.height - 8; el.style.left = Math.max(8, tx) + 'px'; el.style.top = Math.max(8, ty) + 'px'; }
-function hideTip() { $('tooltip').hidden = true; }
+function showTip(html, x, y) { const el = $('tooltip'); if (!html.startsWith('<div class="tt-head')) html = '<div class="tt-plain">' + html + '</div>'; if (el.dataset.src !== html) { el.dataset.src = html; el.innerHTML = html; } el.hidden = false; moveTip(x, y); }
+function moveTip(x, y) { const el = $('tooltip'), r = el.getBoundingClientRect(); let tx = x + 16, ty = y + 14; if (tx + r.width > W - 8) tx = x - r.width - 12; tx = Math.min(tx, W - r.width - 8); if (ty + r.height > H - 8) ty = H - r.height - 8; el.style.left = Math.round(Math.max(8, tx) / UIZ) + 'px'; el.style.top = Math.round(Math.max(8, ty) / UIZ) + 'px'; }
+function hideTip() { const el = $('tooltip'); el.hidden = true; }
 function tipFor(key) {
   const [k, v] = key.split(/:(.+)/);
   if (k === 'item') { const it = findItem(+v); return it ? itemTooltip(it) : null; }
   if (k === 'sitem') { const it = storageFind(+v); return it ? itemTooltip(it) : null; }
   if (k === 'mail') { const m = P.mail && P.mail[+v]; return m ? itemTooltip(m.item) : null; }
-  if (k === 'shop') return itemTooltip({ id: v }, true);
+  if (k === 'shop') return ITEMS[v] ? itemTooltip({ id: v }, true) : null;
+  if (k === 'hotitem') { if (!ITEMS[v]) return null; const it = P.inv.find(i => i.id === v); return it ? itemTooltip(it) : itemTooltip({ id: v }, true); }
   if (k === 'skill') return skillTooltip(v);
   if (k === 'wm') { const d = MAPDEFS[v]; if (!d) return null; const ms = [...new Set(d.spawns.map(s => s[0]))].map(id => MOBS[id].name); return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${esc(d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : d.sub)}${P.flags.seen[v] && ms.length ? '<br>' + esc(ms.join(', ')) : ''}${P.flags.seen[v] && d.boss && MOBS[d.boss] ? `<br>MVP: ${esc(MOBS[d.boss].name)}${P.flags.bosses[d.boss] ? ' (slain)' : ''}` : ''}</div><div class="muted">${P.kindled[v] ? 'Waystone kindled' : genMap(v).way ? 'Waystone not kindled' : ''}</div>`; }
-  if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${[...Object.entries(b.bonus || {}).map(([a, n]) => bonusLine(a, n)), ...buffLines(b)].join('<br>')}</div><div class="muted">${b.count !== undefined ? `×${b.count}` : Math.ceil(b.t) + 's left'}</div>` : null; }
+  if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${[...Object.entries(b.bonus || {}).map(([a, n]) => bonusLine(a, n)), ...buffLines(b)].join('<br>')}</div><div class="muted">${b.perm ? 'Permanent' : b.count !== undefined ? `×${b.count}` : Math.ceil(b.t) + 's left'}</div>` : null; }
   return null;
 }
 
+const ACTS = {};
 function handleAct(act, e) {
   const [a, b, c] = act.split(':'); Sfx.click();
   switch (a) {
@@ -600,6 +818,15 @@ function handleAct(act, e) {
     case 'wipe': UI.wipeArm = true; break;
     case 'ctrl': setCtrlMode(b); break;
     case 'wipe2': store('aom-save', null); location.reload(); break;
+    // Round 6: mount, pets, graphics options
+    case 'mount': toggleMount(); break;
+    case 'pethatch': { const it = findItem(+b); if (it) hatchEgg(it); break; }
+    case 'petfeed': petFeed(); break;
+    case 'petegg': petToEgg(); break;
+    case 'petrename': { const el = $('petname'); if (el) petRename(el.value); UI.petDraft = null; break; }
+    case 'gfxq': if (typeof GFX !== 'undefined' && GFX.setQuality) { GFX.setQuality(b); log(`Graphics: ${b}.`, 'sys'); } break;
+    case 'gfxauto': if (typeof GFX !== 'undefined') { GFX.auto = !GFX.auto; store('aom-gfx-auto', GFX.auto ? 'on' : 'off'); if (!GFX.auto && GFX.setLevel) GFX.setLevel(0); log(`Auto quality ${GFX.auto ? 'on' : 'off'}.`, 'sys'); } break;
+    default: if (ACTS[a]) ACTS[a](b, c, e);   // round 8: actions registered by later sections
   }
   UI.dirty = true;
 }
@@ -625,13 +852,72 @@ function doRefine(it, stoneId) {
    Dialog & story
    ========================================================= */
 let dlgResolve = null;
+// The speaker's portrait: the NPC talking (talkNPC, or a scene speaker) or a name match; the hero's own lines use
+// the class portrait; anyone else gets a monogram. A mood can be set per page with an HTML comment the text already
+// carries invisibly, e.g. '<!--happy-->' (neutral | happy | sad | angry | surprised), or by a dialogMood(id, text) hook.
+const DLGP = { key: null, name: '', text: '' };
+function setDialogPortrait(name, text) {
+  DLGP.name = name; DLGP.text = text;
+  const ent = typeof talkNPC !== 'undefined' ? talkNPC : null, self = P && name === P.name;
+  const id = self ? null : npcPortraitId(name, ent);
+  let mood = (/<!--\s*(neutral|happy|sad|angry|surprised)\s*-->/.exec(text || '') || [])[1];
+  if (!mood && id && typeof dialogMood === 'function') { try { mood = dialogMood(id, text); } catch (e) { mood = null; } }
+  const key = self ? 'self|' + P.cls + P.gender + P.hairStyle + P.hair : id ? id + '|' + (mood || 'neutral') : 'm|' + name;
+  const D = id && NPCS[id], title = D && D.title && !normName(name).includes(normName(D.title)) ? D.title : '';
+  setText('dsub', self ? CLASSES[P.cls].name : title);
+  if (key === DLGP.key) return; DLGP.key = key;
+  $('dport').innerHTML = self ? playerPortrait() : (id && npcPortraitHTML(id, mood)) || monogram(name);
+}
 function dialog(name, text, opts) {
+  let pn = null; for (const p of DLG_PANELS) { try { if (p.test(name, opts)) { pn = p; break; } } catch (e) { /* data not loaded: plain menu */ } }
   return new Promise(res => {
-    dlgResolve = res; $('dialog').hidden = false; $('dname').textContent = name; $('dtext').innerHTML = `<span class="nm">[${esc(name)}]</span>` + text;
-    $('dopts').className = opts.length > 2 ? 'menu-list' : '';
-    $('dopts').innerHTML = opts.map((o, i) => `<button class="btn" data-dlg="${i}">${esc(o)}</button>`).join('');
-    const b = $('dopts').querySelector('button'); if (b) b.focus({ preventScroll: true });
+    dlgResolve = res; const dg = $('dialog'); dg.hidden = false; $('dname').textContent = name;
+    try { setDialogPortrait(name, text); } catch (e) { console.error(e); }
+    DLG.cur = pn ? { pn, name, text, opts } : null; UI.deepSel = null;
+    dg.classList.toggle('panel', !!pn); $('dtb').hidden = !pn; $('dtbt').textContent = pn ? pn.title : '';
+    if (pn) { try { dlgPanelDraw(true); } catch (e) { console.error(e); DLG.cur = null; dg.classList.remove('panel'); $('dtb').hidden = true; pn = null; } }
+    if (!pn) {
+      const dt = $('dtext'); dt.innerHTML = `<span class="nm">[${esc(name)}]</span>` + text; dt.scrollTop = 0;
+      $('dopts').className = opts.length > 2 ? 'menu-list' : '';
+      $('dopts').innerHTML = opts.map((o, i) => `<button class="btn" data-dlg="${i}">${esc(o)}</button>`).join('');
+    }
+    const b = $('dopts').querySelector('button:not(.dup)'); if (b) b.focus({ preventScroll: true });
   });
+}
+/* UI round 8: dialog panels. Ganglati's and Ganglöt's menus become windows in place: when a dialog's speaker and
+   options match a DLG_PANELS entry, the dialog grows a title bar and shows the panel (floor select, records, affixes,
+   rewards; the nine beasts and the bests) instead of a bare list. The options core passed are still the buttons and
+   still resolve to the same indices, so talkGanglati / talkGanglot (js/data/npcs.js) run unchanged; the ones the panel
+   makes redundant stay in the DOM, hidden (.dup), and a panel may add its own actions (data-dx) that resolve with the
+   "Farewell" index and then act (e.g. a mid-run checkpoint). If the data a panel needs is missing, the plain menu shows. */
+const DLG = { cur: null };
+const DLG_PANELS = [
+  { id: 'deep', title: 'The Deep Roots', render: (t, o) => deepPanel(t, o),
+    test: (name, opts) => typeof deepState === 'function' && typeof NPCS !== 'undefined' && !!NPCS.ganglati && name === NPCS.ganglati.dname && opts.some(o => /^Begin a new descent/.test(o)) },
+  { id: 'gauntlet', title: 'The Gauntlet of Eljudnir', render: (t, o) => rushPanel(t, o),
+    test: (name, opts) => typeof rushState === 'function' && typeof RUSH_LIST !== 'undefined' && typeof NPCS !== 'undefined' && !!NPCS.ganglot && name === NPCS.ganglot.dname && opts.some(o => /^Begin the Gauntlet/.test(o)) },
+];
+const dlgBye = opts => { const i = opts.findIndex(o => /^(Farewell|Nothing|Not yet|Stay)\b/i.test(o)); return i >= 0 ? i : opts.length - 1; };
+function dlgPanelDraw(fresh) {
+  const c = DLG.cur; if (!c) return;
+  const r = c.pn.render(c.text, c.opts), dt = $('dtext'), st = fresh ? 0 : dt.scrollTop;
+  dt.innerHTML = `<span class="nm">[${esc(c.name)}]</span><p class="dq">${c.text}</p>${r.html}`; dt.scrollTop = st;
+  const shown = new Set(r.show), btn = (i, cls) => `<button class="btn${cls}" data-dlg="${i}">${esc(c.opts[i])}</button>`;
+  $('dopts').className = 'panel-opts';
+  $('dopts').innerHTML = (r.extra || []).map(x => `<button class="btn prim" data-dx="${esc(x.act)}">${esc(x.label)}</button>`).join('')
+    + r.show.map(i => btn(i, i === r.primary ? ' prim' : i === dlgBye(c.opts) ? ' bye' : '')).join('')
+    + c.opts.map((o, i) => shown.has(i) ? '' : btn(i, ' dup')).join('');
+}
+// Clicks inside a panel: data-dsel picks a floor (redraw in place), data-dx runs a panel action after closing.
+function dlgExtraClick(e) {
+  if (e.target.closest('[data-dclose]')) { closeDialog(); return true; }
+  const s = e.target.closest('[data-dsel]'); if (s && DLG.cur) { Sfx.click(); UI.deepSel = +s.dataset.dsel; dlgPanelDraw(); return true; }
+  const x = e.target.closest('[data-dx]'); if (!x || !DLG.cur) return false;
+  const act = x.dataset.dx, c = DLG.cur, r = dlgResolve; dlgResolve = null; DLG.cur = null; Sfx.click();
+  if (r) r(dlgBye(c.opts));
+  const [k, v] = act.split(':');
+  if (k === 'deep' && typeof deepGo === 'function') setTimeout(() => { if (!P.dead) deepGo(+v); }, 0);
+  return true;
 }
 function closeDialog() { $('dialog').hidden = true; if (dlgResolve) { const r = dlgResolve; dlgResolve = null; r(-1); } }
 async function say(name, pages) { for (let i = 0; i < pages.length; i++) { const r = await dialog(name, pages[i], [i < pages.length - 1 ? 'Next' : 'Close']); if (r < 0) break; } $('dialog').hidden = true; }
@@ -731,57 +1017,10 @@ if (typeof updateCamera === 'function') {
 /* =========================================================
    UI: quests (tracker, toasts, NPC markers)
    ========================================================= */
-const QUEST_UI = { markers: true, boards: true, boardLabels: true, helgate: true }; // the renderer may set these false once it draws them itself
-(function questStyles() {
-  const st = document.createElement('style');
-  st.textContent = `
-#qtrack{position:absolute;right:calc(8px + env(safe-area-inset-right,0px));top:calc(220px + env(safe-area-inset-top,0px));width:210px;font-size:11.5px;cursor:pointer}
-#qtrack .rbd{padding:4px 8px 6px}
-#qtrack .qt{font-weight:800;color:#2c3858;margin-bottom:2px}
-#qtrack .o{display:grid;grid-template-columns:12px 1fr auto;gap:4px;line-height:1.35;color:var(--ink)}
-#qtrack .o.done{color:var(--faint)}#qtrack .o.done .m{color:var(--good)}#qtrack .o .m{color:#e06a1a;font-weight:800}#qtrack .o.lock{opacity:.55}
-#qtrack .o b{font-variant-numeric:tabular-nums}
-#qtrack .rd{color:#1e7a2a;font-weight:800;margin-top:2px}
-#qtoast{position:absolute;left:50%;top:calc(60px + env(safe-area-inset-top,0px));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;z-index:31}
-#qtoast div{font:800 12.5px var(--ui);color:#fff;padding:4px 14px;border-radius:12px;background:rgba(16,20,34,.72);border:1px solid rgba(255,220,150,.35);text-shadow:0 1px 2px #000;animation:qtoast 2.6s ease forwards;white-space:nowrap}
-#qtoast div.obj{color:#c8f0a8}#qtoast div.new{color:#ffe08a}#qtoast div.ready{color:#9ae0ff}
-@keyframes qtoast{0%{opacity:0;transform:translateY(-6px)}10%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
-#chat .quest{color:#ffd890}
-.qcard{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:5px 7px;margin-bottom:5px}
-.qcard.tr{border-color:#e0a040;box-shadow:0 0 0 1px #f0c070}
-.qcard .qh{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
-.qcard .qs{font-size:11.5px;margin:1px 0 3px;line-height:1.35}
-.qcard .qn{font-variant-numeric:tabular-nums}
-.qcard .qr{font-size:11px;color:var(--gold);margin-top:3px}
-.qcard .qready{color:#1e7a2a;font-weight:800;margin-top:2px}
-@media (max-width:760px){#qtrack{top:calc(160px + env(safe-area-inset-top,0px));width:160px;font-size:10.5px}}
-#game.cine #qtrack,#game.cine #tip,#game.cine #hotbar,#game.cine #buffs{opacity:0;transition:opacity .3s}
-#w-inv .lk,#w-storage .lk{position:absolute;left:1px;top:0;font-size:9px}
-.tabs .btn.on .muted{color:#dfe8ff}
-.inv-tabs{flex-wrap:wrap}.inv-tabs .btn{padding:2px 6px;font-size:10.5px}
-.st-grid{max-height:236px;overflow:auto}
-.craft{display:grid;grid-template-columns:minmax(170px,44%) 1fr;gap:8px;align-items:start}
-.clist{max-height:340px;overflow:auto;padding-right:2px}
-.crow{width:100%;text-align:left;font:12px var(--ui);color:var(--ink);cursor:pointer}
-.crow.sel{border-color:#e0a040;box-shadow:0 0 0 1px #f0c070;background:#fffaf0}
-.crow .ok{color:var(--good);font-weight:800}
-.cdet{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:6px 8px;min-height:120px}
-.cprev{border-bottom:1px solid #d4dbe8;padding-bottom:4px;margin-bottom:2px;font-size:11.5px;line-height:1.4}
-.mat{display:grid;grid-template-columns:22px 1fr auto;gap:6px;align-items:center;height:24px}
-.mat img{width:20px;height:20px}.mat.ok b{color:var(--good)}.mat.no b{color:var(--bad)}
-.odds{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:5px 7px}
-.odds .good{color:var(--good);font-weight:800}.odds .bad{color:var(--bad)}
-.junk{background:#fff;border:1px solid #c4cde0;border-radius:3px;padding:6px 7px;margin-bottom:8px}
-.junk .btn{font-size:10.5px;padding:2px 6px}
-.btn.lock{padding:2px 4px;font-size:10px}
-.tt-cmp{margin-top:5px;padding-top:4px;border-top:1px dashed #c4cde0}
-.cmp-up{color:var(--good);font-weight:700}.cmp-dn{color:var(--bad);font-weight:700}
-@media (max-width:760px){.craft{grid-template-columns:1fr}.clist{max-height:180px}}
-#ptitle{display:block;font-size:10.5px;font-weight:700;color:#b07d00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pnc{display:flex;flex-direction:column;min-width:0}`;
-  document.head.appendChild(st);
+const QUEST_UI = { markers: true, boards: true, boardLabels: true, helgate: true, skills: true, spots: true }; // skills / spots: the VFX team's 3D versions set these false // the renderer may set these false once it draws them itself
+(function questUI() {   // styles live in index.html (round 7); this adds the tracker and the toast column
   const tr = document.createElement('div'); tr.id = 'qtrack'; tr.className = 'rwin'; tr.hidden = true; tr.dataset.win = 'journal'; tr.title = 'Open the quest log';
-  $('hud').appendChild(tr);
+  ($('tr') || $('hud')).appendChild(tr);
   const to = document.createElement('div'); to.id = 'qtoast'; $('game').appendChild(to);
 })();
 function questToast(msg, kind) {
@@ -795,9 +1034,16 @@ function renderTracker(force) {
   const el = $('qtrack'), id = P.quests && P.quests.track;
   if (!id || !P.quests.active[id]) { el.hidden = true; return; }
   const q = QUESTS[id], ready = questReady(id), ti = questTurnIn(q);
-  const rows = questObjectives(id).map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}${o.live ? ` <i style="color:#b0402a">${esc(o.live)}</i>` : ''}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
-  const html = `<div class="rtb">Quest</div><div class="rbd"><div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}</div>`;
+  // Round 8: on phones the tracker is clamped (one line per objective, the finished ones folded away, at most two
+  // shown) until it is tapped; tapped, it shows everything and a link to the quest log.
+  const phone = phoneUI(), open = !phone || !!UI.trackOpen;
+  let obs = questObjectives(id), more = 0;
+  if (!open) { const left = obs.filter(o => !o.done); more = obs.length - Math.min(2, left.length); obs = left.slice(0, 2); }
+  const rows = obs.map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}${o.live ? ` <i style="color:#b0402a">${esc(o.live)}</i>` : ''}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
+  const foot = !phone ? '' : open ? '<button class="btn qlog" data-win="journal">Quest log</button>' : more > 0 ? `<div class="qmore">+${more} more · tap</div>` : '';
+  const html = `<div class="rtb"><span>Quest</span></div><div class="rbd"><div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}${foot}</div>`;
   if (cache.qtrack !== html) { cache.qtrack = html; el.innerHTML = html; }
+  el.classList.toggle('open', phone && open); el.classList.toggle('clamp', !open);
   el.hidden = false;
 }
 /* Per-frame overlay helpers (perf round 2): projected points come from a ring of reused arrays (pj), ground loops
@@ -844,7 +1090,7 @@ function drawQuestOverlay() {
     if (QUEST_UI.boardLabels !== false && typeof label === 'function') { const a = pj(o.x, o.y, groundH(o.x, o.y)); if (a[2] < 1) label(o.name, a[0], a[1] + 17 * sc, '#ffd8a8', 11.5); }
   }
   drawQuestSpots(sc);
-  if (!QUEST_UI.markers) return;
+  if (!QUEST_UI.markers || (typeof CINE !== 'undefined' && CINE.active)) return;   // no '!' / '?' marks during a scene
   for (const e of [...map.npcs, ...boards]) {
     if (e.actor || e.escort) continue; // scene actors and escorted NPCs carry no quest marks
     if (!(e._qmT > time - 0.25) || e._qmT > time) { e._qm = questMarkerInfo(e); e._qmT = time; } // re-evaluated 4x per second
@@ -856,7 +1102,7 @@ function drawQuestOverlay() {
 // Round 4: investigation spots (a bobbing "?" and a glint), hunt / defence / destination rings, Hel's gate (no mesh yet:
 // QUEST_UI.helgate = false once the renderer draws `helgate` objects), and your title under your feet.
 function drawQuestSpots(sc) {
-  for (const s of questSpots()) {
+  for (const s of (QUEST_UI.spots === false ? [] : questSpots())) {
     const gh = groundH(s.x, s.y), pulse = 0.5 + 0.5 * Math.sin(time * 3 + s.x);
     if (s.kind === 'inspect') {
       const a = pj(s.x, s.y, gh + 1.1 + Math.sin(time * 2.6 + s.y) * 0.12); if (a[2] > 1) continue;
@@ -888,6 +1134,7 @@ function strokeLoop(pts, fill, stroke, lw, dash) {
 }
 function runeAt(x, y, h, txt, col, px) { const a = pj(x, y, groundH(x, y) + h); if (a[2] > 1) return; ctx.font = `${px}px 'Noto Sans Runic', 'Segoe UI Historic', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,6,4,.7)'; ctx.strokeText(txt, a[0], a[1]); ctx.fillStyle = col; ctx.fillText(txt, a[0], a[1]); ctx.textBaseline = 'alphabetic'; }
 function drawSkillOverlay() {
+  if (QUEST_UI.skills === false) return;   // the renderer draws skill zones, auras, spheres, marks and telegraph shapes in 3D
   if (!started || !map || !P || typeof proj !== 'function' || typeof PPU === 'undefined') return;
   const sc = clamp(PPU / 34, 0.75, 1.5);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -988,6 +1235,10 @@ const game = $('game');
 $('bRespawn').onclick = () => { Sfx.click(); respawn(); };
 function showDeath() { $('deathz').textContent = P.lostZeny && P.lostZeny.map === map.id ? `Your ${fmt(P.lostZeny.zeny)} zeny lies where you fell.` : ''; $('death').hidden = false; }
 game.addEventListener('click', e => {
+  // Round 8: a tap on the clamped phone tracker unfolds it (and folds it again); its "Quest log" button opens the log.
+  const qt = e.target.closest('#qtrack'); if (qt && phoneUI() && !e.target.closest('.qlog')) { Sfx.unlock(); UI.trackOpen = !UI.trackOpen; renderTracker(true); return; }
+  if (e.target.closest('.qlog')) UI.trackOpen = false;
+  if (dlgExtraClick(e)) return;
   const w = e.target.closest('[data-win]'); if (w) { Sfx.unlock(); toggleWin(w.dataset.win); return; }
   const x = e.target.closest('[data-close]'); if (x) { closeWin(x.dataset.close); return; }
   const d = e.target.closest('[data-dlg]'); if (d) { const r = dlgResolve; dlgResolve = null; if (r) r(+d.dataset.dlg); return; }
@@ -1004,13 +1255,13 @@ game.addEventListener('pointerover', e => {
   const b = e.target.closest('[data-bind]'); UI.hoverBind = b && b.dataset.bind ? b.dataset.bind : null;
 });
 game.addEventListener('pointerout', e => { const t = e.target.closest('[data-tip]'); if (t && !t.contains(e.relatedTarget)) hideTip(); const b = e.target.closest('[data-bind]'); if (b && !b.contains(e.relatedTarget)) UI.hoverBind = null; });
-game.addEventListener('pointermove', e => { const el = $('tooltip'); if (!el.hidden && e.target.closest('[data-tip]')) showTip(el.innerHTML, e.clientX, e.clientY); });
+game.addEventListener('pointermove', e => { const el = $('tooltip'); if (!el.hidden && e.target.closest('[data-tip]')) moveTip(e.clientX, e.clientY); });
 
 addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && !$('title').hidden) $('bNew').click(); return; }
+  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && !$('title').hidden) $('bNew').click(); if (e.key === 'Enter' && e.target.id === 'petname') { handleAct('petrename'); e.target.blur(); } return; }
   if (e.key === 'Alt') { mouse.alt = true; e.preventDefault(); return; }
   if (!started) return;
-  if (!$('dialog').hidden && (e.key === 'Enter' || e.key === ' ')) { const b = $('dopts').querySelector('button'); if (b && document.activeElement !== b) { b.click(); e.preventDefault(); } return; }
+  if (!$('dialog').hidden && (e.key === 'Enter' || e.key === ' ')) { const b = $('dopts').querySelector('button:not(.dup)'); if (b && document.activeElement !== b) { b.click(); e.preventDefault(); } return; }
   const k = e.key.toLowerCase();
   if (/^[1-9]$/.test(e.key)) {
     e.preventDefault(); const i = +e.key - 1;
@@ -1020,8 +1271,9 @@ addEventListener('keydown', e => {
   }
   if (k === 'escape') { if (!$('dialog').hidden) { closeDialog(); return; } let top = null, tz = -1; for (const id in UI.open) if (UI.open[id]) { const z = +$('w-' + id).style.zIndex; if (z > tz) { tz = z; top = id; } } if (top) closeWin(top); return; }
   if (e.ctrlKey || e.metaKey) return;
-  const map_ = { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help' };
+  const map_ = { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help', p: 'pet' };
   if (map_[k]) { toggleWin(map_[k]); return; }
+  if (k === 'r') { toggleMount(); return; }   // round 6: ride / dismount (action mode: js/action.js)
   if (k === ',' || (k === 'w' && !isAction())) { toggleWin('worldmap'); return; }
   if (k === 'x') { if ((P.skills.basic || 0) < 3) { log('You need Basic Skill 3 to sit.', 'warn'); return; } if (P.target || P.casting) return; P.sitting = !P.sitting; P.path = null; log(P.sitting ? 'You sit and catch your breath.' : 'You stand.', 'sys'); return; }
   if (k === 'z') { let best = null, bd = 3.5; for (const d of drops) { const dd = dist(d, P); if (dd < bd) { bd = dd; best = d; } } if (best) { P.target = null; P.goal = { kind: 'drop', ref: best }; P.path = null; } return; }
@@ -1031,12 +1283,12 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { if (e.key === 'Alt') mouse.alt = false; });
 addEventListener('blur', () => { mouse.alt = false; mouse.down = false; });
-addEventListener('resize', () => { resize(); if (map) setScreenParts(); });
+addEventListener('resize', () => { resize(); if (map) setScreenParts(); applyUIZ(); fitWins(); if (!$('tooltip').hidden) hideTip(); });
 
 /* =========================================================
    Save / load / boot
    ========================================================= */
-const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests', 'titles', 'title', 'ach', 'storage', 'mail'];
+const SAVE_KEYS = ['name', 'hair', 'gender', 'hairStyle', 'cls', 'lvl', 'exp', 'jlvl', 'jexp', 'statPts', 'skillPts', 'st', 'skills', 'hp', 'sp', 'zeny', 'inv', 'equip', 'hot', 'map', 'x', 'y', 'lastWay', 'kindled', 'flags', 'lostZeny', 'playTime', 'quests', 'titles', 'title', 'ach', 'storage', 'mail', 'pet', 'mounted'];
 function serialize() { if (!P) return null; const o = {}; for (const k of SAVE_KEYS) o[k] = P[k]; o.uidc = uidc; o.v = 1; return JSON.stringify(o); }
 function saveGame() { if (!started || !P) return; const s = serialize(); if (s) store('aom-save', s); }
 function loadSave() { const raw = store('aom-save'); if (!raw) return null; try { return JSON.parse(raw); } catch (e) { return null; } }
@@ -1059,6 +1311,12 @@ function applySave(o) {
   P.storage = Array.isArray(o.storage) ? o.storage.filter(it => it && ITEMS[it.id]) : [];
   P.mail = Array.isArray(o.mail) ? o.mail.filter(m => m && m.item && ITEMS[m.item.id]) : [];
   P.inv = P.inv.filter(it => it && ITEMS[it.id]);
+  // Round 6: the pet that was out, riding, taming and rebirth records (older saves: none).
+  const op = o.pet; P.pet = op && PETS[op.type] ? { type: op.type, name: String(op.name || MOBS[op.type].name).slice(0, 16), hunger: clamp(+op.hunger || 0, 0, 100), intim: clamp(+op.intim || PET_START.intim, 1, 1000), t: +op.t || 0 } : null;
+  P.flags.tamed = P.flags.tamed && typeof P.flags.tamed === 'object' ? P.flags.tamed : {};
+  if (P.flags.reborn && typeof P.flags.reborn !== 'object') P.flags.reborn = { from: null, skills: {} };
+  if (!CLASSES[P.cls]) P.cls = 'novice';
+  P.mounted = !!o.mounted && !!P.flags.warg && MOUNT_CLASSES.includes(P.cls);
   for (const list of [P.inv, P.storage]) for (let i = 0; i < list.length; i++) { const it = list[i]; if (stackable(it.id) && it.qty > STACK_MAX && list.length < (list === P.inv ? BAG_SLOTS : STORAGE_SLOTS)) { list.push({ uid: uidc++, id: it.id, qty: it.qty - STACK_MAX }); it.qty = STACK_MAX; } }
   resetRuntime();
 }
@@ -1084,7 +1342,7 @@ function showTitle() {
     <div class="t-rune">ᚨᛊᚺᛖᛊ · ᛟᚠ · ᛗᛁᛞᚷᚨᚱᛞ</div>
     <h1>Ashes of Midgard</h1>
     <p class="t-sub">The Tree burned. You did not.</p>
-    <div class="t-card rwin"><div class="rtb">Character</div><div class="rbd">
+    <div class="t-card rwin"><div class="rtb"><span>Character</span></div><div class="rbd">
       ${save ? `<button class="btn big" id="bCont">Continue · ${esc(save.name)}, Lv ${save.lvl} ${CLASSES[save.cls] ? CLASSES[save.cls].name : ''}</button><div class="sec" style="margin:6px 0 0">Or begin again</div>` : ''}
       <label for="nm">Name</label><input id="nm" maxlength="16" value="Unkindled" autocomplete="off" spellcheck="false">
       <label>Body</label><div class="hairs" role="group" aria-label="Body">${opt('gender', 'm', 'Male', true)}${opt('gender', 'f', 'Female', false)}</div>
@@ -1164,7 +1422,306 @@ function boot(data) {
   else showTitle();
   requestAnimationFrame(frame);
 }
-if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in iconCache) if (k.startsWith('sk|') || k.startsWith('shard')) delete iconCache[k]; for (const k in iconCache) if (k.startsWith('shard|')) delete iconCache[k]; UI.dirty = true; if (P && started) renderBuffs(); });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { for (const k in iconCache) if (k.startsWith('sk|') || k.startsWith('shard')) delete iconCache[k]; for (const k in iconCache) if (k.startsWith('shard|')) delete iconCache[k]; UI.dirty = true; UI.hotSig = null; if (P && started) renderBuffs(); });
 const hot = window.claude && window.claude.hot;
 if (hot && typeof hot.snapshot === 'function') hot.snapshot(() => ({ save: started ? serialize() : null }));
 if (hot && typeof hot.ready === 'function') hot.ready(boot); else boot((hot && hot.data) || {});
+
+
+/* =========================================================
+   Content round 6: the Pet window, graphics options, HUD menu button
+   ========================================================= */
+const petBar = (v, max, col) => `<div class="pbar"><i style="width:${clamp(v / max * 100, 0, 100).toFixed(1)}%;background:linear-gradient(${col},${col}cc)"></i></div>`;
+RENDER.pet = function () {
+  const p = P.pet, eggs = P.inv.filter(i => ITEMS[i.id].effect === 'egg'), food = countItem('pet_food');
+  let h = '';
+  if (p) {
+    const T = PETS[p.type], on = p.intim >= PET_BONUS_AT, bonus = Object.entries(T.bonus).map(([a, v]) => bonusLine(a, v)).join(', ');
+    h += `<div class="petcard"><div class="well pspr" data-pspr="${p.type}" title="${esc(MOBS[p.type].name)}">${ITEMS['egg_' + p.type] ? icoTag('egg_' + p.type) : ''}</div><div><b style="font-size:15px">${esc(p.name)}</b><div class="muted" style="font-size:11.5px">${esc(MOBS[p.type].name)} · Lv ${MOBS[p.type].lvl} · out with you</div><div class="petmood ${p.intim >= PET_BONUS_AT ? 'on' : ''}">${petWord(PET_INTIM_WORDS, p.intim)}${p.hunger <= 25 ? ' · hungry' : ''}</div></div></div>`;
+    h += `<div class="drow" style="margin-top:8px"><span>Hunger</span><b>${petWord(PET_HUNGER_WORDS, p.hunger)} · ${Math.round(p.hunger)}/100</b></div>${petBar(p.hunger, 100, p.hunger <= 25 ? '#d0582a' : p.hunger > 90 ? '#c8a040' : '#6ab04a')}`;
+    h += `<div class="drow"><span>Intimacy</span><b>${petWord(PET_INTIM_WORDS, p.intim)} · ${Math.round(p.intim)}/1000</b></div>${petBar(p.intim, 1000, on ? '#e8709a' : '#b88aa0')}`;
+    h += `<p class="muted" style="margin:0 0 6px;font-size:11.5px">Bonus while Cordial or Loyal (${PET_BONUS_AT}+): <b style="color:${on ? 'var(--ember)' : 'inherit'}">${esc(bonus)}</b> · ${on ? 'active' : 'not yet'}</p>`;
+    const nm = UI.petDraft != null ? UI.petDraft : p.name;
+    h += `<div class="row" style="gap:6px"><input id="petname" maxlength="16" value="${esc(nm)}" autocomplete="off" spellcheck="false" style="flex:1;min-width:0" aria-label="Pet name"><button class="btn" data-act="petrename">Rename</button></div>`;
+    h += `<div class="row" style="gap:6px;margin-top:6px"><button class="btn" data-act="petfeed" ${food ? '' : 'disabled'}>Feed · Pet Food ×${food}</button><button class="btn" data-act="petegg">Back to its egg</button></div>`;
+    h += `<p class="muted" style="margin:6px 0 0;font-size:11px">Feed it when it is Hungry: it grows fond of you. Overfed (Satisfied or Stuffed) it sulks. Left starving, it loses heart and one day runs away. Hunger falls a point a minute.</p>`;
+  } else h += '<p class="muted" style="margin:0">No pet is out. Buy a taming sweet at Ylva’s stable in Skaldhaven, use it near that monster once it is worn down, and hatch the egg here.</p>';
+  if (eggs.length) h += `<div class="sec">Eggs</div><div class="list">${eggs.map(e => `<div class="li" data-tip="item:${e.uid}">${icoBox(e.id)}<span>${esc((e.pet && e.pet.name) || MOBS[ITEMS[e.id].pet].name)} <span class="muted">· ${esc(MOBS[ITEMS[e.id].pet].name)}${e.pet ? ' · ' + petWord(PET_INTIM_WORDS, e.pet.intim) : ''}</span></span><button class="btn" data-act="pethatch:${e.uid}">Hatch</button></div>`).join('')}</div>`;
+  if (hugClass()) { const c = HUG.c, st = !c ? '' : c.mode === 'perch' ? 'perched on your shoulder' : c.mode === 'dive' ? 'diving' : 'flying beside you'; h += `<div class="sec">Huginn</div><p class="muted" style="margin:0;font-size:11.5px">Odin’s raven hunts with you${st ? `, ${st}` : ''}. Blitz Beat sends him diving (and he dives by himself on some of your attacks)${P.skills.huginn_muninn ? '; Huginn & Muninn sends both ravens' : ''}. He needs no food: he steals yours.</p>`; }
+  const T = P.flags.tamed || {};
+  h += `<div class="sec">Tameable in Midgard</div><div class="list">${Object.keys(PETS).map(k => `<div class="li" data-tip="shop:${PETS[k].tame}"><span class="ico pthumb" data-pspr="${k}" data-sz="thumb">${icoTag(PETS[k].tame)}</span><span>${esc(MOBS[k].name)} <span class="muted">· ${esc(ITEMS[PETS[k].tame].name)} · Lv ${MOBS[k].lvl}</span></span><span class="muted">${T[k] ? '✓ tamed' : ''}</span></div>`).join('')}</div>`;
+  return h;
+};
+addEventListener('input', e => { if (e.target && e.target.id === 'petname') UI.petDraft = e.target.value; });
+// Graphics options (Help window): presets, adaptive quality and a live readout (GFX in js/gfx-world.js).
+function gfxInfoText() {
+  try { const i = GFX.autoInfo(); return `${Math.round(i.fps || 0)} fps · ${(i.frameMs || 0).toFixed(1)} ms · ${i.auto ? `auto level ${i.level}/${Math.max(0, i.levels - 1)}` : 'fixed'} · scale ${Math.round((i.scale || 1) * 100)}%`; } catch (e) { return ''; }
+}
+function gfxOptionsHTML() {
+  if (typeof GFX === 'undefined' || !GFX.setQuality) return '';
+  const qs = ['low', 'medium', 'high', 'ultra'];
+  return `<div class="sec">Graphics</div><div class="tabs">${qs.map(q => `<button class="btn ${GFX.quality === q ? 'on' : ''}" data-act="gfxq:${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;gap:8px;margin-top:4px"><button class="btn ${GFX.auto ? 'on' : ''}" data-act="gfxauto">${GFX.auto ? '☑' : '☐'} Auto quality</button><span class="muted" id="gfxinfo" style="font-size:11.5px">${gfxInfoText()}</span></div>
+    <p class="muted" style="font-size:11px;margin:4px 0 0">Low is for phones and old laptops; Ultra wants a strong graphics card. Auto lowers the render scale and effects when frames run slow and raises them again when there is headroom. Both are remembered in this browser.</p>`;
+}
+(function () {
+  const ga = store('aom-gfx-auto'); if (ga && typeof GFX !== 'undefined') GFX.auto = ga === 'on';
+  const m = document.querySelector('.menu');
+  if (m && !m.querySelector('[data-win="pet"]')) { const b = document.createElement('button'); b.className = 'btn'; b.dataset.win = 'pet'; b.innerHTML = 'Pet<kbd>P</kbd>'; m.insertBefore(b, m.querySelector('[data-win="help"]')); }
+})();
+
+
+/* =========================================================
+   UI round 8: the Deep Roots and the Gauntlet (content round 7), the pet's portrait, the rebirth ceremony.
+   Hooks (nothing in js/core.js or js/data/* is edited; every call into them is guarded with typeof):
+   - Ganglati's and Ganglöt's menus are dialog panels (DLG_PANELS, next to dialog() above).
+   - rushStart is wrapped: a run that starts opens the Gauntlet window. talkGanglot is wrapped: during a run Ganglöt's
+     "Busy" line gives way to that window (it holds the clock and the Abandon button).
+   - rebirth is wrapped: when it returns true, the Reborn ceremony plays (rebornCeremony, skippable).
+   All three are global function declarations called by name at call time (npcs.js, NPCS[..].talk, OBJ_TALK), so
+   reassigning the global binding from here reaches every caller.
+   ========================================================= */
+const fmtClock = t => typeof rushClock === 'function' ? rushClock(t) : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}.${Math.floor((t * 10) % 10)}`;
+const chip = (k, v, cls) => `<div class="chip${cls ? ' ' + cls : ''}"><b>${v}</b><span>${k}</span></div>`;
+const ico16 = id => ITEMS[id] ? `<span class="rw-i">${icoTag(id)}</span>` : '';
+
+/* ---------- The Deep Roots ---------- */
+function deepInfo() {
+  const D = deepState(), run = D.run || null, cp = run && run.cp > 1 ? run.cp : 1, cps = [1];
+  for (let n = 6; n <= cp; n += 5) cps.push(n);
+  if (cp > 1 && !cps.includes(cp)) cps.push(cp);
+  return { D, run, cp, cps };
+}
+const deepLv = n => typeof deepLevel === 'function' ? deepLevel(n) : Math.min(130, 71 + 2 * n);
+function deepPlanOf(n, run) { try { return typeof deepPlan === 'function' ? deepPlan(n, run ? run.seed : 1) : null; } catch (e) { return null; } }
+// What opening floor n's portal pays (deepReward in js/core.js; `plan` gives the affixes, null = not rolled yet).
+function deepRewardRows(n, plan) {
+  const boss = n % 5 === 0, aff = plan ? plan.aff : [], g = aff.includes('gilded') ? 2 : 1, rows = [];
+  rows.push([ico16('hel_obol'), `${(boss ? 5 + n : n) * g} Hel’s Obols`]);
+  rows.push(['<span class="rw-z">z</span>', `${fmt(1500 * n * g)} zeny`]);
+  rows.push([ico16('gjoll_draught'), `Draught of Gjöll ×${1 + Math.floor(n / 4)}`]);
+  rows.push([`<span class="rw-i"><img class="ic" src="${groupIconURL('sword')}" alt=""></span>`, boss ? `Lv ${Math.min(99, deepLv(n))} gear at the portal` : `Gear: ${Math.min(100, 40 + 2 * n)} % chance${aff.includes('restless') ? ', +50 % a second piece' : ''}`]);
+  if (boss) { rows.push([ico16('black_sun_shard'), 'Shard of the Black Sun']); if (n >= 10) rows.push([ico16('golden_apple'), 'Golden Apple']); }
+  return `<div class="rw">${rows.map(([i, t]) => `<div>${i}<span>${t}</span></div>`).join('')}</div>`;
+}
+function deepAffHTML(plan, n, fresh) {
+  if (fresh && n === 1) return '<p class="muted dnote">Floor 1 never has an affix. A new descent rolls new floors, and each stays the same until you start again.</p>';
+  if (!plan) return '<p class="muted dnote">Not rolled yet.</p>';
+  if (!plan.aff.length) return '<p class="muted dnote">No affix: an ordinary floor of the dead.</p>';
+  return plan.aff.map(k => { const A = typeof DEEP_AFFIXES !== 'undefined' && DEEP_AFFIXES[k]; return A ? `<div class="aff a-${k}"><b>${esc(A.name)}</b><span>${esc(A.desc)}</span></div>` : ''; }).join('');
+}
+// The depth ladder: floors in runs of five (every fifth a boss floor), the deepest you ever reached in gold, this
+// descent's cleared floors filled, checkpoints as buttons when `pick` (the floor select), the chosen one ringed.
+function deepLadder(I, sel, pick) {
+  const { D, run, cps } = I, far = Math.max(D.best, run ? run.floor || 0 : 0, I.cp), top = Math.min(60, Math.max(10, Math.ceil((far + 1) / 5) * 5 + (far >= 5 ? 5 : 0)));
+  let h = '<div class="ladder">';
+  for (let s = 1; s <= top; s += 5) {
+    h += '<div class="lseg">';
+    for (let n = s; n < s + 5; n++) {
+      const cp = cps.includes(n), c = ['fc', n % 5 === 0 ? 'boss' : '', n <= D.best ? 'best' : '', run && n <= (run.cleared || 0) ? 'clr' : '', cp ? 'cp' : '', n === sel ? 'sel' : '', run && n === run.floor ? 'here' : ''].filter(Boolean).join(' ');
+      const tip = `Floor ${n} · Lv ${deepLv(n)}${n % 5 === 0 ? ' · boss' : ''}${cp ? (n === 1 ? ' · new descent' : ' · checkpoint') : ''}`;
+      h += cp && pick ? `<button class="${c}" data-dsel="${n}" title="${tip}" aria-label="${tip}">${n}</button>` : `<span class="${c}" title="${tip}">${n}</span>`;
+    }
+    h += '</div>';
+  }
+  return h + '</div><div class="lleg"><span><i class="fc cp"></i>checkpoint</span><span><i class="fc boss"></i>boss floor</span><span><i class="fc best"></i>reached</span><span><i class="fc clr"></i>cleared this descent</span></div>';
+}
+function deepRecords(I) {
+  const { D, run } = I;
+  return `<div class="chips">${chip('deepest floor', D.best || '—', 'big')}${chip('floors cleared', fmt(D.floors))}${chip('descents', fmt(D.runs))}${chip('old beasts', fmt(D.bosses))}</div>`
+    + (run ? `<p class="muted dnote">This descent: floor ${run.floor || 0} reached, ${run.cleared || 0} cleared, checkpoint ${run.cp || 1}. <span class="seed">Descent ${String(run.seed).slice(-5)}</span></p>` : '<p class="muted dnote">No descent yet.</p>');
+}
+// Ganglati's panel (the dialog): records, the floor select, the chosen floor's affixes and rewards.
+function deepPanel(text, opts) {
+  const I = deepInfo(), { run, cp, cps } = I;
+  if (!cps.includes(UI.deepSel)) UI.deepSel = cp;
+  const sel = UI.deepSel, fresh = sel === 1, plan = fresh ? null : deepPlanOf(sel, run);
+  const nb = Math.ceil(sel / 5) * 5, nbPlan = deepPlanOf(nb, fresh ? null : run);
+  const nbName = !fresh && nbPlan && nbPlan.bossType && MOBS[nbPlan.bossType] ? MOBS[nbPlan.bossType].name : 'one of Midgard’s great beasts';
+  let h = deepRecords(I);
+  h += `<div class="sec">Choose where to start</div>${deepLadder(I, sel, true)}`;
+  h += `<div class="dsel"><div class="dsh"><b>${fresh ? 'Floor 1 · a new descent' : `Floor ${sel} · checkpoint`}</b><span>Lv ${deepLv(sel)}</span></div>`;
+  if (fresh && run && cp > 1) h += '<p class="warnl">Starting again forgets this descent’s floors and its checkpoint.</p>';
+  h += `<div class="dcol"><div><div class="sub">Affix</div>${deepAffHTML(plan, sel, fresh)}<div class="sub">Next boss</div><p class="muted dnote">Floor ${nb}: ${esc(nbName)}. Beat it and floor ${nb + 1} becomes a checkpoint.</p></div>`;
+  h += `<div><div class="sub">When its way down opens</div>${deepRewardRows(sel, plan)}</div></div></div>`;
+  const iNew = opts.findIndex(o => /^Begin a new descent/.test(o)), iRet = opts.findIndex(o => /^Return to floor/.test(o)), iTell = opts.findIndex(o => /^Tell me/.test(o)), bye = dlgBye(opts);
+  const show = [], extra = [];
+  if (fresh && iNew >= 0) show.push(iNew);
+  else if (!fresh && sel === cp && iRet >= 0) show.push(iRet);
+  else extra.push({ label: `Return to floor ${sel} (checkpoint)`, act: 'deep:' + sel });
+  if (iTell >= 0) show.push(iTell); if (!show.includes(bye)) show.push(bye);
+  return { html: h, show, primary: show[0] === iTell ? -1 : show[0], extra };
+}
+// The Deep window: on a floor, that floor (affixes, how far to the way down, what it pays); elsewhere, the records.
+RENDER.deep = function () {
+  if (typeof deepState !== 'function') return '<p class="muted">The Deep Roots are not open.</p>';
+  const I = deepInfo(), on = !!(map && map.d && map.d.deep), n = on ? map.d.deep : 0;
+  let h = '';
+  if (on) {
+    const plan = map.d.plan || deepPlanOf(n, I.run), Dp = typeof DEEP !== 'undefined' ? DEEP : null, cleared = !!(Dp && Dp.id === map.id && Dp.cleared);
+    const pct = Dp && Dp.total ? Dp.killed / Dp.total : 0, need = typeof DEEP_CLEAR === 'number' ? DEEP_CLEAR : 0.6;
+    const guard = plan && plan.boss ? (Dp && Dp.boss ? `${esc(Dp.boss.d.name)}${Dp.boss.dead ? ' has fallen' : ' waits in the arena'}` : 'the floor’s master') : (Dp && Dp.warden ? (Dp.warden.dead ? 'the warden is dead' : 'the warden keeps the far hall') : '');
+    h += `<div class="dsel here"><div class="dsh"><b>Floor ${n}${plan && plan.boss ? ' · boss floor' : ''}</b><span>Lv ${plan ? plan.lvl : deepLv(n)}</span></div>`;
+    h += `<div class="sub">Affix</div>${deepAffHTML(plan, n, false)}`;
+    h += `<div class="sub">The way down</div>`;
+    if (cleared) h += '<p class="okl">Open. The portal burns green, and this floor has paid.</p>';
+    else if (plan && plan.boss) h += `<p class="muted dnote">Sealed until the master falls: ${guard}.</p>`;
+    else h += `<div class="dprog"><i style="width:${Math.min(100, pct / need * 100).toFixed(1)}%"></i><em>${Math.round(pct * 100)} % of ${Math.round(need * 100)} % laid to rest</em></div><p class="muted dnote">Or kill its warden: ${guard}.</p>`;
+    h += `<div class="sub">${cleared ? 'It paid' : 'It will pay'}</div>${deepRewardRows(n, plan)}`;
+    h += '<p class="muted dnote">The stair back to Helheim is always open in the start room. A fall sends you to your Waystone or Hlín’s camp.</p></div>';
+    h += `<div class="sec">Records</div>${deepRecords(I)}${deepLadder(I, n, false)}`;
+  } else {
+    h += deepRecords(I) + `<div class="sec">Depth</div>${deepLadder(I, 0, false)}<p class="muted dnote">Ganglati keeps the stair east of the Helheim camp. Speak with him to choose a floor.</p>`;
+  }
+  return h;
+};
+
+/* ---------- The Gauntlet ---------- */
+function rushBoard(R) {
+  if (!R.board.length) return '<p class="muted dnote">No clears yet. The benches are patient. They are dead.</p>';
+  return `<ol class="board">${R.board.slice(0, 5).map((e, i) => `<li class="${i === 0 ? 'top' : ''}"><b>${fmtClock(e.t)}</b><span>${esc(CLASSES[e.cls] ? CLASSES[e.cls].name : e.cls)} · Lv ${e.lvl}</span><em>${esc(e.day || '')}</em></li>`).join('')}</ol>`;
+}
+const rushHPOf = i => typeof rushHP === 'function' ? rushHP(i) : 60000 + 15000 * i;
+function rushList(live) {
+  const on = live && RUSH.on;
+  return `<ol class="mvps">${RUSH_LIST.map((k, i) => {
+    const done = on && i < RUSH.i, now = on && i === RUSH.i, split = done ? RUSH.splits[i] : null;
+    const st = done ? `<b class="ok">✓ ${fmtClock(split)}</b>` : now ? (RUSH.cur && !RUSH.cur.dead ? '<b class="now">fighting</b>' : '<b class="now">next</b>') : `<span>${Math.round(rushHPOf(i) / 1000)}k HP</span>`;
+    return `<li class="${done ? 'done' : now ? 'now' : ''}"><i>${i + 1}</i><span class="mn">${esc(MOBS[k] ? MOBS[k].name : k)}</span>${st}${now && live ? '<div class="gcur"><i id="gcurb"></i></div>' : ''}</li>`;
+  }).join('')}</ol>`;
+}
+// Ganglöt's panel (the dialog): the rules, the nine, the bests.
+function rushPanel(text, opts) {
+  const R = rushState();
+  const h = `<div class="chips">${chip('personal best', R.best ? fmtClock(R.best) : '—', 'big')}${chip('runs', fmt(R.runs))}${chip('clears', fmt(R.clears))}</div>`
+    + `<p class="muted dnote">Nine great beasts, all Lv ${typeof RUSH_LV !== 'undefined' ? RUSH_LV : 90}, one after another; 4 s between them, with a quarter of your HP and SP back. The clock runs from the first to the last. Fall, or leave the hall, and it is over. Faster pays more Obols.</p>`
+    + `<div class="dcol"><div><div class="sub">Tonight’s beasts</div>${rushList(false)}</div><div><div class="sub">Personal bests</div>${rushBoard(R)}</div></div>`;
+  const iGo = opts.findIndex(o => /^Begin the Gauntlet/.test(o)), bye = dlgBye(opts);
+  return { html: h, show: [iGo, bye].filter(i => i >= 0), primary: iGo };
+}
+// The Gauntlet window: the live clock, the nine with splits, the current beast's health, start / abandon, the bests.
+RENDER.gauntlet = function () {
+  if (typeof rushState !== 'function' || typeof RUSH === 'undefined') return '<p class="muted">The Gauntlet is not open.</p>';
+  const R = rushState(), on = RUSH.on, inHall = !!(map && map.id === 'helheim_arena');
+  const nm = on && RUSH_LIST[RUSH.i] && MOBS[RUSH_LIST[RUSH.i]] ? MOBS[RUSH_LIST[RUSH.i]].name : '';
+  let h = `<div class="gclock ${on ? 'on' : ''}"><b id="gclk">${fmtClock(on ? RUSH.t : 0)}</b><span>${on ? `Beast ${Math.min(RUSH.i + 1, RUSH_LIST.length)} of ${RUSH_LIST.length} · ${esc(nm)}` : R.best ? `Best ${fmtClock(R.best)}` : 'Not running'}</span></div>`;
+  h += rushList(true);
+  if (on) h += `<button class="btn warn wide" data-act="rushquit">${UI.rushArm ? 'Confirm: abandon the run' : 'Abandon the run'}</button>`;
+  else h += `<button class="btn big wide" data-act="rushgo" ${inHall ? '' : 'disabled'}>Begin the Gauntlet</button>${inHall ? '' : '<p class="muted dnote">Only in Eljudnir, before Hel’s high seat.</p>'}`;
+  h += `<div class="sec">Personal bests <span class="muted" style="font-weight:400">· runs ${R.runs} · clears ${R.clears}</span></div>${rushBoard(R)}`;
+  return h;
+};
+// Per frame while it is open (renderHUD): the clock text and the beast's health bar; a re-render when the run moves on.
+let RUSHUI = { sig: '', t: -1 };
+function rushTickUI() {
+  if (typeof RUSH === 'undefined') return;
+  const sig = RUSH.on + '|' + RUSH.i + '|' + !!(RUSH.cur && !RUSH.cur.dead) + '|' + (typeof P.flags.rush === 'object' ? P.flags.rush.clears : 0);
+  if (sig !== RUSHUI.sig) { RUSHUI.sig = sig; if (!RUSH.on) UI.rushArm = false; renderWin('gauntlet'); }
+  if (!RUSH.on) return;
+  const tt = Math.floor(RUSH.t * 10); if (tt !== RUSHUI.t) { RUSHUI.t = tt; const c = $('gclk'); if (c) c.textContent = fmtClock(RUSH.t); }
+  const b = $('gcurb'); if (b && RUSH.cur) { const w = Math.round(clamp(RUSH.cur.hp / (RUSH.cur.maxhp || 1), 0, 1) * 1000) / 10 + '%'; if (b.style.width !== w) b.style.width = w; }
+}
+if (typeof rushStart === 'function') {
+  const baseRushStart = rushStart;
+  // eslint-disable-next-line no-global-assign
+  rushStart = function () { const r = baseRushStart.apply(this, arguments); if (r) { UI.rushArm = false; openWin('gauntlet'); } return r; };
+}
+if (typeof talkGanglot === 'function') {
+  const baseTalkGanglot = talkGanglot;
+  // eslint-disable-next-line no-global-assign
+  talkGanglot = async function () { if (typeof RUSH !== 'undefined' && RUSH.on && P.flags.talked && P.flags.talked.ganglot) { openWin('gauntlet'); return; } return baseTalkGanglot.apply(this, arguments); };
+}
+Object.assign(ACTS, {
+  rushgo() { if (typeof rushStart === 'function' && !RUSH.on) rushStart(); },
+  rushquit() {
+    if (!RUSH.on) return; if (!UI.rushArm) { UI.rushArm = true; return; }
+    UI.rushArm = false; if (typeof rushAbort === 'function') rushAbort('You yield the floor. The benches of Eljudnir jeer, and the beasts sink back into the dark.');
+  },
+});
+
+/* ---------- The Deep card in the HUD (under the map, on a Deep floor): floor, affixes, how far to the way down ---------- */
+let deepCardT = 0;
+function renderDeepCard() {
+  const el = $('deepcard'); if (!el) return;
+  if (time - deepCardT < 0.25 && time >= deepCardT) return; deepCardT = time;
+  const on = !!(map && map.d && map.d.deep && typeof DEEP !== 'undefined');
+  if (!on) { if (!el.hidden) el.hidden = true; return; }
+  const plan = map.d.plan || {}, n = map.d.deep, cleared = DEEP.id === map.id && DEEP.cleared, need = typeof DEEP_CLEAR === 'number' ? DEEP_CLEAR : 0.6;
+  const pct = DEEP.total ? DEEP.killed / DEEP.total : 0, aff = (plan.aff || []).map(k => typeof DEEP_AFFIXES !== 'undefined' && DEEP_AFFIXES[k] ? DEEP_AFFIXES[k].name : k);
+  const prog = cleared ? '<div class="dc-ok">Way down open</div>' : plan.boss ? '<div class="dc-b">Boss floor · the way opens when it falls</div>' : `<div class="dprog sm"><i style="width:${Math.min(100, pct / need * 100).toFixed(1)}%"></i><em>${Math.round(pct * 100)}/${Math.round(need * 100)} %</em></div>`;
+  const html = `<div class="rtb"><span>The Deep</span></div><div class="rbd"><div class="dc-h"><b>Floor ${n}</b><span>Lv ${plan.lvl || deepLv(n)}</span></div>${aff.length ? `<div class="dc-a">${aff.map(a => `<span>${esc(a)}</span>`).join('')}</div>` : ''}${prog}</div>`;
+  if (cache.deepcard !== html) { cache.deepcard = html; el.innerHTML = html; }
+  if (el.hidden) el.hidden = false;
+}
+
+/* ---------- The pet's portrait: its monster sheet, idle frame 0 facing S ----------
+   Loaded on first need (the sheet's JSON, then its PNG), cropped to the creature and drawn once into a small canvas
+   kept in PETSPR. After each render of the Pet window (AFTER.pet) the card gets that canvas and the list rows get
+   small copies (a canvas-to-canvas draw), so a re-render never touches the sheet again. The crop reads pixels only
+   where the browser allows it (file:// taints the canvas): otherwise the whole frame is used. Until the sheet arrives,
+   or if it is missing, the egg icon stays. */
+const PETSPR = {};
+function artJSON2(url, ok, bad) {
+  try { const x = new XMLHttpRequest(); x.open('GET', url, true); x.onload = () => { let j = null; if ((x.status === 200 || x.status === 0) && x.responseText) { try { j = JSON.parse(x.responseText); } catch (e) { j = null; } } if (j) ok(j); else bad(); }; x.onerror = bad; x.send(); }
+  catch (e) { bad(); }
+}
+function petSprite(type) {
+  let r = PETSPR[type]; if (r) return r;
+  r = PETSPR[type] = { st: 'load', cv: null };
+  const id = 'mob_' + type, base = typeof SHEET_BASE === 'string' ? SHEET_BASE : 'assets/sprites/';
+  if (typeof SHEETS !== 'undefined' && SHEETS.indexReady && !SHEETS.entries[id]) { r.st = 'bad'; return r; }
+  const fail = () => { r.st = 'bad'; };
+  artJSON2(base + id + '.json', j => {
+    if (!j.actions || !j.actions.idle || !j.frameW || !Array.isArray(j.dirs)) { fail(); return; }
+    const im = new Image(); im.decoding = 'async';
+    im.onload = () => { try { r.cv = petCrop(im, j); r.st = 'ok'; } catch (e) { r.st = 'bad'; } if (UI.open.pet) UI.dirty = true; };
+    im.onerror = fail; im.src = base + id + '.png';
+  }, fail);
+  return r;
+}
+function petCrop(im, j) {
+  const d = Math.max(0, j.dirs.indexOf('S')), R = typeof sheetRect === 'function' ? sheetRect(j, 'idle', d, 0) : { x: 0, y: 0, w: j.frameW, h: j.frameH };
+  const f = document.createElement('canvas'); f.width = R.w; f.height = R.h; const g = f.getContext('2d'); g.drawImage(im, R.x, R.y, R.w, R.h, 0, 0, R.w, R.h);
+  let bx = 0, by = 0, bw = R.w, bh = R.h;
+  try {
+    const px = g.getImageData(0, 0, R.w, R.h).data; let x0 = R.w, y0 = R.h, x1 = -1, y1 = -1;
+    for (let y = 0; y < R.h; y++) for (let x = 0; x < R.w; x++) if (px[(y * R.w + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 >= x0) { bx = x0; by = y0; bw = x1 - x0 + 1; bh = y1 - y0 + 1; }
+  } catch (e) { /* tainted canvas: keep the whole frame */ }
+  const c = document.createElement('canvas'); c.width = 192; c.height = 176; const k = Math.min((c.width - 20) / bw, (c.height - 18) / bh, 3);
+  const w = bw * k, h = bh * k, cg = c.getContext('2d'); cg.imageSmoothingQuality = 'high';
+  cg.drawImage(f, bx, by, bw, bh, (c.width - w) / 2, c.height - 10 - h, w, h); c.className = 'pspr-cv';
+  return c;
+}
+function petThumb(src) { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const k = Math.min(64 / src.width, 64 / src.height); c.getContext('2d').drawImage(src, (64 - src.width * k) / 2, 64 - src.height * k, src.width * k, src.height * k); c.className = 'pthumb-cv'; return c; }
+AFTER.pet = bd => {
+  for (const el of bd.querySelectorAll('[data-pspr]')) {
+    const r = petSprite(el.dataset.pspr); if (r.st !== 'ok') continue;
+    el.textContent = ''; el.classList.add('has'); el.appendChild(el.dataset.sz === 'thumb' ? petThumb(r.cv) : r.cv);
+  }
+};
+
+/* ---------- Rebirth: the ceremony ---------- */
+let rebornT = null;
+function rebornCeremony(from) {
+  const el = $('reborn'); if (!el || !P) return;
+  const C = CLASSES[P.cls], to = from && typeof REBORN_OF !== 'undefined' && REBORN_OF[from] && CLASSES[REBORN_OF[from]];
+  const motes = Array.from({ length: 18 }, (_, i) => `<i style="left:${(i * 53 + 7) % 100}%;animation-delay:${((i * 0.37) % 3).toFixed(2)}s;animation-duration:${(5 + (i % 5) * 0.8).toFixed(1)}s"></i>`).join('');
+  el.innerHTML = `<div class="rb-motes">${motes}</div><div class="rb-in"><div class="rb-rune">ᚢᚱᚦᚱ · ᚢᛖᚱᚦᚨᚾᛞᛁ · ᛊᚲᚢᛚᛞ</div><div class="rb-thread"></div><h2>Reborn</h2>
+    <p class="rb-norns">“What was, what is, what shall be. We spin your thread again from the beginning, thicker, with everything you are woven in.”</p><p class="rb-who">Urðr · Verðandi · Skuld</p>
+    <div class="rb-cls">${esc(P.name)}, ${esc(C ? C.name : 'High Novice')}</div><div class="rb-sub">Base Lv ${P.lvl} · Job Lv ${P.jlvl}${to ? ` · at Job Lv 10 the path of the ${esc(to.name)} wakes` : ''}</div></div><div class="rb-skip">Click or press any key</div>`;
+  el.classList.remove('out'); el.hidden = false;
+  clearTimeout(rebornT); rebornT = setTimeout(rebornEnd, 9500);
+}
+function rebornEnd() {
+  const el = $('reborn'); if (!el || el.hidden || el.classList.contains('out')) return;
+  clearTimeout(rebornT); el.classList.add('out'); rebornT = setTimeout(() => { el.hidden = true; el.classList.remove('out'); el.innerHTML = ''; }, 650);
+}
+if ($('reborn')) $('reborn').addEventListener('click', rebornEnd);
+// Any key ends it; the usual skip keys (Esc, Enter, Space) are used up by the skip, every other key also does its job.
+addEventListener('keydown', e => { const el = $('reborn'); if (!el || el.hidden) return; rebornEnd(); if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+if (typeof rebirth === 'function') {
+  const baseRebirth = rebirth;
+  // eslint-disable-next-line no-global-assign
+  rebirth = function () { const from = P && P.cls, r = baseRebirth.apply(this, arguments); if (r) { try { rebornCeremony(from); } catch (e) { console.error(e); } } return r; };
+}

@@ -1,0 +1,107 @@
+{
+ "id": "berserkr_f.weapon_knuckle",
+ "layer": "weapon",
+ "body": "berserkr_f",
+ "variant": "knuckle",
+ "layout": "blocks",
+ "blocksPerRow": 4,
+ "frameW": 128,
+ "frameH": 128,
+ "maxFrames": 8,
+ "anchor": [
+  64,
+  104
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "walk": {
+   "row": 1,
+   "frames": 8,
+   "fps": 12,
+   "loop": true
+  },
+  "attack1": {
+   "row": 2,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "attack2": {
+   "row": 3,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "heavy": {
+   "row": 4,
+   "frames": 6,
+   "fps": 10,
+   "loop": false
+  },
+  "cast": {
+   "row": 5,
+   "frames": 4,
+   "fps": 6,
+   "loop": true
+  },
+  "hurt": {
+   "row": 6,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "dead": {
+   "row": 7,
+   "frames": 3,
+   "fps": 6,
+   "loop": false
+  },
+  "sit": {
+   "row": 8,
+   "frames": 1,
+   "fps": 1,
+   "loop": true
+  },
+  "dodge": {
+   "row": 9,
+   "frames": 4,
+   "fps": 12,
+   "loop": false
+  },
+  "block": {
+   "row": 10,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "pickup": {
+   "row": 11,
+   "frames": 3,
+   "fps": 8,
+   "loop": false
+  },
+  "stance": {
+   "row": 12,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  }
+ },
+ "hit": {
+  "attack1": 3,
+  "attack2": 3,
+  "heavy": 4
+ }
+}

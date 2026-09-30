@@ -65,7 +65,7 @@ const MODEL_IDS = new Set([
   'mirewell_reeds_b', 'nidavellir_crystal_a', 'nidavellir_crystal_b', 'nidavellir_forge', 'nidavellir_lava_edge', 'nidavellir_mine_cart',
   'nidavellir_ore_pile', 'nidavellir_rail', 'nidavellir_rail_curve', 'nidavellir_statue_broken', 'nidavellir_support_beams', 'nidavellir_wall',
   'rimeshore_drying_rack', 'rimeshore_fishing_hut', 'rimeshore_ice_crystal', 'rimeshore_ice_floe', 'rimeshore_ice_rock_a', 'rimeshore_ice_rock_b',
-  'rimeshore_ice_rock_c', 'rimeshore_longship', 'rimeshore_longship_prow', 'rimeshore_pine_a', 'rimeshore_pine_a_lod1', 'rimeshore_pine_b',
+  'rimeshore_ice_rock_c', 'rimeshore_longship', 'rimeshore_longship_prow', 'skaldhaven_longship_moored', 'skaldhaven_tavern_sign', 'rimeshore_pine_a', 'rimeshore_pine_a_lod1', 'rimeshore_pine_b',
   'rimeshore_pine_b_lod1', 'rimeshore_snowdrift_a', 'rimeshore_snowdrift_b', 'rock_field_a', 'rock_field_b', 'rock_field_c', 'rock_field_d',
   'ruin_column_fallen', 'ruin_wall_a', 'ruin_wall_b', 'ruin_wall_c', 'signpost', 'throne_basalt_rock', 'throne_obsidian_pillar', 'town_barrel',
   'town_bounty_board', 'town_crates', 'town_fence', 'town_house_big', 'town_house_small', 'town_lamp_post', 'town_market_stall', 'town_well',
@@ -540,14 +540,345 @@ MAPDEFS.skaldhaven = { name: 'Skaldhaven', sub: 'Harbour of the Frozen Coast', l
     for (let y = 24; y <= 36; y += 1) if (!(y >= 28 && y <= 31)) L.decor('town_fence', 'town_fence', SHORE - 3.1, y + 0.5, 1.571, 1, { on: 'open' });
     // boardwalk planks on every pier, longships moored beside them, floes further out
     for (let y = 0; y < h; y++) for (let x = SHORE - 1; x < w; x++) if (m.surf[y * w + x] === SURF.BRIDGE) L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, 1.571, 1, { dy: -0.32 });
-    L.decor('rimeshore_longship', 'ruin_column_fallen', 38.0, 16.6, 1.571, 1, { dy: 0.75 });
-    L.decor('rimeshore_longship', 'ruin_column_fallen', 36.5, 26.6, -1.571, 0.9, { dy: 0.75 });
-    L.decor('rimeshore_longship', 'ruin_column_fallen', 36.0, 12.4, 1.52, 0.85, { dy: 0.75 });
+    // Round 6 (graphics round 5 hook): the moored longships at the three piers and the Salt Hall's sign are placed here, so
+    // the renderer's DECOR_UPGRADE swap for Skaldhaven switches itself off. y0 = absolute deck height (the hull sits in the water).
+    L.decor('skaldhaven_longship_moored', 'rimeshore_longship', 36.5, 11.475, Math.PI / 2, 1, { y0: -0.12 });
+    L.decor('skaldhaven_longship_moored', 'rimeshore_longship', 38.5, 21.475, Math.PI / 2, 1, { y0: -0.12 });
+    L.decor('skaldhaven_longship_moored', 'rimeshore_longship', 36.0, 28.525, -Math.PI / 2, 0.94, { y0: -0.12 });
+    L.decor('skaldhaven_tavern_sign', 'signpost', 9.75, 8.45, 0, 0.9, { on: 'open' });
     L.decor('rimeshore_longship_prow', 'rock_field_c', 43.4, 34.0, 0.4, 1, { dy: 0.5 });
     for (let i = 0; i < 12; i++) { const x = SHORE + 3 + rng() * (w - SHORE - 4), y = 1 + rng() * (h - 2); if (L.at(x | 0, y | 0) === T.WATER && !piers.some(([py]) => Math.abs(y - py - 0.5) < 3)) L.decor('rimeshore_ice_floe', 'rock_field_b', x, y, rng() * 6.28, 0.7 + rng() * 0.6, { dy: 0.7 }); }
-    for (let y = 2; y < h - 2; y++) for (let x = 2; x < SHORE - 1; x++) if (L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && m.surf[y * w + x] === 0 && rng() < 0.03) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' });
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < SHORE - 1; x++) if ((x < 5 || x > SHORE - 7 || y < 4 || y > h - 6) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && m.surf[y * w + x] === 0 && rng() < 0.05) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' });
   } };
 // Map order in the travel lists and the world map: story order.
 const MAP_ORDER = ['emberhold', 'ashen_fields', 'withered_wood', 'gloamheim', 'rimeshore', 'skaldhaven', 'mirewell', 'nidavellir', 'throne', 'bifrost'];
 // js/gfx-world.js reads render.trees for T.TREE tiles: point it at the map's tree list.
 for (const k in MAPDEFS) { const d = MAPDEFS[k]; if (d.render && d.props && d.props.tree && !d.render.trees) d.render.trees = d.props.tree; }
+
+/* =========================================================
+   Content round 7: Helheim (design/helheim.md). Reached through Helgrind in Gloamheim once Act II is over and the
+   hero has been born again (WARP_LOCKS.hel in js/core.js). Maps:
+     helheim              the grey plains: the safe camp by the Helgrind road (Waystone, storage, healer, merchant,
+                          the Deep's stair), the frozen river Gjöll crossed by Gjallarbrú, Hel's hall Eljudnir with
+                          Garmr chained before its gate, the Root Road west to Hvergelmir
+     helheim_hvergelmir   Níðhöggr's arena under the World-Tree root (superboss)
+     helheim_arena        inside Eljudnir: the Gauntlet (boss rush)
+     helheim_deep_<n>     procedural floors of the Deep Roots, generated on demand from a run seed (deepDef below;
+                          genMap in core.js asks for them)
+   Every helheim* id gets the graphics team's Helheim look (RLOOK_BASE.helheim in js/gfx-world.js); render data here
+   only refines it (weather, time of day, fog per floor affix). Braziers are `helheim_brazier` decor with soul-green
+   lights, not m.braziers (those still draw the orange dng_brazier).
+   Height data (round 7 hook, genMap in core.js): a map may define `heights(m, K)`, run after the standard terrain
+   heights. It may rewrite m.hgt (gameplay: where sprites stand and walk) and set m.rhgt, the rendered terrain
+   (js/gfx-world.js renderHgt() uses m.rhgt when a map provides it). Helheim flattens the ground under the river and
+   the set pieces (the Gjöll tiles are laid at one common height, decor y0 = 0, per the kit's placement notes), and
+   gives Gjallarbrú its walking deck: m.hgt along the bridge = 0.12 + 0.38 · (1 − (z/5)²), z = −5..5 along its
+   10 tiles (the model's deck curve), while m.rhgt keeps the river bed under it.
+   ========================================================= */
+for (const id of ['helheim_ash_drift_a', 'helheim_ash_drift_b', 'helheim_banner', 'helheim_blacksun_obelisk', 'helheim_bone_tree_a', 'helheim_bone_tree_a_lod1', 'helheim_bone_tree_b',
+  'helheim_bone_tree_b_lod1', 'helheim_bone_tree_c', 'helheim_bone_tree_c_lod1', 'helheim_brazier', 'helheim_cairn_a', 'helheim_cairn_b', 'helheim_corpse_relief', 'helheim_gate_pillar',
+  'helheim_gjallarbru', 'helheim_gjoll_corner_ice', 'helheim_gjoll_corner_land', 'helheim_gjoll_edge', 'helheim_gjoll_edge_b', 'helheim_gjoll_ice', 'helheim_hall_facade', 'helheim_root',
+  'helheim_soul_lantern', 'helheim_timber_wall', 'rimeshore_barrel', 'rimeshore_crate']) MODEL_IDS.add(id);
+// Gjallarbrú: tiles and deck. The bridge runs north-south (glTF Z = world y); GJALL.x0 is its west tile column.
+const GJALL = { x0: 31, y0: 26, w: 3, len: 10 };
+const gjallDeck = z => 0.12 + 0.38 * (1 - (z / 5) * (z / 5));          // z: bridge-local, -5 (north end) .. 5 (south end)
+const HEL_RIVER = { y0: 28, y1: 33 };                                    // Gjöll: north bank row, 4 ice rows, south bank row
+// Shared Helheim ground look (the renderer's Helheim look is the base; this is the gameplay/fallback data).
+const HEL_LOOK = { floor: 'ash', g1: [92, 94, 92], g2: [128, 130, 126], path: [150, 144, 128], ash: [70, 70, 72], ashAmt: 0.25, grain: 16, flowers: 0, cobble: false, trees: ['dead', 'dead'],
+  rock: 0x6a6c70, tint: [0.9, 0.95, 0.92], fog: 0x4e5351, fogN: 50, fogF: 120, hemi: [0x8a9894, 0x16181a, 0.5], sun: [0xc4d4cc, 0.2], torch: 0.4 };
+const HEL_GROUND = ['#5a5c5a', '#606260', '#555755', '#646664'];
+const HEL_WEATHER = { amb: [['ash', 0.55], ['souls', 0.6]], wind: [0.3, 0.12] };
+// Time-locked twilight: the Helheim look is the twilight (RLOOK_BASE.helheim); no day, dusk or night cycle down here.
+const HEL_RENDER = () => ({ weather: HEL_WEATHER, tod: false, particles: 'ash' });
+const helProps = () => ({
+  tree: propList([['helheim_bone_tree_a', 3, 'tree_dead_a'], ['helheim_bone_tree_b', 2, 'tree_dead_b'], ['helheim_bone_tree_c', 2, 'tree_dead_a']]),
+  rock: propList([['helheim_cairn_a', 1, 'rock_field_c'], ['rock_field_a', 2, 'rock_field_a'], ['rock_field_c', 1, 'rock_field_c']]),
+  wall: propList([['dng_wall', 1, 'dng_wall']]),
+  grave: propList([['helheim_cairn_a', 1, 'dng_grave_a']]),
+  pillar: propList([['dng_pillar', 1, 'dng_pillar']]),
+});
+// Helpers shared by the Helheim layouts
+function helKit(m, K, L) {
+  const { rng } = K;
+  const lantern = (x, y, rot) => L.decor('helheim_soul_lantern', null, x, y, rot === undefined ? rng() * 6.283 : rot, 1, { light: [0x7affb4, 1.1, 5], on: 'open' });
+  const brazier = (x, y) => L.decor('helheim_brazier', 'dng_brazier', x, y, 0, 1, { light: [0x7affb4, 1.4, 6.5], on: 'open' });
+  const banner = (x, y, rot) => L.decor('helheim_banner', 'dng_banner', x, y, rot || 0, 1, { on: 'open' });
+  const cairn = (x, y, big, rot) => { const fx = Math.floor(x), fy = Math.floor(y); return big ? L.decor('helheim_cairn_b', 'dng_grave_b', fx + 1, fy + 0.5, rot || 0, 1, { fp: L.footprint(fx, fy, fx + 1, fy) }) : L.decor('helheim_cairn_a', 'dng_grave_a', fx + 0.5, fy + 0.5, rot === undefined ? rng() * 6.283 : rot, 1, { fp: L.footprint(fx, fy, fx, fy), light: [0x7affb4, 0.6, 3] }); };
+  const obelisk = (x, y, rot) => L.decor('helheim_blacksun_obelisk', 'throne_obsidian_pillar', x, y, rot || 0, 1, { fp: L.footprint(Math.round(x) - 1, Math.round(y) - 1, Math.round(x), Math.round(y)), light: [0xc8ffe0, 1.2, 6] });
+  return { lantern, brazier, banner, cairn, obelisk };
+}
+// Flatten the field noise toward the given zones: f(vx, vz) -> distance (tiles) to the nearest flat zone.
+function helFlatten(m, dist, ramp, amp) {
+  const W1 = m.w + 1;
+  for (let vz = 0; vz <= m.h; vz++) for (let vx = 0; vx <= m.w; vx++) { const i = vz * W1 + vx, k = Math.max(0, Math.min(1, dist(vx, vz) / ramp)); m.hgt[i] *= amp * k * k * (3 - 2 * k); }
+}
+const rectDist = (x, y, x0, y0, x1, y1) => Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1));
+
+MAPDEFS.helheim = { name: 'Helheim', sub: 'Base Lv 70 – 88 · The Grey Plains', lv: [70, 88], world: [228, 120], w: 64, h: 64, seed: 666, gen: 'field', trees: 0.03, rocks: 0.012, ruins: 0,
+  ground: HEL_GROUND, void: '#0a0b0c', dark: 0.6, part: 'ash', look: HEL_LOOK, boss: 'garmr',
+  intro: 'Helheim. The ash here is finer than in Midgard and falls upward, slowly, toward a sun that gives no light. Across the frozen river a hall of rotten timber waits, and something in front of it is chained.',
+  render: HEL_RENDER(), props: helProps(),
+  // spawn regions (js/core.js spawnMobRandom): the south plains are the gentler half, the north past Gjöll the worse
+  spawns: [['hel_hound', 7], ['soul_wisp', 8], ['hel_draugr', 9], ['corpse_bride', 7], ['nidhogg_spawn', 6], ['bone_colossus', 4]],
+  spawnRgn: { hel_hound: [2, 37, 61, 61], soul_wisp: [2, 36, 61, 61], hel_draugr: [2, 2, 61, 61], corpse_bride: [2, 2, 61, 26], nidhogg_spawn: [2, 2, 61, 26], bone_colossus: [2, 14, 61, 26] },
+  safeZone: { x: 32, y: 50, r: 10 },   // the camp: monsters never follow you in (updateMob), none spawn there
+  layout(m, K) {
+    const { set, clearC, clearR, carve, rng, w, h } = K, L = LK(m, K), H = helKit(m, K, L), TT = K.T;
+    m.entry = { x: 32, y: 60 }; m.way = { x: 32.5, y: 49.5 }; m.bossPos = { x: 32.5, y: 14.5 };
+    // 1. clearings: the camp, the hall court, Garmr's gate, the bridge heads, the Deep's stair, the Root Road
+    clearC(32, 50, 8.5); clearR(18, 2, 46, 17); clearR(26, 18, 38, 25); clearR(26, 36, 38, 41); clearC(46, 50, 3.5);
+    carve(32, 61, 32, 57, 1); carve(32, 42, 32, 36, 1); carve(40, 50, 45, 50, 1); carve(31, 24, 18, 18, 1); carve(18, 18, 10, 12, 1); carve(10, 12, 2, 12, 1);
+    carve(33, 24, 52, 18, 1); carve(26, 40, 12, 46, 1); carve(38, 40, 54, 44, 1);
+    clearC(52.5, 18.5, 4); clearC(13, 46, 4); clearC(54, 44, 3.5);
+    // 2. the frozen river Gjöll across the whole map: bank rows walkable, the ice between them blocked (the living
+    //    fall through; T.PROP: drawn only by the river decor)
+    for (let x = 0; x < w; x++) {
+      for (let y = HEL_RIVER.y0 + 1; y < HEL_RIVER.y1; y++) set(x, y, TT.PROP);
+      for (const y of [HEL_RIVER.y0, HEL_RIVER.y1]) if (x >= 2 && x < w - 2) set(x, y, TT.FLOOR);
+    }
+    // 3. Gjallarbrú: 3 x 10 tiles of walkable deck; railings block the sides, so you get on and off at the ends
+    for (let y = GJALL.y0; y < GJALL.y0 + GJALL.len; y++) {
+      for (let x = GJALL.x0; x < GJALL.x0 + GJALL.w; x++) { set(x, y, TT.FLOOR); L.surf(x, y, SURF.BRIDGE); }
+      set(GJALL.x0 - 1, y, TT.PROP); set(GJALL.x0 + GJALL.w, y, TT.PROP);
+    }
+    // 4. Eljudnir (8 x 6, door south) and its walled court; Garmr's gate pillars; the hall door leads to the Gauntlet
+    const hall = L.footprint(28, 4, 35, 8); for (let x = 28; x <= 35; x++) if (x !== 32) set(x, 9, TT.PROP);
+    // the court's walls: blocked T.PROP tiles, each drawn by a keep-wall piece (dng_wall). helheim_timber_wall renders
+    // almost black in Helheim's twilight (see the round-7 hooks in docs/CONTENT.md), so it is not used for now.
+    const timber = [];
+    for (let x = 18; x <= 46; x++) if (x < 26 || x > 38) timber.push([x, 12], [x, 13]);
+    for (let y = 2; y <= 11; y++) timber.push([18, y], [46, y]);
+    const pillA = L.footprint(26, 12, 27, 13), pillB = L.footprint(37, 12, 38, 13);
+    m.warps.push({ x: 32, y: 9, to: 'helheim_arena', tx: 22.5, ty: 33.5, label: 'Eljudnir, the Hall of Hel', lock: 'hall' });
+    // 5. the Root Road west: under a root of the World Tree to Hvergelmir
+    const rootA = L.footprint(5, 6, 8, 8), rootB = L.footprint(5, 16, 8, 17);
+    m.warps.push({ x: 1, y: 12, to: 'helheim_hvergelmir', tx: 20.5, ty: 31.5, label: 'Hvergelmir (the Root Road)', lock: 'root' });
+    // 6. the camp: a Waystone, a timber palisade with gaps north, south and east
+    // (the camp is open: no palisade; the timber pieces read as black blocks in Helheim's twilight, so lanterns and
+    // braziers mark its edge instead)
+    for (const [x, y] of timber) set(x, y, TT.PROP);
+    m.warps.push({ x: 32, y: 62, to: 'gloamheim', tx: 30.5, ty: 6.5, label: 'Gloamheim Keep (Helgrind)' });
+    // 7. the Deep's stair (Ganglati), east of the camp
+    m.objs.push({ kind: 'deepstair', x: 47.5, y: 50.5, name: 'The Deep Roots' });
+    const stair = L.footprint(48, 49, 48, 51);
+    // paths paint (cobble-free ash roads), cairn fields, the Nameless Jarl's mound
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (m.deco[y * w + x] === 6) m.deco[y * w + x] = 0;
+    // ---- decor ----
+    // Gjöll: bank pieces on both banks (edge / edge_b alternating), ice between, all at one height (y0 0: the
+    // heights hook flattens the ground there)
+    for (let x = 0; x < w; x++) {
+      L.decor(x % 3 ? 'helheim_gjoll_edge' : 'helheim_gjoll_edge_b', 'rock_field_b', x + 0.5, HEL_RIVER.y0 + 0.5, Math.PI, 1, { y0: 0 });
+      L.decor(x % 4 === 1 ? 'helheim_gjoll_edge_b' : 'helheim_gjoll_edge', 'rock_field_b', x + 0.5, HEL_RIVER.y1 + 0.5, 0, 1, { y0: 0 });
+      for (let y = HEL_RIVER.y0 + 1; y < HEL_RIVER.y1; y++) L.decor('helheim_gjoll_ice', null, x + 0.5, y + 0.5, ((rng() * 4) | 0) * Math.PI / 2, 1, { y0: 0 });
+    }
+    L.decor('helheim_gjallarbru', 'bifrost_bridge', GJALL.x0 + GJALL.w / 2, GJALL.y0 + GJALL.len / 2, 0, 1, { y0: 0, fp: [GJALL.x0 - 1, GJALL.y0, GJALL.x0 + GJALL.w, GJALL.y0 + GJALL.len - 1] });
+    L.decor('helheim_hall_facade', 'ruin_wall_c', 32.0, 7.0, 0, 1, { fp: hall, y0: 0 });
+    L.decor('helheim_gate_pillar', 'dng_pillar', 27.0, 13.0, 0, 1, { fp: pillA, y0: 0 }); L.decor('helheim_gate_pillar', 'dng_pillar', 38.0, 13.0, Math.PI, 1, { fp: pillB, y0: 0 });
+    L.decor('helheim_root', 'ruin_column_fallen', 7.0, 12.0, Math.PI / 2, 1, { fp: rootA, y0: 0 }); m.decor.push({ model: null, kit: null, x: 7, y: 16.5, rot: 0, scale: 1, fp: rootB, note: 'root footprint (drawn by the root above)' });
+    H.obelisk(24, 7, 0.2); H.obelisk(41, 7, -0.2); H.obelisk(41, 44, 0.5);
+    for (const [x, y] of [[29.6, 10.6], [34.4, 10.6], [24.5, 15.5], [40.5, 15.5], [29.4, 25.4], [35.6, 25.4], [29.4, 36.6], [35.6, 36.6], [31.0, 43.6], [34.0, 43.6], [31.0, 57.5], [34.0, 57.5], [20.5, 19.5], [13.5, 13.5], [44.5, 21.5]]) H.lantern(x, y, x < 32 ? 0 : Math.PI);
+    for (const [x, y] of [[29.2, 47.6], [35.8, 47.6], [29.2, 52.8], [35.8, 52.8], [44.6, 48.6], [44.6, 52.4]]) H.brazier(x, y);
+    for (const a of [20, 70, 110, 160, 200, 250, 290, 340]) { const t = a / 57.3; H.lantern(32 + Math.cos(t) * 9.2, 50 + Math.sin(t) * 9.2, t + Math.PI); }
+    for (const [x, y] of [[20.5, 3.5], [44.5, 3.5], [22.5, 10.5], [42.5, 10.5], [30.5, 45.5], [34.5, 45.5], [45.5, 47.8], [45.5, 53.2]]) H.banner(x, y, 0);
+    for (const [x, y] of timber) L.decor('dng_wall', 'dng_wall', x + 0.5, y + 0.5, ((x * 7 + y * 3) % 4) * Math.PI / 2, 1, { fp: [x, y, x, y] });
+    for (const [x, y] of [[21.0, 14.4], [44.0, 14.4]]) L.decor('helheim_corpse_relief', 'dng_chain', x, y, 0, 1, { on: 'open' });
+    L.decor('ruin_wall_c', 'ruin_wall_c', 48.9, 50.5, -Math.PI / 2, 1, { fp: stair });
+    L.decor('dng_rubble_a', null, 49.5, 47.8, 0.4, 0.8, { on: 'open' }); L.decor('dng_bones', null, 47.2, 52.6, 1.2, 1, { on: 'open' });
+    // cairn fields: Hlín's four cairns (hlin_names) and the barrows of the plains
+    for (const [x, y, big] of [[12, 44, 1], [15, 48, 0], [10, 49, 0], [54, 41, 1], [57, 46, 0], [52, 47, 0], [49, 15, 1], [56, 21, 0], [22, 22, 0], [8, 36, 1], [58, 36, 0], [40, 22, 0]]) H.cairn(x, y, big, rng() * 6.28);
+    for (let i = 0; i < 26; i++) { const x = 3 + rng() * (w - 6), y = 3 + rng() * (h - 6); if (L.at(x | 0, y | 0) !== TT.FLOOR || Math.hypot(x - 32, y - 50) < 11 || (y > 26 && y < 36)) continue; const big = rng() < 0.3; L.decor(big ? 'helheim_ash_drift_b' : 'helheim_ash_drift_a', null, x, y, rng() * 6.28, 0.9 + rng() * 0.3, big ? { fp: L.footprint(x | 0, y | 0, (x | 0) + 1, (y | 0) + 1) } : { on: 'open' }); }
+    for (let i = 0; i < 30; i++) { const x = 3 + rng() * (w - 6), y = 3 + rng() * (h - 6); if (L.at(x | 0, y | 0) === TT.FLOOR && Math.hypot(x - 32, y - 50) > 9 && !(y > 26 && y < 36)) L.decor('dng_bones', null, x, y, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' }); }
+  },
+  heights(m) {
+    const W1 = m.w + 1, gx = GJALL.x0, gy = GJALL.y0;
+    helFlatten(m, (vx, vz) => Math.min(
+      Math.abs(vz - (HEL_RIVER.y0 + HEL_RIVER.y1 + 1) / 2) - 5.5,                 // the river and the bridge heads
+      Math.hypot(vx - 32, vz - 50) - 10,                                          // the camp
+      rectDist(vx, vz, 17, 1, 47, 18),                                           // the hall, its court and Garmr's gate
+      rectDist(vx, vz, 1, 5, 11, 19), Math.hypot(vx - 47, vz - 50) - 3.5), 5, 0.75);
+    m.rhgt = m.hgt.slice();
+    for (let vz = HEL_RIVER.y0; vz <= HEL_RIVER.y1 + 1; vz++) for (let vx = 0; vx <= m.w; vx++) { const i = vz * W1 + vx; m.hgt[i] = 0; m.rhgt[i] = vz > HEL_RIVER.y0 && vz <= HEL_RIVER.y1 ? -0.3 : 0; }
+    // the bridge deck (gameplay only; the rendered ground stays at the river bed / the bank under the model)
+    for (let vz = gy; vz <= gy + GJALL.len; vz++) for (let vx = gx; vx <= gx + GJALL.w; vx++) m.hgt[vz * W1 + vx] = gjallDeck(vz - (gy + GJALL.len / 2));
+  } };
+
+MAPDEFS.helheim_hvergelmir = { name: 'Hvergelmir', sub: 'Where the Root Drinks · Níðhöggr', lv: [90, 99], world: [228, 120], w: 40, h: 36, seed: 669, gen: 'field', trees: 0, rocks: 0, ruins: 0,
+  ground: HEL_GROUND, void: '#07080a', dark: 0.7, part: 'ash', look: Object.assign({}, HEL_LOOK, { fogN: 40, fogF: 95 }), boss: 'nidhogg', spawns: [],
+  intro: 'Hvergelmir, the roaring kettle, where every river of the dead begins. It does not roar now. Something is chewing.',
+  render: { weather: { amb: [['ash', 0.4], ['souls', 1]], wind: [0.1, 0.05] }, tod: false, particles: 'ash', water: { color: 0x14201e, deep: 0x040808, foam: 0x9affc8, level: -0.45, frozen: 0.25, blackSun: true } },
+  props: helProps(),
+  layout(m, K) {
+    const { set, rng, w, h } = K, L = LK(m, K), H = helKit(m, K, L), TT = K.T;
+    m.entry = { x: 20, y: 32 }; m.bossPos = { x: 20.5, y: 12.5 };
+    // an oval hollow ringed with bone trees and rock, open to the root in the north
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const dn = Math.hypot((x + 0.5 - 20) / 17.5, (y + 0.5 - 18) / 15.5) + (L.noise(x / 3, y / 3, 3) - 0.5) * 0.12;
+      set(x, y, dn < 1 ? TT.FLOOR : (rng() < 0.6 ? TT.TREE : TT.ROCK));
+    }
+    for (let y = 32; y < h; y++) for (let x = 19; x <= 21; x++) set(x, y, TT.FLOOR);
+    // the root (12 x 4) arches over the north end: blocked where it meets the ground, open under the arch
+    const rA = L.footprint(14, 4, 16, 7), rB = L.footprint(23, 4, 25, 7);
+    L.decor('helheim_root', 'ruin_column_fallen', 20.0, 6.0, 0, 1, { fp: rA, y0: 0 }); m.decor.push({ model: null, kit: null, x: 24, y: 6, rot: 0, scale: 1, fp: rB, note: 'root footprint' });
+    // the spring itself: black water with a skin of ice, two pools
+    L.disc(31, 13, 3.2, 0.3, (x, y) => set(x, y, TT.WATER)); L.disc(8, 22, 2.6, 0.3, (x, y) => set(x, y, TT.WATER));
+    m.warps.push({ x: 20, y: 34, to: 'helheim', tx: 3.5, ty: 12.5, label: 'Helheim (the Root Road)' });
+    // ---- decor ----
+    H.obelisk(10, 9, 0.4); H.obelisk(31, 25, -0.4);
+    for (let i = 0; i < 10; i++) { const a = Math.PI * 0.15 + i / 9 * Math.PI * 0.7, x = 20 + Math.cos(a) * 13.5, y = 18 + Math.sin(a) * 11.5; if (L.at(x | 0, y | 0) === TT.FLOOR) H.lantern(x, y); }
+    for (const [x, y] of [[13.5, 10.5], [26.5, 10.5], [16.5, 29.5], [23.5, 29.5]]) H.brazier(x, y);
+    for (const [x, y, big] of [[6, 14, 0], [33, 19, 1], [11, 28, 0], [28, 29, 0]]) H.cairn(x, y, big, rng() * 6.28);
+    for (let i = 0; i < 22; i++) { const x = 4 + rng() * 32, y = 4 + rng() * 28; if (L.at(x | 0, y | 0) === TT.FLOOR) L.decor(rng() < 0.6 ? 'dng_bones' : 'helheim_ash_drift_a', null, x, y, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' }); }
+    for (const [x, y] of [[11.5, 5.5], [28.5, 5.5]]) H.banner(x, y, 0);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (L.at(x, y) === TT.WATER) L.paint(x, y);
+  },
+  heights(m) { helFlatten(m, (vx, vz) => Math.hypot((vx - 20) / 1.1, vz - 18) - 13, 4, 0.4); } };
+
+MAPDEFS.helheim_arena = { name: 'Eljudnir', sub: 'The Hall of Hel · The Gauntlet', lv: [85, 99], world: [228, 120], w: 44, h: 40, seed: 671, gen: 'dungeon',
+  ground: ['#3a3834', '#403c38', '#35332f', '#46423c'], wall: ['#5a5650', '#44403a', '#2e2c28'], void: '#060606', dark: 0.8, part: 'dust', safe: false, spawns: [],
+  look: Object.assign({}, HEL_LOOK, { floor: 'flag', g1: [74, 72, 70], g2: [104, 100, 96], fog: 0x1a1c1c, fogN: 36, fogF: 90, torch: 1.2 }),
+  intro: 'Eljudnir, Hel’s hall. The benches are full of the dead, and every one of them turns to watch you come in. They are hungry for a show.',
+  render: { weather: { amb: [['souls', 0.8]], wind: [0.02, 0.01] }, tod: false },
+  props: { wall: propList([['dng_wall', 1, 'dng_wall']]), pillar: propList([['dng_pillar', 1, 'dng_pillar']]), grave: propList([['helheim_cairn_a', 1, 'dng_grave_a']]) },
+  layout(m, K) {
+    const { set, clearR, rng, w, h } = K, L = LK(m, K), H = helKit(m, K, L), TT = K.T;
+    clearR(7, 5, 36, 33); clearR(20, 33, 24, 37);
+    for (const [x0, y0] of [[7, 5], [36, 5], [7, 33], [36, 33]]) for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3 - dy; dx++) set(x0 + (x0 < 20 ? dx : -dx), y0 + (y0 < 20 ? dy : -dy), TT.WALL);
+    for (let y = 9; y <= 29; y += 5) { set(11, y, TT.PILLAR); set(32, y, TT.PILLAR); }
+    m.entry = { x: 22, y: 34 }; m.rushAt = { x: 22.0, y: 17.0 };
+    m.warps.push({ x: 22, y: 37, to: 'helheim', tx: 32.5, ty: 11.5, label: 'Helheim' });
+    // ---- decor ---- Hel's high seat at the north end (the black-sun obelisk behind it), benches of the dead as cairns
+    H.obelisk(22, 7, 0);
+    for (const [x, y] of [[9.5, 7.5], [34.5, 7.5], [9.5, 31.5], [34.5, 31.5], [18.5, 7.5], [25.5, 7.5]]) H.brazier(x, y);
+    for (let y = 8; y <= 30; y += 4) { H.banner(7.6, y + 0.5, Math.PI / 2); H.banner(36.4, y + 0.5, -Math.PI / 2); }
+    for (const x of [13, 19, 25, 31]) L.decor('helheim_corpse_relief', 'dng_chain', x, 5.55, 0, 1, { on: 'open' });
+    for (const [x, y] of [[13.5, 12.5], [30.5, 12.5], [13.5, 22.5], [30.5, 22.5]]) H.lantern(x, y);
+    for (let i = 0; i < 14; i++) { const x = 8 + rng() * 28, y = 6 + rng() * 26; if (L.at(x | 0, y | 0) === TT.FLOOR && Math.hypot(x - 22, y - 17) > 7) L.decor('dng_bones', null, x, y, rng() * 6.28, 0.8 + rng() * 0.3, { on: 'open' }); }
+  } };
+
+/* ---------- The Deep Roots: procedural floors helheim_deep_<n> ----------
+   deepDef(n, runSeed) builds a MAPDEFS entry for floor n of a run. Everything that shapes the floor comes from K.rng()
+   (seeded with deepSeed(runSeed, n)), so a floor is identical every time for the same run seed and floor number.
+   Rooms and corridors are carved out of solid wall (gen 'dungeon'); every room is joined to the start room by a
+   spanning tree of corridors plus a few loops, so every room is reachable. The runtime (js/core.js, DEEP) fills the
+   rooms with monsters scaled to the depth, spawns the warden (or the boss on every 5th floor), unlocks the descend
+   portal and pays the rewards. m.rooms / m.deepStart / m.deepEnd describe the plan. */
+const DEEP_AFFIXES = {
+  frozen: { name: 'Frozen', desc: 'Rime on every stone: you move 15 % slower.' },
+  ashen: { name: 'Ashen', desc: 'Ash-fog fills the halls: you see less far, and so do they.' },
+  soul_rich: { name: 'Soul-Rich', desc: 'Lost souls crowd this floor: +50 % EXP.' },
+  restless: { name: 'Restless', desc: 'More dead, and angrier: +30 % monsters, +15 % ATK, better loot.' },
+  gilded: { name: 'Gilded', desc: 'The dead here were buried rich: double zeny and Obols.' },
+};
+const DEEP_THEMES = [
+  { key: 'keep', floor: 'flag', wall: [['dng_wall', 1, 'dng_wall']], g1: [78, 76, 82], g2: [110, 106, 114], tint: [0.86, 0.9, 0.92] },
+  { key: 'timber', floor: 'ash', wall: [['dng_wall', 1, 'dng_wall']], g1: [84, 84, 80], g2: [118, 116, 110], tint: [0.9, 0.94, 0.9] },
+  { key: 'bone', floor: 'rock', wall: [['dng_wall', 1, 'dng_wall']], g1: [90, 88, 84], g2: [126, 122, 116], tint: [0.92, 0.95, 0.9] },
+];
+const DEEP_BOSSES = ['blight_mother', 'hati', 'sir_gaunt', 'drowned_jarl', 'bog_crone', 'fafnir', 'ashen_king', 'fenrir', 'garmr'];
+const deepSeed = (run, n) => { let x = ((run | 0) ^ Math.imul(n + 1, 0x9e3779b1)) | 0; x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); return ((x ^ (x >>> 16)) >>> 0) % 2147483647 || 1; };
+const deepLevel = n => Math.min(130, 71 + 2 * n);
+function deepPlan(n, run) {   // floor facts that do not need the layout: affixes, theme, boss (deterministic)
+  const r = mulberry32(deepSeed(run, n) ^ 0x5eed), boss = n % 5 === 0, keys = Object.keys(DEEP_AFFIXES), aff = [];
+  const nAff = n === 1 ? 0 : boss ? (r() < 0.5 ? 1 : 0) : n < 6 ? (r() < 0.6 ? 1 : 0) : (r() < 0.45 ? 2 : 1);
+  while (aff.length < nAff) { const k = keys[(r() * keys.length) | 0]; if (!aff.includes(k)) aff.push(k); }
+  const theme = DEEP_THEMES[Math.floor((n - 1) / 5) % DEEP_THEMES.length];
+  const bossType = boss ? DEEP_BOSSES[(Math.floor(n / 5) - 1 + ((r() * 3) | 0)) % DEEP_BOSSES.length] : null;
+  return { n, boss, aff, theme, bossType, lvl: deepLevel(n) };
+}
+function deepDef(n, run) {
+  const plan = deepPlan(n, run), th = plan.theme, A = plan.aff, size = plan.boss ? 52 : Math.min(72, 52 + 2 * Math.floor(n / 3));
+  const fog = A.includes('ashen') ? [0x4a4e4c, 12, 52] : A.includes('frozen') ? [0x8a9ca8, 26, 84] : null;
+  const weather = A.includes('frozen') ? { amb: [['snow', 0.6], ['souls', 0.3]], wind: [0.15, 0.05] } : A.includes('ashen') ? { amb: [['ash', 1.3], ['souls', 0.3]], wind: [0.2, 0.08] }
+    : A.includes('soul_rich') ? { amb: [['souls', 1.4]], wind: [0.05, 0.02] } : { amb: [['souls', 0.45], ['ash', 0.25]], wind: [0.05, 0.02] };
+  const render = { weather, tod: false };
+  if (fog) Object.assign(render, { fog, mist: { col: fog[0], k: 1, amb: 0.1, lit: 1.2, amt: A.includes('ashen') ? 0.6 : 0.45, h: 0.7, max: 0.32, scale: 0.06, wind: [0.02, 0.01], scatter: 0.4 } });
+  const affTxt = A.map(k => DEEP_AFFIXES[k].name).join(' · ');
+  return { name: `The Deep Roots · Floor ${n}`, sub: plan.boss ? `Floor ${n} · ${MOBS[plan.bossType].name} waits below` : `Floor ${n}${affTxt ? ' · ' + affTxt : ''}`, lv: [plan.lvl - 2, plan.lvl + 2], world: [228, 120],
+    w: size, h: size, seed: deepSeed(run, n), gen: 'dungeon', deep: n, run, plan, ground: ['#3a3a38', '#403f3c', '#353432', '#464440'], wall: ['#5a5854', '#44423e', '#2e2c2a'], void: '#050505', dark: 0.88, part: 'dust',
+    look: Object.assign({}, HEL_LOOK, { floor: th.floor, g1: th.g1, g2: th.g2, tint: th.tint, fog: 0x1a1c1c, fogN: 32, fogF: 86, torch: 1.4 }),
+    render, props: { wall: propList(th.wall), pillar: propList([['dng_pillar', 1, 'dng_pillar']]), grave: propList([['dng_grave_a', 1, 'dng_grave_a'], ['dng_grave_b', 1, 'dng_grave_b'], ['helheim_cairn_a', 1, 'dng_grave_a']]) },
+    spawns: [],
+    layout(m, K) { deepLayout(m, K, plan); } };
+}
+function deepLayout(m, K, plan) {
+  const { set, clearR, rng, w, h } = K, L = LK(m, K), H = helKit(m, K, L), TT = K.T, rooms = [];
+  const ri = (a, b) => a + Math.floor(rng() * (b - a + 1));
+  const overlaps = (x0, y0, x1, y1) => rooms.some(r => x0 < r.x1 + 4 && x1 > r.x0 - 4 && y0 < r.y1 + 4 && y1 > r.y0 - 4);
+  const room = (x0, y0, x1, y1, kind) => { clearR(x0, y0, x1, y1); const r = { x0, y0, x1, y1, cx: (x0 + x1) >> 1, cy: (y0 + y1) >> 1, kind, i: rooms.length }; rooms.push(r); return r; };
+  // 1. rooms: the start room on the south edge, then the rest where they fit
+  const sw = 7, sx = ri(4, w - sw - 5);
+  const start = room(sx, h - 11, sx + sw, h - 4, 'start');
+  if (plan.boss) {
+    const ax = Math.floor(w / 2) - 13, arena = room(ax, 4, ax + 26, 26, 'boss');
+    for (const [px, py] of [[ax + 5, 9], [ax + 21, 9], [ax + 5, 21], [ax + 21, 21]]) set(px, py, TT.PILLAR);
+    for (let i = 0; i < 2; i++) { const rw = ri(6, 9), rh = ri(5, 7), x0 = i ? ri(w - rw - 6, w - rw - 3) : ri(3, 6), y0 = ri(30, Math.max(30, h - rh - 13)); if (!overlaps(x0, y0, x0 + rw, y0 + rh)) room(x0, y0, x0 + rw, y0 + rh, 'side'); }
+  } else {
+    const want = 7 + Math.min(5, Math.floor(plan.n / 2));
+    for (let t = 0; t < 400 && rooms.length < want; t++) {
+      const rw = ri(6, 11), rh = ri(6, 10), x0 = ri(3, w - rw - 4), y0 = ri(3, h - rh - 14);
+      if (!overlaps(x0, y0, x0 + rw, y0 + rh)) room(x0, y0, x0 + rw, y0 + rh, 'room');
+    }
+  }
+  // 2. corridors: a minimum spanning tree over the room centres (Prim), plus loops; L-shaped, 3 wide
+  const corr = (a, b) => { const hf = rng() < 0.5; if (hf) { clearR(a.cx, a.cy - 1, b.cx, a.cy + 1); clearR(b.cx - 1, a.cy, b.cx + 1, b.cy); } else { clearR(a.cx - 1, a.cy, a.cx + 1, b.cy); clearR(a.cx, b.cy - 1, b.cx, b.cy + 1); } };
+  const inTree = [0], edges = [];
+  while (inTree.length < rooms.length) {
+    let best = null, bd = 1e9;
+    for (const i of inTree) for (let j = 0; j < rooms.length; j++) { if (inTree.includes(j)) continue; const d = Math.hypot(rooms[i].cx - rooms[j].cx, rooms[i].cy - rooms[j].cy); if (d < bd) { bd = d; best = [i, j]; } }
+    inTree.push(best[1]); edges.push(best);
+  }
+  for (let k = 0; k < Math.min(3, Math.floor(rooms.length / 3)); k++) { const a = ri(1, rooms.length - 1), b = ri(1, rooms.length - 1); if (a !== b && !edges.some(e => (e[0] === a && e[1] === b) || (e[0] === b && e[1] === a))) edges.push([a, b]); }
+  for (const [a, b] of edges) corr(rooms[a], rooms[b]);
+  // 3. the far room (most corridor hops from the start, ties by distance) holds the warden and the way down
+  const adj = rooms.map(() => []); for (const [a, b] of edges) { adj[a].push(b); adj[b].push(a); }
+  const hop = rooms.map(() => -1); hop[0] = 0; const q = [0]; while (q.length) { const c = q.shift(); for (const d of adj[c]) if (hop[d] < 0) { hop[d] = hop[c] + 1; q.push(d); } }
+  const end = plan.boss ? rooms.find(r => r.kind === 'boss') : rooms.slice(1).sort((a, b) => hop[b.i] - hop[a.i] || Math.hypot(b.cx - start.cx, b.cy - start.cy) - Math.hypot(a.cx - start.cx, a.cy - start.cy))[0];
+  end.kind = plan.boss ? 'boss' : 'warden';
+  m.rooms = rooms; m.deepStart = start; m.deepEnd = end; m.deepEdges = edges;
+  m.entry = { x: start.cx, y: start.cy };
+  // 4. portals: the way back to Helheim (start room), the way down (far room; locked until the floor is cleared)
+  m.warps.push({ x: start.x0 + 1, y: start.y1, to: 'helheim', tx: 46.5, ty: 52.5, label: 'Helheim (Ganglati’s Stair)' });
+  const px = end.cx, py = plan.boss ? end.y0 + 2 : end.cy;
+  m.warps.push({ x: px, y: py, to: 'helheim_deep_' + (plan.n + 1), tx: null, ty: null, label: `Floor ${plan.n + 1}`, lock: 'deep', deep: plan.n + 1 });
+  m.deepPortal = { x: px + 0.5, y: py + 0.5 };
+  // 5. dressing: pillars in the big rooms (never on the centre lines the corridors use), graves, braziers, banners
+  const openAt = (x, y) => L.at(x, y) === TT.FLOOR;
+  for (const r of rooms) {
+    const big = (r.x1 - r.x0) >= 9 && (r.y1 - r.y0) >= 8;
+    if (big && r.kind !== 'boss' && rng() < 0.7) for (let y = r.y0 + 2; y <= r.y1 - 2; y += 3) for (let x = r.x0 + 2; x <= r.x1 - 2; x += 3) if (Math.abs(x - r.cx) >= 2 && Math.abs(y - r.cy) >= 2 && rng() < 0.6) set(x, y, TT.PILLAR);
+    if (r.kind === 'room' && rng() < 0.45) for (let i = 0; i < 2; i++) { const gx = ri(r.x0 + 1, r.x1 - 1), gy = ri(r.y0 + 1, r.y1 - 1); if (Math.abs(gx - r.cx) >= 2 && Math.abs(gy - r.cy) >= 2) set(gx, gy, TT.GRAVE); }
+  }
+  for (const r of rooms) {
+    for (const [cx, cy] of [[r.x0 + 0.7, r.y0 + 0.7], [r.x1 + 0.3, r.y1 + 0.3]]) if (openAt(cx | 0, cy | 0)) H.brazier(cx, cy);
+    if (r.kind !== 'start' && rng() < 0.6) { const x = r.cx + 0.5 + (rng() - 0.5) * (r.x1 - r.x0 - 2), y = r.y0 + 0.62; if (openAt(x | 0, r.y0) && L.at(x | 0, r.y0 - 1) === TT.WALL) L.decor(plan.theme.key === 'keep' ? 'dng_chain' : 'helheim_corpse_relief', 'dng_chain', x, y, 0, 1, { on: 'open' }); }
+    if (rng() < 0.7) H.banner(r.x0 + 0.6, r.cy + 0.5, Math.PI / 2);
+    const n = Math.round((r.x1 - r.x0) * (r.y1 - r.y0) / 18);
+    for (let i = 0; i < n; i++) { const x = r.x0 + 0.5 + rng() * (r.x1 - r.x0), y = r.y0 + 0.5 + rng() * (r.y1 - r.y0); if (openAt(x | 0, y | 0)) { const k = rng(); L.decor(k < 0.5 ? 'dng_bones' : k < 0.75 ? 'helheim_ash_drift_a' : 'dng_rubble_b', null, x, y, rng() * 6.28, 0.7 + rng() * 0.4, { on: 'open' }); } }
+    if (plan.theme.key === 'bone' && r.kind === 'room' && (r.x1 - r.x0) >= 8 && rng() < 0.5) { const tx = r.x0 + 2, ty = r.y0 + 2; if (openAt(tx, ty) && openAt(tx + 1, ty) && openAt(tx, ty + 1) && openAt(tx + 1, ty + 1) && Math.abs(tx - r.cx) >= 2 && Math.abs(ty - r.cy) >= 2) L.decor('helheim_bone_tree_' + 'abc'[ri(0, 2)], 'tree_dead_a', tx + 1, ty + 1, rng() * 6.28, 0.8, { fp: L.footprint(tx, ty, tx + 1, ty + 1) }); }
+  }
+  if (end.kind === 'boss' || end.kind === 'warden') { H.lantern(px - 1.5, py + 0.5, 0); H.lantern(px + 2.5, py + 0.5, Math.PI); }
+  if (plan.boss) { H.obelisk(end.cx - 9, end.y0 + 3, 0.3); H.obelisk(end.cx + 10, end.y0 + 3, -0.3); }
+  H.lantern(start.x0 + 2.5, start.y1 - 0.5, 0);
+}
+
+// Round 7: the Helgrind road into Helheim. Gloamheim's warp sits in the crack of Helgrind behind Gaunt's throne
+// (the helgate object); it opens for a hero who finished Act II and has been born again (WARP_LOCKS.hel).
+{ const base = MAPDEFS.gloamheim.layout; MAPDEFS.gloamheim.layout = function (m, K) { base.call(this, m, K); m.warps.push({ x: 30, y: 3, to: 'helheim', tx: 32.5, ty: 59.5, label: 'Helheim (through Helgrind)', lock: 'hel' }); }; }
+MAP_ORDER.push('helheim');
+
+/* ---------- Round 7: render data hooks for the older maps (graphics round 5: weather / tod / night) ----------
+   The graphics team's defaults (WX_MAPS in js/gfx-world.js) become data here, with small per-map touches. Maps that
+   the graphics team styles by hand (RLOOK) only read weather / tod / night / dusk from this block. */
+{
+  const R = (id, o) => { const d = MAPDEFS[id]; d.render = Object.assign(d.render || {}, o); };
+  R('emberhold', { weather: { amb: [['leaves', 0.3], ['fireflies', 0.6, 0]], precip: [[null, 0, 7, 4], ['rain', 0.45, 1.5, 1]], wind: [0.5, 0.2] }, tod: true, night: { torch: 1.3 } });
+  R('ashen_fields', { weather: { amb: [['leaves', 0.8], ['pollen', 0.25], ['ash', 0.2]], precip: [[null, 0, 6, 4], ['rain', 0.7, 1.5, 1], ['rain', 0.3, 1.5, 1]], wind: [0.7, 0.25] }, tod: true });
+  R('withered_wood', { weather: { amb: [['pollen', 0.8], ['fireflies', 1, 0.08], ['leaves', 0.3]], precip: [[null, 0, 8, 5], ['rain', 0.4, 1.5, 1]], wind: [0.25, 0.1] }, tod: true, night: { mix: 0.84, dim: 0.12 } });
+  R('gloamheim', { weather: { amb: [['souls', 0.18]], wind: [0.04, 0.02] }, tod: false });
+  R('throne', { weather: { amb: [['ash', 1], ['embers', 0.4]], wind: [0.25, -0.35] }, tod: false });
+  R('rimeshore', { weather: { precip: [['snow', 0.5, 3, 3], ['snow', 1, 1.5, 1.5], ['snow', 0.22, 2, 1.5]], wind: [0.9, 0.3] }, tod: true, night: { mix: 0.72, torch: 1.2 } });
+  R('skaldhaven', { weather: { precip: [['snow', 0.35, 3, 3], ['snow', 0.8, 1.2, 1], [null, 0, 2, 1.5]], wind: [0.8, 0.25] }, tod: true, night: { torch: 1.4 } });
+  R('mirewell', { weather: { amb: [['fireflies', 1, 0.35], ['spores', 0.6]], precip: [['rain', 0.35, 2, 2], ['rain', 1, 1.2, 1.5], [null, 0, 2.5, 2]], wind: [0.35, 0.15] }, tod: true, night: { mix: 0.8 } });
+  R('nidavellir', { weather: { amb: [['embers', 0.7]], wind: [0.1, 0.05] }, tod: false });
+  R('bifrost', { weather: { amb: [['motes', 1]], wind: [0.3, 0.1] }, tod: false });
+}

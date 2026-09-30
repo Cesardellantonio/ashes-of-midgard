@@ -1,0 +1,112 @@
+{
+ "id": "knight_f.mount_hair_long",
+ "layer": "hair",
+ "body": "knight_f",
+ "variant": "long",
+ "layout": "blocks",
+ "blocksPerRow": 2,
+ "frameW": 192,
+ "frameH": 160,
+ "maxFrames": 8,
+ "anchor": [
+  96,
+  128
+ ],
+ "dirs": [
+  "S",
+  "SE",
+  "E",
+  "NE",
+  "N"
+ ],
+ "actions": {
+  "idle": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "walk": {
+   "row": 1,
+   "frames": 8,
+   "fps": 12,
+   "loop": true
+  },
+  "attack1": {
+   "row": 2,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "attack2": {
+   "row": 3,
+   "frames": 6,
+   "fps": 14,
+   "loop": false
+  },
+  "heavy": {
+   "row": 4,
+   "frames": 6,
+   "fps": 10,
+   "loop": false
+  },
+  "cast": {
+   "row": 5,
+   "frames": 4,
+   "fps": 6,
+   "loop": true
+  },
+  "hurt": {
+   "row": 6,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "dead": {
+   "row": 7,
+   "frames": 3,
+   "fps": 6,
+   "loop": false
+  },
+  "sit": {
+   "row": 0,
+   "frames": 1,
+   "fps": 1,
+   "loop": true,
+   "alias": "idle"
+  },
+  "dodge": {
+   "row": 8,
+   "frames": 4,
+   "fps": 12,
+   "loop": false
+  },
+  "block": {
+   "row": 9,
+   "frames": 2,
+   "fps": 8,
+   "loop": false
+  },
+  "pickup": {
+   "row": 0,
+   "frames": 3,
+   "fps": 8,
+   "loop": false,
+   "alias": "idle"
+  },
+  "stance": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true,
+   "alias": "idle"
+  }
+ },
+ "hit": {
+  "attack1": 3,
+  "attack2": 3,
+  "heavy": 4
+ },
+ "mounted": true,
+ "mount": "warg"
+}

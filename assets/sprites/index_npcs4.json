@@ -1,0 +1,58 @@
+{
+ "sheets": [
+  {
+   "id": "npc_fulla",
+   "layer": "npc",
+   "body": "fulla",
+   "variant": null
+  },
+  {
+   "id": "npc_gna",
+   "layer": "npc",
+   "body": "gna",
+   "variant": null
+  },
+  {
+   "id": "npc_grimr",
+   "layer": "npc",
+   "body": "grimr",
+   "variant": null
+  },
+  {
+   "id": "npc_thordis",
+   "layer": "npc",
+   "body": "thordis",
+   "variant": null
+  },
+  {
+   "id": "npc_ulfar",
+   "layer": "npc",
+   "body": "ulfar",
+   "variant": null
+  },
+  {
+   "id": "npc_hallgerd",
+   "layer": "npc",
+   "body": "hallgerd",
+   "variant": null
+  },
+  {
+   "id": "npc_ketill",
+   "layer": "npc",
+   "body": "ketill",
+   "variant": null
+  },
+  {
+   "id": "npc_orm",
+   "layer": "npc",
+   "body": "orm",
+   "variant": null
+  },
+  {
+   "id": "npc_ylva",
+   "layer": "npc",
+   "body": "ylva",
+   "variant": null
+  }
+ ]
+}

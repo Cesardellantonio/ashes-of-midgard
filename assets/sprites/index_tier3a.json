@@ -1,0 +1,340 @@
+{
+ "sheets": [
+  {
+   "id": "high_novice_f.body",
+   "layer": "body",
+   "body": "high_novice_f",
+   "variant": null
+  },
+  {
+   "id": "high_novice_f.hair_long",
+   "layer": "hair",
+   "body": "high_novice_f",
+   "variant": "long"
+  },
+  {
+   "id": "high_novice_f.hair_spiky",
+   "layer": "hair",
+   "body": "high_novice_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "high_novice_f.weapon_dagger",
+   "layer": "weapon",
+   "body": "high_novice_f",
+   "variant": "dagger"
+  },
+  {
+   "id": "high_novice_m.body",
+   "layer": "body",
+   "body": "high_novice_m",
+   "variant": null
+  },
+  {
+   "id": "high_novice_m.hair_long",
+   "layer": "hair",
+   "body": "high_novice_m",
+   "variant": "long"
+  },
+  {
+   "id": "high_novice_m.hair_spiky",
+   "layer": "hair",
+   "body": "high_novice_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "high_novice_m.weapon_dagger",
+   "layer": "weapon",
+   "body": "high_novice_m",
+   "variant": "dagger"
+  },
+  {
+   "id": "rune_jarl_f.body",
+   "layer": "body",
+   "body": "rune_jarl_f",
+   "variant": null
+  },
+  {
+   "id": "rune_jarl_f.hair_long",
+   "layer": "hair",
+   "body": "rune_jarl_f",
+   "variant": "long"
+  },
+  {
+   "id": "rune_jarl_f.hair_spiky",
+   "layer": "hair",
+   "body": "rune_jarl_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "rune_jarl_f.weapon_spear",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "spear"
+  },
+  {
+   "id": "rune_jarl_f.weapon_sword",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "sword"
+  },
+  {
+   "id": "rune_jarl_f.weapon_twohand",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "twohand"
+  },
+  {
+   "id": "rune_jarl_m.body",
+   "layer": "body",
+   "body": "rune_jarl_m",
+   "variant": null
+  },
+  {
+   "id": "rune_jarl_m.hair_long",
+   "layer": "hair",
+   "body": "rune_jarl_m",
+   "variant": "long"
+  },
+  {
+   "id": "rune_jarl_m.hair_spiky",
+   "layer": "hair",
+   "body": "rune_jarl_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "rune_jarl_m.weapon_spear",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "spear"
+  },
+  {
+   "id": "rune_jarl_m.weapon_sword",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "sword"
+  },
+  {
+   "id": "rune_jarl_m.weapon_twohand",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "twohand"
+  },
+  {
+   "id": "tyr_paladin_f.body",
+   "layer": "body",
+   "body": "tyr_paladin_f",
+   "variant": null
+  },
+  {
+   "id": "tyr_paladin_f.hair_long",
+   "layer": "hair",
+   "body": "tyr_paladin_f",
+   "variant": "long"
+  },
+  {
+   "id": "tyr_paladin_f.hair_spiky",
+   "layer": "hair",
+   "body": "tyr_paladin_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "tyr_paladin_f.shield_tower",
+   "layer": "shield",
+   "body": "tyr_paladin_f",
+   "variant": "tower"
+  },
+  {
+   "id": "tyr_paladin_f.weapon_mace",
+   "layer": "weapon",
+   "body": "tyr_paladin_f",
+   "variant": "mace"
+  },
+  {
+   "id": "tyr_paladin_f.weapon_spear",
+   "layer": "weapon",
+   "body": "tyr_paladin_f",
+   "variant": "spear"
+  },
+  {
+   "id": "tyr_paladin_f.weapon_sword",
+   "layer": "weapon",
+   "body": "tyr_paladin_f",
+   "variant": "sword"
+  },
+  {
+   "id": "tyr_paladin_m.body",
+   "layer": "body",
+   "body": "tyr_paladin_m",
+   "variant": null
+  },
+  {
+   "id": "tyr_paladin_m.hair_long",
+   "layer": "hair",
+   "body": "tyr_paladin_m",
+   "variant": "long"
+  },
+  {
+   "id": "tyr_paladin_m.hair_spiky",
+   "layer": "hair",
+   "body": "tyr_paladin_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "tyr_paladin_m.shield_tower",
+   "layer": "shield",
+   "body": "tyr_paladin_m",
+   "variant": "tower"
+  },
+  {
+   "id": "tyr_paladin_m.weapon_mace",
+   "layer": "weapon",
+   "body": "tyr_paladin_m",
+   "variant": "mace"
+  },
+  {
+   "id": "tyr_paladin_m.weapon_spear",
+   "layer": "weapon",
+   "body": "tyr_paladin_m",
+   "variant": "spear"
+  },
+  {
+   "id": "tyr_paladin_m.weapon_sword",
+   "layer": "weapon",
+   "body": "tyr_paladin_m",
+   "variant": "sword"
+  },
+  {
+   "id": "galdr_master_f.body",
+   "layer": "body",
+   "body": "galdr_master_f",
+   "variant": null
+  },
+  {
+   "id": "galdr_master_f.hair_long",
+   "layer": "hair",
+   "body": "galdr_master_f",
+   "variant": "long"
+  },
+  {
+   "id": "galdr_master_f.hair_spiky",
+   "layer": "hair",
+   "body": "galdr_master_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "galdr_master_f.weapon_rod",
+   "layer": "weapon",
+   "body": "galdr_master_f",
+   "variant": "rod"
+  },
+  {
+   "id": "galdr_master_f.weapon_staff",
+   "layer": "weapon",
+   "body": "galdr_master_f",
+   "variant": "staff"
+  },
+  {
+   "id": "galdr_master_m.body",
+   "layer": "body",
+   "body": "galdr_master_m",
+   "variant": null
+  },
+  {
+   "id": "galdr_master_m.hair_long",
+   "layer": "hair",
+   "body": "galdr_master_m",
+   "variant": "long"
+  },
+  {
+   "id": "galdr_master_m.hair_spiky",
+   "layer": "hair",
+   "body": "galdr_master_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "galdr_master_m.weapon_rod",
+   "layer": "weapon",
+   "body": "galdr_master_m",
+   "variant": "rod"
+  },
+  {
+   "id": "galdr_master_m.weapon_staff",
+   "layer": "weapon",
+   "body": "galdr_master_m",
+   "variant": "staff"
+  },
+  {
+   "id": "volva_f.body",
+   "layer": "body",
+   "body": "volva_f",
+   "variant": null
+  },
+  {
+   "id": "volva_f.hair_long",
+   "layer": "hair",
+   "body": "volva_f",
+   "variant": "long"
+  },
+  {
+   "id": "volva_f.hair_spiky",
+   "layer": "hair",
+   "body": "volva_f",
+   "variant": "spiky"
+  },
+  {
+   "id": "volva_f.weapon_book",
+   "layer": "weapon",
+   "body": "volva_f",
+   "variant": "book"
+  },
+  {
+   "id": "volva_f.weapon_rod",
+   "layer": "weapon",
+   "body": "volva_f",
+   "variant": "rod"
+  },
+  {
+   "id": "volva_f.weapon_staff",
+   "layer": "weapon",
+   "body": "volva_f",
+   "variant": "staff"
+  },
+  {
+   "id": "volva_m.body",
+   "layer": "body",
+   "body": "volva_m",
+   "variant": null
+  },
+  {
+   "id": "volva_m.hair_long",
+   "layer": "hair",
+   "body": "volva_m",
+   "variant": "long"
+  },
+  {
+   "id": "volva_m.hair_spiky",
+   "layer": "hair",
+   "body": "volva_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "volva_m.weapon_book",
+   "layer": "weapon",
+   "body": "volva_m",
+   "variant": "book"
+  },
+  {
+   "id": "volva_m.weapon_rod",
+   "layer": "weapon",
+   "body": "volva_m",
+   "variant": "rod"
+  },
+  {
+   "id": "volva_m.weapon_staff",
+   "layer": "weapon",
+   "body": "volva_m",
+   "variant": "staff"
+  }
+ ]
+}

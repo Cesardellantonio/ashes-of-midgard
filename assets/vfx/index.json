@@ -1,0 +1,441 @@
+{
+ "version": 1,
+ "about": "Hand-authored VFX flipbooks rendered in Blender (art/build_vfx.sh). Frame i is at column i % cols, row floor(i / cols). blend 'add': rgb*a is the additive contribution (use SRC_ALPHA, ONE, i.e. THREE.AdditiveBlending); blend 'alpha': straight alpha, normal blending. anchor = pixel in a frame that sits on the effect's world point (billboards: usually the ground under the target, or the hit point for hit_spark/crit_star; ground decals: the centre). plane 'ground' = top-down decal to lay on the terrain; 'billboard' = camera-facing, authored for a ~30 deg pitched view. ppu = pixels per world unit at 1:1 (world width = frameW / ppu). tint: white effects meant to be multiplied by a colour.",
+ "effects": [
+  {
+   "id": "fire_burst",
+   "file": "vfx/fire_burst.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 12,
+   "cols": 10,
+   "fps": 20,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    96,
+    150
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Explosion: flash, cel fire blobs and tongues, ground shock ring, sparks. Anchor = ground under the target."
+  },
+  {
+   "id": "fireball_trail",
+   "file": "vfx/fireball_trail.png",
+   "frameW": 192,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 16,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    140,
+    64
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Fireball flying to screen-right with a cooling tail. Anchor = ball centre; rotate the quad to the travel direction."
+  },
+  {
+   "id": "ice_shatter",
+   "file": "vfx/ice_shatter.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 12,
+   "cols": 10,
+   "fps": 18,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    96,
+    150
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Frost burst: a crystal cluster grows, then shatters into spinning shards. Anchor = ground."
+  },
+  {
+   "id": "lightning_strike",
+   "file": "vfx/lightning_strike.png",
+   "frameW": 160,
+   "frameH": 256,
+   "frames": 10,
+   "cols": 10,
+   "fps": 20,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    80,
+    214
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "tint": true,
+   "desc": "Vertical bolt from the sky with re-strike flicker, ground flash, ring, sparks and ground arcs. Anchor = ground. White-blue: tint for other colours."
+  },
+  {
+   "id": "lightning_impact",
+   "file": "vfx/lightning_impact.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 20,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    64,
+    96
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "tint": true,
+   "desc": "Electric impact: flash, radial arcs, ring, sparks. Anchor = ground."
+  },
+  {
+   "id": "holy_column",
+   "file": "vfx/holy_column.png",
+   "frameW": 128,
+   "frameH": 256,
+   "frames": 14,
+   "cols": 14,
+   "fps": 16,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    64,
+    218
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Holy light column: grows, rising bands and sparkles, ground ring, narrows out. Anchor = ground."
+  },
+  {
+   "id": "heal_sparkles",
+   "file": "vfx/heal_sparkles.png",
+   "frameW": 128,
+   "frameH": 192,
+   "frames": 12,
+   "cols": 12,
+   "fps": 12,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    64,
+    170
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Rising green crosses and 4-point sparkles over a pulsing ground ring. Loops (play once for a heal, loop for regen)."
+  },
+  {
+   "id": "shadow_smoke",
+   "file": "vfx/shadow_smoke.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 12,
+   "cols": 10,
+   "fps": 14,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    96,
+    160
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Curse: swirling violet-black smoke with magenta motes and a hex ring. Anchor = ground."
+  },
+  {
+   "id": "poison_cloud",
+   "file": "vfx/poison_cloud.png",
+   "frameW": 256,
+   "frameH": 256,
+   "frames": 12,
+   "cols": 8,
+   "fps": 12,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    128,
+    190
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Rot cloud (Nidhoggr breath): billowing green and bruise-purple puffs with bubbles and motes. Spawn several along the breath cone. Anchor = ground."
+  },
+  {
+   "id": "soul_wisps",
+   "file": "vfx/soul_wisps.png",
+   "frameW": 128,
+   "frameH": 160,
+   "frames": 12,
+   "cols": 12,
+   "fps": 12,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    64,
+    140
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Three soul-fire wisps (#7affb4) circling and bobbing. Loops. Anchor = ground."
+  },
+  {
+   "id": "hit_spark",
+   "file": "vfx/hit_spark.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 24,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    64,
+    64
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Generic physical hit: white-yellow flash, stretched 4-point star, ring, streaks. Anchor = the hit point (centre)."
+  },
+  {
+   "id": "crit_star",
+   "file": "vfx/crit_star.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 10,
+   "cols": 10,
+   "fps": 20,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    96,
+    96
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Critical hit: layered red-orange-white jagged starburst, shock ring, streaks. Anchor = the hit point (centre)."
+  },
+  {
+   "id": "impact_dust",
+   "file": "vfx/impact_dust.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 10,
+   "cols": 10,
+   "fps": 20,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    64,
+    96
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Blood-free physical impact / landing dust: tan puffs ring out, pebbles. Anchor = ground."
+  },
+  {
+   "id": "dodge_puff",
+   "file": "vfx/dodge_puff.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 20,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    64,
+    96
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Dodge / dash puff: white smoke ring on the ground + speed lines to screen-left (mirror for the other way). Anchor = ground."
+  },
+  {
+   "id": "levelup",
+   "file": "vfx/levelup.png",
+   "frameW": 192,
+   "frameH": 256,
+   "frames": 16,
+   "cols": 10,
+   "fps": 16,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    96,
+    212
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Base level-up: golden light column and burst; a winged golden Valkyrie blowing a horn rises through it, then dissolves. Anchor = ground under the player."
+  },
+  {
+   "id": "job_levelup",
+   "file": "vfx/job_levelup.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 14,
+   "cols": 10,
+   "fps": 16,
+   "loop": false,
+   "blend": "add",
+   "anchor": [
+    96,
+    140
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Job level-up: teal rune circle bursts open on the ground, short teal column, rune glyphs lift off. Anchor = ground."
+  },
+  {
+   "id": "warp_portal",
+   "file": "vfx/warp_portal.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 16,
+   "cols": 10,
+   "fps": 12,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    96,
+    128
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Warp portal: blue spiral vortex on the ground with a faint column and spiralling motes. Seamless loop. Anchor = portal centre on the ground."
+  },
+  {
+   "id": "waystone_embers",
+   "file": "vfx/waystone_embers.png",
+   "frameW": 128,
+   "frameH": 192,
+   "frames": 16,
+   "cols": 16,
+   "fps": 12,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    64,
+    168
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Waystone ember swirl: orange embers spiral up around the stone. Seamless loop. Anchor = base of the stone."
+  },
+  {
+   "id": "mvp_burst",
+   "file": "vfx/mvp_burst.png",
+   "frameW": 256,
+   "frameH": 256,
+   "frames": 16,
+   "cols": 8,
+   "fps": 16,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    128,
+    190
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "MVP defeated: golden flash, god rays, light column, gold coins that fly out, bounce and fade, sparkles. Anchor = ground."
+  },
+  {
+   "id": "rune_circle",
+   "file": "vfx/rune_circle.png",
+   "frameW": 256,
+   "frameH": 256,
+   "frames": 16,
+   "cols": 8,
+   "fps": 10,
+   "loop": true,
+   "blend": "add",
+   "anchor": [
+    128,
+    128
+   ],
+   "plane": "ground",
+   "ppu": 48.0,
+   "tint": true,
+   "desc": "Rotating magic circle (top-down ground decal, white: multiply by the element colour). Rune band turns 60 deg per loop, hexagram counter-rotates. Seamless loop. Anchor = centre."
+  },
+  {
+   "id": "summon_smoke",
+   "file": "vfx/summon_smoke.png",
+   "frameW": 192,
+   "frameH": 192,
+   "frames": 12,
+   "cols": 10,
+   "fps": 16,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    96,
+    150
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Summon / appear poof: violet flash, ring of lavender smoke puffs rolling out and up, sparkles. Anchor = ground."
+  },
+  {
+   "id": "water_splash",
+   "file": "vfx/water_splash.png",
+   "frameW": 128,
+   "frameH": 160,
+   "frames": 10,
+   "cols": 10,
+   "fps": 20,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    64,
+    132
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Water splash: crown, central jet, flying droplets, ripple rings. Anchor = water surface."
+  },
+  {
+   "id": "snow_puff",
+   "file": "vfx/snow_puff.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 18,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    64,
+    96
+   ],
+   "plane": "billboard",
+   "ppu": 48.0,
+   "desc": "Snow puff (footfall / landing / hit on snow): white-blue puffs and tumbling flakes. Anchor = ground."
+  },
+  {
+   "id": "rain_ripple",
+   "file": "vfx/rain_ripple.png",
+   "frameW": 128,
+   "frameH": 128,
+   "frames": 8,
+   "cols": 8,
+   "fps": 14,
+   "loop": false,
+   "blend": "alpha",
+   "anchor": [
+    64,
+    64
+   ],
+   "plane": "ground",
+   "ppu": 48.0,
+   "desc": "Rain ripple on water or puddles (top-down ground decal): three expanding rings. Anchor = centre. Spawn many at random, small scale."
+  }
+ ]
+}

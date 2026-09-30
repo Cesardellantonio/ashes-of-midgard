@@ -68,6 +68,13 @@
    "fps": 6,
    "loop": false
   },
+  "sit": {
+   "row": 0,
+   "frames": 1,
+   "fps": 1,
+   "loop": true,
+   "alias": "idle"
+  },
   "dodge": {
    "row": 8,
    "frames": 4,
@@ -79,11 +86,27 @@
    "frames": 2,
    "fps": 8,
    "loop": false
+  },
+  "pickup": {
+   "row": 0,
+   "frames": 3,
+   "fps": 8,
+   "loop": false,
+   "alias": "idle"
+  },
+  "stance": {
+   "row": 0,
+   "frames": 4,
+   "fps": 5,
+   "loop": true,
+   "alias": "idle"
   }
  },
  "hit": {
   "attack1": 3,
   "attack2": 3,
   "heavy": 4
- }
+ },
+ "mounted": true,
+ "mount": "warg"
 }

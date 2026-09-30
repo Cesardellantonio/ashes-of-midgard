@@ -65,6 +65,17 @@ recipe('r_rune_rod', { cat: 'gear', at: ['sindri'], out: ['cr_rune_rod', 1], mat
 recipe('r_harpy_mantle', { cat: 'gear', at: ['sindri'], out: ['cr_harpy_mantle', 1], mats: [['harpy_feather', 6], ['valkyrie_plume', 3], ['rune_thread', 2], ['star_glass', 1]], fee: 25000, lvl: 6, base: 58 });
 recipe('r_skybreaker', { cat: 'gear', at: ['sindri'], out: ['cr_skybreaker', 1], mats: [['aesir_core', 5], ['prism_shard', 4], ['star_iron', 3], ['star_glass', 1]], fee: 40000, lvl: 7, base: 55 });
 recipe('r_aesir_band', { cat: 'gear', at: ['sindri'], out: ['cr_aesir_band', 1], mats: [['aesir_core', 4], ['gold_leaf', 2], ['gleipnir_link', 2], ['star_glass', 1]], fee: 40000, lvl: 7, base: 55 });
+// Round 7: Helheim materials (Sindri forges the Gjöll-forged gear; both smiths brew the draughts)
+recipe('r_gjoll_draught', { out: ['gjoll_draught', 3], mats: [['gjoll_ice', 2], ['soul_ember', 1]], fee: 3000, lvl: 6, base: 76 });
+recipe('r_soul_tonic', { out: ['soul_tonic', 2], mats: [['soul_ember', 2], ['grave_rose', 1]], fee: 3500, lvl: 6, base: 74 });
+recipe('r_grave_bread', { out: ['grave_bread', 2], mats: [['colossus_marrow', 1], ['rot_scale', 1], ['bone_shard', 2]], fee: 4000, lvl: 6, base: 72 });
+recipe('r_warding_ash', { out: ['warding_ash', 2], mats: [['hel_chain', 2], ['gjoll_ice', 1], ['black_sun_shard', 1]], fee: 6000, lvl: 7, base: 68 });
+recipe('r_gjoll_plate', { cat: 'gear', at: ['sindri'], out: ['cr_gjoll_plate', 1], mats: [['gjoll_ice', 8], ['hel_chain', 4], ['colossus_marrow', 2], ['black_sun_shard', 1]], fee: 60000, lvl: 8, base: 52 });
+recipe('r_soul_robe', { cat: 'gear', at: ['sindri'], out: ['cr_soul_robe', 1], mats: [['soul_ember', 8], ['grave_rose', 4], ['rune_thread', 2], ['black_sun_shard', 1]], fee: 60000, lvl: 8, base: 52 });
+recipe('r_hound_hide', { cat: 'gear', at: ['sindri'], out: ['cr_hound_hide', 1], mats: [['hel_chain', 6], ['rot_scale', 4], ['rune_thread', 2], ['black_sun_shard', 1]], fee: 58000, lvl: 8, base: 52 });
+recipe('r_hound_boots', { cat: 'gear', at: ['sindri'], out: ['cr_hound_boots', 1], mats: [['hel_chain', 6], ['rot_scale', 3], ['star_iron', 1]], fee: 42000, lvl: 7, base: 56 });
+recipe('r_bone_shield', { cat: 'gear', at: ['sindri'], out: ['cr_bone_shield', 1], mats: [['colossus_marrow', 6], ['gjoll_ice', 4], ['star_iron', 2]], fee: 48000, lvl: 7, base: 56 });
+recipe('r_grave_circlet', { cat: 'gear', at: ['sindri'], out: ['cr_grave_circlet', 1], mats: [['grave_rose', 6], ['soul_ember', 4], ['gold_leaf', 1]], fee: 42000, lvl: 7, base: 56 });
 const RECIPE_CATS = [['use', 'Consumables'], ['stone', 'Upgrade stones'], ['mat', 'Materials'], ['gear', 'Gear']];
 // Craftsmanship practice: each success gives 1 + 2 × recipe level; the next level needs CRAFT_XP(level).
 const CRAFT_XP = lv => 8 * lv * lv;
@@ -108,7 +119,19 @@ const VENDORS = {
   ulfar: { title: 'Úlfar’s Chandlery', gear: false, refine: false, craft: false, sell: true,
     supplies: ['red_potion', 'orange_potion', 'yellow_potion', 'white_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple', 'bear_stew', 'skald_ale'],
     specials: [['honey_mead', 6], ['frost_heart', 1, 4500], ['bog_pearl', 1, 5000], ['warding_stone', 1, 22000], ['ygg_ember', 1, 9000]] },
+  // Round 6: Ylva's stable in Skaldhaven (warg rental in her dialog; taming items and pet food here).
+  ylva: { title: 'Ylva’s Stable', gear: false, refine: false, craft: false, sell: true,
+    supplies: ['pet_food', 'poring_candy', 'moon_carrot', 'ember_sugar', 'marrow_bone', 'shiny_trinket', 'frost_candy', 'jar_of_midges', 'prism_candy'],
+    specials: [['ygg_ember', 1, 9000]] },
+  // Round 7: Gauti the Grave-Trader, in Helheim's camp (his Obol exchange is in his dialog, js/data/npcs.js)
+  gauti: { title: 'Gauti’s Grave-Goods', gear: false, refine: false, craft: false, sell: true,
+    supplies: ['gjoll_draught', 'soul_tonic', 'grave_bread', 'warding_ash', 'white_potion', 'honey_mead', 'blue_potion', 'fly_wing', 'butterfly_wing'],
+    specials: [['eljudnir_mead', 3], ['golden_apple', 1, 18000], ['black_sun_shard', 1, 9000], ['warding_stone', 1, 22000], ['ygg_ember', 1, 9000]] },
 };
+
+// Supplies that only appear from a Base Lv (any vendor's `supplies` list).
+const SUPPLY_MIN_LV = { yellow_potion: 20, white_potion: 30, honey_mead: 40, bear_stew: 12,
+  marrow_bone: 10, shiny_trinket: 12, frost_candy: 24, jar_of_midges: 30, prism_candy: 44 };   // round 6: taming items from the tamed monster's level
 // The smiths' unlimited supplies (Brokkr's list grows with the Rune-Shards; see vendorSupplies in core.js).
 const SMITH_SUPPLIES = ['red_potion', 'orange_potion', 'blue_potion', 'fly_wing', 'butterfly_wing', 'apple'];
 
@@ -131,6 +154,7 @@ const RARE_MAT_OF = {
   bog_pearl: { chance: 0.02, mobs: ['bog_toad', 'mire_leech', 'wisp', 'marsh_hag', 'mire_troll'], mvp: 'bog_crone' },
   deep_ember: { chance: 0.018, mobs: ['cave_bat', 'crystal_spider', 'magma_slime', 'stone_golem', 'dwarf_revenant'], mvp: 'fafnir' },
   star_glass: { chance: 0.015, mobs: ['prism_poring', 'sky_harpy', 'rune_sentinel', 'valkyrie_shade', 'fenrir_whelp'], mvp: 'fenrir' },
+  black_sun_shard: { chance: 0.012, mobs: ['hel_draugr', 'soul_wisp', 'hel_hound', 'corpse_bride', 'nidhogg_spawn', 'bone_colossus'], mvp: 'garmr' },   // round 7 (Níðhöggr drops two)
 };
 for (const id in RARE_MAT_OF) {
   const R = RARE_MAT_OF[id];

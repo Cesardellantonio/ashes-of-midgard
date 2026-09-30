@@ -14,7 +14,47 @@
 const PXU = 36;                       // sprite pixels per world unit
 const PCOL = { fire: '#ff7a2a', ice: '#9fd8ff', soul: '#c8a8ff', holy: '#fff0b0', arrow: '#d8c8a0', bolt: '#fff6a0', spear: '#e8e0ff', raven: '#b8c8ff', sphere: '#9fd0ff' };
 const glc = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+/* ---------- Starting quality (perf round 3) ----------
+   1. window.AOM_GFX_QUALITY (harness / embedder override), 2. the player's stored choice (localStorage 'aom-gfx', written
+   by GFX.setQuality), 3. a quick GPU probe: the unmasked renderer string of a throwaway context (software GL -> low,
+   phones / integrated laptop GPUs -> low / medium, discrete or Apple M -> high), device memory / cores. The adaptive
+   controller (GFX.auto, below) then refines it from real frame times. Headless / automated browsers skip the probe
+   and keep 'high' (deterministic screenshots and benchmarks). */
+const GFX_ENV = (() => {
+  const ua = navigator.userAgent || '', env = { headless: /HeadlessChrome/.test(ua) || navigator.webdriver === true, gpu: '', tier: null, source: 'default', quality: 'high' };
+  let stored = null; try { stored = localStorage.getItem('aom-gfx'); } catch (e) { /* storage blocked */ }
+  const valid = q => q === 'low' || q === 'medium' || q === 'high' || q === 'ultra';
+  if (valid(window.AOM_GFX_QUALITY)) { env.quality = window.AOM_GFX_QUALITY; env.source = 'override'; return env; }
+  if (valid(stored)) { env.quality = stored; env.source = 'stored'; return env; }
+  if (env.headless) return env;
+  try {
+    const c = document.createElement('canvas'), o = { failIfMajorPerformanceCaveat: true, antialias: false, depth: false, stencil: false };
+    let gl = c.getContext('webgl2', o) || c.getContext('webgl', o), caveat = false;
+    if (!gl) { caveat = true; gl = c.getContext('webgl2') || c.getContext('webgl'); }
+    if (gl) {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      env.noHdr = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext ? !gl.getExtension('EXT_color_buffer_float') : !(gl.getExtension('OES_texture_half_float') && gl.getExtension('EXT_color_buffer_half_float'));
+      env.gpu = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
+      const lose = gl.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext();
+    }
+    const g = env.gpu, mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua) && !/Apple M\d/.test(g));
+    const mem = navigator.deviceMemory || 8, cores = navigator.hardwareConcurrency || 8;
+    let t;
+    if (caveat || /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(g)) t = 'low';
+    else if (mobile) t = /Adreno \(TM\) [6-9]\d\d|Apple GPU|Apple A1[5-9]|Immortalis|Xclipse/i.test(g) ? 'medium' : 'low';
+    else if (/Intel/i.test(g)) t = /Arc/i.test(g) ? 'high' : 'medium';
+    else if (/Radeon\(TM\) (Graphics|Vega)|Radeon Vega|Vega \d\b|Radeon \d{3}M\b/i.test(g)) t = 'medium';
+    else if (/MX\s?\d{3}|GeForce (9|7)\d\d[M ]|Quadro [KP]\d{3,4}M?\b/i.test(g)) t = 'medium';
+    else t = 'high';
+    if ((mem <= 2 || cores <= 2) && t !== 'low') t = 'low'; else if (mem <= 4 && t === 'high') t = 'medium';
+    env.tier = t; env.quality = t; env.source = 'probe';
+  } catch (e) { /* probe failed: keep the default */ }
+  return env;
+})();
+// Canvas MSAA only when the starting preset draws straight to the canvas (low); with post-processing the scene is
+// multisampled in its own target and the canvas only receives the final full-screen pass (identical pixels, and no
+// 4x colour+depth canvas buffers: ~66 MB at 1080p).
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: GFX_ENV.quality === 'low' || !!GFX_ENV.noHdr, powerPreference: 'high-performance' });
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -34,8 +74,11 @@ let curWorld = null;
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), _v3 = new THREE.Vector3();
 
 /* ---------- Graphics quality (GFX) ----------
-   GFX.quality: 'low' | 'medium' | 'high' | 'ultra' (localStorage 'aom-gfx').
-   low = no post, no shadows (about the pre-HD-2D cost).
+   GFX.quality: 'low' | 'medium' | 'high' | 'ultra' (the base preset: GFX_ENV above picks the start; GFX.setQuality(q)
+   stores the player's choice in localStorage 'aom-gfx').
+   low = genuinely cheap (phones, software GL): no post, no shadows / SSAO / volumetrics, LOD trees, no grass or far
+   props, 2 point lights, pixel ratio 1, canvas MSAA. medium = laptop default: post (bloom, 1-level DOF, mist), 1024
+   shadows, no SSAO / volumetrics, LOD trees, light grass. high / ultra = the full HD-2D look.
    World: grass = 3D grass tufts per open grass tile (0 = none); smallShadow = small props
    (barrels, rocks, bones...) cast sun shadows; detail = ground shader level (0 colour
    detail only, 1 + normal detail, 2 + macro variation); farProps = the wilderness props
@@ -43,26 +86,71 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), _v3 = new THREE.Ve
    Post (gfx-post.js): msaa = scene MSAA samples; mist = depth-based ground mist / height fog;
    heat = lava heat shimmer; ao = half-res SSAO (aoN taps); vol = ray-marched volumetric sun/moon
    light through the cached static shadow map (volN steps); pools = flickering ground light pools.
+   wx = weather / ambient-life particle count multiplier (round 5, see WX; drawRange only, no rebuild).
    Shadows: the sun's static world shadows are cached (re-rendered only when the view drifts or the
-   world changes, see SHADOW); a second zero-intensity light re-renders only the sprite casters. */
+   world changes, see SHADOW); a second zero-intensity light re-renders only the sprite casters.
+   Adaptive quality (GFX.auto, default on in a real browser): GFX_STEPS are levels below the base preset (render scale
+   first, then SSAO, volumetrics, shadow size, grass...); the controller (AUTO) moves between them from real frame
+   times with hysteresis. GFX.preset is the effective preset (base + level); GFX.level / GFX.scale expose the state. */
 const GFX_PRESETS = {
-  low:    { pr: 1.5, post: false, shadow: 0,    lights: 2, bloomMips: 0, dof: 0, msaa: 0, grass: 0, smallShadow: false, detail: 0, farProps: false, mist: false, heat: false, ao: false, vol: false, pools: false },
-  medium: { pr: 1,   post: true,  shadow: 1024, lights: 4, bloomMips: 4, dof: 1, msaa: 2, grass: 1.5, smallShadow: false, detail: 1, farProps: true, mist: true, heat: true, ao: false, vol: false, pools: true },
-  high:   { pr: 1.5, post: true,  shadow: 2048, lights: 6, bloomMips: 4, dof: 2, msaa: 2, grass: 3, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 8, vol: true, volN: 10, pools: true },
-  ultra:  { pr: 2,   post: true,  shadow: 4096, lights: 8, bloomMips: 6, dof: 3, msaa: 4, grass: 7, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 12, vol: true, volN: 16, pools: true },
+  low:    { pr: 1,   post: false, shadow: 0,    lights: 2, bloomMips: 0, dof: 0, msaa: 0, grass: 0, smallShadow: false, detail: 0, farProps: false, mist: false, heat: false, ao: false, vol: false, pools: false, wx: 0.35 },
+  medium: { pr: 1,   post: true,  shadow: 1024, lights: 4, bloomMips: 4, dof: 1, msaa: 2, grass: 1.5, smallShadow: false, detail: 1, farProps: true, mist: true, heat: true, ao: false, vol: false, pools: true, wx: 0.6 },
+  high:   { pr: 1.5, post: true,  shadow: 2048, lights: 6, bloomMips: 4, dof: 2, msaa: 2, grass: 3, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 8, vol: true, volN: 10, pools: true, wx: 1 },
+  ultra:  { pr: 2,   post: true,  shadow: 4096, lights: 8, bloomMips: 6, dof: 3, msaa: 4, grass: 7, smallShadow: true,  detail: 2, farProps: true, mist: true, heat: true, ao: true, aoN: 12, vol: true, volN: 16, pools: true, wx: 1.4 },
 };
+// Adaptive levels below the base preset. None of them changes a material program (no recompiles): scale / msaa / DOF /
+// bloom only resize post targets, ao / vol pick another post variant (precompiled at map entry), shadow size reallocates
+// the sun's map, grass rebuilds the tufts. Levels that change nothing for a preset are skipped (see gfxLadder).
+const GFX_STEPS = [
+  {},
+  { scale: 0.85 },
+  { scale: 0.75 },
+  { scale: 0.75, ao: false },
+  { scale: 0.75, ao: false, vol: false },
+  { scale: 0.7, ao: false, vol: false, shadowMax: 1024, grassK: 0.5, wxK: 0.7 },
+  { scale: 0.6, ao: false, vol: false, shadowMax: 1024, grassK: 0, smallShadow: false, msaa: 0, wxK: 0.5 },
+  { scale: 0.5, ao: false, vol: false, shadowMax: 1024, grassK: 0, smallShadow: false, msaa: 0, dofMax: 1, bloomMax: 3, wxK: 0.4 },
+];
+function gfxEffective(q, st) {
+  const o = Object.assign({}, GFX_PRESETS[q], (typeof GFX !== 'undefined' && GFX.override) || null);
+  st = st || {}; o.scale = Math.min(st.scale || 1, o.scale || 1);   // (an override may force a scale: A/B shots)
+  if (st.ao === false) o.ao = false;
+  if (st.vol === false) o.vol = false;
+  if (st.shadowMax && o.shadow > st.shadowMax) o.shadow = st.shadowMax;
+  if (st.grassK !== undefined) o.grass *= st.grassK;
+  if (st.wxK !== undefined) o.wx *= st.wxK;
+  if (st.smallShadow === false) o.smallShadow = false;
+  if (st.msaa === 0) o.msaa = 0;
+  if (st.dofMax !== undefined) o.dof = Math.min(o.dof, st.dofMax);
+  if (st.bloomMax !== undefined) o.bloomMips = Math.min(o.bloomMips, st.bloomMax);
+  return o;
+}
+function gfxLadder(q) {
+  const out = []; let prev = '';
+  for (const st of GFX_STEPS) { const k = JSON.stringify(gfxEffective(q, st)); if (k !== prev) { out.push(st); prev = k; } }
+  return out;
+}
 let GFX_EPOCH = 1;                    // bumped when material programs must recompile
 const GFX = {
-  quality: 'high', sun, composer: null, preset: null,
+  quality: GFX_ENV.quality, env: GFX_ENV, sun, composer: null, preset: null, override: null,
+  auto: window.AOM_GFX_AUTO === true || (window.AOM_GFX_AUTO !== false && !GFX_ENV.headless),
+  level: 0, scale: 1, ladder: null, fps: 0, frameMs: 0,
   hooks: [],                          // fn(q) called after a quality change (gfx-post registers one)
-  setQuality(q) {
+  worldHooks: [],                     // fn(freedMapId, residentMapIds) after a world left the LRU (e.g. release its sprite sheets)
+  prefetchHooks: [],                  // fn(neighbourMapId, map) in idle time after a map is entered (e.g. prefetch its sprite sheets)
+  // q: preset name; transient = chosen by the adaptive controller (not stored as the player's choice)
+  setQuality(q, transient) {
     if (!GFX_PRESETS[q]) return GFX.quality;
-    GFX.quality = q; GFX.preset = GFX_PRESETS[q];
-    try { localStorage.setItem('aom-gfx', q); } catch (e) { /* storage blocked */ }
+    GFX.quality = q; GFX.ladder = gfxLadder(q); GFX.level = 0; GFX.preset = gfxEffective(q, GFX.ladder[0]); GFX.scale = 1;
+    if (!transient) { GFX.env.source = 'player'; try { localStorage.setItem('aom-gfx', q); } catch (e) { /* storage blocked */ } }
     applyQuality();
     for (const f of GFX.hooks) try { f(q); } catch (e) { console.warn('[gfx] hook', e); }
+    AUTO.reset(1000);
     return q;
   },
+  // adaptive level (0 = the full preset); called by the controller, usable from the console
+  setLevel(lv) { gfxSetLevel(lv); return GFX.level; },
+  autoInfo() { return { auto: GFX.auto, quality: GFX.quality, level: GFX.level, levels: GFX.ladder.length, scale: GFX.scale, fps: GFX.fps, frameMs: GFX.frameMs, upAfterS: AUTO.upAfter, source: GFX.env.source, gpu: GFX.env.gpu }; },
   // Make a mesh with an alpha-tested map cast a correctly cut-out shadow (r128's
   // default depth material ignores alphaTest). The depth material follows mesh.material.map.
   makeCaster(mesh, alphaTest) {
@@ -71,14 +159,19 @@ const GFX = {
     mesh.customDepthMaterial = dm; mesh.castShadow = true; return mesh;
   },
 };
-try { const s = localStorage.getItem('aom-gfx'); if (GFX_PRESETS[s]) GFX.quality = s; } catch (e) { /* storage blocked */ }
-GFX.preset = GFX_PRESETS[GFX.quality];
+GFX.ladder = gfxLadder(GFX.quality); GFX.preset = gfxEffective(GFX.quality, GFX.ladder[0]);
 const PL = [];                        // point-light pool (fixed size per quality: no per-frame recompiles)
+function gfxPixelRatio(Q) { return Math.min(Q.pr, window.devicePixelRatio || 1) * (Q.post ? 1 : Q.scale || 1); }
 function applyQuality() {
   const Q = GFX.preset;
-  renderer.setPixelRatio(Math.min(Q.pr, window.devicePixelRatio || 1));
+  renderer.setPixelRatio(gfxPixelRatio(Q)); gfxCanvasFilter();
   const on = Q.shadow > 0, split = on && SHADOW.ok;
   renderer.shadowMap.enabled = on; sun.castShadow = on;
+  if (!on) {   // shadows off (low): free the sun's map, the static cache and the builder's map (32-80 MB at high / ultra)
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    if (SHADOW.rt) { SHADOW.rt.dispose(); SHADOW.rt = null; SHADOW.tex = null; }
+    const B = SHADOW.bld; if (B && B.light.shadow.map) { B.light.shadow.map.dispose(); B.light.shadow.map = null; B.on = false; }
+  }
   if (on && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   SHADOW.split = split; sun.shadow.autoUpdate = !split; SHADOW.need = true;
   while (PL.length > Q.lights) scene.remove(PL.pop());
@@ -87,6 +180,59 @@ function applyQuality() {
   GFX_EPOCH++; refreshMaterials(scene);
   if (typeof map !== 'undefined' && map && RL) applyLook();
   if (curWorld) worldQuality(curWorld);
+}
+// Without post the canvas itself is scaled (browser upscale): nearest at 2x so pixels stay whole, else bilinear.
+function gfxCanvasFilter() { const Q = GFX.preset; glc.style.imageRendering = !Q.post && Q.scale <= 0.51 ? 'pixelated' : ''; }
+function gfxSetLevel(lv) {
+  lv = clamp(lv | 0, 0, GFX.ladder.length - 1); if (lv === GFX.level) return;
+  const old = GFX.preset, Q = gfxEffective(GFX.quality, GFX.ladder[lv]);
+  GFX.level = lv; GFX.preset = Q; GFX.scale = Q.scale;
+  if (gfxPixelRatio(Q) !== gfxPixelRatio(old)) renderer.setPixelRatio(gfxPixelRatio(Q));
+  gfxCanvasFilter();
+  if (Q.shadow > 0 && sun.shadow.mapSize.x !== Q.shadow) { sun.shadow.mapSize.set(Q.shadow, Q.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } SHADOW.need = true; }
+  if (GFX.composer) GFX.composer.configure();
+  if (curWorld && (Q.grass !== old.grass || Q.smallShadow !== old.smallShadow || Q.vol !== old.vol)) worldQuality(curWorld);
+  for (const f of GFX.hooks) try { f(GFX.quality, lv); } catch (e) { console.warn('[gfx] hook', e); }
+}
+/* Adaptive quality controller. Samples the interval between presented frames from the game's own
+   requestAnimationFrame timestamps (frames drawn outside rAF, e.g. by the perf / screenshot harnesses, are ignored).
+   Every ~0.75 s window: median > 18.3 ms (< ~55 fps) twice in a row -> one level down (two when > 28 ms); median
+   < 17.3 ms with p90 < 20 ms for `upAfter` seconds -> one level up. An up-step that fails within 8 s doubles upAfter
+   (5 s -> 64 s max), so a machine at the edge settles instead of oscillating. Samples are ignored for 1 s after a
+   change and 2 s after a map entry (loading hitches). At the bottom of the ladder, still slow for 2 more windows while
+   the base preset came from the probe: the base preset drops one step (not stored as the player's choice). */
+const AUTO = { last: 0, hold: 0, samples: [], slow: 0, good: 0, upAfter: 5, lastUp: -1e9, inRaf: false, rafT: 0, bottom: 0,
+  reset(ms) { AUTO.samples.length = 0; AUTO.slow = 0; AUTO.good = 0; AUTO.bottom = 0; AUTO.hold = Math.max(AUTO.hold, Math.max(performance.now(), AUTO.rafT) + (ms || 0)); } };
+(() => {
+  const raf = window.requestAnimationFrame; if (typeof raf !== 'function') return;
+  window.requestAnimationFrame = function (cb) { return raf.call(window, t => { AUTO.inRaf = true; AUTO.rafT = t; try { cb(t); } finally { AUTO.inRaf = false; } }); };
+})();
+const _autoS = [];
+function autoFrame() {
+  if (!AUTO.inRaf) return;
+  const t = AUTO.rafT; let d = t - AUTO.last; AUTO.last = t;
+  if (d <= 0 || d > 1000) { AUTO.samples.length = 0; return; }   // first frame, hidden tab, loading stall: restart the window
+  if (d > 250) d = 250;                                          // (a single long frame is an outlier for the median)
+  GFX.frameMs = GFX.frameMs ? GFX.frameMs + (d - GFX.frameMs) * 0.05 : d; GFX.fps = Math.round(1000 / GFX.frameMs);
+  if (!GFX.auto || t < AUTO.hold || GLOAD.pending) { AUTO.samples.length = 0; return; }
+  const S = AUTO.samples; S.push(d); if (S.length < 45) return;
+  let span = 0; _autoS.length = 0; for (const v of S) { span += v; _autoS.push(v); } _autoS.sort((a, b) => a - b);
+  const med = _autoS[_autoS.length >> 1], p90 = _autoS[Math.floor(_autoS.length * 0.9)]; S.length = 0;
+  if (med > 18.3) {
+    AUTO.good = 0; AUTO.slow++;
+    if (AUTO.slow >= 2 || med > 28) {
+      AUTO.slow = 0;
+      if (t - AUTO.lastUp < 8000) AUTO.upAfter = Math.min(64, AUTO.upAfter * 2);   // the last up-step did not hold
+      if (GFX.level < GFX.ladder.length - 1) { gfxSetLevel(GFX.level + (med > 28 ? 2 : 1)); AUTO.reset(1000); }
+      else if (++AUTO.bottom >= 2 && GFX.env.source !== 'player' && GFX.env.source !== 'override' && GFX.quality !== 'low') {
+        const q = { ultra: 'high', high: 'medium', medium: 'low' }[GFX.quality]; GFX.env.source = 'auto';
+        GFX.setQuality(q, true); gfxSetLevel(GFX.ladder.length - 1); AUTO.reset(1500);
+      }
+    }
+  } else if (med < 17.3 && p90 < 20) {
+    AUTO.slow = 0; AUTO.bottom = 0; AUTO.good += span;
+    if (GFX.level > 0 && AUTO.good >= AUTO.upAfter * 1000) { gfxSetLevel(GFX.level - 1); AUTO.lastUp = t; AUTO.reset(1000); }
+  } else AUTO.slow = 0;
 }
 function refreshMaterials(root) {
   root.traverse(o => { const m = o.material; if (!m) return; if (Array.isArray(m)) m.forEach(x => { x.needsUpdate = true; }); else m.needsUpdate = true; });
@@ -225,19 +371,44 @@ const RLOOK = {
     mist: { col: 0x7a4a3a, k: 1, amb: 0.04, lit: 1.2, amt: 0.3, h: 0.5, max: 0.22, scale: 0.05, wind: [0.01, -0.03], scatter: 0.5 },
   },
 };
+// Base looks for map families whose data may arrive before (or without) render data: every map id matching the key
+// (helheim, helheim_deep_<n>) starts from this look instead of one derived from MAPDEFS.look; render data refines it.
+// Helheim (design/helheim.md): ash-grey haze under a black sun, cold pale light, soul-green fires and lanterns, the
+// frozen river Gjoll (water.frozen), falling ash and drifting soul wisps (WX_MAPS), eternal twilight (tod: false).
+const RLOOK_BASE = {
+  helheim: {
+    exposure: 1.0, sky: [0x0b0c0e, 0x3e4242], haze: 0x4e5351, fog: [32, 120],
+    sunDir: [-0.4, 1.15, 0.32], sun: [0xc4d4cc, 0.5], hemi: [0x8a9894, 0x16181a, 0.44], torch: [0x9affc8, 0.45, 8],
+    lights: { brazier: [0x7affb8, 1.5, 7], way: [0xffa048, 1.6, 9], warp: [0x7ab8ff, 1.4, 6], heart: [0xffc060, 3, 10], lamp: [0x8affc0, 0.9, 5] },
+    flame: [1.1, 3.0, 1.7], flameHalo: 0x5aff9a,
+    bloom: { threshold: 1.1, knee: 0.4, strength: 0.62 },
+    grade: { lift: [0.012, 0.016, 0.018], gamma: [1, 1.01, 1], gain: [0.98, 1.02, 1.0], sat: 0.72, contrast: 1.1, shadowTint: [-0.006, 0.01, 0.008], highTint: [0.0, 0.012, 0.006] },
+    vignette: 0.46, grain: 0.03, dof: { band: 0.1, ramp: 0.4, top: 0.85, bottom: 0.6 },
+    lt: { amb: [0.5, 0.56, 0.55], sun: [0.2, 0.23, 0.21] },
+    mist: { col: 0x9aa8a2, k: 1, amb: 0.14, lit: 1.4, amt: 0.5, h: 0.6, max: 0.3, scale: 0.05, wind: [0.02, 0.008], scatter: 0.45 },
+    hfog: { col: 0x5e6664, k: 0.6, amt: 0.14, h: 1.2, max: 0.3 },
+    vol: { col: 0xc8ffe0, k: 0.22, dens: 0.05, ext: 1, top: 4, scale: 0.05, wind: [0.015, 0.006], noise: 0.8 },
+    water: { color: 0x243234, deep: 0x0a1214, foam: 0xdce8e4, ice: 0x8a9ea0, level: -0.45, frozen: 0.8, blackSun: true },
+    tod: false,
+  },
+};
+const rlookBase = id => { for (const k in RLOOK_BASE) if (id === k || id.startsWith(k + '_')) return RLOOK_BASE[k]; return null; };
 // Maps without an RLOOK entry: MAPDEFS[id].render (data hook for new maps), else derived from MAPDEFS.look.
 // render = { sky:[top,horizon], fog:[color,near,far], exposure, sun:[color,intensity,dir], hemi:[sky,ground,int],
-//   bloom:[threshold,strength], grade:{...}, mist, hfog, vol, heat, shafts, motes, lights, trees } (all optional)
+//   bloom:[threshold,strength], grade:{...}, mist, hfog, vol, heat, shafts, motes, lights, trees, flame, flameHalo,
+//   weather, tod, night, dusk } (all optional; weather / tod / night / dusk: see WX)
 const RLOOK_GEN = {};
 function rlookFor(m) {
   if (RLOOK[m.id]) return RLOOK[m.id];
   if (RLOOK_GEN[m.id]) return RLOOK_GEN[m.id];
-  const L = (m.d && m.d.look) || {}, base = RLOOK.ashen_fields, Rd = m.d && m.d.render, dark = m.d && m.d.gen === 'dungeon';
+  const L = (m.d && m.d.look) || {}, fam = rlookBase(m.id), base = fam || RLOOK.ashen_fields, Rd = m.d && m.d.render, dark = m.d && m.d.gen === 'dungeon';
   let R;
   try {
-    R = Object.assign({}, base, { haze: L.fog !== undefined ? L.fog : base.haze, sky: [L.fog !== undefined ? L.fog : base.sky[0], L.fog !== undefined ? L.fog : base.sky[1]],
+    if (fam) R = Object.assign({}, fam);
+    else R = Object.assign({}, base, { haze: L.fog !== undefined ? L.fog : base.haze, sky: [L.fog !== undefined ? L.fog : base.sky[0], L.fog !== undefined ? L.fog : base.sky[1]],
       hemi: L.hemi ? [L.hemi[0], L.hemi[1], L.hemi[2] * 0.8] : base.hemi, sun: L.sun ? [L.sun[0], L.sun[1] * 3] : base.sun, torch: [0xffa860, L.torch || 0, 10], mist: null, hfog: null });
-    if (dark) Object.assign(R, { exposure: 1.1, lights: RLOOK.gloamheim.lights, bloom: RLOOK.gloamheim.bloom, lt: RLOOK.gloamheim.lt });
+    if (dark && fam) Object.assign(R, { exposure: (fam.exposure || 1) * 1.08, fog: [30, 92], torch: [fam.torch[0], Math.max(1, fam.torch[1]), 9], lt: { amb: fam.lt.amb.map(v => v * 0.8), sun: fam.lt.sun.map(v => v * 0.4) } });
+    else if (dark) Object.assign(R, { exposure: 1.1, lights: RLOOK.gloamheim.lights, bloom: RLOOK.gloamheim.bloom, lt: RLOOK.gloamheim.lt });
     if (Rd) {
       const num = (v, d) => typeof v === 'number' && isFinite(v) ? v : d;
       if (Rd.sky) R.sky = [Rd.sky[0], Rd.sky[1] !== undefined ? Rd.sky[1] : Rd.sky[0]];
@@ -247,7 +418,7 @@ function rlookFor(m) {
       if (Rd.hemi) R.hemi = [Rd.hemi[0], Rd.hemi[1], num(Rd.hemi[2], base.hemi[2])];
       if (Rd.bloom) R.bloom = { threshold: num(Rd.bloom[0], base.bloom.threshold), knee: 0.4, strength: num(Rd.bloom[1], base.bloom.strength) };
       if (Rd.grade) R.grade = Object.assign({}, base.grade, Rd.grade);
-      for (const k of ['mist', 'hfog', 'vol', 'heat', 'shafts', 'motes', 'lights', 'dof', 'vignette', 'grain', 'lt', 'spec', 'paint', 'ao', 'water', 'void', 'torch']) if (Rd[k] !== undefined) R[k] = Rd[k];
+      for (const k of ['mist', 'hfog', 'vol', 'heat', 'shafts', 'motes', 'lights', 'dof', 'vignette', 'grain', 'lt', 'spec', 'paint', 'ao', 'water', 'void', 'torch', 'flame', 'flameHalo', 'weather', 'tod', 'night', 'dusk']) if (Rd[k] !== undefined) R[k] = Rd[k];
       // sprite light tint from the lights when not given: ambient ~ hemi sky, direct ~ sun
       if (!Rd.lt && (Rd.hemi || Rd.sun)) {
         const h = new THREE.Color(R.hemi[0]).convertSRGBToLinear(), su = new THREE.Color(R.sun[0]).convertSRGBToLinear(), hi = R.hemi[2] / 0.42, si = R.sun[1] / 0.8;
@@ -344,7 +515,7 @@ function skirtTex(m) {
 const DETAIL = {};
 const DETAIL_KINDS = { grass: [256, 2, 0.035], dirt: [512, 4, 0.05], cobble: [512, 4, 0.075], flag: [512, 4, 0.06], ash: [512, 4, 0.03], basalt: [512, 4, 0.07], snow: [256, 4, 0.045], mud: [512, 4, 0.05], cloud: [256, 4, 0.03] };
 // look.floor -> ground detail texture (unknown floors fall back to the nearest existing one)
-const FLOOR_DETAIL = { grass: 'grass', flag: 'flag', carved: 'flag', stone: 'flag', rock: 'basalt', basalt: 'basalt', snow: 'snow', ice: 'snow', mud: 'mud', swamp: 'mud', dirt: 'dirt', sand: 'dirt', cloud: 'cloud' };
+const FLOOR_DETAIL = { grass: 'grass', flag: 'flag', carved: 'flag', stone: 'flag', rock: 'basalt', basalt: 'basalt', snow: 'snow', ice: 'snow', mud: 'mud', swamp: 'mud', dirt: 'dirt', sand: 'dirt', cloud: 'cloud', ash: 'ash', bone: 'dirt' };
 function floorDetail(f) { return FLOOR_DETAIL[f] || 'grass'; }
 const FLAG_ROWS = [[1, 2, 1], [2, 2], [1, 1, 2], [2, 1, 1], [1.5, 1.5, 1], [1, 1.5, 1.5], [1, 1, 1, 1]];
 // Fast periodic value noise on cached hash lattices (P must be a power of two).
@@ -446,7 +617,7 @@ const rgbLin = a => new THREE.Color(a[0] / 255, a[1] / 255, a[2] / 255).convertS
    shade (AO + light pools, x2 encoded), and a detail normal (medium+). Layer uniforms are
    only declared for layers the map uses (keeps sampler count low for WebGL1). */
 const GD_PARS = `varying vec3 vGW;
-uniform sampler2D uDB; uniform vec4 uDS; uniform float uNrm;
+uniform sampler2D uDB; uniform vec4 uDS; uniform float uNrm; uniform vec3 uWet, uWetSky, uWetSun, uWetSunC;
 #if defined(GD_LAYERS) || defined(GD_SHADE)
 uniform vec2 uMapInv;
 #endif
@@ -465,7 +636,7 @@ uniform sampler2D uDC; uniform vec3 uCobC;
 #ifdef GD_ASH
 uniform sampler2D uDA; uniform vec3 uAshC;
 #endif`;
-const GD_MAP = `vec2 gSl = vec2(0.0); float gH = 0.5;
+const GD_MAP = `vec2 gSl = vec2(0.0); float gH = 0.5, gWet = 0.0, gPud = 0.0;
 #ifdef USE_MAP
 {
   vec4 texelColor = mapTexelToLinear(texture2D(map, vUv));
@@ -512,21 +683,33 @@ const GD_MAP = `vec2 gSl = vec2(0.0); float gH = 0.5;
   #ifdef GD_SHADE
   col *= texture2D(uShade, wp * uMapInv).rgb * 2.0;
   #endif
+  if (uWet.x > 0.001) {   // rain (WX): darker soaked ground, puddles in the low spots of the detail relief
+    gPud = smoothstep(0.46, 0.68, (1.0 - gH) * 0.5 + (1.0 - lowN) * 0.45 + (texture2D(uDB, wp * 0.047 + vec2(0.61, 0.29)).a - 0.5) * 0.7) * uWet.y;
+    gWet = uWet.x; col *= 1.0 - gWet * (0.24 + 0.22 * (1.0 - gH)) - gPud * 0.3;
+  }
   diffuseColor.rgb *= col;
 }
 #endif`;
+// wet sheen: a little of the sky in soaked ground, more in the puddles, and a sun (moon) glint on them
+const GD_WET = `if (gWet > 0.0) {
+  vec3 wV = normalize(cameraPosition - vGW), wRf = reflect(-wV, vec3(0.0, 1.0, 0.0));
+  float wg = pow(max(dot(wRf, uWetSun), 0.0), 80.0) * (0.25 + 2.2 * gPud) * gWet;
+  outgoingLight = mix(outgoingLight, uWetSky, gWet * 0.05 + gPud * 0.42) + uWetSunC * wg;
+}`;
+const WETU = { uWet: { value: new THREE.Vector3() }, uWetSky: { value: new THREE.Color() }, uWetSun: { value: SKY.sunDir }, uWetSunC: { value: new THREE.Color() } };
 const GD_NORMAL = `#ifdef GD_NORMAL
 normal = normalize(normal - uNrm * (viewMatrix * vec4(gSl.x, 0.0, gSl.y, 0.0)).xyz);
 #endif`;
 function groundDetail(mat, o) {
   const one = new THREE.Vector4(1 / o.base.span, o.path ? 1 / o.path.span : 1, o.cob ? 1 / o.cob.span : 1, o.ash ? 1 / o.ash.span : 1);
-  const U = { uDB: { value: o.base.tex }, uDS: { value: one }, uNrm: { value: o.nrm || 1 } };
+  const U = Object.assign({ uDB: { value: o.base.tex }, uDS: { value: one }, uNrm: { value: o.nrm || 1 } }, WETU);
   let defs = '';
   if (o.mask) { defs += '#define GD_LAYERS\n'; U.uMask = { value: o.mask }; U.uMapInv = { value: o.mapInv }; }
   if (o.shade) { defs += '#define GD_SHADE\n'; U.uShade = { value: o.shade }; U.uMapInv = { value: o.mapInv }; }
   if (o.path) { defs += '#define GD_PATH\n'; U.uDP = { value: o.path.tex }; U.uPathC = { value: o.pathC }; }
   if (o.cob) { defs += '#define GD_COB\n'; U.uDC = { value: o.cob.tex }; U.uCobC = { value: o.cobC }; }
   if (o.ash) { defs += '#define GD_ASH\n'; U.uDA = { value: o.ash.tex }; U.uAshC = { value: o.ashC }; }
+  mat.userData.texU = U;   // uniform textures (per-map mask / shade) for the world LRU and GFX.memory()
   const prev = mat.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile ? mat.onBeforeCompile : null, key = defs.replace(/#define GD_|\n/g, '');
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
@@ -535,7 +718,8 @@ function groundDetail(mat, o) {
     const d = defs + (q >= 1 ? '#define GD_NORMAL\n' : '') + (q >= 2 ? '#define GD_MACRO\n' : '');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;').replace('#include <project_vertex>', '#include <project_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = d + sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GD_PARS).replace('#include <map_fragment>', GD_MAP)
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GD_NORMAL).replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\nspecularStrength *= 0.3 + 1.4 * gH;');
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GD_NORMAL).replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\nspecularStrength *= 0.3 + 1.4 * gH;')
+      .replace('#include <envmap_fragment>', '#include <envmap_fragment>\n' + GD_WET);
   };
   mat.customProgramCacheKey = () => 'gd' + key + GFX.preset.detail + (prev ? 'p' : '');
   return mat;
@@ -689,9 +873,12 @@ function hgtAt(m, x, y) { const W1 = m.w + 1; return m.hgt[clamp(Math.round(y), 
 function headH(e) { const hp = e === P || e.kind === 'player' ? 58 : e.d ? e.d.h : e.look ? 58 * (e.look.scale || 1) : 30; return hp / PXU / COSP; }
 function chestH(e) { if (!e || e.x === undefined) return 1; if (e.kind === 'drop') return groundH(e.x, e.y) + 0.3; return groundH(e.x, e.y) + (e.z || 0) / PXU + headH(e) * 0.5; }
 // Height of the decorative skirt around the map (continues the edge, gentle hills further out)
+// (the sea / a lake running off the map edge continues outward: no hills rising out of it along the border, which drew a
+// straight artificial shore with foam exactly on the map edge)
 function skirtH(m, x, z) {
-  const ex = clamp(x, 0, m.w), ez = clamp(z, 0, m.h), d = Math.hypot(x - ex, z - ez);
-  return hgtAt(m, ex, ez) + (m.d.gen === 'field' || m.d.gen === 'town' ? (vnoise(x / 7, z / 7, m.d.seed + 3) - 0.35) * Math.min(1, d / 8) * 1.6 : 0);
+  const ex = clamp(x, 0, m.w), ez = clamp(z, 0, m.h), d = Math.hypot(x - ex, z - ez), e = hgtAt(m, ex, ez);
+  if (e < -0.7) return e;
+  return e + (m.d.gen === 'field' || m.d.gen === 'town' ? (vnoise(x / 7, z / 7, m.d.seed + 3) - 0.35) * Math.min(1, d / 8) * 1.6 : 0);
 }
 
 /* ---------- Tree textures (painted, Ragnarok-field style) ---------- */
@@ -807,7 +994,7 @@ TEX.shaft = (() => {
   g.putImageData(img, 0, 0); return canvasTex(c);
 })();
 // All shafts of a map in one merged, additive mesh (crossed planes along the sun; per-shaft breathing phase).
-const SHAFTU = { uT: { value: 0 } };
+const SHAFTU = { uT: { value: 0 }, uFade: { value: 1 } };   // uFade: overcast / night (WX)
 function buildShafts(m, R, grp) {
   const S = R.shafts, r = mulberry32(m.d.seed * 31 + 3), dir = new THREE.Vector3(R.sunDir[0], R.sunDir[1], R.sunDir[2]).normalize();
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), out = [], w = m.w, h = m.h, geos = [], M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
@@ -830,7 +1017,7 @@ function buildShafts(m, R, grp) {
   const mat = new THREE.ShaderMaterial({
     uniforms: Object.assign({ tMap: { value: TEX.shaft }, uCol: { value: linCol(S.color) }, uOp: { value: S.op } }, SHAFTU),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
-    vertexShader: 'attribute float aPh; uniform float uT, uOp; varying vec2 vUv; varying float vA; void main(){ vUv = uv; vA = uOp * (0.7 + 0.3 * sin(uT * 0.6 + aPh)); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    vertexShader: 'attribute float aPh; uniform float uT, uOp, uFade; varying vec2 vUv; varying float vA; void main(){ vUv = uv; vA = uOp * uFade * (0.7 + 0.3 * sin(uT * 0.6 + aPh)); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform sampler2D tMap; uniform vec3 uCol; varying vec2 vUv; varying float vA;
       void main(){ vec4 t = texture2D(tMap, vUv); gl_FragColor = vec4(uCol, t.a * vA);
         #include <tonemapping_fragment>
@@ -891,10 +1078,41 @@ function glowBatch(tex, hdrCol) {
    If the models cannot load (no loader, file:// without access, 404) legacyProps() builds the
    old primitive placeholders instead. Collision is unchanged: blocked tiles get blocking
    props, walkable tiles only get low scatter or props off the walking lines. */
-const PROP_LIGHT = { dng_brazier: [0, 1.05, 0], town_lamp_post: [0.46, 1.9, 0], waystone: [0, 3.2, 0] };   // index.json `light`
+const PROP_LIGHT = { dng_brazier: [0, 1.05, 0], helheim_brazier: [0, 1.05, 0], town_lamp_post: [0.46, 1.9, 0], waystone: [0, 3.2, 0] };   // index.json `light`
+// m.braziers: Helheim maps (helheim, helheim_*) use the Helheim kit's soul brazier (same 1x1 footprint and light anchor, green coals)
+const brazierId = m => (m && (m.id === 'helheim' || /^helheim_/.test(m.id || ''))) ? 'helheim_brazier' : 'dng_brazier';
 const PROP_EMIT = { emissive_coals: 2.6, emissive_rune: 2.8, emissive_lamp: 3.4, emissive_obsidian: 2.4, emissive_basalt: 2.2, emissive_ember: 2.8,
-  emissive_bifrost: 1.4, emissive_crystal_ice: 2.0, emissive_bog: 1.8, emissive_shroom: 2.0, emissive_amethyst: 2.2, emissive_lava: 2.6, emissive_rune_gold: 2.6 };
-const PROP_SWAY = { leaves: 1, cloth_banner: 1.8, cloth_awning: 0.5 };
+  emissive_bifrost: 1.4, emissive_crystal_ice: 2.0, emissive_bog: 1.8, emissive_shroom: 2.0, emissive_amethyst: 2.2, emissive_lava: 2.6, emissive_rune_gold: 2.6,
+  emissive_soul: 2.2, emissive_soul_dim: 1.5, emissive_blacksun: 2.0, emissive_gjoll: 1.2 };
+const PROP_SWAY = { leaves: 1, cloth_banner: 1.8, cloth_awning: 0.5, cloth_tatters: 1.8 };
+// Prop kinds whose parts dissolve around the player when they stand between the camera and the hero (canopy dither):
+// trees (wind shader) and the big set pieces / buildings (bridge portal roofs, Hel's hall, the World-Tree root, houses).
+const PROP_OCC = new Set(['tree', 'setpiece', 'building']);
+// Helheim's river ice: the souls drifting under it (emissive map scrolled slowly, see gjollify)
+const GJU = { uGj: { value: 0 } };
+function gjollify(mat) {
+  const em = mat.emissiveMap; if (!em) return mat;
+  em.wrapS = em.wrapT = THREE.RepeatWrapping; em.needsUpdate = true;
+  const prev = mat.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile ? mat.onBeforeCompile : null;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, GJU);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGj;').replace('#include <emissivemap_fragment>',
+      '#ifdef USE_EMISSIVEMAP\n{ vec4 gE = emissiveMapTexelToLinear(texture2D(emissiveMap, vUv + vec2(uGj, uGj * 0.37))) * 0.6 + emissiveMapTexelToLinear(texture2D(emissiveMap, vUv * 1.37 - vec2(uGj * 0.61, -uGj * 0.21))) * 0.55; totalEmissiveRadiance *= gE.rgb; }\n#endif');
+  };
+  const pk = mat.customProgramCacheKey && mat.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.customProgramCacheKey = () => pk + 'gjoll';
+  return mat;
+}
+// Occluder dither on a non-swaying material (set pieces, buildings).
+function occify(mat) {
+  if (mat.userData.occ) return mat; mat.userData.occ = true;
+  const prev = mat.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile ? mat.onBeforeCompile : null;
+  mat.onBeforeCompile = (sh, r) => { if (prev) prev(sh, r); Object.assign(sh.uniforms, OCC); occluder(sh); };
+  const pk = mat.customProgramCacheKey && mat.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.customProgramCacheKey = () => pk + 'occ';
+  return mat;
+}
 const PROP_TINT = { town: new THREE.Color(1.6, 1.36, 1.05), keep: new THREE.Color(0.58, 0.58, 0.64) };
 const PROP_ALL = ['dng_banner', 'dng_bones', 'dng_brazier', 'dng_chain', 'dng_grave_a', 'dng_grave_b', 'dng_pillar', 'dng_rubble_a', 'dng_rubble_b', 'dng_wall', 'rock_field_a', 'rock_field_b', 'rock_field_c', 'rock_field_d', 'ruin_column_fallen', 'ruin_wall_a', 'ruin_wall_b', 'ruin_wall_c', 'throne_basalt_rock', 'throne_obsidian_pillar', 'town_barrel', 'town_crates', 'town_fence', 'town_house_big', 'town_house_small', 'town_lamp_post', 'town_market_stall', 'town_well', 'tree_autumn_a', 'tree_autumn_b', 'tree_dead_a', 'tree_dead_b', 'tree_green_a', 'tree_green_b', 'tree_green_c', 'tree_oak_dark', 'tree_pine_a', 'tree_pine_b', 'waystone'];
 const WIND = { t: { value: 0 } };
@@ -991,8 +1209,10 @@ function makeTemplate(id, gltf) {
     let amp = nm.startsWith('leaves') ? PROP_SWAY.leaves : PROP_SWAY[nm] || (nm.startsWith('cloth_') ? 1 : 0);
     if (id === 'dng_chain') amp = 0.45;
     const sway = amp > 0 && !!geo.attributes._sway;
-    if (sway) windify(mat, amp, kind === 'tree');
+    if (sway) windify(mat, amp, PROP_OCC.has(kind));
     if (id === 'dng_wall') capify(mat);
+    if (nm === 'emissive_gjoll') gjollify(mat);
+    if (!sway && PROP_OCC.has(kind) && kind !== 'tree') occify(mat);
     let depth = null;
     if (mat.alphaTest > 0 || sway) { depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: mat.alphaTest > 0 ? mat.map : null, alphaTest: mat.alphaTest || 0 }); if (sway) windify(depth, amp); }
     parts.push({ geo, mat, depth, name: nm });
@@ -1002,7 +1222,7 @@ function makeTemplate(id, gltf) {
 // Manifest (assets/models/index.json): kind, LODs (lod1), texture-sharing kits (kit_<family>.glb holding
 // several models as named root nodes at the origin). Everything degrades to per-file loading without it.
 PROPS.man = null; PROPS.kits = {};
-const KIT_FIRST = new Set(['town', 'rimeshore', 'mirewell', 'nidavellir', 'bifrost']);
+const KIT_FIRST = new Set(['town', 'rimeshore', 'mirewell', 'nidavellir', 'bifrost', 'skaldhaven', 'helheim']);
 PROPS.manifest = () => PROPS.manP || (PROPS.manP = new Promise(res => {
   const done = j => { try { const by = {}; for (const e of (j && j.models) || []) by[e.id] = e; PROPS.man = { by, kits: (j && j.kits) || {} }; } catch (e) { PROPS.man = null; } res(PROPS.man); };
   try { const l = new THREE.FileLoader(); l.setResponseType('json'); l.load(PROPS.url + 'index.json', done, undefined, () => res(null)); } catch (e) { res(null); }
@@ -1028,20 +1248,37 @@ PROPS.load = function (id) {
 };
 PROPS.ready = ids => ids.every(id => PROPS.tpl[id]);
 PROPS.ensure = ids => Promise.all(ids.map(PROPS.load));
-// After the first map is dressed, quietly fetch the rest (2.9 MB total) so later maps pop in dressed.
+// Neighbour prefetch (perf round 3; replaces fetching every model 1.2 s after boot): once a map is dressed, in idle
+// time, plan each map its warps lead to (genMap + planProps, cached on the map as m.plan and reused by buildWorld) and
+// load the models it needs one at a time, so the next warp dresses at once without a network wait. Only the current
+// map's neighbours are fetched; the player moving on cancels the rest of the queue.
+PROPS.nb = { map: null, ids: [] };
 PROPS.prefetch = () => {
-  if (PROPS.prefetched) return; PROPS.prefetched = true;
-  // whole kits of the base families first (one request each), then anything still missing
-  const kits = PROPS.man ? ['trees', 'field', 'dungeon', 'town'].filter(k => PROPS.man.kits[k] && PROPS.man.kits[k].file) : [];
-  const all = [...PROP_ALL, 'town_bounty_board', ...PROP_ALL.map(PROPS.lod).filter(Boolean)]; let i = 0, j = 0;
-  const next = () => {
-    if (j < kits.length) { const k = kits[j++]; if (!PROPS.kits[k]) PROPS.kits[k] = PROPS.gltf(PROPS.url + PROPS.man.kits[k].file); PROPS.kits[k].then(next, next); return; }
-    if (i >= all.length) return; PROPS.load(all[i++]).then(next, next);
+  const cur = typeof map !== 'undefined' ? map : null; if (!cur || PROPS.nb.map === cur.id || !THREE.GLTFLoader) return;
+  PROPS.nb.map = cur.id;
+  const ids = [...new Set(cur.warps.map(w => w.to))].filter(id => typeof MAPDEFS !== 'undefined' && MAPDEFS[id]);
+  const idle = f => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 250));
+  const q = []; let k = 0;
+  const live = () => PROPS.nb.map === cur.id;
+  const step = () => {
+    if (!live()) return;
+    while (q.length && (PROPS.tpl[q[0]] || PROPS.pend[q[0]])) q.shift();
+    if (q.length) { const id = q.shift(); PROPS.nb.ids.push(id); PROPS.load(id).then(() => idle(step), () => idle(step)); return; }
+    if (k >= ids.length) return;
+    const id = ids[k++];
+    PROPS.manifest().then(() => idle(() => {
+      if (!live()) return;
+      try {
+        const m = genMap(id); if (!m.world) { if (!m.plan) m.plan = planProps(m); const { req, opt } = propIds(m.plan.items, lodLow()); for (const x of [...req, ...opt]) if (!PROPS.tpl[x] && !q.includes(x)) q.push(x); }
+        for (const f of GFX.prefetchHooks) try { f(id, m); } catch (e) { console.warn('[gfx] prefetch hook', e); }
+      } catch (e) { console.warn('[props] prefetch', id, e); }
+      idle(step);
+    }));
   };
-  setTimeout(next, 1200);
+  setTimeout(() => idle(step), 1500);
 };
-PROPS.boot = ['tree_green_a', 'tree_green_b', 'tree_green_c', 'tree_autumn_a', 'tree_autumn_b', 'dng_wall', 'town_house_big', 'town_house_small', 'waystone', 'dng_brazier', 'town_well', 'town_market_stall', 'town_crates', 'town_barrel', 'town_lamp_post', 'town_fence', 'rock_field_a', 'rock_field_b', 'rock_field_c', 'rock_field_d'];
-try { PROPS.ensure(PROPS.boot).catch(() => {}); PROPS.manifest(); } catch (e) { /* no loader: placeholders */ }
+// Only the manifest starts at load; each map requests exactly the models its plan needs (buildWorld).
+try { PROPS.manifest(); } catch (e) { /* no loader: placeholders */ }
 PROPS.mat = (id, name) => { const t = PROPS.tpl[id]; if (!t) return null; const p = t.parts.find(q => q.name === name); return p ? p.mat : null; };
 const TINTED = {};
 function tintMat(mat, key) {
@@ -1111,6 +1348,31 @@ const TOWN_DRESS = {
 };
 function pickW(list, r) { let t = 0; for (const e of list) t += e[1]; let x = r * t; for (const e of list) { x -= e[1]; if (x <= 0) return e[0]; } return list[list.length - 1][0]; }
 function treeSet(m) { if (PROP_TREES[m.id]) return PROP_TREES[m.id]; if (m.d.render && Array.isArray(m.d.render.trees) && m.d.render.trees.length) return m.d.render.trees; const k = (m.d.look.trees || []).join(); return k.includes('forest') ? PROP_TREES.withered_wood : k.includes('dead') ? PROP_TREES.ashen_fields : PROP_TREES.emberhold; }
+/* Render-side decor upgrades (graphics round 5). New art for a map whose layout predates it: `drop` removes the layout's
+   stand-ins, `add` places the new pieces (same fields as m.decor). Applied only when every added model is in the manifest
+   and the layout does not already place it (content adopting the model in js/data/maps.js turns this off by itself).
+   Skaldhaven: the beached wrecks (rimeshore_longship, stand-ins over open water) become the Sea-Snake moored along the
+   three piers (skaldhaven_longship_moored: its own plank pier laid over the boardwalk, deck flush with the walking
+   height), and the Salt Hall gets its tavern sign. */
+const DECOR_UPGRADE = {
+  skaldhaven: [
+    { need: 'skaldhaven_longship_moored', drop: ['rimeshore_longship'], add: [
+      { model: 'skaldhaven_longship_moored', x: 36.5, y: 11.475, rot: Math.PI / 2, scale: 1, y0: -0.12 },
+      { model: 'skaldhaven_longship_moored', x: 38.5, y: 21.475, rot: Math.PI / 2, scale: 1, y0: -0.12 },
+      { model: 'skaldhaven_longship_moored', x: 36.0, y: 28.525, rot: -Math.PI / 2, scale: 0.94, y0: -0.12 }] },
+    { need: 'skaldhaven_tavern_sign', add: [{ model: 'skaldhaven_tavern_sign', x: 9.75, y: 8.45, rot: 0, scale: 0.9 }] },
+  ],
+};
+function decorUpgrade(m) {
+  const base = Array.isArray(m.decor) ? m.decor : [], U = DECOR_UPGRADE[m.id]; if (!U || !PROPS.man) return base;
+  let out = base;
+  for (const u of U) {
+    if (!hasModel(u.need) || base.some(d => d && (d.model === u.need || d.kit === u.need))) continue;
+    if (u.drop) out = out.filter(d => !(d && (u.drop.includes(d.model) || u.drop.includes(d.kit))));
+    out = out.concat(u.add.map(a => Object.assign({ kit: a.model, g5: true }, a)));
+  }
+  return out;
+}
 function planProps(m) {
   const w = m.w, h = m.h, sd = m.d.seed * 17 + 5, gen = m.d.gen, items = [], ao = [], lights = [], avoid = [];
   const H = (x, z) => groundHm(m, x, z);
@@ -1174,7 +1436,7 @@ function planProps(m) {
   }
   // -- waystone, braziers
   if (m.way) { add('waystone', m.way.x, m.way.y, 0, 0.9); ao.push([m.way.x, m.way.y, 1.4, 0.35]); }
-  for (const b of m.braziers) { add('dng_brazier', b.x, b.y, hash2(b.x * 10 | 0, b.y * 10 | 0, sd) * 6.283, 1); ao.push([b.x, b.y, 0.6, 0.3]); }
+  for (const b of m.braziers) { add(brazierId(m), b.x, b.y, hash2(b.x * 10 | 0, b.y * 10 | 0, sd) * 6.283, 1); ao.push([b.x, b.y, 0.6, 0.3]); }
   const busy = [...m.npcs.map(n => [n.x, n.y]), ...m.objs.map(o => [o.x, o.y]), ...m.braziers.map(b => [b.x, b.y]), ...m.warps.map(wp => [wp.x + 0.5, wp.y + 0.5])];
   const free = (x, z, r) => open(x | 0, z | 0) && !busy.some(b => (b[0] - x) ** 2 + (b[1] - z) ** 2 < r * r);
   // -- town dressing
@@ -1223,14 +1485,40 @@ function planProps(m) {
     const it = add('town_bounty_board', o.x, o.y, (hash2(o.x * 10 | 0, o.y * 10 | 0, 3) - 0.5) * 0.3, BOARD_S); it.opt = true; it.board = o;
     ao.push([o.x, o.y + 0.05, 1.1, 0.36]); avoid.push([o.x, o.y, 0.9]);
   }
-  // -- data decor on generated maps: m.decor = [{ model, x, y, rot, scale }] (glTF ids; a missing model is skipped)
-  const dlights = [];
-  if (Array.isArray(m.decor)) for (const d of m.decor) {
+  // -- data decor on generated maps: m.decor = [{ model, kit, x, y, rot, scale, sy?, dy?, fp?, light?, on? }] (glTF ids; a
+  // missing model is skipped). Set pieces (fp = the T.PROP tiles they cover) get contact shade over the footprint and keep
+  // grass out of it; `on: 'water'` floats the piece on the water plane (y = water level + dy) instead of the sea bed;
+  // `light` sits at the model's light anchor (index.json `light`, rotated and scaled with the piece); lanterns / lamps /
+  // braziers (kind 'light' or the id says so) also get the lamp glows and come alive at night (WX).
+  // render-side upgrades of a map's decor with art that landed after its layout (only while the layout does not use
+  // the new model itself): the list is m.decor with the swaps applied (see DECOR_UPGRADE)
+  const decorList = decorUpgrade(m);
+  const dlights = [], WL = (() => { try { const w = rlookFor(m).water; return w && isFinite(w.level) ? +w.level : -0.45; } catch (e) { return -0.45; } })();
+  for (const d of decorList) {
     if (!d || !isFinite(d.x) || !isFinite(d.y)) continue;
     const id = typeof d.kit === 'string' && hasModel(d.kit) ? d.kit : d.model;
     if (typeof id !== 'string' || !/^[\w-]+$/.test(id)) continue;
-    const sc = +d.scale || 1, it = add(id, +d.x, +d.y, +d.rot || 0, sc, { dy: +d.dy || 0 }); it.opt = true;
-    if (Array.isArray(d.light) && d.light.length >= 2) { const inf = PROPS.info(id), la = inf && inf.light; dlights.push({ x: +d.x, z: +d.y, h: it.y + (la ? la[1] * sc : 1.2), col: d.light[0], i: +d.light[1] || 1, d: +d.light[2] || 5 }); }
+    const sc = +d.scale || 1, rot = +d.rot || 0, onW = d.on === 'water';
+    const it = add(id, +d.x, +d.y, rot, sc, onW ? { y: WL + (+d.dy || 0) } : isFinite(d.y0) ? { y: +d.y0 } : { dy: +d.dy || 0, sy: isFinite(d.sy) && +d.sy > 0 ? +d.sy : undefined }); it.opt = true;
+    if (Array.isArray(d.fp) && d.fp.length === 4 && d.fp.every(isFinite)) {
+      const [x0, y0, x1, y1] = d.fp.map(Number), cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, rx = (x1 - x0 + 1) / 2, ry = (y1 - y0 + 1) / 2;
+      if (!onW) ao.push([cx, cy, Math.min(4, Math.max(rx, ry) + 0.4), 0.3]);
+      avoid.push([cx, cy, Math.hypot(rx, ry)]);
+    }
+    // lights: the entry's `light` at the model's anchor; models with several anchors (index.json `lights`: Hel's hall
+    // door + braziers, the Gjallarbru lanterns, the World-Tree root) light every one (lightColor unless `light` says
+    // otherwise; `light: false` turns them off)
+    const inf = PROPS.info(id), multi = inf && Array.isArray(inf.lights) && inf.lights.length ? inf.lights.filter(a => Array.isArray(a) && a.length === 3) : null;
+    if ((Array.isArray(d.light) && d.light.length >= 2) || (multi && multi.length && d.light !== false)) {
+      const la = inf && Array.isArray(inf.light) ? inf.light : null, own = Array.isArray(d.light) && d.light.length >= 2;
+      const col = own ? d.light[0] : inf.lightColor || '#ffc070', I = own ? +d.light[1] || 1 : 0.9, D = own ? +d.light[2] || 5 : 4.5;
+      const lamp = !!((inf && inf.kind === 'light') || /lamp|lantern|brazier|torch/.test(id) || multi);
+      for (const a of (multi && multi.length ? multi : [la])) {
+        const ax = a ? (+a[0] || 0) * sc : 0, az = a ? (+a[2] || 0) * sc : 0;
+        const lx = +d.x + Math.cos(rot) * ax + Math.sin(rot) * az, lz = +d.y - Math.sin(rot) * ax + Math.cos(rot) * az;
+        dlights.push({ x: lx, z: lz, h: it.y + (a ? (+a[1] || 0) * sc * (it.sy || 1) : 1.2), col, i: multi && multi.length > 1 ? I * 0.7 : I, d: D, lamp });
+      }
+    }
   }
   // -- wilderness outside the map: trees (and rocks / ruins) continue into the haze
   if (gen === 'field' || gen === 'town') {
@@ -1240,6 +1528,7 @@ function planProps(m) {
       const d = Math.hypot(x + 0.5 - clamp(x + 0.5, 0, w), z + 0.5 - clamp(z + 0.5, 0, h));
       if (r() > dens * (0.6 + 0.4 * vnoise(x / 5, z / 5, m.d.seed + 17)) * (1 - d / (E + 4))) continue;
       const cx = x + 0.5 + (r() - 0.5) * 0.6, cz = z + 0.5 + (r() - 0.5) * 0.6, k = r(), gy = skirtH(m, cx, cz);
+      if (gy < -0.6) { r(); r(); r(); continue; }   // the sea off the map edge: no trees in the water (same random stream)
       const near = d < 2.5;   // the first rows still cast shadows onto the map edge
       if (k < 0.1) add(pickW(PROP_ROCKS, r()), cx, cz, r() * 6.283, 0.8 + r() * 0.6, { y: gy - 0.05, far: !near });
       else if (k < 0.13 && gen === 'field' && !dense) add(pickW(PROP_RUINS, r()), cx, cz, r() * 6.283, 0.6 + r() * 0.3, { y: gy - 0.08, far: !near });
@@ -1413,16 +1702,47 @@ function legacyProps(m, grp, lam, A) {
   refreshMaterials(grp);
 }
 
+/* ---------- Rendered terrain heights: piers over open water ----------
+   Piers and boardwalks over water (SURF.BRIDGE floor tiles with water on >= 3 of their 8 neighbours) keep their
+   gameplay height (the deck is at walking height), but the rendered terrain under them sinks to the sea bed, so the
+   boardwalk models stand on their posts in open water instead of on an earth ridge with a foam line along it. */
+function renderHgt(m) {
+  if (m.rhgt !== undefined) return m.rhgt || m.hgt;
+  m.rhgt = null;
+  const TW = T.WATER, SB = typeof SURF !== 'undefined' && SURF.BRIDGE !== undefined ? SURF.BRIDGE : 9;
+  if (TW === undefined || !m.surf || !m.t.some(t => t === TW)) return m.hgt;
+  const w = m.w, h = m.h, W1 = w + 1, over = new Uint8Array(w * h); let any = false;
+  const isW = (x, y) => x >= 0 && y >= 0 && x < w && y < h && m.t[y * w + x] === TW;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (m.t[i] !== 0 || m.surf[i] !== SB) continue;
+    let n = 0; for (let k = 0; k < 8; k++) if (isW(x + DX[k], y + DY[k])) n++;
+    if (n >= 3) { over[i] = 1; any = true; }
+  }
+  if (!any) return m.hgt;
+  const hg = m.hgt.slice(), wet = (x, y) => x < 0 || y < 0 || x >= w || y >= h || m.t[y * w + x] === TW || over[y * w + x] === 1;
+  const ov = (x, y) => x >= 0 && y >= 0 && x < w && y < h && over[y * w + x] === 1;
+  for (let vz = 0; vz <= h; vz++) for (let vx = 0; vx <= w; vx++) {
+    if (!(ov(vx - 1, vz - 1) || ov(vx, vz - 1) || ov(vx - 1, vz) || ov(vx, vz))) continue;
+    if (!(wet(vx - 1, vz - 1) && wet(vx, vz - 1) && wet(vx - 1, vz) && wet(vx, vz))) continue;
+    hg[vz * W1 + vx] = Math.min(hg[vz * W1 + vx], -1.15 - vnoise(vx / 4, vz / 4, m.d.seed + 13) * 0.2);
+  }
+  m.rhgt = hg; return hg;
+}
+
 /* ---------- Terrain heightmap texture (post: mist / height fog hug the ground) ---------- */
 function heightTex(m) {
-  const W1 = m.w + 1, H1 = m.h + 1, n = W1 * H1; let mn = 1e9, mx = -1e9;
-  for (let i = 0; i < n; i++) { const v = m.hgt[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  const W1 = m.w + 1, H1 = m.h + 1, n = W1 * H1, HG = renderHgt(m); let mn = 1e9, mx = -1e9;
+  for (let i = 0; i < n; i++) { const v = HG[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
   const rg = Math.max(0.01, mx - mn), D = new Uint8Array(n * 4);
   // G = air mask: 0 over the hidden solid mass of a dungeon (no lit dust / mist in the void), else 1
+  const TW = T.WATER, isW = (x, y) => { x = clamp(x, 0, m.w - 1); y = clamp(y, 0, m.h - 1); return m.t[y * m.w + x] === TW; };
   const dng = m.d.gen === 'dungeon', solid = (x, y) => { if (x < 0 || y < 0 || x >= m.w || y >= m.h) return true; const i = y * m.w + x; return m.t[i] === T.WALL && !(m.vis && m.vis[i]); };
   for (let y = 0; y < H1; y++) for (let x = 0; x < W1; x++) {
     const i = y * W1 + x, air = !dng || !(solid(x - 1, y - 1) && solid(x, y - 1) && solid(x - 1, y) && solid(x, y));
-    D[i * 4] = clamp((m.hgt[i] - mn) / rg * 255, 0, 255); D[i * 4 + 1] = air ? 255 : 0; D[i * 4 + 3] = 255;
+    D[i * 4] = clamp((HG[i] - mn) / rg * 255, 0, 255); D[i * 4 + 1] = air ? 255 : 0; D[i * 4 + 3] = 255;
+    // B = water mask: corners that touch a water tile (or a pier sunk over it); the water planes cover only these, so a
+    // low dip in the hills far from any water no longer shows a pond of water / ice
+    D[i * 4 + 2] = TW !== undefined && (isW(x - 1, y - 1) || isW(x, y - 1) || isW(x - 1, y) || isW(x, y) || HG[i] !== m.hgt[i]) ? 255 : 0;
   }
   const t = new THREE.DataTexture(D, W1, H1, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
   return { tex: t, w1: W1, h1: H1, min: mn, range: rg };
@@ -1431,9 +1751,12 @@ function heightTex(m) {
 /* ---------- Water (T.WATER, render.water) and the cloud sea under the Bifrost (T.VOID, render.void) ----------
    One plane each over the map + skirt; the terrain dips below them, so the depth test cuts the shores.
    Water: depth from the terrain heightmap -> shallow/deep colour, soft shore foam, scrolling normals with a
-   sky reflection (fresnel) and a sun glint; `murky` damps both and adds scum; `ice` freezes the shallows.
+   sky reflection (fresnel) and a sun glint; `murky` damps both and adds scum; `ice` freezes the shallows; `frozen`
+   (0..1) extends the ice over deeper water (Helheim's river Gjoll: cracked grey ice, dark water in the leads);
+   `blackSun` reflects a black disc with a pale corona instead of the glint. Rain (WX) roughens the surface, rings it
+   with ripples and damps the glint (uRain, uGlint are shared by every water plane).
    Clouds: two layers of drifting fbm (opaque floor + a translucent upper layer), faint rainbow sheen. */
-const WATERU = { uT: { value: 0 } };
+const WATERU = { uT: { value: 0 }, uRain: { value: 0 }, uGlint: { value: 1 } };
 const _hexOr = (v, d) => { try { return linCol(v === undefined || v === null ? d : v); } catch (e) { return linCol(d); } };
 function waterNoise() { return (GFX.composer && GFX.composer.noise) || TEX.soft; }
 function buildWater(m, W, R, hg) {
@@ -1441,23 +1764,36 @@ function buildWater(m, W, R, hg) {
   const U = Object.assign({
     tHgt: { value: hg.tex }, uHgt: { value: new THREE.Vector4(1 / hg.w1, 1 / hg.h1, hg.min, hg.range) }, tNoise: { value: waterNoise() }, uLevel: { value: lvl },
     uCol: { value: _hexOr(W.color, 0x1d3c56) }, uDeep: { value: _hexOr(W.deep, 0x0b1a2a) }, uFoam: { value: _hexOr(W.foam, 0xeaf4ff) }, uIce: { value: _hexOr(W.ice, 0xcfe6f6) },
-    uFlags: { value: new THREE.Vector2(W.murky ? 1 : 0, W.ice ? 1 : 0) }, uSky: { value: SKY.top }, uHor: { value: SKY.hor }, uSunDir: { value: SKY.sunDir }, uSunC: { value: sun.color },
+    uFlags: { value: new THREE.Vector4(W.murky ? 1 : 0, W.ice || W.frozen ? 1 : 0, clamp(+W.frozen || 0, 0, 1), W.blackSun ? 1 : 0) }, uSky: { value: SKY.top }, uHor: { value: SKY.hor }, uSunDir: { value: SKY.sunDir }, uSunC: { value: sun.color },
     uFogCol: LAVAU.uFogCol, uFog: LAVAU.uFog,
   }, WATERU);
   const mat = new THREE.ShaderMaterial({
     uniforms: U, transparent: true, depthWrite: false, fog: false,
     vertexShader: 'varying vec3 vW; varying float vDepth; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mv = viewMatrix * w; vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
-    fragmentShader: `uniform sampler2D tHgt, tNoise; uniform vec4 uHgt; uniform float uLevel, uT; uniform vec3 uCol, uDeep, uFoam, uIce, uSky, uHor, uSunDir, uSunC, uFogCol; uniform vec2 uFlags, uFog;
+    fragmentShader: `uniform sampler2D tHgt, tNoise; uniform vec4 uHgt, uFlags; uniform float uLevel, uT, uRain, uGlint; uniform vec3 uCol, uDeep, uFoam, uIce, uSky, uHor, uSunDir, uSunC, uFogCol; uniform vec2 uFog;
       varying vec3 vW; varying float vDepth;
       void main(){
-        float gh = uHgt.z + uHgt.w * texture2D(tHgt, (vW.xz + 0.5) * uHgt.xy).r, dep = max(uLevel - gh, 0.0);
+        vec4 hs = texture2D(tHgt, (vW.xz + 0.5) * uHgt.xy);
+        if (hs.b < 0.04) discard;   // not near any water tile: a dip in the land, not a lake
+        float gh = uHgt.z + uHgt.w * hs.r, dep = max(uLevel - gh, 0.0);
         vec2 p = vW.xz;
         vec2 n1 = texture2D(tNoise, p * 0.085 + vec2(uT * 0.018, uT * 0.011)).rg - 0.5, n2 = texture2D(tNoise, p * 0.23 - vec2(uT * 0.027, -uT * 0.019)).rg - 0.5;
-        vec3 N = normalize(vec3((n1.x + n2.x * 0.7) * 0.55, 1.0, (n1.y + n2.y * 0.7) * 0.55));
+        vec2 slope = (n1 + n2 * 0.7) * (0.55 + 0.5 * uRain);
+        float rip = 0.0;
+        if (uRain > 0.01) {   // rain rings: one drop per cell, random phase and centre
+          vec2 g = p * 1.7, id = floor(g), f = fract(g) - 0.5;
+          float h = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453), ph = fract(uT * 1.1 + h);
+          vec2 d = f - (vec2(fract(h * 7.13), fract(h * 3.71)) - 0.5) * 0.45; float r = length(d);
+          rip = smoothstep(0.06, 0.0, abs(r - ph * 0.42)) * (1.0 - ph) * step(h, uRain);
+          slope += d / max(r, 0.02) * rip * 0.9;
+        }
+        vec3 N = normalize(vec3(slope.x, 1.0, slope.y));
         vec3 V = normalize(cameraPosition - vW), Rf = reflect(-V, N);
         float fres = 0.03 + 0.97 * pow(1.0 - max(dot(N, V), 0.0), 5.0), murk = uFlags.x;
         vec3 sky = mix(uHor, uSky, clamp(Rf.y, 0.0, 1.0));
-        float glint = pow(max(dot(Rf, normalize(uSunDir)), 0.0), 220.0) * 5.0 + pow(max(dot(Rf, normalize(uSunDir)), 0.0), 24.0) * 0.12;
+        float sd = max(dot(Rf, normalize(uSunDir)), 0.0);
+        float glint = (pow(sd, 220.0) * 5.0 + pow(sd, 24.0) * 0.12) * uGlint * (1.0 - 0.75 * uRain);
+        if (uFlags.w > 0.5) { glint = 0.0; float disk = smoothstep(0.9975, 0.9985, sd); sky = mix(sky, sky * 0.06, disk) + vec3(0.55, 0.75, 0.62) * smoothstep(0.990, 0.9972, sd) * (1.0 - disk) * 0.8; }
         vec3 body = mix(uCol, uDeep, smoothstep(0.04, 0.75, dep));
         float scum = murk * smoothstep(0.55, 0.8, texture2D(tNoise, p * 0.06 + vec2(uT * 0.004, 0.0)).g);
         body = mix(body, uFoam * 0.5, scum * 0.6);
@@ -1465,7 +1801,18 @@ function buildWater(m, W, R, hg) {
         float fn = texture2D(tNoise, p * 0.5 + vec2(uT * 0.04, -uT * 0.03)).r, wave = 0.12 + 0.07 * sin(uT * 1.4 - (p.x + p.y) * 0.9);
         float foam = (1.0 - smoothstep(0.0, wave, dep)) * smoothstep(0.3, 0.6, fn) * (1.0 - murk * 0.6);
         c = mix(c, uFoam, foam * 0.8);
-        if (uFlags.y > 0.5) { float fr = smoothstep(0.34, 0.2, dep + (texture2D(tNoise, p * 0.11).g - 0.5) * 0.35); c = mix(c, uIce * (0.85 + 0.3 * texture2D(tNoise, p * 0.7).r) + sky * 0.15, fr * 0.9); }
+        c += (sky * 0.5 + 0.08) * rip * 0.35;
+        if (uFlags.y > 0.5) {
+          float fz = uFlags.z, en = texture2D(tNoise, p * 0.11).g - 0.5;
+          float fr = smoothstep(0.34, 0.2, dep - fz * 2.4 + en * (0.35 + fz * 0.9));
+          vec3 ice = uIce * (0.85 + 0.3 * texture2D(tNoise, p * 0.7).r) + sky * 0.15;
+          if (fz > 0.0) {   // frozen river: cracks (cell edges) and darker clear ice over deep water
+            vec2 q = p * 0.9 + (texture2D(tNoise, p * 0.05).rg - 0.5) * 1.4, cf = abs(fract(q) - 0.5);
+            float crack = smoothstep(0.47, 0.495, max(cf.x, cf.y)) * smoothstep(0.35, 0.6, texture2D(tNoise, q * 0.21).r);
+            ice = mix(ice, mix(ice * 0.55, uDeep * 1.6, 0.5), smoothstep(0.4, 1.6, dep) * 0.6) * (1.0 - crack * 0.55) + sky * fres * 0.4;
+          }
+          c = mix(c, ice, fr * 0.9);
+        }
         float a = mix(0.55, 0.96, smoothstep(0.0, 0.5, dep));
         c = mix(c, uFogCol, smoothstep(uFog.x, uFog.y, vDepth));
         gl_FragColor = vec4(c, a);
@@ -1617,7 +1964,7 @@ function buildHelgate(o, m, lam, A, GB, FB) {
 }
 
 /* ---------- Light pools: soft flickering ground glow under fires / lamps (1 draw call per map) ---------- */
-const POOLU = { uT: { value: 0 }, uWay: { value: 0 } };
+const POOLU = { uT: { value: 0 }, uWay: { value: 0 }, uLamp: { value: 1 } };   // uLamp: night boost (WX)
 function buildPools(m, plan, R) {
   const Lc = R.lights || RLOOK.ashen_fields.lights, E = [], dark = R.exposure > 1.05;
   const col = (hex, k) => linCol(hex).multiplyScalar(k);
@@ -1642,10 +1989,10 @@ function buildPools(m, plan, R) {
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aC', new THREE.BufferAttribute(ctr, 4)); geo.setAttribute('aCol', new THREE.BufferAttribute(cl, 4)); geo.setIndex(idx);
   const mat = new THREE.ShaderMaterial({
     uniforms: POOLU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-    vertexShader: `attribute vec4 aC, aCol; uniform float uT, uWay; varying vec2 vD; varying vec3 vCol;
+    vertexShader: `attribute vec4 aC, aCol; uniform float uT, uWay, uLamp; varying vec2 vD; varying vec3 vCol;
       void main(){ vD = (position.xz - aC.xy) / aC.z; float fl = mod(aCol.w, 10.0), ph = aC.w;
         float f = 1.0 - fl * (0.12 + 0.1 * sin(uT * 11.0 + ph) + 0.07 * sin(uT * 23.7 + ph * 2.0) + 0.05 * sin(uT * 5.3 + ph * 0.7));
-        vCol = aCol.rgb * f * f * (aCol.w >= 10.0 ? uWay : 1.0);
+        vCol = aCol.rgb * f * f * (aCol.w >= 10.0 ? uWay : 1.0) * uLamp;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `varying vec2 vD; varying vec3 vCol;
       void main(){ float q = clamp(1.0 - dot(vD, vD), 0.0, 1.0); gl_FragColor = vec4(vCol * q * q * (0.35 + 0.65 * q), 1.0);
@@ -1657,7 +2004,7 @@ function buildPools(m, plan, R) {
 }
 
 /* ---------- Dust motes drifting in the light (Points; lit only where the static shadow map sees the sun) ---------- */
-const MOTEU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uScale: { value: 400 }, tShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() }, uLitOn: { value: 0 } };
+const MOTEU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uScale: { value: 400 }, tShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() }, uLitOn: { value: 0 }, uK: { value: 1 } };   // uK: night / overcast (WX)
 function buildMotes(S) {
   const n = S.n || 500, seed = new Float32Array(n * 4), r = mulberry32(4242);
   for (let i = 0; i < n * 4; i++) seed[i] = r();
@@ -1686,14 +2033,428 @@ function buildMotes(S) {
         vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
         gl_PointSize = uSize * (0.6 + 0.8 * aSeed.w) * uScale / -mv.z;
       }`,
-    fragmentShader: `uniform vec3 uCol; varying float vB;
-      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d); gl_FragColor = vec4(uCol * vB * a * 1.6, 1.0);
+    fragmentShader: `uniform vec3 uCol; uniform float uK; varying float vB;
+      void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.05, d); gl_FragColor = vec4(uCol * vB * a * 1.6 * uK, 1.0);
         #include <tonemapping_fragment>
         #include <encodings_fragment>
       }`,
   });
   const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = 5; return pts;
 }
+
+/* ---------- Weather, ambient life and time of day (graphics round 5) ----------
+   WX keeps one world clock (time of day, WX.dayLen seconds per cycle) and a weather state per map.
+   Time of day: day (p 0..0.47) = the map's own look, unchanged; dusk, moonlit night and dawn are blended toward on
+   outdoor maps (field / town / sky gens). Locked: dungeons and arenas, RLOOK / render `tod: false` (or a fixed phase
+   number), GFX.lockTime(p) for story scenes. What moves: sky / haze / fog colours, sun (moon) and hemisphere light,
+   exposure, bloom, the post grade and vignette, mist / volumetric colour, the sprites' light tint, and the lamps:
+   lamp posts, braziers, house windows, lantern emissives, their light pools and point lights come alive at night.
+   Weather: `precip` (snow / rain) cycles through weighted states with eased intensity; `amb` = ambient life that is
+   always there (falling leaves, pollen, fireflies at dusk, ash, crystal motes, soul wisps, embers, spores). Rain also
+   wets the ground (darker, puddle sky reflections), draws splash rings (ripples on the water) and roughens the water;
+   heavy snow thickens the ground mist and pulls the fog in; both dim the sun (overcast) and fade god rays.
+   Particles: one GPU-animated mesh per kind (camera-facing quads; positions from per-particle seeds + time in the
+   vertex shader, wrapped in a box that follows the camera and leans toward it with height, so every particle is in
+   view). Counts scale with GFX.preset.wx (low 0.35 .. ultra 1.4) and the adaptive levels (drawRange only: no rebuild).
+   Data: MAPDEFS[id].render.weather = { amb: [[kind, intensity], ...], precip: [[kind|null, intensity, minutes], ...],
+   wind: [x, z] } (else WX_MAPS below, else derived from render.particles); render.tod: false | phase;
+   render.night / render.dusk: partial overrides of WX_NIGHT / WX_DUSK. API: GFX.setTime(p|null), GFX.lockTime(p|null),
+   GFX.setWeather(kind|null, intensity), GFX.wx.info(). */
+// Particle kinds. n: particles at intensity 1 on high (the mesh holds n * 1.4 for ultra); box: side of the wrap box
+// in units of cam.dist; h: height range above the view's ground; fall: units / s (rise for the floating kinds);
+// sway: wobble amplitude; size: quad half-size [w, h] (world units, never under ~1.3 px); col / col2: sRGB;
+// a: opacity; hdr: brightness of the glowing kinds (bloom); move: 0 fall, 1 drift, 2 wander, 3 rise, 5 ground ring;
+// shape: 0 flake, 1 rain streak, 2 ring, 3 ash flake, 4 leaf, 5 speck, 6 glow, 7 sparkle; add: additive blending.
+const WX_KINDS = {
+  snow:      { n: 2600, box: 0.85, h: [-1.5, 10], fall: 1.1, sway: 0.4, size: [0.05, 0.05], col: 0xffffff, a: 0.95, move: 0, shape: 0 },
+  rain:      { n: 2200, box: 0.8, h: [-1.5, 11], fall: 14, sway: 0, size: [0.016, 0.5], col: 0xdce6f2, a: 0.75, move: 0, shape: 1 },
+  splash:    { n: 800, box: 0.7, h: [0, 0], life: 0.38, size: [0.14, 0.14], col: 0xe8f0f8, a: 0.9, move: 5, shape: 2 },
+  ash:       { n: 1300, box: 0.85, h: [-1, 9], fall: 0.55, sway: 0.6, size: [0.045, 0.045], col: 0x8a8480, col2: 0xff7a30, a: 0.85, move: 0, shape: 3 },
+  leaves:    { n: 240, box: 0.85, h: [-0.5, 8], fall: 0.75, sway: 1.0, size: [0.075, 0.055], col: 0xd07a2c, col2: 0x9aa232, a: 1, move: 0, shape: 4, spin: 1 },
+  pollen:    { n: 420, box: 0.8, h: [0.2, 3.5], fall: 0, sway: 0, size: [0.02, 0.02], col: 0xfff2b0, a: 0.7, hdr: 1.4, move: 1, shape: 5, add: 1 },
+  spores:    { n: 380, box: 0.8, h: [0.2, 3.0], fall: 0, sway: 0, size: [0.026, 0.026], col: 0xa8f070, a: 0.6, hdr: 1.3, move: 1, shape: 5, add: 1 },
+  fireflies: { n: 110, box: 0.75, h: [0.35, 2.4], fall: 0, sway: 0, size: [0.075, 0.075], col: 0xd4ff6a, a: 1, hdr: 3.2, move: 2, shape: 6, add: 1, blink: 1 },
+  motes:     { n: 620, box: 0.85, h: [-2.5, 6], fall: 0.25, sway: 0.5, size: [0.05, 0.05], col: 0xd8c8ff, a: 1, hdr: 2.2, move: 3, shape: 7, add: 1, blink: 1, rainbow: 1 },
+  souls:     { n: 110, box: 0.8, h: [0.2, 4.5], fall: 0.22, sway: 0.7, size: [0.13, 0.13], col: 0x9affc8, a: 0.75, hdr: 1.8, move: 3, shape: 6, add: 1 },
+  embers:    { n: 300, box: 0.75, h: [-0.5, 6], fall: 0.9, sway: 0.5, size: [0.028, 0.028], col: 0xff8a30, a: 1, hdr: 3.0, move: 3, shape: 6, add: 1, blink: 1 },
+};
+// Per-map weather (MAPDEFS[id].render.weather overrides): amb = [[kind, intensity(, dayK)]] ambient life (fireflies:
+// dayK = how much of it shows by day, the rest comes with dusk / night); precip = [[kind | null, intensity, minutes,
+// weight]] states picked at random (weighted) for ~minutes each, eased in / out; wind = [x, z] units / s.
+const WX_MAPS = {
+  emberhold: { amb: [['leaves', 0.3], ['fireflies', 0.6, 0]], precip: [[null, 0, 7, 4], ['rain', 0.45, 1.5, 1]], wind: [0.5, 0.2] },
+  ashen_fields: { amb: [['leaves', 0.8], ['pollen', 0.25]], precip: [[null, 0, 6, 4], ['rain', 0.7, 1.5, 1], ['rain', 0.3, 1.5, 1]], wind: [0.7, 0.25] },
+  withered_wood: { amb: [['pollen', 0.8], ['fireflies', 1, 0.08], ['leaves', 0.3]], precip: [[null, 0, 8, 5], ['rain', 0.4, 1.5, 1]], wind: [0.25, 0.1] },
+  throne: { amb: [['ash', 1]], wind: [0.25, -0.35], tod: false },
+  rimeshore: { precip: [['snow', 0.5, 3, 3], ['snow', 1, 1.5, 1.5], ['snow', 0.22, 2, 1.5]], wind: [0.9, 0.3] },
+  skaldhaven: { precip: [['snow', 0.35, 3, 3], ['snow', 0.8, 1.2, 1], [null, 0, 2, 1.5]], wind: [0.8, 0.25] },
+  mirewell: { amb: [['fireflies', 1, 0.35], ['spores', 0.6]], precip: [['rain', 0.35, 2, 2], ['rain', 1, 1.2, 1.5], [null, 0, 2.5, 2]], wind: [0.35, 0.15] },
+  nidavellir: { amb: [['embers', 0.7]], wind: [0.1, 0.05] },
+  bifrost: { amb: [['motes', 1]], wind: [0.3, 0.1], tod: false },
+  helheim: { amb: [['ash', 0.55], ['souls', 0.6]], wind: [0.3, 0.12], tod: false },
+};
+// render.particles (content data) -> weather, for maps without a WX_MAPS entry or render.weather
+const WX_FROM_PART = { snow: { precip: [['snow', 0.5, 3, 2], ['snow', 0.9, 1.5, 1], ['snow', 0.2, 2, 1]] }, spores: { amb: [['spores', 0.6], ['fireflies', 0.8, 0.3]] },
+  embers: { amb: [['embers', 0.7]] }, motes: { amb: [['motes', 1]] }, ash: { amb: [['ash', 0.8]] }, leaves: { amb: [['leaves', 0.7]] }, rain: { precip: [['rain', 0.5, 3, 1], [null, 0, 3, 1]] } };
+// Time-of-day targets (colours sRGB; intensities are multipliers of the map's own day values). Night keeps a hint of
+// the map's hue (sky / haze = mix(day * dim, night colour, mix)).
+const WX_NIGHT = {
+  sky: [0x0a1226, 0x1c2a4a], haze: 0x1e2c48, mix: 0.78, dim: 0.16, sun: 0xa8bcff, sunK: 0.34, hemi: [0x5a6ea0, 0x10141c], hemiK: 0.58,
+  exp: 1.16, bloomThr: 0.95, bloomK: 1.35, vig: 0.12, sat: 0.8, con: 1.04,
+  grade: { lift: [0.004, 0.01, 0.03], gamma: [1, 1, 1.03], gain: [0.94, 0.98, 1.08], shadowTint: [-0.01, 0.0, 0.03], highTint: [0.0, 0.006, 0.02] },
+  lt: { amb: [0.27, 0.31, 0.47], sun: [0.1, 0.12, 0.18] }, mist: 0x566890, mistAmb: 0.5, vol: 0x9fb8ff, volK: 0.55, torch: 1.1,
+};
+const WX_DUSK = {
+  sky: [0x3e4a8a, 0xf0a070], haze: 0xd49a7c, mix: 0.62, dim: 0.6, sun: 0xffa458, sunK: 0.82, hemi: [0xd0a8b4, 0x4a3a30], hemiK: 0.82,
+  exp: 1.02, bloomThr: 1.0, bloomK: 1.1, vig: 0.05, sat: 1.06, con: 1.02,
+  grade: { lift: [0.018, 0.008, 0.02], gamma: [1, 1, 1], gain: [1.04, 0.98, 0.93], shadowTint: [0.0, -0.004, 0.022], highTint: [0.022, 0.01, -0.008] },
+  lt: { ambK: [0.95, 0.82, 0.86], sunK: [1.1, 0.72, 0.46] }, mist: 0xe0a888, mistAmb: 0.9, vol: 0xffb070, volK: 1.1, torch: 0.3,
+};
+const WX_DAWN = Object.assign({}, WX_DUSK, { sky: [0x5a68b0, 0xf4b8a4], haze: 0xdcb0a8, sun: 0xffc0a0, mist: 0xe8c0c0, vol: 0xffc8a8,
+  grade: { lift: [0.016, 0.01, 0.024], gamma: [1, 1, 1], gain: [1.04, 0.99, 0.96], shadowTint: [0.0, 0.0, 0.024], highTint: [0.024, 0.012, 0.0] } });
+const WX_VS = `attribute vec4 aSeed; attribute vec2 aCorner;
+  uniform float uT, uN, uCot, uBox, uFall, uSway, uLife, uPx, uHdr;
+  uniform vec3 uC, uCol, uCol2, uLit; uniform vec2 uCamD, uH, uSize, uWind;
+  #ifdef WX_GROUND
+  uniform sampler2D tHgt; uniform vec4 uHgt; uniform float uLevel;
+  #endif
+  varying vec2 vUv; varying float vA; varying vec3 vTint;
+  float wh(float n){ return fract(sin(n * 91.345 + 0.123) * 47453.5453); }
+  void main(){
+    vUv = aCorner; vTint = vec3(0.0); vA = 0.0;
+    float t = uT, a = clamp((uN - aSeed.w) * 25.0, 0.0, 1.0), H = max(uH.y - uH.x, 0.01), y = 0.0, ph = 0.0;
+    vec2 xz0 = aSeed.xy * uBox, off = vec2(0.0);
+    #if WX_MOVE == 0
+      float spd = uFall * (0.8 + 0.4 * fract(aSeed.z * 7.13));
+      ph = fract(aSeed.z + t * spd / H); y = uH.y - ph * H;
+      off = uWind * t + vec2(sin(t * 0.9 + aSeed.x * 40.0), cos(t * 0.73 + aSeed.y * 40.0)) * uSway;
+      a *= smoothstep(0.0, 0.06, ph) * (1.0 - smoothstep(0.94, 1.0, ph));
+    #elif WX_MOVE == 1
+      y = mix(uH.x, uH.y, 0.5 + 0.5 * sin(t * 0.13 * (0.5 + aSeed.w) + aSeed.z * 6.2832));
+      off = uWind * t * 0.35 + vec2(sin(t * 0.21 + aSeed.z * 6.2832), cos(t * 0.17 + aSeed.x * 6.2832)) * 1.2;
+    #elif WX_MOVE == 2
+      float sp = 0.6 + aSeed.w;
+      off = vec2(sin(t * 0.37 * sp + aSeed.z * 6.2832) + 0.5 * sin(t * 0.91 + aSeed.x * 20.0), cos(t * 0.29 * sp + aSeed.y * 6.2832) + 0.5 * cos(t * 0.83 + aSeed.z * 20.0)) * 1.1;
+      y = mix(uH.x, uH.y, 0.5 + 0.5 * sin(t * 0.5 * sp + aSeed.z * 30.0));
+    #elif WX_MOVE == 3
+      ph = fract(aSeed.z + t * uFall / H * (0.6 + 0.6 * fract(aSeed.w * 5.3)));
+      y = uH.x + ph * H;
+      off = uWind * t + vec2(sin(t * 0.4 + aSeed.x * 30.0), cos(t * 0.33 + aSeed.y * 30.0)) * uSway;
+      a *= smoothstep(0.0, 0.15, ph) * (1.0 - smoothstep(0.65, 1.0, ph));
+    #else
+      float cyc = floor(aSeed.z + t / uLife); ph = fract(aSeed.z + t / uLife);
+      xz0 = vec2(wh(cyc * 3.1 + aSeed.x * 91.0), wh(cyc * 5.7 + aSeed.y * 37.0)) * uBox;
+      a *= 1.0 - ph;
+    #endif
+    // a box that follows the view, leaning toward the camera with height (so high particles are still on screen)
+    vec2 ctr = uC.xz + uCamD * max(y, 0.0) * uCot;
+    vec2 o = ctr - 0.5 * uBox, xz = o + mod(xz0 + off - o, uBox);
+    a *= 1.0 - smoothstep(0.36, 0.5, max(abs(xz.x - ctr.x), abs(xz.y - ctr.y)) / uBox);
+    vec3 p = vec3(xz.x, uC.y + y, xz.y);
+    #ifdef WX_GROUND
+      float gy = uHgt.w > 0.0 ? uHgt.z + uHgt.w * texture2D(tHgt, (xz + 0.5) * uHgt.xy).r : uC.y;
+      p.y = max(gy, uLevel) + 0.03;
+    #elif WX_MOVE == 5
+      p.y = uC.y + 0.03;
+    #endif
+    if (a <= 0.002) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+    float mn = uPx * length(cameraPosition - p) * 1.3;   // world size of ~1.3 px here: never thinner (no sub-pixel shimmer)
+    vec2 sz = uSize * (0.7 + 0.6 * fract(aSeed.w * 13.7));
+    #if WX_SHAPE == 1
+      float sw = max(sz.x, mn); a *= sz.x / sw;
+      vec3 v = normalize(vec3(uWind.x, -uFall, uWind.y)), sd = normalize(cross(v, normalize(cameraPosition - p)));
+      p += v * aCorner.y * sz.y + sd * aCorner.x * sw;
+    #elif WX_SHAPE == 2
+      float r = max(sz.x * (0.25 + 0.75 * ph), mn);
+      p += vec3(aCorner.x * r, 0.0, aCorner.y * r);
+    #else
+      vec2 c = aCorner, s2 = max(sz, vec2(mn)); a *= (sz.x * sz.y) / (s2.x * s2.y);
+      #ifdef WX_SPIN
+        float an = aSeed.x * 6.2832 + t * (1.2 + 2.0 * aSeed.w) * (aSeed.y > 0.5 ? 1.0 : -1.0), fl = cos(t * (2.5 + 3.0 * aSeed.z) + aSeed.y * 20.0);
+        c = mat2(cos(an), sin(an), -sin(an), cos(an)) * vec2(c.x * (0.25 + 0.75 * abs(fl)), c.y);
+      #endif
+      vec3 cR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]), cU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      p += cR * c.x * s2.x + cU * c.y * s2.y;
+    #endif
+    #ifdef WX_BLINK
+      a *= 0.2 + 0.8 * smoothstep(-0.2, 0.9, sin(t * (1.1 + 1.6 * aSeed.w) + aSeed.z * 40.0));
+    #endif
+    vec3 col = uCol;
+    #ifdef WX_LEAF
+      col = mix(uCol, uCol2, step(0.62, fract(aSeed.x * 31.7))) * (0.7 + 0.55 * fract(aSeed.y * 17.3)) * (0.75 + 0.25 * fl);
+    #endif
+    #ifdef WX_RAINBOW
+      vec3 hue = clamp(abs(fract(fract(aSeed.x * 7.7) + vec3(0.0, 0.667, 0.333)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+      col = mix(col, hue, 0.45);
+    #endif
+    #ifdef WX_ADD
+      col *= uHdr;
+    #else
+      col *= uLit;
+    #endif
+    #ifdef WX_EMBERS
+      float em = step(fract(aSeed.y * 23.1), 0.05);   // a few glowing embers among the ash
+      col = mix(col * (0.65 + 0.6 * fract(aSeed.x * 11.3)), uCol2 * (2.5 + 1.5 * sin(t * 6.0 + aSeed.z * 30.0)), em);
+    #endif
+    vTint = col; vA = a;
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  }`;
+const WX_FS = `uniform float uA; varying vec2 vUv; varying float vA; varying vec3 vTint;
+  void main(){
+    vec2 q = vUv; float r = length(q), m; vec3 c = vTint;
+    #if WX_SHAPE == 0
+      m = smoothstep(1.0, 0.3, r);
+    #elif WX_SHAPE == 1
+      m = (1.0 - abs(q.x)) * smoothstep(-1.0, 0.7, q.y);
+    #elif WX_SHAPE == 2
+      m = smoothstep(0.35, 0.7, r) * (1.0 - smoothstep(0.78, 1.0, r)) * 1.4;
+    #elif WX_SHAPE == 3
+      vec2 aq = abs(q); m = 1.0 - smoothstep(0.6, 1.0, max(aq.x + aq.y * 0.35, aq.y + aq.x * 0.2));
+    #elif WX_SHAPE == 4
+      m = 1.0 - smoothstep(0.75, 1.0, abs(q.x) / max(0.05, 1.0 - q.y * q.y)); c *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.14, abs(q.x)));
+    #elif WX_SHAPE == 5
+      m = smoothstep(1.0, 0.0, r);
+    #elif WX_SHAPE == 6
+      m = exp(-r * r * 4.5) * 1.1;
+    #else
+      m = exp(-r * r * 7.0) + (max(0.0, 1.0 - abs(q.x) * 7.0) * (1.0 - abs(q.y)) + max(0.0, 1.0 - abs(q.y) * 7.0) * (1.0 - abs(q.x))) * 0.5;
+    #endif
+    #ifdef WX_ADD
+      gl_FragColor = vec4(c * m * vA * uA, 1.0);
+    #else
+      float al = m * vA * uA; if (al < 0.01) discard;
+      gl_FragColor = vec4(c, al);
+    #endif
+    #include <tonemapping_fragment>
+    #include <encodings_fragment>
+  }`;
+// uniforms shared by every weather layer (set once per frame)
+const WXU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uCamD: { value: new THREE.Vector2(0, 1) }, uCot: { value: 0.83 }, uWind: { value: new THREE.Vector2() }, uPx: { value: 0.001 },
+  uLit: { value: new THREE.Color(1, 1, 1) }, tHgt: { value: null }, uHgt: { value: new THREE.Vector4() }, uLevel: { value: -99 } };
+const WX = {
+  on: false, layers: {}, maps: {}, cfg: null, used: null, t: 0, clock: 0.08, dayLen: 1440, phase: 0.08, lock: null, force: null, forceW: null,
+  n: 0, d: 0, dawnF: false, rain: 0, snow: 0, wet: 0, lamp: 1, look: null, day: null, night: null, dusk: null, dawn: null, dirty: true,
+  _n: -1, _d: -1, _r: -1, _s: -1, _lampE: -1, emis: null, emisN: -1, screenParts: true,
+};
+const WX_DAYP = 0.2;
+function wxLayer(kind) {
+  if (WX.layers[kind]) return WX.layers[kind];
+  const K = WX_KINDS[kind]; if (!K) return null;
+  const N = Math.ceil(K.n * 1.4), r = mulberry32(7919 + kind.length * 131 + kind.charCodeAt(0) * 17);
+  const seed = new Float32Array(N * 16), cor = new Float32Array(N * 8), idx = new (N * 4 > 65535 ? Uint32Array : Uint16Array)(N * 6), C = [-1, -1, 1, -1, 1, 1, -1, 1];
+  for (let i = 0; i < N; i++) {
+    const s0 = r(), s1 = r(), s2 = r(), s3 = (i + r()) / N;   // w ascends with the index: drawRange = the first uN * N
+    for (let v = 0; v < 4; v++) { const o = (i * 4 + v) * 4; seed[o] = s0; seed[o + 1] = s1; seed[o + 2] = s2; seed[o + 3] = s3; cor[(i * 4 + v) * 2] = C[v * 2]; cor[(i * 4 + v) * 2 + 1] = C[v * 2 + 1]; }
+    const b = i * 4, j = i * 6; idx[j] = b; idx[j + 1] = b + 1; idx[j + 2] = b + 2; idx[j + 3] = b; idx[j + 4] = b + 2; idx[j + 5] = b + 3;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 12), 3)); geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4)); geo.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.setDrawRange(0, 0); geo.userData.shared = true;
+  const defs = { WX_MOVE: K.move, WX_SHAPE: K.shape };
+  if (K.add) defs.WX_ADD = 1; if (K.spin) defs.WX_SPIN = 1; if (K.blink) defs.WX_BLINK = 1; if (K.rainbow) defs.WX_RAINBOW = 1;
+  if (K.move === 5 && renderer.capabilities.maxVertexTextures > 0) defs.WX_GROUND = 1; if (kind === 'ash') defs.WX_EMBERS = 1; if (kind === 'leaves') defs.WX_LEAF = 1;
+  const U = Object.assign({ uN: { value: 0 }, uBox: { value: 30 }, uH: { value: new THREE.Vector2(K.h[0], K.h[1]) }, uFall: { value: K.fall || 0 }, uSway: { value: K.sway || 0 }, uLife: { value: K.life || 1 },
+    uSize: { value: new THREE.Vector2(K.size[0], K.size[1]) }, uCol: { value: linCol(K.col) }, uCol2: { value: linCol(K.col2 !== undefined ? K.col2 : K.col) }, uA: { value: K.a }, uHdr: { value: K.hdr || 1 } }, WXU);
+  const mat = new THREE.ShaderMaterial({ uniforms: U, defines: defs, vertexShader: WX_VS, fragmentShader: WX_FS, transparent: true, depthWrite: false, blending: K.add ? THREE.AdditiveBlending : THREE.NormalBlending, fog: false });
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 6; mesh.visible = false; mesh.matrixAutoUpdate = false; mesh.name = 'wx_' + kind; scene.add(mesh);
+  return (WX.layers[kind] = { kind, K, N, mesh, U, want: 0 });
+}
+// Time-of-day target with the map's overrides, colours converted to linear once.
+function wxTarget(T, o) {
+  const X = Object.assign({}, T, o && typeof o === 'object' ? o : {});
+  X.grade = Object.assign({}, T.grade, (o && o.grade) || {}); X.lt = Object.assign({}, T.lt, (o && o.lt) || {});
+  X.skyL = [_hexOr(X.sky[0], T.sky[0]), _hexOr(X.sky[1], T.sky[1])]; X.hazeL = _hexOr(X.haze, T.haze); X.sunL = _hexOr(X.sun, T.sun);
+  X.hemiL = [_hexOr(X.hemi[0], T.hemi[0]), _hexOr(X.hemi[1], T.hemi[1])]; X.mistL = _hexOr(X.mist, T.mist); X.volL = _hexOr(X.vol, T.vol);
+  return X;
+}
+function wxEnter(m) {
+  const R = RL, Rd = (m.d && m.d.render) || {};
+  const famKey = Object.keys(RLOOK_BASE).find(k => m.id === k || m.id.startsWith(k + '_'));
+  const W = (Rd.weather && typeof Rd.weather === 'object' ? Rd.weather : null) || (R.weather && typeof R.weather === 'object' ? R.weather : null) || WX_MAPS[m.id] || (famKey && WX_MAPS[famKey]) || WX_FROM_PART[Rd.particles] || {};
+  const tod = Rd.tod !== undefined ? Rd.tod : R.tod !== undefined ? R.tod : W.tod !== undefined ? W.tod : (m.d.gen === 'field' || m.d.gen === 'town');
+  const amb = (Array.isArray(W.amb) ? W.amb : []).filter(e => Array.isArray(e) && WX_KINDS[e[0]]);
+  const precip = (Array.isArray(W.precip) ? W.precip : []).filter(e => Array.isArray(e) && (e[0] === null || e[0] === 'rain' || e[0] === 'snow'));
+  WX.cfg = { tod: tod === true ? true : typeof tod === 'number' && isFinite(tod) ? ((tod % 1) + 1) % 1 : false, amb, precip, wind: Array.isArray(W.wind) && W.wind.length === 2 ? W.wind.map(Number) : [0.5, 0.2] };
+  const kinds = new Set(amb.map(e => e[0])); for (const e of precip) if (e[0]) { kinds.add(e[0]); if (e[0] === 'rain') kinds.add('splash'); }
+  if (WX.forceW && WX.forceW.kind) { kinds.add(WX.forceW.kind); if (WX.forceW.kind === 'rain') kinds.add('splash'); }
+  WX.used = kinds; for (const k of kinds) wxLayer(k);
+  let st = WX.maps[m.id];
+  if (!st) {   // first visit: the first precip state (the map's usual weather), later ones picked at random
+    st = WX.maps[m.id] = { rng: mulberry32((m.d.seed || 1) * 7919 + 17), kind: null, i: 0, tgt: 0, until: 0 };
+    const e = precip[0]; st.kind = e && e[0] ? e[0] : ((precip.find(q => q[0]) || [null])[0]); st.tgt = st.i = e && e[0] ? clamp(+e[1] || 0, 0, 1.5) : 0;
+    st.until = WX.t + (e ? Math.max(0.3, +e[2] || 3) : 5) * 60;
+  }
+  WX.wet = st.kind === 'rain' ? Math.min(1, st.i) : 0;
+  WX.look = wxLook(R); GFX.look = WX.look; WX.day = wxDay(R);
+  WX.night = wxTarget(WX_NIGHT, R.night || Rd.night); WX.dusk = wxTarget(WX_DUSK, R.dusk || Rd.dusk); WX.dawn = wxTarget(WX_DAWN, R.dusk || Rd.dusk);
+  WX.on = true; WX.dirty = true; WX._lampE = -1;
+  wxUpdate(0);
+}
+function wxLook(R) {
+  const X = Object.assign({}, R), G = R.grade || RLOOK.ashen_fields.grade, a3 = (v, d) => (Array.isArray(v) && v.length === 3 ? v : d).slice();
+  X.grade = { lift: a3(G.lift, [0, 0, 0]), gamma: a3(G.gamma, [1, 1, 1]), gain: a3(G.gain, [1, 1, 1]), shadowTint: a3(G.shadowTint, [0, 0, 0]), highTint: a3(G.highTint, [0, 0, 0]), sat: G.sat === undefined ? 1 : G.sat, contrast: G.contrast === undefined ? 1 : G.contrast };
+  X.bloom = Object.assign({}, R.bloom); X.fog = R.fog.slice(); X.lt = { amb: R.lt.amb.slice(), sun: R.lt.sun.slice() };
+  if (R.mist) X.mist = Object.assign({}, R.mist, { lin: new THREE.Color() });
+  if (R.hfog) X.hfog = Object.assign({}, R.hfog, { lin: new THREE.Color() });
+  if (R.vol) X.vol = Object.assign({}, R.vol, { lin: new THREE.Color() });
+  return X;
+}
+function wxDay(R) {
+  return { top: linCol(R.sky[0]), hor: linCol(R.sky[1]), haze: linCol(R.haze), sunC: linCol(R.sun[0]), sunI: R.sun[1], hemiS: linCol(R.hemi[0]), hemiG: linCol(R.hemi[1]), hemiI: R.hemi[2],
+    exp: R.exposure, torchI: R.torch[1], torchD: R.torch[2], mist: R.mist ? _hexOr(R.mist.col, R.haze) : null, hfog: R.hfog ? _hexOr(R.hfog.col, R.haze) : null, vol: R.vol ? _hexOr(R.vol.col, 0xfff0c0) : null };
+}
+// Pick the next precipitation state (weighted, seeded per map).
+function wxPick(st) {
+  const L = WX.cfg.precip; if (!L.length) { st.tgt = 0; st.until = WX.t + 600; return; }
+  let tot = 0; for (const e of L) tot += +e[3] || 1;
+  let x = st.rng() * tot, e = L[L.length - 1]; for (const q of L) { x -= +q[3] || 1; if (x <= 0) { e = q; break; } }
+  if (e[0]) st.kind = e[0];
+  st.tgt = e[0] ? clamp(+e[1] || 0, 0, 1.5) : 0;
+  st.until = WX.t + Math.max(0.3, +e[2] || 3) * 60 * (0.7 + 0.6 * st.rng());
+}
+const _wc = new THREE.Color(), _wl = new THREE.Color();
+const wxLerp = (a, b, t) => a + (b - a) * t;
+function wxUpdate(dt) {
+  if (!WX.on || !WX.cfg || !map) return;
+  WX.t += dt; if (WX.lock === null) WX.clock = (WX.clock + dt / WX.dayLen) % 1;
+  const cfg = WX.cfg, st = WX.maps[map.id];
+  const p = cfg.tod === false ? WX_DAYP : typeof cfg.tod === 'number' ? cfg.tod : WX.force !== null ? WX.force : WX.lock !== null ? WX.lock : WX.clock;
+  WX.phase = p;
+  WX.d = smoothstep(0.47, 0.55, p) * (1 - smoothstep(0.58, 0.645, p)) + smoothstep(0.865, 0.92, p) * (1 - smoothstep(0.95, 1.0, p));
+  WX.n = smoothstep(0.58, 0.645, p) * (1 - smoothstep(0.865, 0.92, p)); WX.dawnF = p > 0.8;
+  let rain = 0, snow = 0;
+  if (WX.forceW) { const k = WX.forceW.kind; if (k === 'rain') rain = WX.forceW.i; else if (k === 'snow') snow = WX.forceW.i; }
+  else if (st) {
+    if (WX.t >= st.until) wxPick(st);
+    st.i += (st.tgt - st.i) * Math.min(1, dt / 9); if (Math.abs(st.tgt - st.i) < 0.002) st.i = st.tgt;
+    if (st.kind === 'rain') rain = st.i; else if (st.kind === 'snow') snow = st.i;
+  }
+  WX.rain = rain; WX.snow = snow;
+  // the ground soaks in ~6 s and dries over ~40 s
+  const wt = Math.min(1, rain); WX.wet += (wt - WX.wet) * Math.min(1, dt / (wt > WX.wet ? 6 : 40)); if (Math.abs(wt - WX.wet) < 0.002) WX.wet = wt;
+  if (WX.forceW) WX.wet = Math.min(1, rain);
+  wxApply();
+  wxParticles();
+}
+// Blend the live look (WX.look, read by gfx-post) and the scene lights from the day values toward dusk / dawn / night,
+// then overcast. At day with clear weather every value is the map's own (identical frames).
+function wxApply() {
+  const R = RL, X = WX.look, D = WX.day; if (!R || !X || !D) return;
+  const n = WX.n, d = WX.d, rain = WX.rain, snow = WX.snow, wet = WX.wet;
+  if (!WX.dirty && n === WX._n && d === WX._d && rain === WX._r && snow === WX._s && wet === WX._w) return;
+  WX._n = n; WX._d = d; WX._r = rain; WX._s = snow; WX._w = wet; WX.dirty = false;
+  const Tk = WX.dawnF ? WX.dawn : WX.dusk, N = WX.night, g = Math.max(rain, snow * 0.6), post = GFX.preset.post;
+  const sky3 = (out, day, tc, nc) => {
+    out.copy(day);
+    if (d > 0) out.lerp(_wc.copy(day).multiplyScalar(Tk.dim).lerp(tc, Tk.mix), d);
+    if (n > 0) out.lerp(_wc.copy(day).multiplyScalar(N.dim).lerp(nc, N.mix), n);
+    if (g > 0) { const l = out.r * 0.2126 + out.g * 0.7152 + out.b * 0.0722; out.lerp(_wc.setRGB(l, l, l * 1.05), 0.45 * g).multiplyScalar(1 - 0.12 * g); }
+    return out;
+  };
+  sky3(SKY.top, D.top, Tk.skyL[0], N.skyL[0]); sky3(SKY.hor, D.hor, Tk.skyL[1], N.skyL[1]); sky3(SKY.hazeLin, D.haze, Tk.hazeL, N.hazeL);
+  const exp = D.exp * (1 + (Tk.exp - 1) * d) * (1 + (N.exp - 1) * n);
+  X.exposure = exp; SKY.exposure = exp; renderer.toneMappingExposure = exp;
+  SKY.fogOut.copy(post ? SKY.hazeLin : acesDisplay(SKY.hazeLin, exp));
+  if (scene.fog) scene.fog.color.copy(SKY.fogOut);
+  if (scene.background && scene.background.isColor) scene.background.copy(SKY.fogOut);
+  sun.color.copy(D.sunC).lerp(Tk.sunL, d).lerp(N.sunL, n);
+  sun.intensity = D.sunI * (1 + (Tk.sunK - 1) * d) * (1 + (N.sunK - 1) * n) * (1 - 0.55 * rain - 0.3 * snow);
+  hemi.color.copy(D.hemiS).lerp(Tk.hemiL[0], d * 0.6).lerp(N.hemiL[0], n * 0.8);
+  hemi.groundColor.copy(D.hemiG).lerp(Tk.hemiL[1], d * 0.5).lerp(N.hemiL[1], n * 0.8);
+  hemi.intensity = D.hemiI * (1 + (Tk.hemiK - 1) * d) * (1 + (N.hemiK - 1) * n) * (1 - 0.1 * g);
+  X.bloom.threshold = wxLerp(wxLerp(R.bloom.threshold, Tk.bloomThr, d), N.bloomThr, n);
+  X.bloom.strength = R.bloom.strength * (1 + (Tk.bloomK - 1) * d) * (1 + (N.bloomK - 1) * n);
+  const G0 = R.grade || RLOOK.ashen_fields.grade;
+  for (const k of ['lift', 'gamma', 'gain', 'shadowTint', 'highTint']) { const a = X.grade[k], b0 = Array.isArray(G0[k]) ? G0[k] : a; for (let i = 0; i < 3; i++) a[i] = wxLerp(wxLerp(b0[i], Tk.grade[k][i], d), N.grade[k][i], n); }
+  X.grade.sat = (G0.sat === undefined ? 1 : G0.sat) * (1 + (Tk.sat - 1) * d) * (1 + (N.sat - 1) * n) * (1 - 0.15 * g);
+  X.grade.contrast = (G0.contrast === undefined ? 1 : G0.contrast) * (1 + (Tk.con - 1) * d) * (1 + (N.con - 1) * n) * (1 - 0.05 * g);
+  X.vignette = R.vignette + Tk.vig * d + N.vig * n + 0.04 * g;
+  X.fog[0] = R.fog[0] * (1 - 0.3 * rain - 0.4 * snow); X.fog[1] = R.fog[1] * (1 - 0.25 * rain - 0.35 * snow);
+  if (X.mist) {
+    X.mist.lin.copy(D.mist).lerp(Tk.mistL, d * 0.7).lerp(N.mistL, n * 0.8);
+    const M = R.mist; X.mist.amb = (M.amb === undefined ? 1 : M.amb) * (1 + (Tk.mistAmb - 1) * d) * (1 + (N.mistAmb - 1) * n);
+    X.mist.amt = (M.amt || 0) * (1 + 0.3 * rain + 1.0 * snow); X.mist.max = (M.max || 0.5) * (1 + 0.2 * rain + 0.6 * snow);
+  }
+  if (X.hfog) { X.hfog.lin.copy(D.hfog).lerp(Tk.hazeL, d * 0.4).lerp(N.hazeL, n * 0.7); X.hfog.amt = (R.hfog.amt || 0) * (1 + 0.6 * g); }
+  if (X.vol) { X.vol.lin.copy(D.vol).lerp(Tk.volL, d).lerp(N.volL, n); X.vol.k = (R.vol.k || 1) * (1 + (Tk.volK - 1) * d) * (1 + (N.volK - 1) * n); X.vol.dens = R.vol.dens * (1 - 0.8 * g); }
+  // sprites: ambient + sun (moon) light, fires grow brighter at night
+  const la = R.lt.amb, ls = R.lt.sun, sk = 1 - 0.5 * rain - 0.25 * snow;
+  for (let i = 0; i < 3; i++) {
+    X.lt.amb[i] = wxLerp(la[i] * (1 + (Tk.lt.ambK[i] - 1) * d), N.lt.amb[i], n) * (1 - 0.08 * g);
+    X.lt.sun[i] = wxLerp(ls[i] * (1 + (Tk.lt.sunK[i] - 1) * d), N.lt.sun[i], n) * sk;
+  }
+  WX.lamp = 1 + 1.3 * n + 0.45 * d + 0.15 * g;
+  LT.amb = X.lt.amb; LT.sun = X.lt.sun; LT.lamp = WX.lamp;
+  torch.intensity = Math.max(D.torchI, N.torch * n + Tk.torch * d); torch.distance = n > 0.05 || d > 0.3 ? Math.max(D.torchD, 9) : D.torchD;
+  // rain / overcast / night on the other shaders
+  WETU.uWet.value.set(wet, Math.min(1, wet * 1.3), 0); WETU.uWetSky.value.copy(SKY.hor).lerp(SKY.top, 0.5); WETU.uWetSunC.value.copy(sun.color).multiplyScalar(sun.intensity * 1.2);
+  WATERU.uRain.value = rain; WATERU.uGlint.value = clamp(sun.intensity / Math.max(D.sunI, 0.01), 0, 1.3);
+  SHAFTU.uFade.value = (1 - 0.85 * g) * (1 - n) * (1 - 0.4 * d);
+  MOTEU.uK.value = (1 - 0.75 * n) * (1 - 0.6 * g);
+  POOLU.uLamp.value = 1 + (WX.lamp - 1) * 0.45;
+  wxEmissive();
+}
+// Lantern glass, coals and house windows come alive at night (the prop templates' materials, shared by every map).
+const WX_EMIS = { emissive_lamp: 1, emissive_coals: 0.6, emissive_bog: 0.8, emissive_rune_gold: 0.5, emissive_shroom: 0.6, emissive_crystal_ice: 0.4, emissive_soul: 0.5, emissive_soul_dim: 0.5 };
+function wxEmissive() {
+  const nT = Object.keys(PROPS.tpl).length;
+  if (!WX.emis || WX.emisN !== nT) {
+    const seen = new Set(WX.emis ? WX.emis.map(e => e.m) : []), L = WX.emis || [];
+    for (const id in PROPS.tpl) for (const pt of PROPS.tpl[id].parts) {
+      const m = pt.mat; if (!m || seen.has(m) || !m.emissive) continue;
+      if (WX_EMIS[m.name] !== undefined) { L.push({ m, k: WX_EMIS[m.name], base: m.emissiveIntensity }); seen.add(m); }
+      else if (m.name === 'glass') { L.push({ m, glass: true, base: m.emissive.clone() }); seen.add(m); }
+    }
+    WX.emis = L; WX.emisN = nT; WX._lampE = -1;
+  }
+  if (WX._lampE === WX.lamp) return; WX._lampE = WX.lamp;
+  const k = WX.lamp - 1, win = 0.95 * WX.n + 0.3 * WX.d;
+  for (const e of WX.emis) {
+    if (e.glass) e.m.emissive.copy(e.base).add(_wl.setRGB(1.0, 0.56, 0.24).multiplyScalar(win * 1.6));
+    else e.m.emissiveIntensity = e.base * (1 + k * e.k * 0.6);
+  }
+}
+const _wdb = new THREE.Vector2();
+function wxParticles() {
+  const cfg = WX.cfg, q = GFX.preset.wx === undefined ? 1 : GFX.preset.wx;
+  for (const k in WX.layers) WX.layers[k].want = 0;
+  for (const e of cfg.amb) {
+    const L = WX.layers[e[0]]; if (!L) continue; let i = +e[1] || 0; const k = e[0];
+    if (k === 'fireflies') { const dk = e[2] !== undefined ? +e[2] : 0; i *= (dk + (1 - dk) * Math.max(WX.n, WX.d * 0.6)) * (1 - WX.rain); }
+    else if (k === 'pollen' || k === 'spores') i *= (1 - 0.7 * WX.n) * (1 - 0.8 * WX.rain);
+    else if (k === 'leaves') i *= 1 - 0.4 * WX.rain;
+    L.want += i;
+  }
+  if (WX.layers.rain) WX.layers.rain.want += WX.rain; if (WX.layers.splash) WX.layers.splash.want += WX.rain; if (WX.layers.snow) WX.layers.snow.want += WX.snow;
+  const fk = WX.forceW && WX.forceW.kind; if (fk && fk !== 'rain' && fk !== 'snow' && WX.layers[fk]) WX.layers[fk].want = Math.max(WX.layers[fk].want, WX.forceW.i);
+  let any = false;
+  for (const k in WX.layers) {
+    const L = WX.layers[k], u = WX.used.has(k) || k === fk ? clamp(L.want * q / 1.4, 0, 1) : 0, cnt = u > 0.0005 ? Math.min(L.N, Math.ceil(u * L.N) + 2) : 0;
+    L.U.uN.value = u; L.mesh.visible = cnt > 0; L.mesh.geometry.setDrawRange(0, cnt * 6); L.U.uBox.value = Math.max(12, cam.dist * L.K.box);
+    if (cnt > 0 && k !== 'fireflies') any = true;
+  }
+  WX.screenParts = !any;   // (a hint for the 2D screen particles in gfx-render.js: 3D weather replaces them)
+  const U = WXU, hg = GFX.world && GFX.world.hgt;
+  U.uT.value = typeof time === 'number' ? time : WX.t; U.uC.value.set(cam.tx, cam.th, cam.ty); U.uCamD.value.set(Math.sin(cam.yaw), Math.cos(cam.yaw)); U.uCot.value = 1 / Math.tan(cam.pitch);
+  U.uWind.value.set(cfg.wind[0], cfg.wind[1]);
+  U.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, renderer.getDrawingBufferSize(_wdb).y * (GFX.composer && GFX.composer.on ? GFX.composer.scale : 1));
+  const D = WX.day; if (D) { const den = D.hemiI + D.sunI * 0.55 || 1; U.uLit.value.copy(hemi.color).multiplyScalar(hemi.intensity / den).add(_wc.copy(sun.color).multiplyScalar(sun.intensity * 0.55 / den)); }
+  if (hg) { U.tHgt.value = hg.tex; U.uHgt.value.set(1 / hg.w1, 1 / hg.h1, hg.min, hg.range); } else { U.tHgt.value = null; U.uHgt.value.set(0, 0, 0, 0); }
+  const W = RL && RL.water; U.uLevel.value = map && map.anim && map.anim.water ? (W && isFinite(W.level) ? +W.level : -0.45) : -99;
+}
+GFX.wx = WX;
+GFX.wx.info = () => ({ phase: +WX.phase.toFixed(3), night: +WX.n.toFixed(3), dusk: +WX.d.toFixed(3), rain: +WX.rain.toFixed(3), snow: +WX.snow.toFixed(3), wet: +WX.wet.toFixed(3), lamp: +WX.lamp.toFixed(3),
+  tod: WX.cfg ? WX.cfg.tod : null, layers: Object.fromEntries(Object.entries(WX.layers).filter(e => e[1].mesh.visible).map(([k, L]) => [k, Math.round(L.U.uN.value * L.N)])) });
+// p: 0..1 day phase (0.2 day, 0.55 dusk, 0.75 night, 0.93 dawn); null = the running clock
+GFX.setTime = p => { WX.force = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WX.dirty = true; return WX.force; };
+// story scenes: hold the clock at phase p (null releases it); maps with tod: false stay locked at day anyway
+GFX.lockTime = p => { WX.lock = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WX.dirty = true; return WX.lock; };
+// force a weather ('rain' | 'snow' | an ambient kind, intensity) on every map; null = back to the natural cycle
+GFX.setWeather = (kind, i) => {
+  WX.forceW = kind && WX_KINDS[kind] ? { kind, i: i === undefined ? 1 : +i || 0 } : null; WX.dirty = true;
+  if (WX.forceW) { wxLayer(kind); if (kind === 'rain') wxLayer('splash'); }
+  return WX.forceW;
+};
 
 /* ---------- Carved stone caps on the keep wall blocks (the model's top faces) ----------
    World-up faces of dng_wall get their own albedo: tile-aligned slabs with a carved groove and
@@ -1743,15 +2504,18 @@ function buildWorld(m) {
   const spec = R.spec;
   const lam = (o) => new THREE.MeshPhongMaterial(Object.assign({ specular: spec ? spec[0] : 0x000000, shininess: spec ? spec[1] : 1 }, o));
   const solid = (geo, mat) => { const me = new THREE.Mesh(geo, mat); me.castShadow = true; me.receiveShadow = true; grp.add(me); return me; };
-  const plan = planProps(m); m.propLights = plan.lights; m.propDLights = plan.dlights; m.propAvoid = plan.avoid; m.propItems = plan.items;
+  const plan = (PROPS.man && m.plan) || planProps(m); if (PROPS.man) m.plan = plan; m.propLights = plan.lights; m.propDLights = plan.dlights; m.propAvoid = plan.avoid; m.propItems = plan.items;
   m.hgtInfo = heightTex(m); A.halos = [];
   // Ground: painted macro + detail layers (see groundDetail)
   const gg = new THREE.PlaneGeometry(w, h, w, h); gg.rotateX(-Math.PI / 2); gg.translate(w / 2, 0, h / 2);
-  const pos = gg.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, m.hgt[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]);
+  const pos = gg.attributes.position, HG = renderHgt(m); for (let i = 0; i < pos.count; i++) pos.setY(i, HG[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]);
   gg.computeVertexNormals();
   const pg = paintGround(m, plan), mk = groundMask(m); m.gbase = pg; m.gmask = mk;
   const shadeT = new THREE.CanvasTexture(pg.shade); shadeT.flipY = false; shadeT.generateMipmaps = false; shadeT.minFilter = THREE.LinearFilter; pg.shade = null;
-  const gmat = lam({ map: canvasTex(pg.macro, { aniso: true }) }); pg.macro = null;
+  // low: the painted macro layer at half resolution (1024 instead of 2048 px on a 64-tile map: 5 MB instead of 21 MB
+  // with mips); medium and up keep the full 32 px per tile
+  let macro = pg.macro; if (GFX.quality === 'low' && macro.width >= 512) { const hc = mkCanvas(macro.width >> 1, macro.height >> 1), hg = hc.getContext('2d'); hg.imageSmoothingQuality = 'high'; hg.drawImage(macro, 0, 0, hc.width, hc.height); macro = hc; }
+  const gmat = lam({ map: canvasTex(macro, { aniso: GFX.quality !== 'low' }) }); pg.macro = null;
   const baseK = floorDetail(L.floor);
   groundDetail(gmat, {
     base: detailTex(baseK), mask: mk.tex, shade: shadeT, mapInv: new THREE.Vector2(1 / w, 1 / h), nrm: baseK === 'flag' ? 1.25 : 1,
@@ -1784,17 +2548,25 @@ function buildWorld(m) {
     A.warps.push({ ring, ringM, beam, beamM, bt, wp });
   }
   // Brazier flames at the model's light anchor
+  // (R.flame / R.flameHalo recolour the fires: Helheim's soul fires burn pale green)
+  const fc = Array.isArray(R.flame) && R.flame.length === 3 ? R.flame : [3.2, 1.5, 0.5], fh = R.flameHalo !== undefined ? _hexOr(R.flameHalo, 0xff7a20) : linCol(0xff7a20);
   for (const b of m.braziers) {
-    const gh = groundHm(m, b.x, b.y), ay = PROP_LIGHT.dng_brazier[1];
-    const fl = flameSprite(3.2, 1.5, 0.5); fl.position.set(b.x, gh + ay + 0.28, b.y); fl.scale.set(0.5, 0.75, 1);
-    const halo = glowSprite(linCol(0xff7a20), 0.3, 1.8, 1.8); halo.position.set(b.x, gh + ay + 0.2, b.y); A.halos.push({ s: halo, op: 0.3, ph: b.x * 3.1 + b.y, fl: 1 });
+    const gh = groundHm(m, b.x, b.y), ay = PROP_LIGHT[brazierId(m)][1];
+    const fl = flameSprite(fc[0], fc[1], fc[2]); fl.position.set(b.x, gh + ay + 0.28, b.y); fl.scale.set(0.5, 0.75, 1);
+    const halo = glowSprite(fh, 0.3, 1.8, 1.8); halo.position.set(b.x, gh + ay + 0.2, b.y); A.halos.push({ s: halo, op: 0.3, ph: b.x * 3.1 + b.y, fl: 1, lamp: true });
     A.flames.push({ s: fl, sx: 0.5, sy: 0.75 });
   }
   // Lamp-post lanterns: a soft glow (the emissive glass blooms; the light pool adds the rest)
-  // (a wide faint outer halo reads as night glow in the lantern's own haze)
+  // (a wide faint outer halo reads as night glow in the lantern's own haze; both swell at night, see WX)
   for (const l of plan.lights) {
-    const s = glowSprite(linCol(0xffc070), 0.4, 1.1, 1.1); s.position.set(l.x, l.h, l.z); A.halos.push({ s, op: 0.4, ph: l.x * 1.7 + l.z, fl: 0.25 });
-    const o = glowSprite(linCol(0xffb060), 0.1, 3.2, 3.2); o.position.set(l.x, l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.2 : 0.1, ph: l.x * 1.7 + l.z, fl: 0.3 });
+    const s = glowSprite(linCol(0xffc070), 0.4, 1.1, 1.1); s.position.set(l.x, l.h, l.z); A.halos.push({ s, op: 0.4, ph: l.x * 1.7 + l.z, fl: 0.25, lamp: true });
+    const o = glowSprite(linCol(0xffb060), 0.1, 3.2, 3.2); o.position.set(l.x, l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.2 : 0.1, ph: l.x * 1.7 + l.z, fl: 0.3, lamp: true, night: 0.12 });
+  }
+  // Decor lanterns (lamp posts, soul lanterns, lantern posts placed as m.decor): the same two glows in the light's colour
+  for (const l of (plan.dlights || [])) {
+    if (!l.lamp) continue; let c; try { c = linCol(l.col); } catch (e) { continue; }
+    const s = glowSprite(c, 0.32, 1.0, 1.0); s.position.set(l.x, l.h, l.z); A.halos.push({ s, op: 0.32, ph: l.x * 1.7 + l.z, fl: 0.25, lamp: true });
+    const o = glowSprite(c, 0.08, 3.0, 3.0); o.position.set(l.x, l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.16 : 0.08, ph: l.x * 1.7 + l.z, fl: 0.3, lamp: true, night: 0.1 });
   }
   // Bounty boards (quest objects): a 3D notice board replaces the 2D overlay placeholder (model via props,
   // primitive mesh when the model can't load, see dress())
@@ -1831,21 +2603,170 @@ function buildWorld(m) {
   const props = new THREE.Group(); grp.add(props); grp.userData.props = props; grp.userData.map = m;
   // Required models must all load (else the legacy primitives). The world dresses as soon as they are in; optional
   // ones (decor, LODs, the board model, kit variants) follow and trigger one rebuild; missing ones are skipped.
-  const clearProps = () => { for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) o.geometry.dispose(); } };
+  // (the instanced geometries share the templates' attribute buffers: only their own VAO / instance buffers are freed)
+  const clearProps = () => { const keep = tplAttrs(); for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } };
   let have = null;
-  const dress = (lq, final) => { clearProps(); buildProps(props, plan.items, lq); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
+  const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
   const optional = lq => PROPS.manifest().then(() => { const { opt } = propIds(plan.items, lq); return Promise.all(opt.map(id => PROPS.load(id).catch(() => null))).then(() => opt); });
-  const finish = lq => optional(lq).then(opt => { if (grp.userData.propLod !== lq) return; if (opt.some(id => PROPS.tpl[id] && !have.has(id))) dress(lq, true); else boardFallback(); });
+  const finish = lq => optional(lq).then(opt => { if (grp.userData.propLod !== lq || grp.userData.dead) return; if (opt.some(id => PROPS.tpl[id] && !have.has(id))) dress(lq, true); else boardFallback(); });
   const lq0 = lodLow(), ids0 = propIds(plan.items, lq0);
   if (PROPS.man && PROPS.ready(ids0.req) && PROPS.ready(ids0.opt)) dress(lq0, true);
   else PROPS.ensure(ids0.req).then(() => { dress(lq0, false); finish(lq0); }, e => {
     console.warn('[props] models unavailable, using placeholders:', e && e.message || e); legacyProps(m, props, lam, A); grp.userData.legacy = true;
-    optional(lq0).then(() => { buildProps(props, plan.items.filter(it => it.opt), lq0); boardFallback(); SHADOW.need = true; });
+    optional(lq0).then(() => { if (grp.userData.dead) return; buildProps(props, plan.items.filter(it => it.opt), lq0); boardFallback(); SHADOW.need = true; });
   });
   grp.userData.rebuildProps = lq => { if (grp.userData.legacy) return; grp.userData.propLod = lq; optional(lq).then(() => { if (grp.userData.propLod === lq) dress(lq, true); }); };
   m.world = grp; m.anim = A;
   return grp;
 }
+
+/* ---------- Map entry: world LRU, shader precompile, loading gate (perf round 3) ----------
+   World LRU: every visited map used to keep its world (ground canvases, masks, grass, prop instances, water...) on the
+   GPU forever (~60-150 MB per map with its sprite sheets). The current map + the WORLD_KEEP-1 most recent stay resident
+   (a revisit is instant); older worlds free their textures and geometry (materials and shader programs stay cached, so
+   a later rebuild does not recompile). Shared resources (templates, detail textures, grass blade, anything a resident
+   world still uses) are kept; a texture freed by mistake would only be re-uploaded on next use.
+   Precompile: on entry every material of the scene is compiled with renderer.compile() plus the post variants of this
+   map. With KHR_parallel_shader_compile the programs link on driver threads (three's blocking link check is skipped
+   for them and done once they are complete), so the main thread does not stall.
+   Gate: in a real browser, a fresh world (or new programs) is held behind a short dark fade (#gfxfade, under the HUD and
+   the map-name banner): the first frame uploads the world's textures, then frames are skipped until the programs are
+   linked (<= GLOAD.maxMs), then the world fades in. No gate under the harnesses unless AOM_GFX_GATE (deterministic
+   frames); precompile always runs. */
+const WORLD_LRU = [];
+const WORLD_KEEP = () => ({ low: 2, medium: 3, high: 4, ultra: 5 }[GFX.quality] || 3);
+function tplAttrs() {
+  const k = new Set();
+  const add = g => { if (!g) return; if (g.index) k.add(g.index); for (const n in g.attributes) k.add(g.attributes[n]); };
+  for (const id in PROPS.tpl) for (const pt of PROPS.tpl[id].parts) add(pt.geo);
+  add(GRASS.geo); add(BOARD.geo); add(BOARD.faceGeo);
+  return k;
+}
+// Dispose a geometry but keep the GPU buffers of attributes in `keep` (shared with live geometry): they are detached first.
+function disposeGeo(g, keep) {
+  if (!g || g.userData.shared) return;
+  if (keep) { if (g.index && keep.has(g.index)) g.index = null; for (const n of Object.keys(g.attributes)) if (keep.has(g.attributes[n])) delete g.attributes[n]; }
+  g.dispose();
+}
+// Textures / geometries / attributes referenced by a world (materials: standard maps, ShaderMaterial uniforms and the
+// uniform textures groundDetail() keeps in userData.texU).
+function worldRefs(root, R) {
+  R = R || { tex: new Set(), geo: new Set(), attr: new Set(), mats: new Set() };
+  const texOf = v => { if (v && v.isTexture) R.tex.add(v); };
+  const mat = m => {
+    if (!m || R.mats.has(m)) return; R.mats.add(m);
+    for (const k in m) texOf(m[k]);
+    if (m.uniforms) for (const k in m.uniforms) texOf(m.uniforms[k] && m.uniforms[k].value);
+    if (m.userData && m.userData.texU) for (const k in m.userData.texU) texOf(m.userData.texU[k].value);
+  };
+  root.traverse(o => {
+    if (o.material) { if (Array.isArray(o.material)) o.material.forEach(mat); else mat(o.material); }
+    if (o.customDepthMaterial) mat(o.customDepthMaterial);
+    const g = o.geometry; if (g && !R.geo.has(g)) { R.geo.add(g); if (g.index) R.attr.add(g.index); for (const n in g.attributes) R.attr.add(g.attributes[n]); }
+  });
+  return R;
+}
+function worldLRU(m) {
+  const i = WORLD_LRU.indexOf(m); if (i >= 0) WORLD_LRU.splice(i, 1); WORLD_LRU.push(m);
+  while (WORLD_LRU.length > WORLD_KEEP()) freeWorld(WORLD_LRU.shift());
+}
+function freeWorld(m) {
+  const grp = m && m.world; if (!grp || grp === curWorld) return;
+  grp.userData.dead = true;
+  const live = { tex: new Set(), geo: new Set(), attr: new Set(), mats: new Set() };
+  for (const o of WORLD_LRU) if (o.world && o !== m) worldRefs(o.world, live);
+  worldRefs(scene, live);
+  for (const k in TEX) live.tex.add(TEX[k]); for (const k in DETAIL) live.tex.add(DETAIL[k].tex); for (const k in TREETEX) live.tex.add(TREETEX[k]);
+  const dead = worldRefs(grp);
+  let nt = 0, ng = 0;
+  for (const t of dead.tex) if (!live.tex.has(t)) { t.dispose(); nt++; }
+  if (m.hgtInfo && m.hgtInfo.tex && !live.tex.has(m.hgtInfo.tex)) { m.hgtInfo.tex.dispose(); nt++; }
+  // attributes shared with resident geometry (prop templates, grass blade) keep their buffers; template attributes no
+  // resident world uses any more are freed with the last geometry that referenced them (re-uploaded if used again)
+  for (const g of dead.geo) { if (live.geo.has(g)) continue; disposeGeo(g, live.attr); ng++; }
+  grp.traverse(o => { if (o.isInstancedMesh) o.dispose(); });
+  m.world = null; m.anim = null; m.hgtInfo = null; m.gbase = null; m.gmask = null;
+  GLOAD.stats.freed.push({ map: m.id, textures: nt, geometries: ng });
+  for (const f of GFX.worldHooks) try { f(m.id, WORLD_LRU.map(o => o.id)); } catch (e) { console.warn('[gfx] world hook', e); }
+}
+const GLOAD = {
+  pending: false, defer: false, t0: 0, frames: 0, progs: null, uploaded: false, check: false, el: null, maxMs: 2000,
+  ext: renderer.extensions.get('KHR_parallel_shader_compile'),
+  gate: window.AOM_GFX_GATE !== undefined ? !!window.AOM_GFX_GATE : !GFX_ENV.headless,
+  stats: { last: null, freed: [] },
+};
+if (GLOAD.ext && typeof GLOAD.ext.maxShaderCompilerThreadsKHR === 'function') try { GLOAD.ext.maxShaderCompilerThreadsKHR(0xFFFFFFFF); } catch (e) { /* optional */ }
+function gloadFade(on) {
+  let el = GLOAD.el;
+  if (!el) {
+    if (!on) return;
+    el = GLOAD.el = document.createElement('div'); el.id = 'gfxfade';
+    el.style.cssText = 'position:absolute;inset:0;background:#07080c;pointer-events:none;opacity:0';
+    const cv = document.getElementById('cv'); if (cv && cv.parentNode) cv.parentNode.insertBefore(el, cv.nextSibling); else document.body.appendChild(el);
+  }
+  if (on) { el.style.transition = 'none'; el.style.opacity = '1'; }
+  else { el.style.transition = 'opacity .35s ease-out'; el.style.opacity = '0'; }
+}
+function mapEntryLoad(fresh) {
+  GLOAD.pending = false; GLOAD.defer = false;
+  const t0 = performance.now(), known = new Set(renderer.info.programs || []), chk = renderer.debug.checkShaderErrors;
+  if (GLOAD.ext) renderer.debug.checkShaderErrors = false;
+  try {
+    camera.updateMatrixWorld(); scene.updateMatrixWorld();
+    renderer.compile(scene, camera);
+    if (GFX.composer && GFX.composer.precompile) GFX.composer.precompile();
+  } catch (e) { console.warn('[gfx] precompile', e); }
+  finally { renderer.debug.checkShaderErrors = chk; }
+  const progs = (renderer.info.programs || []).filter(p => !known.has(p));
+  GLOAD.progs = GLOAD.ext ? progs : null; GLOAD.check = !!GLOAD.ext && progs.length > 0;
+  GLOAD.stats.last = { map: map.id, fresh, programs: progs.length, compileMs: +(performance.now() - t0).toFixed(1), parallel: !!GLOAD.ext, gated: false, waitMs: 0, frames: 0 };
+  AUTO.reset(2000);
+  if (GLOAD.gate && (fresh || progs.length)) { GLOAD.pending = true; GLOAD.t0 = performance.now(); GLOAD.frames = 0; GLOAD.uploaded = false; GLOAD.stats.last.gated = true; gloadFade(true); }
+}
+// Upload the current world's textures now (under the fade) instead of inside the first visible frame.
+function gloadUpload() {
+  const R = worldRefs(curWorld);
+  for (const t of R.tex) if (t.image || t.isDataTexture) try { renderer.initTexture(t); } catch (e) { /* not uploadable yet (image loading) */ }
+}
+// Programs compiled without three's blocking link check: check them once the driver reports them complete.
+function gloadCheck() {
+  GLOAD.check = false; const gl = renderer.getContext();
+  for (const p of GLOAD.progs || []) if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) console.error('THREE.WebGLProgram: shader error (' + p.name + '):', gl.getProgramInfoLog(p.program));
+}
+// Called by gfxPresent before drawing: false = keep the world hidden this frame (still loading).
+function gloadReady() {
+  if (!GLOAD.pending) { if (GLOAD.check) gloadCheck(); return true; }
+  if (GLOAD.defer) { if (GLOAD.frames++ === 0) return false; GLOAD.defer = false; enterWorldNow(true); return !GLOAD.pending; }   // build frame; uploads next frame
+  if (!GLOAD.uploaded) { GLOAD.uploaded = true; gloadUpload(); return false; }
+  GLOAD.frames++;
+  const gl = renderer.getContext(), ext = GLOAD.ext, el = performance.now() - GLOAD.t0;
+  let done = true;
+  if (ext && GLOAD.progs) for (const p of GLOAD.progs) if (!gl.getProgramParameter(p.program, ext.COMPLETION_STATUS_KHR)) { done = false; break; }
+  if (!done && el < GLOAD.maxMs && GLOAD.frames < 240) return false;
+  GLOAD.pending = false; GLOAD.stats.last.waitMs = Math.round(el); GLOAD.stats.last.frames = GLOAD.frames; GLOAD.stats.last.timedOut = !done;
+  if (GLOAD.check) gloadCheck();
+  gloadFade(false); AUTO.reset(1000);
+  return true;
+}
+GFX.load = GLOAD;
+// GPU memory estimate (MB) of what the renderer holds for the world and the pipeline: render targets (post + shadow maps
+// + canvas), textures and geometry of the resident worlds, templates and the scene. perf.py's map_entry scenario
+// measures the real allocations (WebGL calls); this is the in-game view (console: GFX.memory()).
+GFX.memory = () => {
+  const MB = b => +(b / 1048576).toFixed(1), texB = t => {
+    const im = t.image, w = im && (im.width || im.videoWidth) || 0, h = im && (im.height || im.videoHeight) || 0; if (!w || !h) return 0;
+    const bpp = t.type === THREE.HalfFloatType ? 8 : t.type === THREE.FloatType ? 16 : 4, mips = t.generateMipmaps && t.minFilter !== THREE.LinearFilter && t.minFilter !== THREE.NearestFilter ? 4 / 3 : 1;
+    return w * h * bpp * mips * (t.isCubeTexture ? 6 : 1);
+  };
+  const R = { tex: new Set(), geo: new Set(), attr: new Set(), mats: new Set() };
+  worldRefs(scene, R); for (const m of WORLD_LRU) if (m.world) worldRefs(m.world, R);
+  for (const id in PROPS.tpl) for (const pt of PROPS.tpl[id].parts) { if (pt.geo.index) R.attr.add(pt.geo.index); for (const n in pt.geo.attributes) R.attr.add(pt.geo.attributes[n]); }
+  let tex = 0, geo = 0; for (const t of R.tex) tex += texB(t); for (const a of R.attr) geo += a.array ? a.array.byteLength : 0;
+  const post = GFX.composer && GFX.composer.memory ? GFX.composer.memory() : 0;
+  const sm = sun.shadow.mapSize.x, shadow = sun.castShadow ? sm * sm * 8 + (SHADOW.rt ? sm * sm * 4 : 0) + (SHADOW.bld && SHADOW.bld.light.shadow.map ? sm * sm * 8 : 0) : 0;
+  const gl = renderer.getContext(), a = gl.getContextAttributes() || {}, px = gl.drawingBufferWidth * gl.drawingBufferHeight, canvas = px * (8 + (a.depth ? 4 : 0)) + (a.antialias ? px * 32 : 0);
+  return { quality: GFX.quality, level: GFX.level, scale: GFX.scale, worlds: WORLD_LRU.map(m => m.id), postMB: MB(post), shadowMB: MB(shadow), canvasMB: MB(canvas), texturesMB: MB(tex), textures: R.tex.size, geometryMB: MB(geo), totalMB: MB(post + shadow + canvas + tex + geo) };
+};
 
 /* ---------- Per-map look: lights, sky, fog, exposure ---------- */
 const LSRC = [];                      // static light sources of the current map (for the point-light pool)
@@ -1863,31 +2784,48 @@ function applyLook() {
   sun.color.copy(linCol(R.sun[0])); sun.intensity = R.sun[1];
   SKY.sunDir.set(R.sunDir[0], R.sunDir[1], R.sunDir[2]).normalize();
   torch.color.copy(linCol(R.torch[0])); torch.intensity = R.torch[1]; torch.distance = R.torch[2]; torch.decay = 2;
+  WX.dirty = true;   // time of day / weather re-applied on top (next wxUpdate)
 }
+// With the loading gate, a world that must be built is built one frame later, behind the already painted fade
+// (gloadReady): the warp shows black at once instead of freezing on the old map while the new one is built.
 function enterWorld() {
+  if (GLOAD.gate && !map.world) {
+    if (curWorld) { scene.remove(curWorld); curWorld = null; }
+    Object.assign(GLOAD, { pending: true, defer: true, t0: performance.now(), frames: 0, uploaded: false });
+    gloadFade(true); AUTO.reset(2000); clearVis();
+    return;
+  }
+  enterWorldNow();
+}
+function enterWorldNow(deferred) {
   RL = rlookFor(map);
   if (curWorld) scene.remove(curWorld);
+  const fresh = !map.world;
   curWorld = buildWorld(map); scene.add(curWorld);
   if (curWorld.userData.epoch !== GFX_EPOCH) refreshMaterials(curWorld);
   worldQuality(curWorld);
   applyLook();
+  worldLRU(map);
   GFX.world = { hgt: map.hgtInfo || null, shadow: SHADOW };
   if (map.anim && map.anim.boards && typeof QUEST_UI !== 'undefined') QUEST_UI.boards = false;   // the 3D board mesh replaces the overlay placeholder
   if (map.anim && map.anim.gate && typeof QUEST_UI !== 'undefined') QUEST_UI.helgate = false;   // Hel's gate is a mesh now
   SHADOW.need = true;
   // static light sources for the point-light pool
   LSRC.length = 0; const Lc = RL.lights;
-  for (const b of map.braziers) LSRC.push({ x: b.x, y: b.y, h: groundH(b.x, b.y) + 1.35, c: linCol(Lc.brazier[0]), i: Lc.brazier[1], d: Lc.brazier[2], fl: 1, ph: b.x * 3.1 + b.y });
+  for (const b of map.braziers) LSRC.push({ x: b.x, y: b.y, h: groundH(b.x, b.y) + 1.35, c: linCol(Lc.brazier[0]), i: Lc.brazier[1], d: Lc.brazier[2], fl: 1, ph: b.x * 3.1 + b.y, lamp: true });
   if (map.way) LSRC.push({ x: map.way.x, y: map.way.y, h: groundH(map.way.x, map.way.y) + 3.2, c: linCol(Lc.way[0]), i: Lc.way[1], d: Lc.way[2], fl: 1, ph: 0.7, way: true });
   for (const wp of map.warps) LSRC.push({ x: wp.x + 0.5, y: wp.y + 0.5, h: groundH(wp.x + 0.5, wp.y + 0.5) + 1.2, c: linCol(Lc.warp[0]), i: Lc.warp[1], d: Lc.warp[2], fl: 0.3, ph: 2, warp: wp });
   const Ll = Lc.lamp || [0xffc070, 0.5, 4.5];
-  for (const l of (map.propLights || [])) LSRC.push({ x: l.x, y: l.z, h: l.h, c: linCol(Ll[0]), i: Ll[1], d: Ll[2], fl: 0.12, ph: l.x * 1.7 + l.z });
+  for (const l of (map.propLights || [])) LSRC.push({ x: l.x, y: l.z, h: l.h, c: linCol(Ll[0]), i: Ll[1], d: Ll[2], fl: 0.12, ph: l.x * 1.7 + l.z, lamp: true });
   for (const o of map.objs) if (o.kind === 'helgate') LSRC.push({ x: o.x, y: o.y + 0.7, h: groundH(o.x, o.y) + 1.8, c: new THREE.Color(), i: 0, d: 7, fl: 0.1, ph: 3, gate: true });
-  for (const l of (map.propDLights || [])) { let c; try { c = linCol(l.col); } catch (e) { c = linCol(0xffc070); } LSRC.push({ x: l.x, y: l.z, h: l.h, c, i: l.i, d: l.d, fl: 0.1, ph: l.x * 2.3 + l.z }); }
+  for (const l of (map.propDLights || [])) { let c; try { c = linCol(l.col); } catch (e) { c = linCol(0xffc070); } LSRC.push({ x: l.x, y: l.z, h: l.h, c, i: l.i, d: l.d, fl: 0.1, ph: l.x * 2.3 + l.z, lamp: true }); }
   if (map.heart) LSRC.push({ x: map.heart.x, y: map.heart.y + 0.6, h: groundH(map.heart.x, map.heart.y) + 1.8, c: linCol(Lc.heart[0]), i: Lc.heart[1], d: Lc.heart[2], fl: 0.2, ph: 1, heart: true });
-  clearVis();
+  if (!deferred) clearVis();   // (deferred: cleared when the warp started; sprites made since belong to this map)
   if (P) { cam.tx = P.x; cam.ty = P.y; cam.th = groundH(P.x, P.y); }
+  try { wxEnter(map); } catch (e) { console.warn('[gfx] weather', e); WX.on = false; GFX.look = null; }
   LT.key = ''; buildLightGrid();
+  mapEntryLoad(fresh);
+  PROPS.prefetch();
 }
 function snapCam() { cam.tx = P.x; cam.ty = P.y; cam.th = groundH(P.x, P.y); }
 
@@ -1896,7 +2834,10 @@ function snapCam() { cam.tx = P.x; cam.ty = P.y; cam.th = groundH(P.x, P.y); }
    >1 near fires/magic, <1 in shade and dark corners. Baked per map at 2 samples/tile
    (ambient + sun with a ray-marched shade test + braziers/waystone/warps/lava/heart),
    plus the few dynamic spell lights of this frame. Pass `out` to avoid allocation. */
-const LT = { g: null, gw: 0, gh: 0, key: '', dyn: [], nd: 0 };
+// (round 5: baked as two layers so time of day / overcast can re-light sprites every frame without a rebake:
+//  LT.lit = sun visibility 0..1, LT.g = the static fires' light (rgb). lightTint = amb + sun * lit + fires * lamp, with
+//  amb / sun / lamp from WX (the map's lt at day: identical to the old single bake).)
+const LT = { g: null, lit: null, gw: 0, gh: 0, key: '', dyn: [], nd: 0, amb: [1, 1, 1], sun: [0, 0, 0], lamp: 1 };
 const LT_RES = 2;
 function casterSpan(t, m, x, y) {
   switch (t) {
@@ -1915,8 +2856,8 @@ function casterSpan(t, m, x, y) {
   }
 }
 function buildLightGrid() {
-  const m = map, R = RL, gw = m.w * LT_RES, gh = m.h * LT_RES, G = new Float32Array(gw * gh * 3);
-  const amb = R.lt.amb, sn = R.lt.sun, sd = SKY.sunDir, hl = Math.hypot(sd.x, sd.z) || 1, dx = sd.x / hl, dz = sd.z / hl, tanE = sd.y / hl;
+  const m = map, R = RL, gw = m.w * LT_RES, gh = m.h * LT_RES, G = new Float32Array(gw * gh * 3), LI = new Float32Array(gw * gh);
+  const sd = SKY.sunDir, hl = Math.hypot(sd.x, sd.z) || 1, dx = sd.x / hl, dz = sd.z / hl, tanE = sd.y / hl;
   const spans = []; for (let i = 0; i < m.w * m.h; i++) spans.push(casterSpan(m.t[i], m, i % m.w, (i / m.w) | 0));
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
     const px = (i + 0.5) / LT_RES, pz = (j + 0.5) / LT_RES, own = ((pz | 0) * m.w + (px | 0));
@@ -1926,16 +2867,16 @@ function buildLightGrid() {
       const k = (z | 0) * m.w + (x | 0); if (k === own) continue; const s = spans[k]; if (!s) continue;
       const hy = t * tanE; if (hy >= s[0] && hy <= s[1]) { shade = s[2]; break; }
     }
-    const o = (j * gw + i) * 3, lit = 1 - shade;
-    G[o] = amb[0] + sn[0] * lit; G[o + 1] = amb[1] + sn[1] * lit; G[o + 2] = amb[2] + sn[2] * lit;
+    LI[j * gw + i] = 1 - shade;
   }
   const splat = (x, y, rad, c, k) => {
     const x0 = Math.max(0, Math.floor((x - rad) * LT_RES)), x1 = Math.min(gw - 1, Math.ceil((x + rad) * LT_RES)), y0 = Math.max(0, Math.floor((y - rad) * LT_RES)), y1 = Math.min(gh - 1, Math.ceil((y + rad) * LT_RES));
     for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++) { const d = Math.hypot((i + 0.5) / LT_RES - x, (j + 0.5) / LT_RES - y); if (d >= rad) continue; const f = 1 - d / rad, a = f * f * k, o = (j * gw + i) * 3; G[o] += c.r * a; G[o + 1] += c.g * a; G[o + 2] += c.b * a; }
   };
   const warm = new THREE.Color(1, 0.62, 0.3), blue = new THREE.Color(0.35, 0.6, 1), lava = new THREE.Color(1, 0.42, 0.14), gold = new THREE.Color(1, 0.8, 0.45);
+  const fire = Array.isArray(R.flame) && R.flame.length === 3 ? new THREE.Color(R.flame[0], R.flame[1], R.flame[2]).multiplyScalar(1 / Math.max(R.flame[0], R.flame[1], R.flame[2], 1e-3)) : warm;
   const dim = R.exposure > 1.05 ? 1.0 : 0.75;       // fires read stronger in dark maps
-  for (const b of m.braziers) splat(b.x, b.y, 4.2, warm, 0.8 * dim);
+  for (const b of m.braziers) splat(b.x, b.y, 4.2, fire, 0.8 * dim);
   const wayLit = !!(P && P.kindled && P.kindled[m.id]), kingSlain = !!(P && P.flags && P.flags.kingSlain);
   if (m.way && wayLit) splat(m.way.x, m.way.y, 5.5, warm, 0.7 * dim);
   for (const wp of m.warps) splat(wp.x + 0.5, wp.y + 0.5, 2.8, blue, 0.5);
@@ -1943,16 +2884,19 @@ function buildLightGrid() {
   if (m.heart && kingSlain) splat(m.heart.x, m.heart.y + 1, 7, gold, 0.7);
   if (m.d.look.lava) for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { if (m.t[y * m.w + x] !== T.LAVA) continue; let open = false; for (let k = 0; k < 4 && !open; k++) { const nx = x + DX[k], ny = y + DY[k]; open = nx >= 0 && ny >= 0 && nx < m.w && ny < m.h && m.t[ny * m.w + nx] === 0; } if (open) splat(x + 0.5, y + 0.5, 2.2, lava, 0.18); }
   for (let i = 0; i < G.length; i++) G[i] = Math.min(G[i], 2.2);
-  LT.g = G; LT.gw = gw; LT.gh = gh; LT.key = m.id + '|' + wayLit + '|' + kingSlain;
+  LT.g = G; LT.lit = LI; LT.gw = gw; LT.gh = gh; LT.key = m.id + '|' + wayLit + '|' + kingSlain;
+  if (!WX.on) { LT.amb = R.lt.amb; LT.sun = R.lt.sun; LT.lamp = 1; }
 }
 function lightTint(x, y, out) {
   out = out || { r: 1, g: 1, b: 1 };
   const G = LT.g; if (!G) { out.r = out.g = out.b = 1; return out; }
   const gw = LT.gw, gh = LT.gh;
   let fx = x * LT_RES - 0.5, fy = y * LT_RES - 0.5; fx = fx < 0 ? 0 : fx > gw - 1.001 ? gw - 1.001 : fx; fy = fy < 0 ? 0 : fy > gh - 1.001 ? gh - 1.001 : fy;
-  const xi = fx | 0, yi = fy | 0, ax = fx - xi, ay = fy - yi, i0 = (yi * gw + xi) * 3, i1 = i0 + 3, i2 = i0 + gw * 3, i3 = i2 + 3;
-  const w0 = (1 - ax) * (1 - ay), w1 = ax * (1 - ay), w2 = (1 - ax) * ay, w3 = ax * ay;
-  let r = G[i0] * w0 + G[i1] * w1 + G[i2] * w2 + G[i3] * w3, g = G[i0 + 1] * w0 + G[i1 + 1] * w1 + G[i2 + 1] * w2 + G[i3 + 1] * w3, b = G[i0 + 2] * w0 + G[i1 + 2] * w1 + G[i2 + 2] * w2 + G[i3 + 2] * w3;
+  const xi = fx | 0, yi = fy | 0, ax = fx - xi, ay = fy - yi, j0 = yi * gw + xi, i0 = j0 * 3, i1 = i0 + 3, i2 = i0 + gw * 3, i3 = i2 + 3;
+  const w0 = (1 - ax) * (1 - ay), w1 = ax * (1 - ay), w2 = (1 - ax) * ay, w3 = ax * ay, LI = LT.lit, A = LT.amb, S = LT.sun, k = LT.lamp;
+  const lit = LI[j0] * w0 + LI[j0 + 1] * w1 + LI[j0 + gw] * w2 + LI[j0 + gw + 1] * w3;
+  let r = A[0] + S[0] * lit + (G[i0] * w0 + G[i1] * w1 + G[i2] * w2 + G[i3] * w3) * k, g = A[1] + S[1] * lit + (G[i0 + 1] * w0 + G[i1 + 1] * w1 + G[i2 + 1] * w2 + G[i3 + 1] * w3) * k, b = A[2] + S[2] * lit + (G[i0 + 2] * w0 + G[i1 + 2] * w1 + G[i2 + 2] * w2 + G[i3 + 2] * w3) * k;
+  r = r > 2.2 ? 2.2 : r; g = g > 2.2 ? 2.2 : g; b = b > 2.2 ? 2.2 : b;
   for (let k = 0; k < LT.nd; k++) { const d = LT.dyn[k], ddx = x - d.x, ddy = y - d.y, q = ddx * ddx + ddy * ddy; if (q >= d.r2) continue; const f = 1 - Math.sqrt(q) / d.rad, a = f * f * d.k; r += d.c.r * a; g += d.c.g * a; b += d.c.b * a; }
   out.r = r > 2.4 ? 2.4 : r; out.g = g > 2.4 ? 2.4 : g; out.b = b > 2.4 ? 2.4 : b;
   return out;
@@ -1993,6 +2937,7 @@ function updateLights() {
     let I = s.i;
     let jx = 0, jz = 0;
     if (s.fl && !s.dyn) { I *= flick(s.fl, s.ph); if (s.fl >= 1) { jx = Math.sin(time * 7.1 + s.ph) * 0.05; jz = Math.cos(time * 8.3 + s.ph) * 0.05; } }
+    if (s.lamp) I *= WX.lamp;
     if (s.gate) { const G = map.anim && map.anim.gate, k = G ? G.k : 0; I = 0.25 + 2.2 * k; l.color.copy(GATEU.uCol.value); l.intensity = I * flick(0.1, s.ph); l.distance = s.d; l.position.set(s.x, s.h, s.y); continue; }
     if (s.warp) { const locked = warpIsLocked(s.warp); _col.setRGB(locked ? 1 : s.c.r, locked ? 0.25 : s.c.g, locked ? 0.12 : s.c.b); l.color.copy(_col); } else l.color.copy(s.c);
     l.intensity = I; l.distance = s.d; l.position.set(s.x + jx, s.h, s.y + jz);
@@ -2023,7 +2968,7 @@ function updateSun() {
   }
 }
 function updateAtmosphere() {
-  const k = cam.dist / 40; if (scene.fog && RL) { scene.fog.near = RL.fog[0] * k; scene.fog.far = RL.fog[1] * k; LAVAU.uFog.value.set(scene.fog.near, scene.fog.far); }
+  const k = cam.dist / 40, F = (WX.on && WX.look ? WX.look : RL); if (scene.fog && F) { scene.fog.near = F.fog[0] * k; scene.fog.far = F.fog[1] * k; LAVAU.uFog.value.set(scene.fog.near, scene.fog.far); }
   skyDome.position.copy(camera.position);
 }
 const _dbs = new THREE.Vector2();
@@ -2048,14 +2993,16 @@ function animateWorld(dt) {
     if (Math.random() < 0.5) parts.push({ x: w.wp.x + 0.5 + rand(-0.5, 0.5), y: w.wp.y + 0.5 + rand(-0.5, 0.5), z: 0, vx: 0, vy: 0, vz: rand(50, 110), life: rand(0.8, 1.4), max: 1.4, col: locked ? '#ff8a6a' : '#bfe4ff', size: 2.5, float: true });
   }
   SHAFTU.uT.value = time;
-  if (A.halos) for (const h of A.halos) h.s.material.opacity = h.op * flick(h.fl, h.ph);
+  wxUpdate(dt);
+  const lk = 1 + (WX.lamp - 1) * 0.35;
+  if (A.halos) for (const h of A.halos) h.s.material.opacity = (h.night ? h.op + h.night * WX.n : h.op) * flick(h.fl, h.ph) * (h.lamp ? lk : 1);
   POOLU.uT.value = time; POOLU.uWay.value = lit ? 1 : 0;
   if (A.motes) {
-    MOTEU.uT.value = time; MOTEU.uC.value.set(cam.tx, cam.th, cam.ty); MOTEU.uScale.value = renderer.getDrawingBufferSize(_dbs).y * 0.5 * camera.projectionMatrix.elements[5];
+    MOTEU.uT.value = time; MOTEU.uC.value.set(cam.tx, cam.th, cam.ty); MOTEU.uScale.value = renderer.getDrawingBufferSize(_dbs).y * (GFX.composer && GFX.composer.on ? GFX.composer.scale : 1) * 0.5 * camera.projectionMatrix.elements[5];
     MOTEU.tShadow.value = SHADOW.tex; MOTEU.uShadowM.value.copy(sun.shadow.matrix); MOTEU.uLitOn.value = SHADOW.split && SHADOW.tex ? 1 : 0;
   }
   if (A.lava) LAVAU.uTime.value = time;
-  WATERU.uT.value = time;
+  WATERU.uT.value = time; GJU.uGj.value = (time * 0.012) % 64;
   if (A.groundEmis) { const k = 0.85 + 0.15 * Math.sin(time * 1.3); A.groundEmis.emissive.setRGB(1.5 * k, 0.62 * k, 0.25 * k); }
   if (A.heart) { const alive = P.flags.kingSlain; const k = alive ? 0.6 + Math.sin(time * 2) * 0.3 : 0.05; if (alive) A.heart.coreM.color.setRGB(0.4 + k * 2.6, 0.2 + k * 1.6, 0.05 + k * 0.4); else A.heart.coreM.color.setRGB(0.04, 0.015, 0.008); A.heart.glowS.material.opacity = alive ? k * 0.7 : 0; }
   if (A.gate) {
@@ -2111,4 +3058,4 @@ const CURSORS = (() => {
 let curCursor = '';
 function setCursor(k) { if (k !== curCursor) { curCursor = k; cv.style.cursor = CURSORS[k]; } }
 applyQuality();
-// (the boot models and the manifest start loading as soon as the loader exists, see PROPS.boot)
+// (the models manifest starts loading at once; each map's models load with its world, neighbours in idle time)

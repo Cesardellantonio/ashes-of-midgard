@@ -66,10 +66,61 @@ const CLASSES = {
 // Every class, in definition order. Gear with no `jobs` list is usable by all of them.
 const ALLJ = Object.keys(CLASSES);
 // Classes offered when leaving class `cls` (Vidar's job change uses 'novice').
-const nextClasses = cls => Object.keys(CLASSES).filter(k => CLASSES[k].from === cls);
+const nextClasses = cls => Object.keys(CLASSES).filter(k => CLASSES[k].from === cls && !CLASSES[k].reborn);   // reborn classes come from REBORN_OF only
 // The class and every class it grew from, oldest first: ['novice', 'swordsman', 'knight'].
 function classChain(cls) { const out = []; for (let c = cls, g = 0; c && CLASSES[c] && g < 6; c = CLASSES[c].from, g++) out.unshift(c); return out; }
 // Can class `cls` use item template t? Honours CLASSES[cls].base inheritance.
 // Weapons are stricter: the class must list the weapon type in `weapons` (second classes drop some
 // of their first class's weapon families, and have no sprite for them).
 function jobOk(t, cls) { if (t.slot === 'weapon' && t.wtype && CLASSES[cls] && CLASSES[cls].weapons && !CLASSES[cls].weapons.includes(t.wtype)) return false; if (!t.jobs) return true; for (let c = cls, g = 0; c && g < 6; c = CLASSES[c] && CLASSES[c].base, g++) if (t.jobs.includes(c)) return true; return false; }
+
+/* ---------- Content round 6: rebirth (design/tier3.md) ----------
+   At Base 60 + Job 50 as a second class, the quest chain `reborn_1..3` (js/data/quests.js) ends at the Heart of
+   Yggdrasil: rebirth() (js/core.js) turns the hero into a High Novice (Base 1, bonus status points, items kept). At
+   Job 10 the High Novice goes straight to the reborn version of the second class it had (REBORN_OF), tier 3,
+   job cap 70: the class chain runs through the old classes, so every first- and second-class skill is kept and the
+   five new signature skills are added. `from` = the second class (classChain / the Skills window sections), but a
+   tier-3 class is never offered by nextClasses() as a job change: only Vidar's reborn path uses REBORN_OF. */
+Object.assign(CLASSES, {
+  high_novice: { name: 'High Novice', tier: 0, base: 'novice', reborn: true, hp: [5.5, 0.12], sp: 1.3, maxJob: 10, skills: ['basic', 'first_aid'], weapons: ['dagger'],
+    look: { body: '#e8e2d4', trim: '#d0a840', legs: '#6a5a40' },
+    blurb: 'Born again at the Heart of Yggdrasil. The Tree remembers what you were: at Job Lv 10 your old path takes you back, higher than before.' },
+  rune_jarl: { name: 'Rune Jarl', tier: 3, from: 'knight', base: 'knight', reborn: true, hp: [8.8, 0.58], sp: 3, maxJob: 70,
+    skills: ['spiral_pierce', 'einherjar_fury', 'gungnir_charge', 'thurisaz_rune', 'warg_mastery'], weapons: ['spear', 'twohand', 'sword'],
+    look: { body: '#2a2622', trim: '#e0b040', legs: '#1e1a18', cape: '#9a1e1e' },
+    blurb: 'The Ash Knight reborn. Black-and-gold plate carved with burning runes, a warg under the saddle and the fury of the einherjar behind the spear.' },
+  tyr_paladin: { name: 'Paladin of Tyr', tier: 3, from: 'oathkeeper', base: 'oathkeeper', reborn: true, hp: [8.6, 0.55], sp: 3.8, maxJob: 70,
+    skills: ['gloria', 'shield_chain', 'pressure', 'tyrs_sacrifice', 'tyrs_aegis'], weapons: ['sword', 'spear', 'mace'],
+    look: { body: '#f0ece0', trim: '#e0b840', legs: '#5a5a68', cape: '#b02a1e' },
+    blurb: 'The Oathkeeper reborn with one gauntlet missing, as Tyr lost his hand. Shield thrown, judgement pressed, the god’s own ward over the ground.' },
+  galdr_master: { name: 'Galdr Master', tier: 3, from: 'runecaster', base: 'runecaster', reborn: true, hp: [6, 0.2], sp: 8.5, maxJob: 70,
+    skills: ['muspel_vulcan', 'unmake', 'soul_drain', 'ginnungagap', 'galdr_amplify'], weapons: ['staff', 'rod'],
+    look: { body: '#1a1840', trim: '#e8d070', legs: '#120f2a', robe: true, hat: 'witch' },
+    blurb: 'The Runecaster reborn. Chants galdr, the spoken runes: ghost-fire from Muspel, the void before the worlds, and the power to unmake another’s spell.' },
+  volva: { name: 'Völva', tier: 3, from: 'sage', base: 'sage', reborn: true, hp: [6.6, 0.24], sp: 8, maxJob: 70,
+    skills: ['foresight', 'spell_breaker', 'seidr_hex', 'vardlokkur', 'volva_sight'], weapons: ['book', 'rod', 'staff'],
+    look: { body: '#2a4a7a', trim: '#e0e0f0', legs: '#1a2a44', robe: true },
+    blurb: 'The Seiðr Sage reborn as a seeress with a staff of bells. Sees the next spell before it is cast, breaks the enemy’s, and hexes the rest.' },
+  fenris_stalker: { name: 'Fenris Stalker', tier: 3, from: 'wolfhunter', base: 'wolfhunter', reborn: true, hp: [6.8, 0.28], sp: 3.4, maxJob: 70,
+    skills: ['sharp_shooting', 'huginn_muninn', 'gleipnir_snare', 'fenris_howl', 'wolf_instinct'], weapons: ['bow', 'dagger'],
+    look: { body: '#1e1c1e', trim: '#d8d0b0', legs: '#2a2426', hat: 'feather' },
+    blurb: 'The Wolfhunter reborn in the Wolf’s own pelt. Arrows that go through a whole pack, and both of Odin’s ravens at once.' },
+  bragi_voice: { name: 'Voice of Bragi', tier: 3, from: 'skald', base: 'skald', reborn: true, hp: [7, 0.3], sp: 4.2, maxJob: 70,
+    skills: ['norns_draw', 'harmonize', 'song_of_valhalla', 'bragis_verse', 'skald_volley'], weapons: ['lute', 'whip', 'bow'],
+    look: { body: '#c89a30', trim: '#fff0c0', legs: '#5a3a20', cape: '#7a1e3a', hat: 'feather' },
+    blurb: 'The Skald reborn with Bragi’s own voice: two songs at once, a verse that cuts, and the Norns’ cards drawn blind.' },
+  valkyrie: { name: 'Valkyrie', tier: 3, from: 'priest', base: 'priest', reborn: true, hp: [7.4, 0.34], sp: 7, maxJob: 70,
+    skills: ['assumptio', 'basilica', 'einherjar_call', 'chooser_spear', 'wings_of_valhalla'], weapons: ['mace', 'staff', 'book', 'spear'],
+    look: { body: '#e8ecf4', trim: '#c8d0e0', legs: '#8a90a0', robe: true },
+    blurb: 'The Valkyrie Priest reborn a true Valkyrie: winged helm, a spear to choose the slain and the right to call the einherjar back to their feet.' },
+  berserkr: { name: 'Berserkr', tier: 3, from: 'monk', base: 'monk', reborn: true, hp: [8.2, 0.46], sp: 5.2, maxJob: 70,
+    skills: ['blade_stop', 'chain_crush', 'asura_plus', 'bear_rage', 'thors_palm'], weapons: ['knuckle', 'mace'],
+    look: { body: '#6a4a2a', trim: '#c83a2a', legs: '#2a2018' },
+    blurb: 'The Einherjar Monk reborn in the bear’s skin. Catches the blade barehanded, then does not stop hitting.' },
+});
+// The reborn version of each second class (the High Novice's only job change, from Vidar).
+const REBORN_OF = { knight: 'rune_jarl', oathkeeper: 'tyr_paladin', runecaster: 'galdr_master', sage: 'volva', wolfhunter: 'fenris_stalker', skald: 'bragi_voice', priest: 'valkyrie', monk: 'berserkr' };
+// Classes that can ride a warg (Ylva's stable in Skaldhaven). Art: knight_<g>.mount_* exists; rune_jarl_<g>.mount_* does not yet.
+const MOUNT_CLASSES = ['knight', 'rune_jarl'];
+// ALLJ is recomputed so armour with no `jobs` list (every class) includes the new classes too.
+ALLJ.length = 0; ALLJ.push(...Object.keys(CLASSES));

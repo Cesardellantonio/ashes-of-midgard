@@ -521,7 +521,7 @@ A2('act2_9', { name: 'The One-Eyed Wanderer', area: 'Bifrost · Emberhold · Ash
 A2('act2_10', { name: 'Hel’s Due', area: 'Gloamheim Keep', req: { quests: ['act2_9'] }, seq: true,
   summary: 'Hel is sewing her brother a new body at Helgrind. Go and see her.',
   obj: [{ type: 'scene', map: 'gloamheim', x: 30.5, y: 7.5, r: 3.5, scene: 'a2_hel', place: 'Helgrind, behind Gaunt’s throne', text: 'Go to Helgrind, behind Gaunt’s throne' },
-    { type: 'hunt', mob: 'garmr', map: 'gloamheim', x: 30.5, y: 9.5, place: 'Helgrind' },
+    { type: 'hunt', mob: 'garmr_gate', map: 'gloamheim', x: 30.5, y: 9.5, place: 'Helgrind' },   // round 7: the variant of the Helheim MVP (mob_garmr)
     { type: 'scene', npc: 'modgud', scene: 'a2_modgud3', text: 'Speak with Móðguðr' }],
   reward: { exp: 400000, jexp: 260000, lore: 'garmr' } });
 A2('act2_11', { name: 'Gjallarhorn', area: 'Bifrost Ruins', req: { quests: ['act2_10'] }, seq: true,
@@ -785,6 +785,7 @@ const TITLES = {
   wolfbinder: 'Wolfbinder', wolf_friend: 'Wolf-Friend', pips_hero: 'Pip’s Hero', shield_kin: 'Shield-Kin of Rimeshore', mire_friend: 'Friend of the Mire',
   dvergar_friend: 'Dvergar-Friend', ghost_speaker: 'Who Speaks for the Dead', refused: 'Refused Again', hatter: 'Hatter of Midgard',
   forge_friend: 'Forge-Friend', master_smith: 'Master Smith', hoarder: 'Keeper of Hoards',   // round 5
+  reborn: 'Reborn', warg_rider: 'Warg-Rider', beast_friend: 'Beast-Friend', beast_tamer: 'Tamer of the Ash',   // round 6
 };
 const killsOf = f => { let n = 0; const K = P.flags.kills || {}; for (const k in K) if (MOBS[k] && !MOBS[k].variant && f(MOBS[k], k)) n += K[k]; return n; };
 const allKills = () => killsOf(() => true);
@@ -793,7 +794,7 @@ const NAMED_KEYS = ['poring_king', 'old_greyback', 'shellback', 'amethyst_matria
 const QUEST_HATS = ['straw_hat', 'poring_hat', 'raven_feather', 'greyback_hood', 'squire_plume', 'shellback_helm', 'boatman_hat', 'amethyst_diadem', 'runehelm_str', 'runehelm_int', 'runehelm_dex', 'valkyrie_circlet', 'sprig_crown', 'cinder_circlet', 'wanderer_hat', 'gleipnir_band', 'wolf_ears'];
 const wayMaps = () => MAP_ORDER.filter(k => MAPDEFS[k] && genMap(k).way);
 // Side quests anyone can finish: not the second-class trials (one path each) and not the pre-Act II Fenrir quest.
-const sideIds = () => Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'side' && !QUESTS[id].trial && (id !== 'vidar_fenrir' || P.quests.done[id]));
+const sideIds = () => Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'side' && !QUESTS[id].trial && !QUESTS[id].reborn && (id !== 'vidar_fenrir' || P.quests.done[id]));   // round 6: the rebirth chain is not a side quest for 'every side quest'
 const cardsOfMap = k => { const d = MAPDEFS[k], s = new Set(d.spawns.map(x => x[0])); if (d.boss) s.add(d.boss); return [...s].filter(m => ITEMS['c_' + m]); };
 const nCards = () => Object.keys(P.flags.cards || {}).length;
 const ach = (cat, id, name, desc, check, prog, title) => ({ cat, id, name, desc, check, prog, title });
@@ -840,6 +841,171 @@ const ACHIEVEMENTS = [
   ach('Other', 'zeny', 'Andvari’s Envy', 'Carry 1,000,000 zeny.', ...cnt(1000000, () => P.zeny)),
   ach('Other', 'deaths', 'Refused Again', 'Die ten times. The Tree keeps sending you back.', ...cnt(10, () => P.flags.deaths || 0), 'refused'),
 ];
+
+/* ---------- Content round 6: rebirth (design/tier3.md) ----------
+   Vidar offers it to a second class at Base Lv 60 + Job Lv 50 once the Age is chosen (main_8). The three roots of
+   Yggdrasil (Act II: Mímir's burned well at the crossroads shrine, Hvergelmir under Helgrind, Urðr's well on the
+   Bifrost), then the Norns' price for Heimdall, then the Heart of Yggdrasil (talkHeart -> heartRebirth, npcs.js),
+   which calls rebirth() (core.js). `reborn: true` keeps these out of the "every side quest" achievement. */
+const rebornOpen = () => CLASSES[P.cls].tier === 2 && !P.flags.reborn;
+quest('reborn_1', { giver: 'vidar', reborn: true, name: 'The Roots Remember', area: 'Ashen Fields · Gloamheim · Bifrost Ruins',
+  req: { lvl: 60, jlvl: 50, quests: ['main_8'], test: rebornOpen },
+  summary: 'Vidar says the Tree can spin a life again. First, listen at its three roots.',
+  offer: ['<i>He does not look up from the fire.</i> You have gone as far as a path goes. I can see it on you. The next step is not forward.', 'The Tree stands on three roots, and all three still drink. Go and listen at each one: Mímir’s well, the burned shrine at the crossroads in the fields; Hvergelmir, under Hel’s gate in Gloamheim; and Urðr’s well, where the broken bridge runs into the sky. Then come back and tell me what they said.'],
+  progress: 'Mímir’s well at the crossroads shrine, Hvergelmir at Helgrind, Urðr’s well in the Bifrost’s Rune Plaza. Then Vidar.',
+  done: ['<i>You tell him. He is quiet for a long time.</i> They all said the same thing to me, once. “Not yet.” To you they said “again”.', 'The Norns can spin you again. Young, and remembering everything. But they do not work for nothing.'],
+  obj: [
+    { type: 'inspect', map: 'ashen_fields', place: 'Mímir’s well', r: 2.2, spots: [{ x: 40.5, y: 32.5, name: 'Mímir’s Well', text: ['<i>The shrine is still black with the fire. Under it, very deep, water moves.</i>', 'A voice like a stone rolling over: <i>An eye for wisdom. A son for time. What will you pay, little ember? … Nothing? Good. Then listen: the Tree is not finished with you.</i>'] }] },
+    { type: 'inspect', map: 'gloamheim', place: 'Hvergelmir', r: 2.5, spots: [{ x: 30.5, y: 7.5, name: 'Hvergelmir', text: ['<i>Behind Helgrind the root goes down into a roar of cold water, the spring every river of the dead begins from.</i>', '<i>The dead drink here and forget. You drink and remember everything: every time you fell in the Ash, and every time you got up.</i>'] }] },
+    { type: 'inspect', map: 'bifrost', place: 'Urðr’s well', r: 2.5, spots: [{ x: 33.5, y: 40.5, name: 'Urðr’s Well', text: ['<i>In the Rune Plaza a dry basin of white stone, carved with every name that was ever spun. Yours is there, and the thread beside it is nearly used up.</i>', '<i>Three shadows stand around the basin and one of them, the young one, winks at you.</i>'] }] },
+  ],
+  reward: { zeny: 20000, lore: 'roots' } });
+quest('reborn_2', { giver: 'vidar', turnIn: 'heimdall', reborn: true, name: 'The Norns’ Price', area: 'Midgard · Bifrost Ruins',
+  req: { quests: ['reborn_1'], test: rebornOpen },
+  summary: 'The Norns want three Embers of Yggdrasil and five Valkyrie Plumes. Heimdall keeps the way to their well.',
+  offer: ['The Norns’ price is always the same: something of the Tree, and something of the ones who chose the slain. Three Embers of Yggdrasil. Five plumes from the Valkyrie shades on the broken bridge.', 'Bring them to Heimdall. He has kept the way to Urðr’s well since before there was a bridge. He will draw the water for you.'],
+  progress: 'Three Embers of Yggdrasil (the great beasts drop them; the smiths sometimes sell one) and five Valkyrie Plumes, for Heimdall.',
+  done: ['<i>Heimdall takes the embers and the plumes and walks off the edge of the bridge. He comes back a minute later, not wet at all, with a flask of water that is heavier than water should be.</i>', 'Pour it on the Heart. All of it. And say goodbye to this body; you have used it well.'],
+  obj: [{ type: 'collect', item: 'ygg_ember', n: 3 }, { type: 'collect', item: 'valkyrie_plume', n: 5 }],
+  reward: { items: [['urd_water', 1]], lore: 'norns' } });
+quest('reborn_3', { giver: null, turnIn: null, auto: true, reborn: true, name: 'Born Again', area: 'Throne of Cinders',
+  req: { quests: ['reborn_2'] },
+  summary: 'Pour the Water of Urðr on the Heart of Yggdrasil, behind the Throne of Cinders.',
+  obj: [{ type: 'cond', text: 'Pour the Water of Urðr on the Heart of Yggdrasil and be born again', check: () => !!P.flags.reborn }],
+  reward: { title: 'reborn', lore: 'reborn' } });
+ACHIEVEMENTS.push(
+  ach('Rebirth', 'reborn', 'Born Again', 'Be reborn at the Heart of Yggdrasil.', () => !!P.flags.reborn),
+  ach('Rebirth', 'tier3', 'The Higher Path', 'Take up a reborn path: Rune Jarl, Paladin of Tyr, Galdr Master, Völva, Fenris Stalker, Voice of Bragi, Valkyrie or Berserkr.', () => CLASSES[P.cls].tier === 3),
+  ach('Rebirth', 'tier3_70', 'Spun Anew', 'Reach Job Lv 70 in a reborn path.', ...cnt(70, () => CLASSES[P.cls].tier === 3 ? P.jlvl : 0)),
+  ach('Companions', 'warg', 'Warg-Rider', 'Ride one of Ylva’s wargs.', () => !!P.flags.rode, null, 'warg_rider'),
+  ach('Companions', 'tame_1', 'A Friend in the Ash', 'Tame a monster.', ...cnt(1, () => Object.keys(P.flags.tamed || {}).length)),
+  ach('Companions', 'pet_loyal', 'Beast-Friend', 'Raise a pet to Loyal.', () => !!(P.pet && P.pet.intim >= 910) || !!P.flags.petLoyal, null, 'beast_friend'),
+  ach('Companions', 'tame_all', 'Tamer of the Ash', 'Tame every kind of pet in Midgard.', ...cnt(Object.keys(PETS).length, () => Object.keys(P.flags.tamed || {}).length), 'beast_tamer'),
+);
+
+/* =========================================================
+   Content round 7 · Act III: The Roots of Hel (after Act II; Helheim needs a reborn hero at Base Lv 70)
+   Six story quests (`act: 3`). Scenes live in SCENES (js/data/npcs.js: a3_*). Rebirth is the key: Hel's law keeps
+   the living out of her realm, but not one the Norns have spun twice (WARP_LOCKS.hel in js/core.js).
+   ========================================================= */
+const A3 = (id, o) => quest(id, Object.assign({ kind: 'main', act: 3, auto: true, giver: null, turnIn: null }, o));
+A3('act3_1', { name: 'The Gnawing Below', area: 'Gloamheim Keep', req: { quests: ['act2_12'] }, seq: true,
+  summary: 'The dead are pressing back against Helgrind from the living side, as if something below frightens them. Móðguðr wants a word.',
+  onAccept() { P.flags.act3 = P.flags.act3 || 1; },
+  obj: [{ type: 'scene', npc: 'modgud', scene: 'a3_modgud', text: 'Speak with Móðguðr at Helgrind (Gloamheim Keep)' },
+    { type: 'cond', text: 'Be born again at the Heart of Yggdrasil (Vidar knows the way)', check: () => !!P.flags.reborn },
+    { type: 'cond', text: 'Grow strong in your second life (Base Lv 70)', check: () => !!P.flags.reborn && P.lvl >= 70, prog: () => [P.flags.reborn ? Math.min(70, P.lvl) : 0, 70] }],
+  reward: { exp: 600000, jexp: 300000, lore: 'helheim' } });
+A3('act3_2', { name: 'Across Gjallarbrú', area: 'Helheim', req: { quests: ['act3_1'] }, seq: true,
+  summary: 'Walk through Helgrind into Helheim, find the camp by the road, and cross the golden bridge over Gjöll.',
+  obj: [{ type: 'reach', map: 'helheim', text: 'Walk through Helgrind into Helheim (Gloamheim Keep, behind Gaunt’s throne)' },
+    { type: 'cond', text: 'Kindle the Waystone in the camp by the Helgrind road', check: () => !!P.kindled.helheim },
+    { type: 'scene', map: 'helheim', x: GJALL.x0 + 1.5, y: GJALL.y0 + 5, r: 1.6, scene: 'a3_bridge', place: 'Gjallarbrú', text: 'Cross Gjallarbrú, the golden bridge over Gjöll' }],
+  reward: { exp: 800000, jexp: 400000, items: [['gjoll_draught', 10]], lore: 'gjoll' } });
+A3('act3_3', { name: 'The Hound Before the Hall', area: 'Helheim', req: { quests: ['act3_2'] }, seq: true,
+  summary: 'Hel sewed Garmr back together and chained him before Eljudnir’s door. Nobody enters Hel’s hall while he stands.',
+  obj: [{ type: 'boss', mob: 'garmr', text: 'Defeat Garmr, chained before Eljudnir' },
+    { type: 'scene', map: 'helheim', x: 32.5, y: 11.5, r: 3, scene: 'a3_hel', place: 'Eljudnir’s door', text: 'Go to the door of Eljudnir' }],
+  reward: { exp: 1200000, jexp: 600000, items: [['warding_ash', 3]], lore: 'eljudnir' } });
+A3('act3_4', { name: 'Ganglati’s Stair', area: 'Helheim · the Deep Roots', req: { quests: ['act3_3'] }, turnIn: 'ganglati',
+  summary: 'The way to Níðhöggr must be found from below. Go down Ganglati’s stair, beat what waits on the fifth floor, and bring back pieces of the root the dragon’s brood have chewed.',
+  progress: 'Down… is… this way. The fifth floor. And splinters… of the root.',
+  done: ['<i>Ganglati turns the splinters over in his hands. It takes a very long time.</i> These… are fresh. He bit them… yesterday.', 'The Root Road, west of the plain, goes under the great root to Hvergelmir. It was choked… with the dead. They have run away… from him. <i>He nods, slowly.</i> It is open. Go. I will… still be here.'],
+  obj: [{ type: 'cond', text: 'Beat the master of floor 5 of the Deep Roots', check: () => !!(P.flags.deep && (P.flags.deep.bosses || 0) >= 1), prog: () => [Math.min(1, (P.flags.deep && P.flags.deep.bosses) || 0), 1] },
+    { type: 'collect', item: 'root_splinter', n: 3, text: 'Splinters of the World-Root (Níðhöggr’s brood carry them)' }],
+  drops: [{ mob: 'nidhogg_spawn', item: 'root_splinter', chance: 0.35 }],
+  onComplete() { P.flags.lore.hvergelmir = true; },
+  reward: { exp: 1500000, jexp: 700000, zeny: 150000, items: [['golden_apple', 1]] } });
+A3('act3_5', { name: 'Malice-Striker', area: 'Hvergelmir', req: { quests: ['act3_4'] }, seq: true,
+  summary: 'Níðhöggr gnaws the root at Hvergelmir. Take the Root Road west under the great root, and stop him.',
+  obj: [{ type: 'scene', map: 'helheim_hvergelmir', x: 20.5, y: 26.5, r: 6, scene: 'a3_hvergelmir', place: 'Hvergelmir', text: 'Take the Root Road to Hvergelmir' },
+    { type: 'boss', mob: 'nidhogg', text: 'Slay Níðhöggr at the root' }],
+  reward: { exp: 3000000, jexp: 1200000, items: [['golden_apple', 2]], lore: 'nidhogg' } });
+A3('act3_6', { name: 'What Hel Owes', area: 'Eljudnir', req: { quests: ['act3_5'] },
+  summary: 'The gnawing has stopped. Hel pays her debts. Go to her table in Eljudnir and name your price.',
+  obj: [{ type: 'scene', map: 'helheim_arena', x: 22.5, y: 16.5, r: 7, scene: 'a3_payment', place: 'Hel’s table', text: 'Go to Hel’s table in Eljudnir' }],
+  reward: { exp: 2500000, jexp: 1000000, zeny: 300000, title: 'hels_guest', items: P => [[({ rest: 'u_hel_mercy', vidar: 'u_vidar_shoe', seal: 'u_hel_seal' })[P.flags.helPact] || 'u_hel_mercy', 1], ['golden_apple', 3]] } });
+
+/* ---------- Helheim side quests (round 7) and Hel's bounty board ---------- */
+const helReq = (lvl, o) => Object.assign({ lvl, quests: ['act3_2'] }, o || {});
+quest('eir_roses', { giver: 'eir', name: 'Roses for the Unwed', area: 'Helheim', req: helReq(72),
+  summary: 'Eir wants the dead roses the corpse brides carry. She says they still remember being alive, and that is medicine.',
+  offer: ['The brides on the north plain carry bouquets of roses that died the day they did. They will not let go of them. They will not let go of anything.', 'A dead rose remembers the garden. Steep it and it remembers for you. Bring me eight, and I will brew you something that helps you remember too.'],
+  progress: 'Eight grave roses, from the corpse brides north of the river.',
+  done: ['<i>Eir lays the roses out in a row.</i> Eight gardens. <i>She crushes them, one by one, into a kettle.</i> Here. Drink it slowly. Cry if you want. Everybody does.'],
+  obj: [{ type: 'collect', item: 'grave_rose', n: 8 }],
+  reward: { exp: 600000, jexp: 380000, items: [['gjoll_draught', 10], ['soul_tonic', 5]], rep: { dead: 1 } } });
+quest('eir_child', { giver: 'eir', name: 'The Lantern Child', area: 'Helheim', req: helReq(72),
+  summary: 'A lost soul, a child with a lantern, cries in the cairn field west of the camp. Walk it to Eir’s fire before the hounds find it.',
+  offer: ['There is a child in the cairn field to the west. A lost soul. It has been crying for a hundred years, and the hounds follow the sound.', 'The dead cannot carry it: it will not let them. It might let you. Walk it here, to the fire. Slowly. Children are slow even when they are dead.'],
+  progress: 'The lost child waits in the cairn field west of the camp. Bring it to Eir’s fire.',
+  done: ['<i>The child sits down by the fire and, for the first time in a hundred years, stops crying.</i>', '<i>Eir looks at you over its head.</i> Thank you. I will keep it until it remembers its name. Here: the souls left me these. They want you to have them.'],
+  obj: [{ type: 'escort', npc: 'lost_child', map: 'helheim', from: [13.5, 45.5], to: [31.0, 51.0], r: 3, place: 'Eir’s fire', hp: 120, dmg: 5, speed: 3.2 }],
+  reward: { exp: 700000, jexp: 420000, items: [['soul_tonic', 5], ['warding_ash', 2]], rep: { dead: 1 } } });
+quest('hlin_names', { giver: 'hlin', name: 'Names on the Stones', area: 'Helheim', req: helReq(70),
+  summary: 'Hlín keeps a list of names Frigg asked her to look for. Read the four cairns in the west plain and tell her who lies there.',
+  offer: ['Frigg gave me a list before she went. Names she wanted kept safe: mothers, mostly. I have looked for them for a long time.', 'There are four cairns on the west plain, by the river and among the stones. Read them for me. I cannot leave the chest.'],
+  progress: 'Four cairns on the west plain of Helheim: two by the camp’s cairn field, one by the river, one further out.',
+  done: ['<i>Hlín reads your list against hers. Her finger stops on one name, and stays there.</i> She is here. After all this time.', 'Take this. Frigg gave it to me so she could always find me. I do not need to be found any more. You might.'],
+  obj: [{ type: 'inspect', map: 'helheim', place: 'the west cairns', r: 2.3, spots: [
+    { x: 13.0, y: 45.9, name: 'The Long Barrow', text: ['<i>A barrow heaped with frosted stones, a rusted sword in its head.</i>', '<i>Scratched on the shield at its foot: “Hervor. She went into the mound for her father’s sword and came out with it.”</i>'] },
+    { x: 15.5, y: 49.7, name: 'The Small Cairn', text: ['<i>A little cairn with a soul candle guttering on top.</i>', '<i>“Unnr, who carried water.” Someone has left a cup beside it. It is full.</i>'] },
+    { x: 10.5, y: 50.7, name: 'The Leaning Cairn', text: ['<i>A cairn leaning toward the camp, as if listening to the fire.</i>', '<i>“Gerd the weaver. She wove the sails of the ships that took her sons.”</i> The name is on Hlín’s list.'] },
+    { x: 9.9, y: 37.9, name: 'The River Barrow', text: ['<i>A barrow by Gjöll’s bank. Faces move under the ice beside it.</i>', '<i>“Signy, who waited.” Nothing else. Nothing else was needed.</i>'] }] }],
+  reward: { exp: 500000, jexp: 320000, items: [['u_hlin_brooch', 1]], lore: 'hlin', rep: { dead: 2 } } });
+quest('gauti_draugr', { giver: 'gauti', name: 'Grave-Goods', area: 'Helheim', req: helReq(74),
+  summary: 'Hel’s draugr hoard the Obols of the dead they rob. Gauti wants them “returned to circulation”.',
+  offer: ['The draugr out on the plain rob the newly dead of their Obols. Then they sit on them. Nobody spends them. It is a terrible waste.', 'Put fifteen of them back in the ground and bring me what they drop. I will pay you in Obols. Some of them may even be theirs.'],
+  progress: 'Fifteen of Hel’s draugr, anywhere on the plain.',
+  done: ['<i>Gauti counts the coins twice, then a third time out of habit.</i> Circulation restored. Here is your cut. It is a generous cut. Do not tell anybody.'],
+  obj: [{ type: 'kill', mob: 'hel_draugr', n: 15 }],
+  reward: { exp: 650000, jexp: 400000, zeny: 40000, items: [['hel_obol', 25]] } });
+quest('gauti_marrow', { giver: 'gauti', name: 'Bones for the Forge', area: 'Helheim', req: helReq(82, { quests: ['act3_2', 'gauti_draugr'] }),
+  summary: 'Sindri, up in Nidavellir, wants colossus marrow and hound-chain for Gjöll-forged steel. Gauti is brokering the deal.',
+  offer: ['I had a letter from a dwarf. A dwarf! Writing to Hel! He wants giant’s marrow from the bone colossi and links of the hounds’ chains. Six of each.', 'Bring them. The dwarf pays well, and I pay you some of what the dwarf pays me, and everybody is happy except the colossi.'],
+  progress: 'Six Giant’s Marrow (bone colossi) and six Hound-Chain Links (hounds of Hel).',
+  done: ['<i>Gauti wraps the bones and chain in old shrouds and addresses them to Nidavellir.</i> There. The dwarf sent these in advance. He said you would know what to do with them.'],
+  obj: [{ type: 'collect', item: 'colossus_marrow', n: 6 }, { type: 'collect', item: 'hel_chain', n: 6 }],
+  reward: { exp: 800000, jexp: 480000, items: [['black_sun_shard', 2], ['dvergr_whetstone', 1], ['hel_obol', 15]] } });
+quest('modgud_bridge', { giver: 'modgud_hel', name: 'Hold Gjallarbrú', area: 'Helheim', req: helReq(76),
+  summary: 'The hungry dead are trying to cross the bridge back toward the living. Hold its south head with Móðguðr through three waves.',
+  offer: ['They are coming again. The ones who have been down too long, who have forgotten they are dead. They want to go home, and home does not want them.', 'Stand with me at the south end of the bridge. I will ask their names. You will stop them while I ask.'],
+  progress: 'Hold the south head of Gjallarbrú. Clear each wave in under a minute.',
+  done: ['<i>Móðguðr sets her lantern down on the bridge. There is a flame in it, and it is steady.</i> I asked every one of their names. I will forget them by morning. You will not, I think.', 'Take the lantern. It lit for you, not for me. I have another. I have always had another.'],
+  obj: [{ type: 'waves', map: 'helheim', x: 32.5, y: 38.5, r: 6, place: 'the south head of Gjallarbrú', limit: 60, gap: 4,
+    waves: [[['hel_hound', 3], ['soul_wisp', 2]], [['hel_draugr', 3], ['hel_hound', 2]], [['corpse_bride', 2], ['hel_draugr', 2], ['hel_hound', 2]]] }],
+  reward: { exp: 900000, jexp: 520000, items: [['u_modgud_lantern', 1]], rep: { dead: 1 } } });
+quest('ganglati_nameless', { giver: 'ganglati', name: 'The Nameless Jarl', area: 'Helheim', req: helReq(80),
+  summary: 'A draugr king who forgot his name on the bridge rages on the north-east plain. Ganglati would like him to stop.',
+  offer: ['There is… a jarl. North-east… past the river. He told Móðguðr his name… ten thousand years ago. She forgot it. So did he.', 'He is… very angry about it. He frightens… the others. <i>A long pause.</i> Make him… stop.'],
+  progress: 'The Nameless Jarl, on the north-east plain past Gjöll.',
+  done: ['<i>Ganglati nods for a long time.</i> Quiet… now. Good. <i>He hands you something without looking at it.</i> Obols. From the others. They… are grateful.'],
+  obj: [{ type: 'hunt', mob: 'nameless_jarl', map: 'helheim', x: 52.5, y: 18.5, place: 'the north-east plain' }],
+  reward: { exp: 900000, jexp: 520000, zeny: 60000, items: [['hel_obol', 15]] } });
+// Hel's bounty board in the camp: two a day from five
+BOARDS.hel_board = { name: 'Bounty Board', title: 'Helheim', map: 'helheim', x: 27.5, y: 54.0, perDay: 2, pool: [] };
+bounty('bb_hel_hounds', 'hel_board', 'Bounty: Hounds of Hel', { summary: 'The hounds circle the camp at night. Eir wants a quieter night.', obj: [{ type: 'kill', mob: 'hel_hound', n: 12 }] });
+bounty('bb_lost_souls', 'hel_board', 'Bounty: Lost Souls', { summary: 'Lay the lost souls to rest. They do not fight back much. That is the sad part.', obj: [{ type: 'kill', mob: 'soul_wisp', n: 12 }] });
+bounty('bb_brides', 'hel_board', 'Bounty: Corpse Brides', { summary: 'The brides have started proposing to the living. Decline, firmly.', obj: [{ type: 'kill', mob: 'corpse_bride', n: 10 }] });
+bounty('bb_colossi', 'hel_board', 'Bounty: Bone Colossi', { summary: 'A colossus walked through the camp palisade twice this week. Once was an accident.', obj: [{ type: 'kill', mob: 'bone_colossus', n: 6 }] });
+bounty('bb_rot_scales', 'hel_board', 'Bounty: Rot-Wyrm Scales', { summary: 'Gauti is buying Níðhöggr’s brood by the scale. Do not ask what for.', obj: [{ type: 'collect', item: 'rot_scale', n: 6 }] });
+// Every Helheim bounty also pays in the dead's own coin.
+for (const id of BOARDS.hel_board.pool) { const r = QUESTS[id].reward; r.items = (r.items || []).concat([['hel_obol', 4]]); }
+
+/* ---------- Titles and achievements (round 7) ---------- */
+Object.assign(TITLES, { hels_guest: 'Guest of Eljudnir', hound_breaker: 'Hound-Breaker', dragonsbane: 'Níðhöggr’s Bane', deep_walker: 'Deep-Walker', root_diver: 'Root-Diver', hel_champion: 'Champion of Eljudnir' });
+ACHIEVEMENTS.push(
+  ach('Helheim', 'helheim', 'Hel’s Law', 'Walk into Helheim alive.', () => !!P.flags.seen.helheim),
+  ach('Helheim', 'garmr', 'Hound-Breaker', 'Defeat Garmr before Eljudnir.', () => !!P.flags.bosses.garmr, null, 'hound_breaker'),
+  ach('Helheim', 'nidhogg', 'Malice Struck', 'Slay Níðhöggr at the root.', () => !!P.flags.bosses.nidhogg, null, 'dragonsbane'),
+  ach('Helheim', 'deep_5', 'Down the Stair', 'Reach floor 5 of the Deep Roots.', ...cnt(5, () => (P.flags.deep && P.flags.deep.best) || 0)),
+  ach('Helheim', 'deep_10', 'Deep-Walker', 'Reach floor 10 of the Deep Roots.', ...cnt(10, () => (P.flags.deep && P.flags.deep.best) || 0), 'deep_walker'),
+  ach('Helheim', 'deep_20', 'Root-Diver', 'Reach floor 20 of the Deep Roots.', ...cnt(20, () => (P.flags.deep && P.flags.deep.best) || 0), 'root_diver'),
+  ach('Helheim', 'gauntlet', 'Champion of Eljudnir', 'Win the Gauntlet in Hel’s hall.', () => !!(P.flags.rush && P.flags.rush.clears), null, 'hel_champion'),
+  ach('Helheim', 'gauntlet_fast', 'The Benches Fall Silent', 'Win the Gauntlet in under 8 minutes.', () => !!(P.flags.rush && P.flags.rush.best && P.flags.rush.best < 480)),
+  ach('Story', 'act3', 'What Hel Owes', 'Finish Act III: The Roots of Hel.', () => !!P.quests.done.act3_6),
+  ach('Other', 'lv99', 'Deep-Rooted', 'Reach Base Level 99 in your second life.', ...cnt(99, () => P.lvl)),
+);
 
 /* Round 5: js/data/recipes.js (crafting, vendors, services) loads right after this file. index.html does not list it
    yet (not ours to edit); while it does not, this parser-time document.write inserts it before js/core.js runs. */

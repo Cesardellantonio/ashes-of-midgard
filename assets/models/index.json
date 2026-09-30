@@ -7,6 +7,7 @@
   "emissive": "materials named 'emissive_*' glow (emissiveFactor / emissiveTexture) -> bloom layer",
   "alpha": "leaves / cloth_banner use alphaMode MASK (alphaTest 0.5), double sided",
   "light": "optional [x, y, z] (glTF axes, model space) where the engine should place a flame/light; lightColor = suggested light colour",
+  "lights": "optional list of every light anchor ([x, y, z] each) for props with several flames (Helheim set pieces); `light` is always the first / main one",
   "marker": "optional [x, y, z] anchor for a floating quest marker (clear space above the prop)",
   "lod1": "id of a lower-detail version (<id>_lod1.glb, same materials/textures, ~1/2 the leaf-card fill = leafArea); LOD entries carry lodOf",
   "map": "world-2 kits: map id the prop belongs to; kind = tree|rock|decor|building|setpiece|light|wall|pillar|walkway|edge (trees with a map prefix are still kind 'tree': use it instead of the id prefix for Lambert/occluder choices)",
@@ -95,6 +96,8 @@
   "rimeshore": {
    "file": "kit_rimeshore.glb",
    "ids": [
+    "rimeshore_barrel",
+    "rimeshore_crate",
     "rimeshore_drying_rack",
     "rimeshore_fishing_hut",
     "rimeshore_ice_crystal",
@@ -111,8 +114,8 @@
     "rimeshore_snowdrift_a",
     "rimeshore_snowdrift_b"
    ],
-   "bytes": 769148,
-   "bytesSeparate": 1243616
+   "bytes": 858720,
+   "bytesSeparate": 1423236
   },
   "mirewell": {
    "file": "kit_mirewell.glb",
@@ -169,6 +172,38 @@
    ],
    "bytes": 483600,
    "bytesSeparate": 630136
+  },
+  "helheim": {
+   "file": "kit_helheim.glb",
+   "ids": [
+    "helheim_ash_drift_a",
+    "helheim_ash_drift_b",
+    "helheim_banner",
+    "helheim_blacksun_obelisk",
+    "helheim_bone_tree_a",
+    "helheim_bone_tree_a_lod1",
+    "helheim_bone_tree_b",
+    "helheim_bone_tree_b_lod1",
+    "helheim_bone_tree_c",
+    "helheim_bone_tree_c_lod1",
+    "helheim_brazier",
+    "helheim_cairn_a",
+    "helheim_cairn_b",
+    "helheim_corpse_relief",
+    "helheim_gate_pillar",
+    "helheim_gjallarbru",
+    "helheim_gjoll_corner_ice",
+    "helheim_gjoll_corner_land",
+    "helheim_gjoll_edge",
+    "helheim_gjoll_edge_b",
+    "helheim_gjoll_ice",
+    "helheim_hall_facade",
+    "helheim_root",
+    "helheim_soul_lantern",
+    "helheim_timber_wall"
+   ],
+   "bytes": 2875424,
+   "bytesSeparate": 3848020
   }
  },
  "models": [
@@ -581,6 +616,781 @@
     "stone_keep"
    ],
    "kit": "dungeon"
+  },
+  {
+   "id": "helheim_ash_drift_a",
+   "file": "helheim_ash_drift_a.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.2,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Wind-carved ash drift with a crest, a couple of bones (no shadow; low, walkable).",
+   "tris": 450,
+   "bytes": 43872,
+   "materials": [
+    "ash",
+    "bone_hel"
+   ],
+   "walkable": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_ash_drift_b",
+   "file": "helheim_ash_drift_b.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 1.3,
+   "castShadow": false,
+   "sway": true,
+   "notes": "Big ash drift over a buried giant: ribs arching out, a skull, a broken spear with a rag (cloth_tatters sways). No shadow.",
+   "tris": 1033,
+   "bytes": 86592,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "shadow",
+    "timber_hel",
+    "iron",
+    "cloth_tatters"
+   ],
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_banner",
+   "file": "helheim_banner.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.99,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Hel's banner: tattered black cloth with the half-dead face of Hel (cloth_tatters, alpha MASK, sways toward the ragged tails) on a bone pole topped by a soul-eyed skull.",
+   "tris": 723,
+   "bytes": 78464,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "cloth_tatters",
+    "leaves_deadmoss"
+   ],
+   "leafArea": 0.4,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_blacksun_obelisk",
+   "file": "helheim_blacksun_obelisk.glb",
+   "map": "helheim",
+   "kind": "light",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 4.48,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Black-sun obelisk: polished black shaft on a frosted stepped plinth, bone-inlaid runes, and the black sun near the top: a lightless disc with a cold green-white corona (emissive_blacksun) in a spiked iron ring. Chains round its foot, skull and bones.",
+   "tris": 4295,
+   "bytes": 219088,
+   "materials": [
+    "stone_hel",
+    "blackstone",
+    "bone_hel",
+    "emissive_blacksun",
+    "iron",
+    "shadow"
+   ],
+   "light": [
+    0.0,
+    3.51,
+    0.66
+   ],
+   "lightColor": "#c8ffe0",
+   "blocking": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_a",
+   "file": "helheim_bone_tree_a.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.29,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Bone tree: a trunk of fused vertebrae and spiralling bones, clawed finger-bone branches, a skull with soul-fire eyes impaled on a branch, captured souls hanging on threads (emissive_soul), dead moss (leaves_deadmoss sways).",
+   "tris": 4347,
+   "bytes": 195104,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "leaves_deadmoss"
+   ],
+   "light": [
+    1.13,
+    2.63,
+    0.58
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 3.09,
+   "lod1": "helheim_bone_tree_a_lod1",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_a_lod1",
+   "file": "helheim_bone_tree_a_lod1.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.1,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Bone tree: a trunk of fused vertebrae and spiralling bones, clawed finger-bone branches, a skull with soul-fire eyes impaled on a branch, captured souls hanging on threads (emissive_soul), dead moss (leaves_deadmoss sways). LOD1.",
+   "tris": 2256,
+   "bytes": 127832,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "leaves_deadmoss"
+   ],
+   "light": [
+    1.13,
+    2.66,
+    0.58
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 0.91,
+   "lodOf": "helheim_bone_tree_a",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_b",
+   "file": "helheim_bone_tree_b.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.29,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Ribcage bone tree: a vertebra column with seven ribs curling up like a cupped claw, a skull with soul-fire eyes, and a captured soul (emissive_soul) glowing inside the cage. Dead moss sways.",
+   "tris": 2794,
+   "bytes": 137080,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "leaves_deadmoss"
+   ],
+   "light": [
+    0.0,
+    2.75,
+    -0.05
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 5.5,
+   "lod1": "helheim_bone_tree_b_lod1",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_b_lod1",
+   "file": "helheim_bone_tree_b_lod1.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.22,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Ribcage bone tree: a vertebra column with seven ribs curling up like a cupped claw, a skull with soul-fire eyes, and a captured soul (emissive_soul) glowing inside the cage. Dead moss sways. LOD1.",
+   "tris": 1394,
+   "bytes": 94532,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "leaves_deadmoss"
+   ],
+   "light": [
+    0.0,
+    2.75,
+    -0.05
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 2.18,
+   "lodOf": "helheim_bone_tree_b",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_c",
+   "file": "helheim_bone_tree_c.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.0,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Leaning bone snag: clawed branches heavy with dead hanging moss, one captured soul.",
+   "tris": 1654,
+   "bytes": 103732,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "leaves_deadmoss",
+    "shadow",
+    "emissive_soul"
+   ],
+   "light": [
+    1.18,
+    2.23,
+    1.28
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 5.08,
+   "lod1": "helheim_bone_tree_c_lod1",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_bone_tree_c_lod1",
+   "file": "helheim_bone_tree_c_lod1.glb",
+   "map": "helheim",
+   "kind": "tree",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.0,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Leaning bone snag: clawed branches heavy with dead hanging moss, one captured soul. LOD1.",
+   "tris": 1003,
+   "bytes": 82812,
+   "materials": [
+    "ash",
+    "bone_hel",
+    "leaves_deadmoss",
+    "shadow",
+    "emissive_soul"
+   ],
+   "light": [
+    1.18,
+    2.37,
+    1.28
+   ],
+   "lightColor": "#7affb4",
+   "leafArea": 2.43,
+   "lodOf": "helheim_bone_tree_c",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_brazier",
+   "file": "helheim_brazier.glb",
+   "map": "helheim",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.2,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Soul brazier: bone tripod, iron bowl with bone teeth and a soul-eyed skull, cold grey ash and pale soul-green coals (emissive_soul_dim, embers emissive_soul), a low soul flame. Drop-in for dng_brazier on Helheim maps: same 1x1 footprint, height and flame / light anchor (y=1.05).",
+   "tris": 1135,
+   "bytes": 80656,
+   "materials": [
+    "bone_hel",
+    "iron",
+    "emissive_soul",
+    "shadow",
+    "ash",
+    "emissive_soul_dim"
+   ],
+   "light": [
+    0,
+    1.05,
+    0
+   ],
+   "lightColor": "#7affb4",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_cairn_a",
+   "file": "helheim_cairn_a.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.77,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Grave cairn: frost-rimed stacked stones, a skull, a leaning runestone with faint soul-lit runes and a soul candle (emissive_soul).",
+   "tris": 2221,
+   "bytes": 164176,
+   "materials": [
+    "ash",
+    "stone_hel",
+    "emissive_soul",
+    "frost",
+    "bone_hel",
+    "shadow"
+   ],
+   "light": [
+    0.35,
+    0.3,
+    0.33
+   ],
+   "lightColor": "#7affb4",
+   "blocking": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_cairn_b",
+   "file": "helheim_cairn_b.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 1.33,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Long barrow: ash mound heaped with frosted stones, a rusted sword standing in its head, a round shield leaning at the foot, skull and bones.",
+   "tris": 2554,
+   "bytes": 190480,
+   "materials": [
+    "ash",
+    "frost",
+    "stone_hel",
+    "iron",
+    "timber_hel",
+    "planks_hel",
+    "bone_hel",
+    "shadow"
+   ],
+   "blocking": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_corpse_relief",
+   "file": "helheim_corpse_relief.glb",
+   "map": "helheim",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 2.36,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Wall decoration: three bodies frozen into an ice panel in a frosted stone frame, one with soul-lit eyes (emissive_soul), icicles on the lintel. Back plane at glTF z=-0.46 (mount against a wall to the north, like dng_chain); faces +Z. 2 wide, 2.4 high.",
+   "tris": 2491,
+   "bytes": 140312,
+   "materials": [
+    "stone_hel",
+    "ice_gjoll",
+    "bone_hel",
+    "emissive_soul",
+    "shadow"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gate_pillar",
+   "file": "helheim_gate_pillar.glb",
+   "map": "helheim",
+   "kind": "pillar",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 5.18,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Chained gate pillar (Garmr's gate): iron-banded stone pillar, horned capstone, claw gouges, a great iron ring with a slack chain coiled on the ground in front and a second chain draped down the +X side. Place two either side of a gate (the second rotated 180 or mirrored in X).",
+   "tris": 5632,
+   "bytes": 227696,
+   "materials": [
+    "stone_hel",
+    "iron",
+    "bone_hel",
+    "shadow"
+   ],
+   "blocking": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjallarbru",
+   "file": "helheim_gjallarbru.glb",
+   "map": "helheim",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    10
+   ],
+   "height": 4.56,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Set piece: Gjallarbru, the golden bridge over Gjoll, 3 wide x 10 long (runs along glTF Z). Tarnished gold deck plates (walk lane |x| <= 1.1) arching from y=0.12 at the ends to 0.5 in the middle: deck_y(z) = 0.12 + 0.38 * (1 - (z/5)^2). Gold railings (blocking at |x| ~ 1.27), stone piers, four portals with gold-shingled gable roofs, skulls with soul-fire eyes and soul lanterns (emissive_soul) on the end gates, Hel banners (cloth_tatters sway) on the mid frames.",
+   "tris": 7864,
+   "bytes": 519792,
+   "materials": [
+    "stone_hel",
+    "gold_worn",
+    "gold",
+    "iron",
+    "timber_hel",
+    "gold_thatch",
+    "bone_hel",
+    "emissive_soul",
+    "shadow",
+    "cloth_tatters"
+   ],
+   "light": [
+    0.0,
+    2.6,
+    -4.6
+   ],
+   "lights": [
+    [
+     -1.1,
+     2.62,
+     4.6
+    ],
+    [
+     1.1,
+     2.62,
+     4.6
+    ],
+    [
+     -1.1,
+     2.62,
+     -4.6
+    ],
+    [
+     1.1,
+     2.62,
+     -4.6
+    ]
+   ],
+   "lightColor": "#7affb4",
+   "walkable": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjoll_corner_ice",
+   "file": "helheim_gjoll_corner_ice.glb",
+   "map": "helheim",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Gjoll river corner, 1 tile: ice only in the +X/-Z quadrant (rounded), bank elsewhere - the outside of a bend. At rotation 0 its +X border continues a rot-0 edge (bank +Z) and its -Z border continues a rot -pi/2 edge (bank -X). All Gjoll pieces share one border cross-section (the lip crosses every tile border at its midpoint) and seamless periodic textures, so edge, edge_b, the two corners and ice fit together in any 90-degree rotation. Rotation (three.js rotation.y) of a straight edge: 0 = bank toward +Z (south bank), pi = bank toward -Z (north bank), +pi/2 = bank toward +X, -pi/2 = bank toward -X. PLACEMENT: the pieces are flat (ice at y=0.02, bank easing to y=0 at its outer border, 0.3 skirts below). Lay every tile of one river reach at ONE common height (decor `y0`, at least the highest terrain corner under the reach), not at each tile's own ground height: on sloped terrain the ground (and its SURF.ICE paint) otherwise pierces the flat tiles along the terrain triangles - the black/white harlequin of graphics round 5.",
+   "tris": 985,
+   "bytes": 87352,
+   "materials": [
+    "emissive_gjoll",
+    "snow_gjoll",
+    "frost",
+    "stone_hel"
+   ],
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjoll_corner_land",
+   "file": "helheim_gjoll_corner_land.glb",
+   "map": "helheim",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.1,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Gjoll river corner, 1 tile: bank only in the -X/+Z quadrant (rounded), ice elsewhere - the inside of a bend or a spit. At rotation 0 its -X border continues a rot-0 edge (bank +Z) and its +Z border continues a rot -pi/2 edge (bank -X). All Gjoll pieces share one border cross-section (the lip crosses every tile border at its midpoint) and seamless periodic textures, so edge, edge_b, the two corners and ice fit together in any 90-degree rotation. Rotation (three.js rotation.y) of a straight edge: 0 = bank toward +Z (south bank), pi = bank toward -Z (north bank), +pi/2 = bank toward +X, -pi/2 = bank toward -X. PLACEMENT: the pieces are flat (ice at y=0.02, bank easing to y=0 at its outer border, 0.3 skirts below). Lay every tile of one river reach at ONE common height (decor `y0`, at least the highest terrain corner under the reach), not at each tile's own ground height: on sloped terrain the ground (and its SURF.ICE paint) otherwise pierces the flat tiles along the terrain triangles - the black/white harlequin of graphics round 5.",
+   "tris": 833,
+   "bytes": 79780,
+   "materials": [
+    "emissive_gjoll",
+    "snow_gjoll",
+    "frost",
+    "stone_hel"
+   ],
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjoll_edge",
+   "file": "helheim_gjoll_edge.glb",
+   "map": "helheim",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Gjoll river bank, 1 tile: snow-covered ash bank on the +Z half (a soft snow drift along the lip on the tile's centre line, easing to ash-grey ground level at z=+0.5) and pale grey-blue cracked ice (emissive_gjoll: faint drowned souls under it) on the -Z half. Alternate edge / edge_b along a bank. All Gjoll pieces share one border cross-section (the lip crosses every tile border at its midpoint) and seamless periodic textures, so edge, edge_b, the two corners and ice fit together in any 90-degree rotation. Rotation (three.js rotation.y) of a straight edge: 0 = bank toward +Z (south bank), pi = bank toward -Z (north bank), +pi/2 = bank toward +X, -pi/2 = bank toward -X. PLACEMENT: the pieces are flat (ice at y=0.02, bank easing to y=0 at its outer border, 0.3 skirts below). Lay every tile of one river reach at ONE common height (decor `y0`, at least the highest terrain corner under the reach), not at each tile's own ground height: on sloped terrain the ground (and its SURF.ICE paint) otherwise pierces the flat tiles along the terrain triangles - the black/white harlequin of graphics round 5.",
+   "tris": 1009,
+   "bytes": 88576,
+   "materials": [
+    "emissive_gjoll",
+    "snow_gjoll",
+    "frost",
+    "stone_hel"
+   ],
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjoll_edge_b",
+   "file": "helheim_gjoll_edge_b.glb",
+   "map": "helheim",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Gjoll river bank, 1 tile: snow-covered ash bank on the +Z half (a soft snow drift along the lip on the tile's centre line, easing to ash-grey ground level at z=+0.5) and pale grey-blue cracked ice (emissive_gjoll: faint drowned souls under it) on the -Z half. Alternate edge / edge_b along a bank. All Gjoll pieces share one border cross-section (the lip crosses every tile border at its midpoint) and seamless periodic textures, so edge, edge_b, the two corners and ice fit together in any 90-degree rotation. Rotation (three.js rotation.y) of a straight edge: 0 = bank toward +Z (south bank), pi = bank toward -Z (north bank), +pi/2 = bank toward +X, -pi/2 = bank toward -X. PLACEMENT: the pieces are flat (ice at y=0.02, bank easing to y=0 at its outer border, 0.3 skirts below). Lay every tile of one river reach at ONE common height (decor `y0`, at least the highest terrain corner under the reach), not at each tile's own ground height: on sloped terrain the ground (and its SURF.ICE paint) otherwise pierces the flat tiles along the terrain triangles - the black/white harlequin of graphics round 5.",
+   "tris": 863,
+   "bytes": 82596,
+   "materials": [
+    "emissive_gjoll",
+    "snow_gjoll",
+    "frost",
+    "stone_hel"
+   ],
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_gjoll_ice",
+   "file": "helheim_gjoll_ice.glb",
+   "map": "helheim",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.02,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Gjoll river ice, 1 flat tile at y=0.02 (emissive_gjoll: faint souls under the ice). Fill between the bank rows; any rotation (random multiples of 90 deg hide the repeat; the cracks link up across tiles). All Gjoll pieces share one border cross-section (the lip crosses every tile border at its midpoint) and seamless periodic textures, so edge, edge_b, the two corners and ice fit together in any 90-degree rotation. Rotation (three.js rotation.y) of a straight edge: 0 = bank toward +Z (south bank), pi = bank toward -Z (north bank), +pi/2 = bank toward +X, -pi/2 = bank toward -X. PLACEMENT: the pieces are flat (ice at y=0.02, bank easing to y=0 at its outer border, 0.3 skirts below). Lay every tile of one river reach at ONE common height (decor `y0`, at least the highest terrain corner under the reach), not at each tile's own ground height: on sloped terrain the ground (and its SURF.ICE paint) otherwise pierces the flat tiles along the terrain triangles - the black/white harlequin of graphics round 5.",
+   "tris": 42,
+   "bytes": 11568,
+   "materials": [
+    "emissive_gjoll"
+   ],
+   "walkable": true,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_hall_facade",
+   "file": "helheim_hall_facade.glb",
+   "map": "helheim",
+   "kind": "setpiece",
+   "footprint": [
+    8,
+    6
+   ],
+   "height": 8.02,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Set piece: Eljudnir, Hel's hall, 8 wide x 6 deep, ridge 6.5 (horn finials to 8). Rotten board walls and sagging roof with holes where bone rafters show, a vertebra ridge, a tusk-arch around the great door (dark, faint green glow deep inside: emissive_soul_dim), Hel's round soul-eye in the gable, green windows, skull row, bone-legged soul braziers (emissive_soul) and Hel banners (cloth_tatters sway) at the front. Door threshold at glTF z=+2.0, y=0.4 (steps down to z=+3.4). Everything but the stair is blocking.",
+   "tris": 11232,
+   "bytes": 493168,
+   "materials": [
+    "stone_hel",
+    "shadow",
+    "planks_hel",
+    "emissive_soul_dim",
+    "timber_hel",
+    "bone_hel",
+    "emissive_soul",
+    "leaves_deadmoss",
+    "iron",
+    "ash",
+    "cloth_tatters"
+   ],
+   "light": [
+    0.0,
+    1.6,
+    1.3
+   ],
+   "lights": [
+    [
+     0.0,
+     1.6,
+     1.3
+    ],
+    [
+     -1.85,
+     1.65,
+     2.55
+    ],
+    [
+     1.85,
+     1.65,
+     2.55
+    ]
+   ],
+   "lightColor": "#7affb4",
+   "blocking": true,
+   "leafArea": 4.6,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_root",
+   "file": "helheim_root.glb",
+   "map": "helheim",
+   "kind": "setpiece",
+   "footprint": [
+    12,
+    4
+   ],
+   "height": 4.51,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Arena set piece: a giant root of the World Tree arching out of the ash, a lower root looping in front on the right (12 x 4, crown 4.4 high; underside clearance ~2.5 between glTF x = -2 and 2). N\u00ed\u00f0h\u00f6ggr's bite wounds show pale heartwood and drip soul sap (emissive_soul) into a glowing pool on the ground. Lichen, hanging dead moss (sways), rootlets, ash heaps. Blocking where it touches the ground (x < -3 and x > 3); the arch middle is passable.",
+   "tris": 5864,
+   "bytes": 293132,
+   "materials": [
+    "heartwood",
+    "bark_root",
+    "emissive_soul",
+    "leaves_deadmoss",
+    "ash",
+    "frost",
+    "stone_hel",
+    "bone_hel",
+    "shadow"
+   ],
+   "light": [
+    -1.36,
+    0.3,
+    1.11
+   ],
+   "lights": [
+    [
+     -1.36,
+     0.3,
+     1.11
+    ],
+    [
+     -1.36,
+     4.04,
+     0.51
+    ],
+    [
+     2.57,
+     3.38,
+     0.43
+    ]
+   ],
+   "lightColor": "#7affb4",
+   "blocking": true,
+   "leafArea": 10.34,
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_soul_lantern",
+   "file": "helheim_soul_lantern.glb",
+   "map": "helheim",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.49,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Soul lantern: a bone post with a vertebra crossarm and skull, an iron cage lantern holding a pale green soul flame (emissive_soul), a strip of Hel's cloth (sways).",
+   "tris": 833,
+   "bytes": 87084,
+   "materials": [
+    "ash",
+    "stone_hel",
+    "bone_hel",
+    "shadow",
+    "iron",
+    "emissive_soul",
+    "cloth_tatters"
+   ],
+   "light": [
+    0.62,
+    1.7,
+    0.0
+   ],
+   "lightColor": "#7affb4",
+   "kit": "helheim"
+  },
+  {
+   "id": "helheim_timber_wall",
+   "file": "helheim_timber_wall.glb",
+   "map": "helheim",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tileable rotting timber wall, exactly 1x1 tile, 2.5 high: vertical ash-grey boards with broken tops and rime on the edges, beams at the same heights on all four faces (they line up across neighbours), iron straps, corner posts, a soul-green rune (emissive_soul) on the upper beam of each face. Rotate instances by random multiples of 90 deg.",
+   "tris": 960,
+   "bytes": 132544,
+   "materials": [
+    "bark_ash",
+    "planks_drift",
+    "bone_hel",
+    "iron",
+    "emissive_soul",
+    "ash"
+   ],
+   "blocking": true,
+   "kit": "helheim"
   },
   {
    "id": "mirewell_boardwalk",
@@ -1239,6 +2049,52 @@
    "kit": "nidavellir"
   },
   {
+   "id": "rimeshore_barrel",
+   "file": "rimeshore_barrel.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.84,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Frosted barrel (town_barrel shape): heaped snow on the lid, icicles under the top hoop, a snowdrift banked against it.",
+   "tris": 631,
+   "bytes": 73564,
+   "materials": [
+    "planks",
+    "iron",
+    "snow",
+    "ice"
+   ],
+   "kit": "rimeshore"
+  },
+  {
+   "id": "rimeshore_crate",
+   "file": "rimeshore_crate.glb",
+   "map": "rimeshore",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.22,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Two stacked crates (town_crates style), frosted: snow on both lids, icicles along the front edges, a drift against the back.",
+   "tris": 966,
+   "bytes": 106056,
+   "materials": [
+    "planks",
+    "timber",
+    "snow",
+    "ice"
+   ],
+   "kit": "rimeshore"
+  },
+  {
    "id": "rimeshore_drying_rack",
    "file": "rimeshore_drying_rack.glb",
    "map": "rimeshore",
@@ -1774,6 +2630,58 @@
     0.0
    ],
    "kit": "town"
+  },
+  {
+   "id": "skaldhaven_longship_moored",
+   "file": "skaldhaven_longship_moored.glb",
+   "map": "skaldhaven",
+   "kind": "setpiece",
+   "footprint": [
+    5,
+    9
+   ],
+   "height": 4.09,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Set piece: the Sea-Snake, Ormr's intact longship, moored alongside a plank pier. 5x9 tiles, long axis along glTF Z (dragon prow at -Z, curled stern post toward +Z / the camera); ship centre line at x=-0.75, pier deck (top y=0.12, x 0.7..2.25) along +X. The hull sits in the water: keel at y~-0.65, waterline ~y-0.45, deck ~y-0.3 (the engine's default water level), so place it on a shore where water covers x<0.6. Sail furled on the yard (painted red/cream stripes), shields on both gunwales, gangplank from the pier at z~+0.45. Rotate 90 deg to lay it along X.",
+   "tris": 8503,
+   "bytes": 430436,
+   "materials": [
+    "planks",
+    "painted",
+    "timber",
+    "iron"
+   ],
+   "blocking": true
+  },
+  {
+   "id": "skaldhaven_tavern_sign",
+   "file": "skaldhaven_tavern_sign.glb",
+   "map": "skaldhaven",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.7,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Salt Hall tavern sign: timber post on a stone footing, an arm to +X with an iron scroll, and a board (0.85 x 0.6, green with a gilded frame) on two chains, facing +Z (the camera), with a carved mead horn on both faces. Mirror it (scale x -1) to hang the board to the other side.",
+   "tris": 1140,
+   "bytes": 108612,
+   "materials": [
+    "stone",
+    "timber",
+    "iron",
+    "planks_painted",
+    "gold",
+    "painted"
+   ],
+   "marker": [
+    0.1,
+    2.95,
+    0.0
+   ]
   },
   {
    "id": "throne_basalt_rock",

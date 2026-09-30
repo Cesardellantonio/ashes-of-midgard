@@ -17,6 +17,9 @@
         contrast, split tone), vignette, subtle film grain -> canvas.
    Everything atmospheric is low-frequency, so pixel sprites stay crisp.
    The 2D overlay canvas (#cv) is separate and stays sharp on top.
+   Dynamic resolution (perf round 3): the scene and every post target render at GFX.scale (0.5..1, driven by the
+   adaptive quality controller in gfx-world.js); the composite writes the full-resolution canvas and reads the scene
+   through a Catmull-Rom (sharp bicubic) filter when scaled, so pixel sprites stay crisp. At scale 1 nothing changes.
    gfxPresent() draws a frame; renderer.render(scene, camera) is
    wrapped so existing callers go through it automatically.
    ========================================================= */
@@ -27,7 +30,7 @@ const POST = (() => {
   const depthOK = gl2 || has('WEBGL_depth_texture');
   const derivOK = gl2 || has('OES_standard_derivatives');
   const TYPE = THREE.HalfFloatType;
-  const S = { dbg: null, on: false, w: 0, h: 0, scene: null, mips: [], dA: null, dA2: null, dB: null, dB2: null, atmo: null, focus: 0.5, hdr, gl2, depthOK, stats: { passes: 0 } };
+  const S = { dbg: null, on: false, scale: 1, w: 0, h: 0, scene: null, mips: [], dA: null, dA2: null, dB: null, dB2: null, atmo: null, focus: 0.5, hdr, gl2, depthOK, stats: { passes: 0 } };
 
   const VS = 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }';
   const mat = (fs, uniforms, o = {}) => new THREE.ShaderMaterial(Object.assign({ vertexShader: VS, fragmentShader: fs, uniforms, depthTest: false, depthWrite: false, fog: false, lights: false }, o));
@@ -143,9 +146,9 @@ const POST = (() => {
     uInvProj: AU.uInvProj, uCamW: AU.uCamW, uHgt: AU.uHgt, uAtTexel: v2(),
     uMistC: { value: new THREE.Color() }, uMist: { value: new THREE.Vector4() }, uMistN: { value: new THREE.Vector4() },
     uFogC: { value: new THREE.Color() }, uMistL: { value: new THREE.Vector2(1, 0) }, uFogH: { value: new THREE.Vector3() }, uVolC: { value: new THREE.Color() }, uAOk: { value: 1 }, uVolE: { value: 0 },
-    uHeat: { value: new THREE.Vector4() },
+    uHeat: { value: new THREE.Vector4() }, uScnSize: v2(),
   };
-  const FS_COMP = `uniform sampler2D tScene, tBloom, tDofA, tDofB, tDepth, tAtmo, tNoise, tHgt;
+  const FS_COMP = `uniform sampler2D tScene, tBloom, tDofA, tDofB, tDepth, tAtmo, tNoise, tHgt; uniform vec2 uScnSize;
     uniform float uExp, uBloom, uFocus, uBand, uRamp, uTop, uBot, uVig, uGrain, uTime, uSat, uCon, uAOk, uVolE;
     uniform vec3 uLift, uGamma, uGain, uShT, uHiT, uMistC, uFogC, uFogH, uVolC; uniform vec4 uMist, uMistN, uHeat, uHgt; uniform vec2 uMistL; uniform vec2 uAtTexel; varying vec2 vUv;
     ${WPOS}
@@ -155,6 +158,19 @@ const POST = (() => {
       c = I * (c / 0.6); vec3 a = c * (c + 0.0245786) - 0.000090537; vec3 b = c * (0.983729 * c + 0.4329510) + 0.238081; return clamp(O * (a / b), 0.0, 1.0); }
     vec3 srgb(vec3 c){ return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    #if UPS
+    // scaled scene -> full-res canvas: Catmull-Rom bicubic in 5 bilinear taps (sharper than bilinear, no ringing below 0)
+    vec3 scn(vec2 uv){
+      vec2 sp = uv * uScnSize, t1 = floor(sp - 0.5) + 0.5, f = sp - t1, f2 = f * f, f3 = f2 * f;
+      vec2 w0 = f2 - 0.5 * (f3 + f), w1 = 1.5 * f3 - 2.5 * f2 + 1.0, w3 = 0.5 * (f3 - f2), w2 = 1.0 - w0 - w1 - w3, w12 = w1 + w2;
+      vec2 t0 = (t1 - 1.0) / uScnSize, t3 = (t1 + 2.0) / uScnSize, t12 = (t1 + w2 / w12) / uScnSize;
+      vec3 c = texture2D(tScene, vec2(t12.x, t0.y)).rgb * (w12.x * w0.y) + texture2D(tScene, vec2(t0.x, t12.y)).rgb * (w0.x * w12.y)
+        + texture2D(tScene, t12).rgb * (w12.x * w12.y) + texture2D(tScene, vec2(t3.x, t12.y)).rgb * (w3.x * w12.y) + texture2D(tScene, vec2(t12.x, t3.y)).rgb * (w12.x * w3.y);
+      return max(c / (w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y), 0.0);
+    }
+    #else
+    vec3 scn(vec2 uv){ return texture2D(tScene, uv).rgb; }
+    #endif
     void main(){
       vec2 uv = vUv;
       #if DEPTH
@@ -168,7 +184,7 @@ const POST = (() => {
         uv += (nz - 0.75) * uHeat.x * hm * vec2(1.0, 1.6);
       }
       #endif
-      vec3 c = texture2D(tScene, uv).rgb;
+      vec3 c = scn(uv);
       #if DOF > 0
         float dd = uv.y - uFocus; float k = (dd > 0.0 ? uTop : uBot) * smoothstep(uBand, uBand + uRamp, abs(dd));
         vec3 a = texture2D(tDofA, uv).rgb;
@@ -224,7 +240,7 @@ const POST = (() => {
     }`;
   const COMP = {}; let mComp = null;
   function compMat(f) {
-    const k = [f.DOF, f.DEPTH, f.ATMO, f.MIST, f.HEAT].join(''); if (COMP[k]) return COMP[k];
+    const k = [f.DOF, f.DEPTH, f.ATMO, f.MIST, f.HEAT, f.UPS].join(''); if (COMP[k]) return COMP[k];
     return (COMP[k] = mat(FS_COMP, U, { defines: Object.assign({}, f) }));
   }
   const fsGeo = new THREE.BufferGeometry(); fsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -254,7 +270,7 @@ const POST = (() => {
     if (useDepth() && (Q.ao || Q.vol) && derivOK) S.atmo = mk(w >> 1, h >> 1);
   }
   function configure() {
-    S.on = !!(GFX.preset.post && hdr);
+    S.on = !!(GFX.preset.post && hdr); S.scale = S.on ? clamp(GFX.preset.scale || 1, 0.5, 1) : 1;
     free();
   }
   const _sz = new THREE.Vector2(), _p = new THREE.Vector3();
@@ -263,11 +279,13 @@ const POST = (() => {
     mBlur.uniforms.tSrc.value = tmp.texture; mBlur.uniforms.uDir.value.set(0, spread / src.height); pass(mBlur, src);
   }
   const lin = (hex, k, out) => out.set(hex).convertSRGBToLinear().multiplyScalar(k);
+  // (the live look from gfx-world's WX carries the time-of-day / weather colour already linear in .lin)
+  const linL = (o, hex, k, out) => o && o.lin && o.lin.isColor ? out.copy(o.lin).multiplyScalar(k) : lin(hex, k, out);
   function render() {
     S.stats.passes = 0;
-    renderer.getDrawingBufferSize(_sz); const w = _sz.x | 0, h = _sz.y | 0;
+    renderer.getDrawingBufferSize(_sz); const sc = S.scale, w = Math.max(1, Math.round(_sz.x * sc)), h = Math.max(1, Math.round(_sz.y * sc));
     if (w !== S.w || h !== S.h || !S.scene) alloc(w, h);
-    const R = RL || RLOOK.emberhold, Q = GFX.preset, B = R.bloom, G = R.grade, D = R.dof, t = typeof time === 'number' ? time : 0;
+    const R = (GFX.look && GFX.wx && GFX.wx.on ? GFX.look : RL) || RLOOK.emberhold, Q = GFX.preset, B = R.bloom, G = R.grade, D = R.dof, t = typeof time === 'number' ? time : 0;
     // 1. scene -> HDR (+ resolved depth)
     renderer.setRenderTarget(S.scene); raw(scene, camera);
     const src = S.scene.texture, ac = renderer.autoClear, dtex = S.scene.depthTexture || null;
@@ -289,7 +307,7 @@ const POST = (() => {
       }
       pass(atmoMat(aoOn ? (Q.aoN || 8) : 0, vol ? (Q.volN || 10) : 0), S.atmo);
       U.tAtmo.value = S.atmo.texture; U.uAtTexel.value.set(0.75 / S.atmo.width, 0.75 / S.atmo.height);
-      U.uAOk.value = aoOn ? 1 : 0; if (vol) lin(vol.col, vol.k || 1, U.uVolC.value); else U.uVolC.value.setRGB(0, 0, 0); U.uVolE.value = vol ? (vol.ext === undefined ? 1 : vol.ext) : 0;
+      U.uAOk.value = aoOn ? 1 : 0; if (vol) linL(vol, vol.col, vol.k || 1, U.uVolC.value); else U.uVolC.value.setRGB(0, 0, 0); U.uVolE.value = vol ? (vol.ext === undefined ? 1 : vol.ext) : 0;
     }
     // 3. bloom mip chain
     if (S.mips.length) {
@@ -303,8 +321,8 @@ const POST = (() => {
     // 4. tilt-shift DOF sources
     if (S.dA) {
       mDown.uniforms.tSrc.value = src; mDown.uniforms.uTexel.value.set(1 / S.w, 1 / S.h); pass(mDown, S.dA);
-      blur2(S.dA, S.dA2, Q.dof > 2 ? 1.25 : 1.0);
-      if (S.dB) { mDown.uniforms.tSrc.value = S.dA.texture; mDown.uniforms.uTexel.value.set(1 / S.dA.width, 1 / S.dA.height); pass(mDown, S.dB); blur2(S.dB, S.dB2, 1.0); if (Q.dof > 2) blur2(S.dB, S.dB2, 1.6); }
+      blur2(S.dA, S.dA2, (Q.dof > 2 ? 1.25 : 1.0) * sc);   // spread in texels x scale: same blur radius on screen at any scale
+      if (S.dB) { mDown.uniforms.tSrc.value = S.dA.texture; mDown.uniforms.uTexel.value.set(1 / S.dA.width, 1 / S.dA.height); pass(mDown, S.dB); blur2(S.dB, S.dB2, sc); if (Q.dof > 2) blur2(S.dB, S.dB2, 1.6 * sc); }
     }
     // focus: the player's body on screen (sharp band), eased
     let fy = 0.5;
@@ -313,7 +331,8 @@ const POST = (() => {
     // 5. composite
     const mist = Q.mist && dtex && (R.mist || R.hfog) ? true : false, heat = Q.heat && dtex && R.heat ? true : false;
     const dof = Math.min(2, Q.dof);
-    mComp = compMat({ DOF: dof, DEPTH: mist || heat ? 1 : 0, ATMO: atmo ? 1 : 0, MIST: mist ? 1 : 0, HEAT: heat ? 1 : 0 });
+    mComp = compMat({ DOF: dof, DEPTH: mist || heat ? 1 : 0, ATMO: atmo ? 1 : 0, MIST: mist ? 1 : 0, HEAT: heat ? 1 : 0, UPS: sc < 1 ? 1 : 0 });
+    U.uScnSize.value.set(S.w, S.h);
     U.tScene.value = src; U.tBloom.value = S.mips.length ? S.mips[0].texture : null; U.tDofA.value = S.dA ? S.dA.texture : null; U.tDofB.value = S.dB ? S.dB.texture : null;
     U.uExp.value = R.exposure; U.uBloom.value = S.mips.length ? B.strength : 0;
     const zk = clamp(40 / cam.dist, 1, 2);   // zoomed in: keep the same world area around the player sharp
@@ -323,9 +342,9 @@ const POST = (() => {
     U.uSat.value = G.sat; U.uCon.value = G.contrast;
     if (mist) {
       const M = R.mist || { amt: 0 }, F = R.hfog || { amt: 0 };
-      lin(M.col || R.haze, M.k || 1, U.uMistC.value); U.uMistL.value.set(M.amb === undefined ? 1 : M.amb, M.lit || 0); U.uMist.value.set(M.amt || 0, M.h || 0.8, M.max || 0.5, M.scatter || 0);
+      linL(M, M.col || R.haze, M.k || 1, U.uMistC.value); U.uMistL.value.set(M.amb === undefined ? 1 : M.amb, M.lit || 0); U.uMist.value.set(M.amt || 0, M.h || 0.8, M.max || 0.5, M.scatter || 0);
       U.uMistN.value.set(M.scale || 0.05, (M.wind || [0.03, 0.01])[0], (M.wind || [0.03, 0.01])[1], 0);
-      lin(F.col || R.haze, F.k || 1, U.uFogC.value); U.uFogH.value.set(F.amt || 0, F.h || 2, F.max || 0.6);
+      linL(F, F.col || R.haze, F.k || 1, U.uFogC.value); U.uFogH.value.set(F.amt || 0, F.h || 2, F.max || 0.6);
     }
     if (heat) U.uHeat.value.set(R.heat.amp || 0.004, R.heat.y === undefined ? -0.3 : R.heat.y, camera.aspect, 0);
     if (S.dbg) {
@@ -337,7 +356,34 @@ const POST = (() => {
     if (!U.tDofA.value) U.tDofA.value = src; if (!U.tDofB.value) U.tDofB.value = src;
     pass(mComp, null);
   }
-  S.raw = raw; S.render = render; S.configure = configure; S.pass = pass; S.noise = NOISE;
+  // Compile this map's post programs ahead of its first frame (map entry, see mapEntryLoad in gfx-world.js): the fixed
+  // passes once, the composite / atmosphere variants the current look uses, plus the variants the adaptive controller
+  // steps into first (scaled scene, SSAO off). Other variants compile on first use.
+  function precompile() {
+    if (!S.on) return;
+    const R = RL || RLOOK.emberhold, Q = GFX.preset, world = GFX.world || {}, dep = useDepth();
+    const vol = !!(R.vol && Q.vol && world.shadow && SHADOW.split), aoOn = !!(Q.ao && R.ao !== 0), atmoOk = dep && derivOK && (Q.ao || Q.vol);
+    const mist = !!(Q.mist && dep && (R.mist || R.hfog)), heat = !!(Q.heat && dep && R.heat), f = { DOF: Math.min(2, Q.dof), DEPTH: mist || heat ? 1 : 0, MIST: mist ? 1 : 0, HEAT: heat ? 1 : 0 };
+    const atmo = atmoOk && (aoOn || vol) ? 1 : 0, list = [mPre, mDown, mUp, mBlur];
+    list.push(compMat(Object.assign({ ATMO: atmo, UPS: S.scale < 1 ? 1 : 0 }, f)), compMat(Object.assign({ ATMO: atmo, UPS: 1 }, f)));
+    if (atmo) {
+      list.push(atmoMat(aoOn ? (Q.aoN || 8) : 0, vol ? (Q.volN || 10) : 0));
+      if (aoOn && vol) list.push(atmoMat(0, Q.volN || 10));
+      list.push(compMat(Object.assign({ ATMO: aoOn && vol ? 1 : 0, UPS: 1 }, f)));
+    }
+    const m0 = fsMesh.material;
+    try { for (const m of list) { fsMesh.material = m; renderer.compile(fsScene, fsCam); } } finally { fsMesh.material = m0; }
+  }
+  // GPU bytes of the post targets at the current size (for GFX.memory())
+  function memory() {
+    let b = 0;
+    for (const t of [S.scene, S.dA, S.dA2, S.dB, S.dB2, S.atmo, ...S.mips]) {
+      if (!t) continue; const px = t.width * t.height, n = t.samples || 0;
+      b += px * 8 * (n > 1 ? n + 1 : 1) + (t.depthBuffer ? px * 4 * Math.max(1, n) : 0) + (t.depthTexture ? px * 4 : 0);
+    }
+    return b;
+  }
+  S.raw = raw; S.render = render; S.configure = configure; S.pass = pass; S.noise = NOISE; S.precompile = precompile; S.memory = memory;
   return S;
 })();
 // Without half-float render targets the pipeline would band badly: fall back to direct ACES rendering.
@@ -346,8 +392,14 @@ GFX.composer = POST;
 GFX.hooks.push(() => POST.configure());
 applyQuality(); POST.configure();
 
+// Effective 3D pixel ratio (point-sprite sizes etc.): the canvas pixel ratio times the post render scale.
+(() => { const gpr = renderer.getPixelRatio.bind(renderer); renderer.getPixelRatio = () => gpr() * (POST.on ? POST.scale : 1); })();
 // Draw one frame of the 3D world (with post-processing when the quality preset enables it).
+// gloadReady(): false while a freshly entered map is still loading behind the fade (see mapEntryLoad in gfx-world.js);
+// autoFrame(): the adaptive quality controller's frame-time sample.
 function gfxPresent() {
+  autoFrame();
+  if (!gloadReady()) return;
   if (POST.on) POST.render();
   else { renderer.setRenderTarget(null); POST.raw(scene, camera); }
 }

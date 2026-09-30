@@ -10,17 +10,17 @@ const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, 
 let HITSTOP = 0, SHAKE = 0;
 const isAction = () => CTRL.mode === 'action';
 const WINKEYS = {
-  action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap' },
-  classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help', KeyW: 'worldmap' },
+  action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap', KeyP: 'pet' },
+  classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help', KeyW: 'worldmap', KeyP: 'pet' },
 };
 // Comma is not an action key: ui.js opens the World Map on ',' in both modes (and on W in classic mode).
-const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap' };
-const ACTION_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN']);
+const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet' };
+const ACTION_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN', 'KeyR', 'KeyP']);   // round 6: R rides / dismounts, P opens the Pet window
 
 function setCtrlMode(m) {
   CTRL.mode = m; store('aom-ctrl', m); CTRL.keys.clear(); if (P) P.blocking = false;
   refreshKeyHints();
-  log(m === 'action' ? 'Action controls: WASD move · J attack · K heavy (hold) · L block · Space dodge · F talk.' : 'Classic controls: click to move and attack.', 'sys');
+  log(m === 'action' ? 'Action controls: WASD move · J attack · K heavy (hold) · L block · Space dodge · F talk · R ride.' : 'Classic controls: click to move and attack.', 'sys');
   UI.dirty = true;
 }
 function refreshKeyHints() {
@@ -50,6 +50,7 @@ addEventListener('keydown', e => {
     case 'KeyE': cam.yawT -= Math.PI / 8; break;
     case 'KeyF': actInteract(); break;
     case 'Tab': actLockCycle(); break;
+    case 'KeyR': toggleMount(); break;
   }
 }, true);
 addEventListener('keyup', e => {
@@ -60,14 +61,15 @@ addEventListener('keyup', e => {
 }, true);
 addEventListener('blur', () => { CTRL.keys.clear(); if (P) { P.blocking = false; if (P.charge >= 0) actHeavyRelease(); } });
 
+const MOVEV = [0, 0];
 function moveInput() {
   const k = CTRL.keys; let ix = 0, iy = 0;
   if (isAction()) { ix = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0); iy = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0); }
   if (CTRL.pad) { ix += CTRL.pad.x; iy -= CTRL.pad.y; }
-  if (Math.hypot(ix, iy) < 0.25) return null;
+  if (hyp(ix, iy) < 0.25) return null;
   const rx = Math.cos(cam.yaw), ry = -Math.sin(cam.yaw), fx = -Math.sin(cam.yaw), fy = -Math.cos(cam.yaw);
-  const x = rx * ix + fx * iy, y = ry * ix + fy * iy, n = Math.hypot(x, y) || 1;
-  return [x / n, y / n];
+  const x = rx * ix + fx * iy, y = ry * ix + fy * iy, n = hyp(x, y) || 1;
+  MOVEV[0] = x / n; MOVEV[1] = y / n; return MOVEV;   // perf round 5: one reused array (callers read it at once)
 }
 function freeAt(x, y) { const r = 0.26; return !blocked(x - r, y - r) && !blocked(x + r, y - r) && !blocked(x - r, y + r) && !blocked(x + r, y + r); }
 function stepMove(dx, dy) { if (freeAt(P.x + dx, P.y)) P.x += dx; if (freeAt(P.x, P.y + dy)) P.y += dy; }
@@ -96,9 +98,12 @@ function pollPad(dt) {
 /* ---------- Targeting ---------- */
 function softTarget(range, cone) {
   if (CTRL.lock && !CTRL.lock.dead && dist(CTRL.lock, P) <= range + 1) return CTRL.lock;
+  // perf round 5: with many mobs only the grid cells around the hero are visited, in mobs[] order (ties: first wins)
+  const grid = typeof mobsNearIdx === 'function' && mobs.length >= MG_MIN && range < 1e6, L = mobs, idx = grid ? mobsNearIdx(P.x, P.y, range) : null, n = grid ? idx.length : L.length;
   let best = null, bs = -1e9;
-  for (const m of mobs) {
-    if (m.dead) continue; const dx = m.x - P.x, dy = m.y - P.y, d = Math.hypot(dx, dy); if (d > range) continue;
+  for (let k = 0; k < n; k++) {
+    const m = grid ? L[idx[k]] : L[k];
+    if (m.dead) continue; const dx = m.x - P.x, dy = m.y - P.y, d = hyp(dx, dy); if (d > range) continue;
     const dot = d < 0.01 ? 1 : (dx * P.fx + dy * P.fy) / d; if (dot < cone && d > 1.3) continue;
     const s = -d + dot * 2.5; if (s > bs) { bs = s; best = m; }
   }
@@ -152,12 +157,21 @@ function actHeavyRelease() {
 }
 function meleeArc(range, cone, mul, o) {
   let hit = 0;
-  for (const m of mobs) {
-    if (m.dead) continue; const dx = m.x - P.x, dy = m.y - P.y, d = Math.hypot(dx, dy); const r = range + (m.d.size || (m.d.look && m.d.look.scale) || 1) * 0.35;
-    if (d > r) continue; const dot = d < 0.3 ? 1 : (dx * P.fx + dy * P.fy) / d; if (dot < cone) continue;
+  const one = m => {
+    if (m.dead) return; const dx = m.x - P.x, dy = m.y - P.y, d = hyp(dx, dy); const r = range + (m.d.size || (m.d.look && m.d.look.scale) || 1) * 0.35;
+    if (d > r) return; const dot = d < 0.3 ? 1 : (dx * P.fx + dy * P.fy) / d; if (dot < cone) return;
     const hp = m.hp; physHit(m, mul, o);
     if (m.hp < hp && !m.dead) m.stun = Math.max(m.stun || 0, m.d.boss ? (o.heavy ? 0.3 : 0) : o.stun);
     hit++;
+  };
+  // perf round 5: with many mobs only the grid cells in reach are visited, in mobs[] order (the candidate list is copied:
+  // a hit can query again); mobs appended while swinging are visited afterwards, as the old for-of did
+  const L = mobs;
+  if (typeof mobsNearIdx !== 'function' || L.length < MG_MIN) { for (const m of L) one(m); }
+  else {
+    const n0 = L.length, idx = mobsNearIdx(P.x, P.y, range, true).slice();
+    for (let k = 0; k < idx.length; k++) one(L[idx[k]]);
+    for (let i = n0; i < L.length; i++) one(L[i]);
   }
   if (hit) { HITSTOP = Math.max(HITSTOP, o.heavy ? 0.09 : 0.045); if (o.heavy) SHAKE = Math.max(SHAKE, 0.2); }
   return hit;

@@ -5,6 +5,174 @@
    "layer": "pet",
    "body": "huginn",
    "variant": null
+  },
+  {
+   "id": "knight_f.mount_body",
+   "layer": "body",
+   "body": "knight_f",
+   "variant": "mounted",
+   "mounted": true
+  },
+  {
+   "id": "knight_f.mount_hair_long",
+   "layer": "hair",
+   "body": "knight_f",
+   "variant": "long",
+   "mounted": true
+  },
+  {
+   "id": "knight_f.mount_hair_spiky",
+   "layer": "hair",
+   "body": "knight_f",
+   "variant": "spiky",
+   "mounted": true
+  },
+  {
+   "id": "knight_f.mount_weapon_spear",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "spear",
+   "mounted": true
+  },
+  {
+   "id": "knight_f.mount_weapon_sword",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "sword",
+   "mounted": true
+  },
+  {
+   "id": "knight_f.mount_weapon_twohand",
+   "layer": "weapon",
+   "body": "knight_f",
+   "variant": "twohand",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_body",
+   "layer": "body",
+   "body": "knight_m",
+   "variant": "mounted",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_hair_long",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "long",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_hair_spiky",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "spiky",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_weapon_spear",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "spear",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_weapon_sword",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "sword",
+   "mounted": true
+  },
+  {
+   "id": "knight_m.mount_weapon_twohand",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "twohand",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_body",
+   "layer": "body",
+   "body": "rune_jarl_f",
+   "variant": "mounted",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_hair_long",
+   "layer": "hair",
+   "body": "rune_jarl_f",
+   "variant": "long",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_hair_spiky",
+   "layer": "hair",
+   "body": "rune_jarl_f",
+   "variant": "spiky",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_weapon_spear",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "spear",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_weapon_sword",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "sword",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_f.mount_weapon_twohand",
+   "layer": "weapon",
+   "body": "rune_jarl_f",
+   "variant": "twohand",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_body",
+   "layer": "body",
+   "body": "rune_jarl_m",
+   "variant": "mounted",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_hair_long",
+   "layer": "hair",
+   "body": "rune_jarl_m",
+   "variant": "long",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_hair_spiky",
+   "layer": "hair",
+   "body": "rune_jarl_m",
+   "variant": "spiky",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_weapon_spear",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "spear",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_weapon_sword",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "sword",
+   "mounted": true
+  },
+  {
+   "id": "rune_jarl_m.mount_weapon_twohand",
+   "layer": "weapon",
+   "body": "rune_jarl_m",
+   "variant": "twohand",
+   "mounted": true
   }
  ]
 }

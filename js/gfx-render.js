@@ -22,6 +22,10 @@
    draw per sheet instead of ~4 draws per entity. The overlay uses
    projTo() into reused arrays, cached gradients/glow sprites/strings,
    and PFX particles are pooled.
+
+   Round 5 (mounts & companions): the mounted player (mount_* sheets, gfx-sheets.js) uses the same layered path
+   (x-ray, casters, hat); COMPANIONS pets and the Blitz Beat raven are instances of their sheets' sprite batches
+   (syncRavenShots / syncCompanions, called from syncEntities before the batches flush).
    ========================================================= */
 const UNITPLANE = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
 const FLATPLANE = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
@@ -51,17 +55,75 @@ function sprMapSet(mat, tex) {
   if (mat.userData.enc !== tex.encoding) { mat.userData.enc = tex.encoding; mat.needsUpdate = true; }
   const u = mat.userData.u; if (u && tex.image) u.uTexSize.value.set(tex.image.width || 64, tex.image.height || 64);
 }
+/* ---------- Indexed sprite sheets (perf round 4) ----------
+   Sheets decoded by gfx-sheets.js into an R8 index texture (one page = a band of block rows) + a 256x1 RGBA palette
+   (every sheet has <= 49 colours, binary alpha) cost 1 byte per texel instead of 4. The shader fetches the index and
+   looks the colour up, emulating the RGBA texture's sampler exactly: NEAREST when magnified, LINEAR (4 palette taps,
+   clamp to edge) when minified, chosen like the GPU does (rho^2 = max |d(uv*size)/dx|^2, |.../dy|^2 > 1 -> min).
+   The fetched colour then goes through the same mapTexelToLinear as before. WebGL2 only (texelFetch / textureSize);
+   materials opt in with the SPR_PAL define + a uPal uniform (sprPalMat). SPR_TEX(uv) replaces texture2D(map, uv).
+   uTexOff: offset of the page inside the whole sheet in texels (the dissolve hash keeps its sheet-texel pattern). */
+const SPR_PAL_HEAD = `
+#ifdef SPR_PAL
+uniform sampler2D uPal;
+bool sprMinF; ivec2 sprMx;
+void sprSetup(vec2 uv) {
+  ivec2 ts = textureSize(map, 0); vec2 p = uv * vec2(ts), dx = dFdx(p), dy = dFdy(p);
+  sprMinF = max(dot(dx, dx), dot(dy, dy)) > 1.0; sprMx = ts - 1;
+}
+vec4 sprPal(ivec2 t) { return texelFetch(uPal, ivec2(int(texelFetch(map, clamp(t, ivec2(0), sprMx), 0).r * 255.0 + 0.5), 0), 0); }
+vec4 sprTex(vec2 uv) {
+  vec2 p = uv * vec2(sprMx + 1);
+  if (!sprMinF) return sprPal(ivec2(floor(p)));
+  p -= 0.5; vec2 f = fract(p); ivec2 i = ivec2(floor(p));
+  return mix(mix(sprPal(i), sprPal(i + ivec2(1, 0)), f.x), mix(sprPal(i + ivec2(0, 1)), sprPal(i + ivec2(1, 1)), f.x), f.y);
+}
+#define SPR_TEX(uv) sprTex(uv)
+#define SPR_SETUP(uv) sprSetup(uv)
+#else
+#define SPR_TEX(uv) texture2D(map, uv)
+#define SPR_SETUP(uv)
+#endif
+`;
+const PAL_MAP = `
+#ifdef USE_MAP
+SPR_SETUP( vUv );
+vec4 texelColor = SPR_TEX( vUv );
+texelColor = mapTexelToLinear( texelColor );
+diffuseColor *= texelColor;
+#endif
+`;
+// Palette lookup in a fragment shader template (before three resolves its #includes): the helpers go after the map
+// sampler declaration.
+// full: also map_fragment -> PAL_MAP (plain / depth materials; the colour sprite OBCs use SPR_MAP instead).
+function palInject(sh, mat, full) {
+  if (mat.userData.pal) sh.uniforms.uPal = mat.userData.pal;
+  let f = sh.fragmentShader.replace('#include <map_pars_fragment>', '#include <map_pars_fragment>\n' + SPR_PAL_HEAD);
+  if (full) f = f.replace('#include <map_fragment>', PAL_MAP);
+  sh.fragmentShader = f;
+}
+// Plain materials sampling a sheet (x-ray, sun casters): palette lookup only.
+function PAL_OBC(sh) { palInject(sh, this, true); }
+// Opt a material into the palette path of sheet record rec (no-op for RGBA sheets). Keeps an existing onBeforeCompile
+// (every sprite OBC calls palInject); plain materials get PAL_OBC.
+function sprPalMat(mat, rec) {
+  if (!rec || !rec.pal) return mat;
+  mat.defines = Object.assign({}, mat.defines, { SPR_PAL: '' }); mat.userData.pal = { value: rec.pal.tex };
+  if (!mat.userData.obc) mat.onBeforeCompile = PAL_OBC;
+  mat.needsUpdate = true; return mat;
+}
 
 /* ---------- Sprite shader patch ---------- */
 const SPR_HEAD = `
-uniform vec4 uFlash; uniform vec3 uRim; uniform vec2 uRimDir; uniform vec2 uFrameV; uniform float uDissolve; uniform float uFade; uniform vec2 uTexSize;
+uniform vec4 uFlash; uniform vec3 uRim; uniform vec2 uRimDir; uniform vec2 uFrameV; uniform float uDissolve; uniform float uFade; uniform vec2 uTexSize; uniform vec2 uTexOff;
 #ifdef SPR_HAIR
 uniform vec4 uHK; uniform vec3 uH0; uniform vec3 uH1; uniform vec3 uH2; uniform vec3 uH3; uniform vec3 uClip;
 #endif
 float sprHash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 `;
 const SPR_MAP = `
-vec4 texelColor = texture2D( map, vUv );
+SPR_SETUP( vUv );
+vec4 texelColor = SPR_TEX( vUv );
 float sprA = texelColor.a;
 texelColor = mapTexelToLinear( texelColor );
 #ifdef SPR_HAIR
@@ -81,7 +143,7 @@ if ( dot(vec3(vUv, 1.0), uClip) < 0.0 ) discard;   // headgear hideHair 'top' (g
 float sprV = clamp((vUv.y - uFrameV.x) / max(1e-5, uFrameV.y - uFrameV.x), 0.0, 1.0);
 float sprEdge = 0.0;
 if ( uDissolve > 0.0 ) {
-  float n = sprHash(floor(vUv * uTexSize * 0.5)) * 0.68 + (1.0 - sprV) * 0.32;   // 2x2-texel blocks
+  float n = sprHash(floor((vUv * uTexSize + uTexOff) * 0.5)) * 0.68 + (1.0 - sprV) * 0.32;   // 2x2-texel blocks
   float th = uDissolve * 1.25 - 0.12;
   if ( n < th ) discard;
   sprEdge = 1.0 - smoothstep(0.0, 0.16, n - th);
@@ -92,7 +154,7 @@ const SPR_OUT = `
   // hue-preserving soft knee: lit sprites stay crisp pixels instead of blooming into haze near fires
   float sprMx = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b);
   if ( sprMx > 0.82 ) outgoingLight *= (0.82 + 0.2 * (1.0 - exp(-(sprMx - 0.82) * 4.0))) / sprMx;
-  float a1 = texture2D( map, vUv + uRimDir ).a, a3 = texture2D( map, vUv + 3.0 * uRimDir ).a;
+  float a1 = SPR_TEX( vUv + uRimDir ).a, a3 = SPR_TEX( vUv + 3.0 * uRimDir ).a;
   outgoingLight += uRim * (step(0.5, a1) * (1.0 - step(0.5, a3)));
   outgoingLight = mix(outgoingLight, uFlash.rgb, uFlash.a);
   outgoingLight = mix(outgoingLight, vec3(2.4, 0.9, 0.22), sprEdge);
@@ -102,7 +164,7 @@ const SPR_OUT = `
 `;
 // Shared function object: the program cache key is its source, so all sprites share one program.
 function SPR_OBC(sh) {
-  Object.assign(sh.uniforms, this.userData.u);
+  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this);
   sh.fragmentShader = SPR_HEAD + sh.fragmentShader
     .replace('#include <map_fragment>', SPR_MAP)
     .replace('#include <alphatest_fragment>', SPR_TEST)
@@ -110,21 +172,22 @@ function SPR_OBC(sh) {
 }
 function sprUniforms() {
   return { uFlash: { value: new THREE.Vector4(1, 1, 1, 0) }, uRim: { value: new THREE.Vector3() }, uRimDir: { value: new THREE.Vector2() },
-    uFrameV: { value: new THREE.Vector2(0, 1) }, uDissolve: { value: 0 }, uFade: { value: 0 }, uTexSize: { value: new THREE.Vector2(64, 64) } };
+    uFrameV: { value: new THREE.Vector2(0, 1) }, uDissolve: { value: 0 }, uFade: { value: 0 }, uTexSize: { value: new THREE.Vector2(64, 64) }, uTexOff: { value: new THREE.Vector2(0, 0) } };
 }
 function spriteMat(tex, o = {}) { return new THREE.MeshBasicMaterial(Object.assign({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }, o)); }
-// Lit, rim-lit, flashable, dissolvable sprite material. hair: true adds the palette ramp.
-function fxSpriteMat(tex, hair) {
-  const m = spriteMat(null); m.userData.u = sprUniforms(); m.onBeforeCompile = SPR_OBC;
+// Lit, rim-lit, flashable, dissolvable sprite material. hair: true adds the palette ramp. rec: sheet record (indexed
+// sheets: palette lookup).
+function fxSpriteMat(tex, hair, rec) {
+  const m = spriteMat(null); m.userData.u = sprUniforms(); m.onBeforeCompile = SPR_OBC; m.userData.obc = true;
   if (hair) { m.defines = { SPR_HAIR: '' }; Object.assign(m.userData.u, { uHK: { value: new THREE.Vector4() }, uH0: { value: new THREE.Color() }, uH1: { value: new THREE.Color() }, uH2: { value: new THREE.Color() }, uH3: { value: new THREE.Color() }, uClip: { value: new THREE.Vector3(0, 0, 1) } }); }
-  sprMapSet(m, tex); return m;
+  sprPalMat(m, rec); sprMapSet(m, tex); return m;
 }
 // The same hair clip on a plain sprite / depth material (hair x-ray and sun caster): discard where dot(uv, clip) < 0.
 function HAIRCLIP_OBC(sh) {
-  sh.uniforms.uClip = this.userData.clipU;
+  sh.uniforms.uClip = this.userData.clipU; palInject(sh, this, true);
   sh.fragmentShader = 'uniform vec3 uClip;\n' + sh.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\nif ( dot(vec3(vUv, 1.0), uClip) < 0.0 ) discard;');
 }
-function hairClipPatch(mat, clipU) { mat.userData.clipU = clipU; mat.onBeforeCompile = HAIRCLIP_OBC; mat.needsUpdate = true; return mat; }
+function hairClipPatch(mat, clipU) { mat.userData.clipU = clipU; mat.userData.obc = true; mat.onBeforeCompile = HAIRCLIP_OBC; mat.needsUpdate = true; return mat; }
 
 /* ---------- Hair palette ramp ----------
    Hair sheets are painted in neutral grey (outline 64, shade 126, lit 184 = 0.72, highlight 228).
@@ -152,9 +215,9 @@ function applyHairRamp(mat, hex) {
 }
 
 /* ---------- Shadow casters ---------- */
-function makeCaster(geo, tex) {
+function makeCaster(geo, tex, rec) {
   const c = new THREE.Mesh(geo, CASTMAT); c.castShadow = true; c.renderOrder = -2;
-  c.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
+  c.customDepthMaterial = sprPalMat(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5, side: THREE.DoubleSide }), rec);
   scene.add(c); return c;
 }
 // Casters face the sun (widest silhouette), choosing the side whose +x matches camera right
@@ -174,7 +237,26 @@ function sprLights() {
   for (const b of map.braziers || []) L.push({ x: b.x, y: b.y, r: 4.6, c: [1.0, 0.58, 0.22], i: 0.62, h: 0.2 });
   if (map.way) L.push({ x: map.way.x, y: map.way.y, r: 5.5, c: [1.0, 0.62, 0.25], i: 0.7, h: 0.9, way: true });
   for (const w of map.warps || []) L.push({ x: w.x + 0.5, y: w.y + 0.5, r: 3.2, c: [0.55, 0.78, 1.0], i: 0.45, h: 0.1 });
-  SPRF.lights = L; SPRF.lightsMap = map; return L;
+  SPRF.lights = L; SPRF.lightsMap = map; SPRF.lgrid = null; return L;
+}
+/* Rim lights near a point (perf round 4): sprRim looped over every brazier / waystone / warp of the map for every
+   entity every frame (12% self time in the Gloamheim horde). Lights are bucketed into 4x4-tile cells by their radius'
+   bounding box, keeping the map's light order in each cell, so the per-entity sum is bit-identical. */
+const LGRID_C = 4;
+function sprLightsNear(x, y) {
+  const L = sprLights(); let G = SPRF.lgrid;
+  if (!G) {
+    const gw = Math.ceil((map.w || 1) / LGRID_C) + 1, gh = Math.ceil((map.h || 1) / LGRID_C) + 1, cells = new Array(gw * gh);
+    for (let i = 0; i < cells.length; i++) cells[i] = [];
+    for (const l of L) {
+      const cx0 = Math.max(0, Math.floor((l.x - l.r) / LGRID_C)), cx1 = Math.min(gw - 1, Math.floor((l.x + l.r) / LGRID_C));
+      const cy0 = Math.max(0, Math.floor((l.y - l.r) / LGRID_C)), cy1 = Math.min(gh - 1, Math.floor((l.y + l.r) / LGRID_C));
+      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) cells[cy * gw + cx].push(l);
+    }
+    G = SPRF.lgrid = { gw, gh, cells };
+  }
+  const cx = Math.floor(x / LGRID_C), cy = Math.floor(y / LGRID_C);
+  return cx >= 0 && cy >= 0 && cx < G.gw && cy < G.gh ? G.cells[cy * G.gw + cx] : L;
 }
 const _LT = { r: 1, g: 1, b: 1 };
 function sprLight(v, x, y) {
@@ -189,7 +271,9 @@ function sprRim(e, st) {
   st.rim[0] = st.rim[1] = st.rim[2] = 0; st.rdx = 0; st.rdy = 0;
   const q = gfxQ(); if (q === 'low') return;
   let bx = 0, by = 0, bw = 0;
-  for (const L of sprLights()) {
+  const LS = sprLightsNear(e.x, e.y);
+  for (let i = 0; i < LS.length; i++) {
+    const L = LS[i];
     if (L.way && !(P && P.kindled && P.kindled[map.id])) continue;
     const dx = L.x - e.x, dy = L.y - e.y, d = Math.hypot(dx, dy); if (d > L.r || d < 0.05) continue;
     const w = (1 - d / L.r) * (1 - d / L.r) * L.i, sr = (dx * SPRF.rx + dy * SPRF.ry) / d;
@@ -272,6 +356,12 @@ function ibAlloc(B, cap) {
   if (B.depth) { mesh.castShadow = true; mesh.customDepthMaterial = B.depth; }
   scene.add(mesh); B.mesh = mesh; B.cap = cap; B.m = mesh.instanceMatrix.array; B.c = B.color ? mesh.instanceColor.array : null;
 }
+// Remove a batch for good (its sheet was released): mesh, geometry, materials. sprBatch(rec) makes a new one on reuse.
+function ibDrop(B) {
+  const i = IB.indexOf(B); if (i >= 0) IB.splice(i, 1);
+  if (B.mesh) { scene.remove(B.mesh); B.mesh.dispose(); B.mesh.geometry.dispose(); B.mesh = null; }
+  if (B.mat) B.mat.dispose(); if (B.depth) B.depth.dispose(); if (B.rec && B.rec.batches && B.rec.batches[B.pg] === B) B.rec.batches[B.pg] = null;
+}
 function ibPush(B) { if (B.n >= B.cap) ibAlloc(B, Math.max(16, B.cap * 2)); return B.n++; }
 function ibFlag(a, n) { a.updateRange.offset = 0; a.updateRange.count = n * a.itemSize; a.needsUpdate = true; }
 function ibReset() { for (let i = 0; i < IB.length; i++) IB[i].n = 0; }
@@ -306,7 +396,7 @@ function ibFlush() {
     ibFlag(m.instanceMatrix, B.n); if (m.instanceColor) ibFlag(m.instanceColor, B.n);
     const at = m.geometry.attributes; for (let k = 0; k < B.keys.length; k++) ibFlag(at[B.keys[k]], B.n);
     if (B.depth) m.castShadow = SPRF.shadows;
-    if (B.rec) sprMapSet(B.mat, B.rec.tex); else if (B.tex) sprMapSet(B.mat, B.tex);
+    if (B.rec) { const t = sheetPageTex(B.rec, B.pg); sprMapSet(B.mat, t); if (B.depth.map !== t) B.depth.map = t; } else if (B.tex) sprMapSet(B.mat, B.tex);
   }
 }
 // Instance i's matrix = T(x,y,z) * RotY(c = cos yaw, s = sin yaw) * S(sx,sy,sz), column-major (Object3D.matrix layout).
@@ -324,7 +414,7 @@ const SPR_VI = `attribute vec4 iUV; attribute vec4 iCol; attribute vec4 iFlash; 
 varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec2 vIFrameV;
 `;
 const SPR_HEAD_I = `
-uniform vec2 uTexSize;
+uniform vec2 uTexSize; uniform vec2 uTexOff;
 varying vec4 vICol; varying vec4 vIFlash; varying vec4 vIRim; varying vec4 vIMisc; varying vec2 vIFrameV;
 #define uFlash vIFlash
 #define uRim vIRim.xyz
@@ -336,7 +426,7 @@ float sprHash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 
 `;
 const IUV_VERTEX = 'vUv = ( uvTransform * vec3( mix( iUV.xy, iUV.zw, uv ), 1 ) ).xy;';   // iUV = (u0, v0, u1, v1)
 function SPR_OBC_I(sh) {
-  Object.assign(sh.uniforms, this.userData.u);
+  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this);
   sh.vertexShader = SPR_VI + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX + ' vICol = iCol; vIFlash = iFlash; vIRim = iRim; vIMisc = iMisc; vIFrameV = iUV.yw;');
   sh.fragmentShader = SPR_HEAD_I + sh.fragmentShader
     .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity ) * vICol;')
@@ -348,7 +438,7 @@ function SPR_OBC_I(sh) {
 // iCast = (x, y, z, mirror sign x size; 0 = no shadow -> degenerate quad). uCastCS = cos/sin of the caster yaw.
 const CASTU = { uCastCS: { value: new THREE.Vector2(1, 0) }, uCastH: { value: CAST_H } };
 function CAST_OBC_I(sh) {
-  Object.assign(sh.uniforms, CASTU);
+  Object.assign(sh.uniforms, CASTU); palInject(sh, this, true);
   sh.vertexShader = 'attribute vec4 iUV; attribute vec4 iCast; uniform vec2 uCastCS; uniform float uCastH;\n' + sh.vertexShader
     .replace('#include <uv_vertex>', IUV_VERTEX)
     .replace('#include <project_vertex>', `vec4 mvPosition = vec4( iCast.w * transformed.x * uCastCS.x + transformed.z * uCastCS.y + iCast.x, transformed.y * uCastH * abs(iCast.w) + iCast.y,
@@ -356,15 +446,19 @@ function CAST_OBC_I(sh) {
     mvPosition = modelViewMatrix * mvPosition; gl_Position = projectionMatrix * mvPosition;`);
 }
 const SPRB_ATTR = { iUV: 4, iCol: 4, iFlash: 4, iRim: 4, iMisc: 4, iCast: 4 };
-function sprBatch(rec) {
-  if (rec.batch) return rec.batch;
-  const mat = spriteMat(null); mat.userData.u = { uTexSize: { value: new THREE.Vector2(64, 64) } }; mat.onBeforeCompile = SPR_OBC_I; sprMapSet(mat, rec.tex);
-  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: rec.tex, alphaTest: 0.5, side: THREE.DoubleSide }); depth.onBeforeCompile = CAST_OBC_I;
-  return (rec.batch = ibNew({ geo: ibGeo(sheetPlane(rec.json)), mat, depth, attrs: SPRB_ATTR, order: -0.5, rec, sort: true }));
+// One batch per sheet page (gfx-sheets.js sheetPages: large indexed sheets are split into bands of block rows;
+// every other sheet has a single page, i.e. one batch per sheet as before).
+function sprBatch(rec, pg) {
+  const bs = rec.batches || (rec.batches = []), b = bs[pg]; if (b) return b;
+  const tex = sheetPageTex(rec, pg), p = sheetPages(rec)[pg];
+  const mat = spriteMat(null); mat.userData.u = { uTexSize: { value: new THREE.Vector2(64, 64) }, uTexOff: { value: new THREE.Vector2(0, rec.texH - p.y0 - p.h) } };
+  mat.onBeforeCompile = SPR_OBC_I; mat.userData.obc = true; sprPalMat(mat, rec); sprMapSet(mat, tex);
+  const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: tex, alphaTest: 0.5, side: THREE.DoubleSide }); depth.onBeforeCompile = CAST_OBC_I; depth.userData.obc = true; sprPalMat(depth, rec);
+  return (bs[pg] = ibNew({ geo: ibGeo(sheetPlane(rec.json)), mat, depth, attrs: SPRB_ATTR, order: -0.5, rec, pg, sort: true }));
 }
 // One instance of layer L (see placeSheetVis): same transform, UVs and look as the per-entity mesh path.
 function sprInstance(L, x, y, z, sx, st, flip) {
-  const B = sprBatch(L.rec), i = ibPush(B), o = i * 4, A = B.A, uv = L.uv, ts = B.mat.userData.u.uTexSize.value;
+  const B = sprBatch(L.rec, L.pg), i = ibPush(B), o = i * 4, A = B.A, uv = L.uv, ts = B.mat.userData.u.uTexSize.value;
   const k = st.scl;
   ibMat(B, i, x, y, z, SPRF.cy, SPRF.sy, sx * st.sx * k, st.sy * k / COSP, 1);
   let a = A.iUV; a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
@@ -382,16 +476,17 @@ function placeBlob(v, x, gh, y, r, z, on) {
   ibMat(BLOBS, ibPush(BLOBS), x, gh + 0.03, y, 1, 0, s, s, s);
 }
 // Per-entity motion FX: footstep dust, death embers, ghost wisps.
-function sprMotion(v, e, st, hu) {
+// gh: ground height at the entity when the caller already has it (placeSheetVis), else sampled here.
+function sprMotion(v, e, st, hu, gh) {
   if (typeof PFX === 'undefined') return;
-  const gh = groundH(e.x, e.y);
+  if (gh === undefined) gh = groundH(e.x, e.y);
   if (e.moving && !st.ghost && !(e.z > 0)) {
     const step = Math.floor((e.walk || 0) / 2.3);
-    if (v.step !== undefined && step !== v.step) PFX.dust(e.x, gh, e.y, e === P ? 3 : 2, (e.d && e.d.size) || 1);
+    if (v.step !== undefined && step !== v.step) { PFX.dust(e.x, gh, e.y, e === P ? (v.mounted ? 5 : 3) : 2, v.mounted ? 1.6 : (e.d && e.d.size) || 1); if (e === P && VFX.step) VFX.step(e, gh, !!v.mounted); }   // mounted: the warg's gallop kicks up more; powder on snow (VFX)
     v.step = step;
   }
   if (e === P) {
-    if (P.dodgeT > 0 && !(v.dodging)) PFX.dust(e.x, gh, e.y, 7, 1.3);
+    if (P.dodgeT > 0 && !(v.dodging)) PFX.dust(e.x, gh, e.y, v.mounted ? 12 : 7, v.mounted ? 1.8 : 1.3);
     if (P.dodgeT > 0 && Math.random() < 0.6) PFX.dust(e.x, gh, e.y, 1, 0.8);
     v.dodging = P.dodgeT > 0;
   }
@@ -451,27 +546,60 @@ function playerPose() {
   if (P.moving) return { anim: 'walk', i: Math.floor(P.walk * 1.26) % 6 };
   return { anim: 'idle', i: Math.floor(time * 2.5) % 4 };
 }
-const DROPTEX = {};
-function dropTex(d) {
-  if (d.zeny) { const k = d.lost ? 'lost' : 'zeny'; if (DROPTEX[k]) return DROPTEX[k]; const c = mkCanvas(32, 32), g = c.getContext('2d'); if (d.lost) { g.fillStyle = '#8a1018'; g.beginPath(); g.ellipse(16, 24, 13, 6, 0, 0, 7); g.fill(); g.fillStyle = '#e8c050'; g.beginPath(); g.ellipse(16, 20, 5, 3, 0, 0, 7); g.fill(); } else { for (let i = 0; i < 4; i++) { g.fillStyle = '#b08420'; g.beginPath(); g.ellipse(9 + i * 5, 25 - i * 3, 6, 3.5, 0, 0, 7); g.fill(); g.fillStyle = '#f4d060'; g.beginPath(); g.ellipse(9 + i * 5, 24 - i * 3, 6, 3.2, 0, 0, 7); g.fill(); } } pixelize(c, [40, 26, 10]); return (DROPTEX[k] = canvasTex(c, { pixel: true })); }
-  const t = ITEMS[d.item.id], k = t.icon + '|' + (t.color || ''); if (DROPTEX[k]) return DROPTEX[k];
-  const src = iconCanvas(t), c = mkCanvas(32, 32), g = c.getContext('2d'); g.drawImage(src, 2, 2, 28, 28); pixelize(c, [30, 20, 16]);
-  return (DROPTEX[k] = canvasTex(c, { pixel: true }));
+// Drop icons are painted on CPU-backed canvases (willReadFrequently): pixelize() reads them back and the atlas copy /
+// texture upload read them again; with GPU canvases the first drop of a new icon cost 280-420 ms on SwiftShader.
+const DROPCV = {}, DROPTEX = {}, cpuCtx = c => c.getContext('2d', { willReadFrequently: true });
+function dropTex(d) { const k = dropKey(d); return DROPTEX[k] || (DROPTEX[k] = canvasTex(dropCanvas(d), { pixel: true })); }
+function dropCanvas(d) {
+  if (d.zeny) { const k = d.lost ? 'lost' : 'zeny'; if (DROPCV[k]) return DROPCV[k]; const c = mkCanvas(32, 32), g = cpuCtx(c); if (d.lost) { g.fillStyle = '#8a1018'; g.beginPath(); g.ellipse(16, 24, 13, 6, 0, 0, 7); g.fill(); g.fillStyle = '#e8c050'; g.beginPath(); g.ellipse(16, 20, 5, 3, 0, 0, 7); g.fill(); } else { for (let i = 0; i < 4; i++) { g.fillStyle = '#b08420'; g.beginPath(); g.ellipse(9 + i * 5, 25 - i * 3, 6, 3.5, 0, 0, 7); g.fill(); g.fillStyle = '#f4d060'; g.beginPath(); g.ellipse(9 + i * 5, 24 - i * 3, 6, 3.2, 0, 0, 7); g.fill(); } } pixelize(c, [40, 26, 10]); return (DROPCV[k] = c); }
+  const t = ITEMS[d.item.id], k = t.icon + '|' + (t.color || ''); if (DROPCV[k]) return DROPCV[k];
+  const src = iconCanvas(t), c = mkCanvas(32, 32), g = cpuCtx(c); g.drawImage(src, 2, 2, 28, 28); pixelize(c, [30, 20, 16]);
+  return (DROPCV[k] = c);
 }
 const RCOL = { common: 0xffffff, magic: 0x7fa0ff, rare: 0xffd84a, unique: 0xff9a30, card: 0xd0a8ff, key: 0xffa870 };
 /* Ground drops: one instanced icon mesh (the 32x32 icons packed into a 512x512 atlas, 34-px slots with a 1-px
    edge copy so bilinear minification samples exactly what the single-texture clamp-to-edge version sampled) and one
    instanced rarity-glow mesh. If the atlas fills up, further icons fall back to one mesh per drop. */
 const DROPAT = (() => {
-  const S = 34, N = 15, c = mkCanvas(512, 512), g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  const S = 34, N = 15, c = mkCanvas(512, 512), g = cpuCtx(c); g.imageSmoothingEnabled = false;
   return { S, N, c, g, tex: canvasTex(c, { pixel: true }), slot: {}, n: 0 };
 })();
 function dropKey(d) { if (d.zeny) return d.lost ? 'lost' : 'zeny'; const t = ITEMS[d.item.id]; return t.icon + '|' + (t.color || ''); }
+/* Painted item icons (vfx round 7; ui.js itemIconURL(id): assets/ui/icons/<id>.png, 64x64): loaded lazily once per item id,
+   downscaled to a 32x32 CPU canvas and packed into the same drop atlas (key 'p|<id>'), so drops stay one instanced
+   draw. Until the file has loaded, when it fails, when the atlas would run short (the last DROP_KEEP slots stay for
+   canvas icons) or when the image would taint the canvas (file:// without file access), the canvas icon is used. */
+const DROPPAINT = new Map(), DROP_KEEP = 24;
+function dropPaint(id) {
+  let e = DROPPAINT.get(id); if (e) return e;
+  e = { img: null, cv: null, bad: false }; DROPPAINT.set(id, e);
+  let url = ''; try { url = typeof itemIconURL === 'function' ? itemIconURL(id) : ''; } catch (err) { url = ''; }
+  if (!url || /^data:/.test(url)) { e.bad = true; return e; }   // no painted file: itemIconURL fell back to the canvas icon
+  const im = new Image(); im.decoding = 'async'; e.img = im;
+  im.onload = () => {
+    try { const c = mkCanvas(32, 32), g = cpuCtx(c); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, 32, 32); g.getImageData(0, 0, 1, 1); e.cv = c; }   // getImageData throws on a tainted canvas
+    catch (err) { e.bad = true; }
+  };
+  im.onerror = () => { e.bad = true; };
+  im.src = url; return e;
+}
+// Painted icon slot of an item drop: uv, null (never: use the canvas icon), or undefined (still loading).
+function dropPaintSlot(d) {
+  if (d.zeny || !d.item || typeof itemIconURL !== 'function') return null;
+  const A = DROPAT, k = 'p|' + d.item.id; let uv = A.slot[k]; if (uv !== undefined) return uv;
+  const e = dropPaint(d.item.id); if (e.bad) return (A.slot[k] = null); if (!e.cv) return undefined;
+  if (A.n >= A.N * A.N - DROP_KEEP) return (A.slot[k] = null);
+  return (A.slot[k] = dropAtlasPut(e.cv));
+}
 // UV rect (u0, v0, u1, v1) of the drop's icon in the atlas, or null when the atlas is full.
 function dropSlot(d) {
+  const P0 = dropPaintSlot(d); if (P0) return P0;
   const A = DROPAT, k = dropKey(d); let uv = A.slot[k]; if (uv !== undefined) return uv;
   if (A.n >= A.N * A.N) return (A.slot[k] = null);
-  const src = dropTex(d).image, i = A.n++, px = (i % A.N) * A.S + 1, py = Math.floor(i / A.N) * A.S + 1, g = A.g;
+  return (A.slot[k] = dropAtlasPut(dropCanvas(d)));
+}
+function dropAtlasPut(src) {
+  const A = DROPAT, i = A.n++, px = (i % A.N) * A.S + 1, py = Math.floor(i / A.N) * A.S + 1, g = A.g; let uv;
   g.drawImage(src, px, py);
   g.drawImage(src, 0, 0, 32, 1, px, py - 1, 32, 1); g.drawImage(src, 0, 31, 32, 1, px, py + 32, 32, 1);     // edge copies (= clamp)
   g.drawImage(src, 0, 0, 1, 32, px - 1, py, 1, 32); g.drawImage(src, 31, 0, 1, 32, px + 32, py, 1, 32);
@@ -479,7 +607,7 @@ function dropSlot(d) {
   g.drawImage(src, 0, 31, 1, 1, px - 1, py + 32, 1, 1); g.drawImage(src, 31, 31, 1, 1, px + 32, py + 32, 1, 1);
   A.tex.needsUpdate = true;
   uv = [px / 512, 1 - (py + 32) / 512, (px + 32) / 512, 1 - py / 512];
-  return (A.slot[k] = uv);
+  return uv;
 }
 function DROP_OBC(sh) { sh.vertexShader = 'attribute vec4 iUV;\n' + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX); }
 let DROPB = null, DROPG = null;
@@ -492,7 +620,8 @@ function dropBatches() {   // created at load (see below), so their shaders comp
 }
 dropBatches();
 function makeDropVis(d) {
-  const v = { meshes: [], F: null, uv: sprBatchOn() ? dropSlot(d) : null, glowC: null, gm: null, gx: NaN, gy: NaN, gh: 0 };
+  const v = { meshes: [], F: null, uv: sprBatchOn() ? dropSlot(d) : null, glowC: null, gm: null, gx: NaN, gy: NaN, gh: 0, paint: false };
+  if (v.uv && !d.zeny && d.item && typeof itemIconURL === 'function' && DROPAT.slot['p|' + d.item.id] === undefined) v.paint = true;   // painted icon still loading: swap it in later (syncDrop)
   const r = d.lost ? 'lostz' : d.zeny ? null : rarityOf(d.item);
   if (v.uv) {
     dropBatches(); if (r && r !== 'common') v.glowC = new THREE.Color(r === 'lostz' ? 0xff2020 : RCOL[r]);
@@ -508,6 +637,7 @@ function syncDrop(d) {
   v.seen = frameNo;
   if (v.gx !== d.x || v.gy !== d.y || v.gm !== map) { v.gx = d.x; v.gy = d.y; v.gm = map; v.gh = groundH(d.x, d.y); }   // drops do not move: ground height once
   const gh = v.gh, bounce = Math.max(0, 1 - d.t * 2.5) * Math.abs(Math.sin(d.t * 9)) * 0.6, s = d.lost ? 0.9 : 0.62;
+  if (v.paint && (frameNo & 7) === 0) { const pu = dropPaintSlot(d); if (pu !== undefined) { v.paint = false; if (pu) v.uv = pu; } }
   if (v.uv) {
     const B = DROPB, i = ibPush(B), a = B.A.iUV, o = i * 4, uv = v.uv;
     ibMat(B, i, d.x, gh + bounce, d.y, SPRF.cy, SPRF.sy, s, s / COSP, 1);
@@ -523,7 +653,7 @@ function syncEntities() {
   frameNo++;
   SPRF.dt = clamp(time - SPRF.t, 0, 0.25); SPRF.t = time;
   SPRF.shadows = shadowsOn(); SPRF.cyaw = casterYaw(); SPRF.rx = Math.cos(cam.yaw); SPRF.ry = -Math.sin(cam.yaw);
-  SPRF.cy = Math.cos(cam.yaw); SPRF.sy = Math.sin(cam.yaw); CASTU.uCastCS.value.set(Math.cos(SPRF.cyaw), Math.sin(SPRF.cyaw));
+  SPRF.cy = Math.cos(cam.yaw); SPRF.sy = Math.sin(cam.yaw); SPRF.yaw = cam.yaw; CASTU.uCastCS.value.set(Math.cos(SPRF.cyaw), Math.sin(SPRF.cyaw));
   SHADOWMAT.opacity = SPRF.shadows ? 0.42 : 0.6;
   ibReset();
   const sh = typeof syncSheetMob === 'function';
@@ -531,8 +661,11 @@ function syncEntities() {
   for (const n of map.npcs) { if (n.fx === undefined) { n.fx = n.dir; n.fy = 0.4; } if (!(sh && syncSheetNPC(n))) syncSprite(n, framesForNPC(n), n.moving ? { anim: 'walk', i: Math.floor((n.walk || time * 6) * 1.26) % 6 } : { anim: 'idle', i: Math.floor(time * 2 + n.x) % 4 }); }
   for (const d of drops) syncDrop(d);
   if (started && !(typeof syncSheetPlayer === 'function' && syncSheetPlayer())) syncSprite(P, framesForPlayer(), playerPose());
+  // after the player (a perched pet follows the owner's facing / squash of this frame), before the batches flush
+  if (typeof syncRavenShots === 'function') { syncRavenShots(); syncCompanions(); }
   VIS.forEach(visSweep);
   ibFlush();
+  if (frameNo % 120 === 0 && typeof sheetPagesSweep === 'function') sheetPagesSweep();
   let king = null; for (const m of mobs) if (m.type === 'ashen_king' && !m.dead) { king = m; break; }
   if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
   syncSwing();
@@ -759,7 +892,7 @@ function syncDecals() {
     if (f.k === 'ring') syncDecal(f, () => [decalMesh(TEX.ring, new THREE.Color(f.col), 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(Math.max(0.01, f.r * (0.3 + 0.7 * k))); a.material.opacity = 1 - k; });
     else if (f.k === 'mark') syncDecal(f, () => [decalMesh(TEX.target, 0xffe070, 1, true)], ([a]) => { const k = f.t / f.dur; a.position.set(f.x, groundH(f.x, f.y) + 0.06, f.y); a.scale.setScalar(0.5 - k * 0.2); a.material.opacity = 1 - k; a.rotation.y = k * 2; });
   }
-  if (P && P.casting) { const col = _castCol.set(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
+  if (P && P.casting && !(VFX.enabled && VFX.fbReady('rune_circle'))) { const col = _castCol.set(ELCOL[SKILLS[P.casting.id].el] || '#ffffff'); syncDecal('cast', () => [decalMesh(TEX.magic, col, 0.95, true)], ([a]) => { a.material.color.copy(col); a.position.set(P.x, groundH(P.x, P.y) + 0.07, P.y); a.rotation.y = time * 1.4; a.scale.setScalar(1.3 + Math.sin(time * 6) * 0.05); }); }
   syncTargetRing();
   DV.forEach(dvSweep);
 }
@@ -792,7 +925,8 @@ function syncTargetRing() {
                         by syncDecals)
      P.buffs[*].aura    songs, Oath of Tyr, Magic Rod, the Kyrie bubble
      P.spheres          monk spirit spheres
-     projs[]            magic bolts, Huginn (a pixel raven), the thrown spear, flicked spheres (arrows stay 2D)
+     projs[]            magic bolts, Huginn's trail (the bird is the pet_huginn sheet; a pixel raven until it loads),
+                        the thrown spear, flicked spheres (arrows stay 2D)
      fxs[]              'strike' (3D lightning) and 'pillar' (3D light column); ring/mark stay decals
      mobs[]             snare / slow / frozen / stun / mark / dispel / lex, named-variant and MVP auras
      questSpots()       quest beacons (light pillar + '?' rune, destination and defence rings)
@@ -808,7 +942,7 @@ function syncTargetRing() {
      placeholders in js/ui.js can stand down.
    ========================================================= */
 const VFX = (() => {
-  const V = { enabled: true, ready: false, t: 0, extra: [] };
+  const V = { enabled: true, ready: false, t: 0, extra: [], hide: 0 };   // hide: debug bitmask of batches (GN, GA, PB, BA, BN)
   /* ---------- colour helpers (cached, no per-frame strings) ---------- */
   const COLC = new Map();
   function lc(hex) {   // hex -> [r, g, b] in the working space (linear when the pipeline is)
@@ -889,14 +1023,29 @@ const VFX = (() => {
       for (let y = 0; y < CS; y++) for (let x = 0; x < CS; x++) { const o = (y * CS + x) * 4; d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = clamp(fn((x + 0.5) / CS, 1 - (y + 0.5) / CS), 0, 1) * 255; }
       g.putImageData(im, (i % CN) * CS, Math.floor(i / CN) * CS); };
     cell('coneBase', g => strip(g, (u, v) => 0.55 + 0.45 * Math.max(Math.exp(-u * 30), Math.exp(-(1 - u) * 30), Math.exp(-(1 - v) * 30))));
-    cell('coneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 30), Math.exp(-(1 - u) * 30), Math.exp(-(1 - v) * 26)) * (0.35 + 0.65 * v) + 0.06));
-    cell('coneFill', g => strip(g, (u, v) => 0.12 + 0.2 * v + Math.exp(-(1 - v) * 18) * 0.9));
-    cell('laneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 24), Math.exp(-(1 - u) * 24)) + 0.07));
+    cell('coneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 30), Math.exp(-(1 - u) * 30), Math.exp(-(1 - v) * 26)) * (0.35 + 0.65 * v)));
+    cell('coneFill', g => strip(g, (u, v) => 0.03 + 0.07 * v + Math.exp(-(1 - v) * 14) * 0.95));
+    cell('laneEdge', g => strip(g, (u, v) => Math.max(Math.exp(-u * 24), Math.exp(-(1 - u) * 24))));
     cell('chev', g => strip(g, (u, v) => { const d = Math.abs(v - 0.35 - (0.5 - Math.abs(u - 0.5)) * 0.9); return Math.exp(-d * d * 160) * (1 - Math.pow(Math.abs(u - 0.5) * 2, 4)); }));
     cell('bar', g => strip(g, (u, v) => Math.exp(-Math.pow((v - 0.5) * 5, 2)) * (1 - Math.pow(Math.abs(u - 0.5) * 2, 6))));
     // '?' quest rune: white fill, dark outline (tinted by the vertex colour in the normal-blend batch)
     cell('qmark', g => { g.font = `900 ${R * 1.6}px Georgia, 'Times New Roman', serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineWidth = 22; g.strokeStyle = 'rgba(26,16,8,1)'; g.strokeText('?', 0, R * 0.08); g.fillStyle = '#fff'; g.fillText('?', 0, R * 0.08); });
+    // round 7: Bear-Skin Rage claw marks, the Foresight eye, a weakened / armour-broken shield, the Seidr hex bind-rune
+    cell('claw', g => { for (let i = -1; i <= 1; i++) { const ox = i * R * 0.34; g.beginPath(); g.moveTo(ox - R * 0.42, -R * 0.82); g.quadraticCurveTo(ox + R * 0.12, -R * 0.1, ox + R * 0.36, R * 0.84); g.quadraticCurveTo(ox - R * 0.02, -R * 0.02, ox - R * 0.42, -R * 0.82); g.closePath();
+      g.save(); g.shadowColor = '#fff'; g.shadowBlur = 14; g.lineWidth = 9; g.stroke(); g.restore(); g.fill(); } });
+    cell('eye', g => { strokeGlow(g, 7, () => { g.beginPath(); g.moveTo(-R * 0.9, 0); g.quadraticCurveTo(0, -R * 0.78, R * 0.9, 0); g.quadraticCurveTo(0, R * 0.78, -R * 0.9, 0); g.stroke(); circ(g, R * 0.33); g.stroke(); });
+      g.beginPath(); g.arc(0, 0, R * 0.16, 0, 6.2832); g.fill(); for (let i = 0; i < 5; i++) { const a = -2.4 + i * 0.4; g.lineWidth = 5; g.beginPath(); g.moveTo(Math.cos(a) * R * 0.62, Math.sin(a) * R * 0.5 - R * 0.08); g.lineTo(Math.cos(a) * R * 0.9, Math.sin(a) * R * 0.75 - R * 0.1); g.stroke(); } });
+    cell('brokenShield', g => {
+      const sh = () => { g.beginPath(); g.moveTo(-R * 0.66, -R * 0.74); g.lineTo(R * 0.66, -R * 0.74); g.lineTo(R * 0.66, -R * 0.12); g.quadraticCurveTo(R * 0.6, R * 0.55, 0, R * 0.92); g.quadraticCurveTo(-R * 0.6, R * 0.55, -R * 0.66, -R * 0.12); g.closePath(); };
+      g.globalAlpha = 0.35; sh(); g.fill(); g.globalAlpha = 1; strokeGlow(g, 8, () => { sh(); g.stroke(); });
+      g.globalCompositeOperation = 'destination-out'; g.lineWidth = 16; g.beginPath(); g.moveTo(R * 0.1, -R * 0.95); g.lineTo(-R * 0.14, -R * 0.36); g.lineTo(R * 0.16, -R * 0.02); g.lineTo(-R * 0.12, R * 0.42); g.lineTo(R * 0.06, R * 1.05); g.stroke();
+      g.globalCompositeOperation = 'source-over'; });
+    cell('seidr', g => { strokeGlow(g, 5, () => { circ(g, R * 0.93); g.stroke(); });
+      strokeGlow(g, 8, () => { g.beginPath(); g.moveTo(0, -R * 0.74); g.lineTo(0, R * 0.74); g.moveTo(0, -R * 0.2); g.lineTo(-R * 0.44, -R * 0.62); g.moveTo(0, -R * 0.2); g.lineTo(R * 0.44, -R * 0.62);
+        g.moveTo(0, R * 0.2); g.lineTo(-R * 0.44, R * 0.62); g.moveTo(0, R * 0.2); g.lineTo(R * 0.44, R * 0.62); g.moveTo(-R * 0.36, -R * 0.08); g.lineTo(R * 0.36, R * 0.08); g.stroke(); });
+      for (const sx of [-1, 1]) { g.beginPath(); g.arc(sx * R * 0.55, R * 0.02, R * 0.075, 0, 6.2832); g.fill(); } });
     for (const rn of RUNE_KEYS) cell('rune:' + rn, g => strokeGlow(g, 11, () => { runePath(g, rn, R * 1.5); g.stroke(); }));
+    if (cellN > CN * CN && typeof console !== 'undefined') console.warn('[vfx] atlas overflow: ' + cellN + ' cells');
     const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.LinearEncoding; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
     return tex;
   }
@@ -1028,7 +1177,7 @@ const VFX = (() => {
   function flush() {
     for (const B of QB) {
       const g = B.mesh.geometry, n = B.n;
-      g.setDrawRange(0, n * 6); B.mesh.visible = n > 0 || B.warm < 3; B.warm++;
+      g.setDrawRange(0, n * 6); B.mesh.visible = (n > 0 || B.warm < 3) && !(V.hide & (1 << QB.indexOf(B))); B.warm++;
       if (!n) continue;
       for (const k of ['position', 'uv', 'vcol']) { const at = g.attributes[k]; at.updateRange.offset = 0; at.updateRange.count = n * 4 * at.itemSize; at.needsUpdate = true; }
       B.mat.uniforms.uLin.value = sprLinear() ? 1 : 0;
@@ -1087,6 +1236,8 @@ const VFX = (() => {
       runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.42, lc('#e8c8ff'), 0.8 * life);
       if (q > 0.4) { const k = rate(14 * r); const cc = srgb('#2a0a34'); for (let i = 0; i < k; i++) { const a = Math.random() * 6.2832, d = Math.sqrt(Math.random()) * r * 0.9; PFX.emitDark(z.x + Math.cos(a) * d, gh + 0.1, z.y + Math.sin(a) * d, 0, 0.5 + Math.random() * 0.6, 0, 0.12, 0.6, 1 + Math.random() * 0.6, cc[0], cc[1], cc[2], 0.75, 0.16, 0.3, 1.2); } }
       motes(z.x, z.y, gh, r * 0.9, 10 * r, z.col, 1.1, 0.08, false);
+      if (!FB_SEEN.has(z)) { if (fbSpawn('shadow_smoke', z.x, z.y, gh, fbo(r / 1.4))) FB_SEEN.add(z); }
+      else if (Math.random() < dt * 0.9 * life) { const a = Math.random() * 6.2832, d = Math.random() * r * 0.6; fbSpawn('shadow_smoke', z.x + Math.cos(a) * d, z.y + Math.sin(a) * d, gh, fbo(0.45 + Math.random() * 0.25, null, 0.85)); }
       return;
     }
     switch (z.kind) {
@@ -1134,6 +1285,43 @@ const VFX = (() => {
         runeGround(z.rune, z.x, z.y, gh + 0.02, r * 0.28, lc('#ffffff'), 0.75 * life);
         pillarQ(BA, 'beam', z.x, z.y, gh, r * 1.7, 4.2, c, 0.3 * life, 0);
         motes(z.x, z.y, gh, r * 0.95, 26 * r * life, '#e8ffd8', 1.1, 0.1);
+        // healing light: sparkle loops over the ground (flipbook heal_sparkles), three phases
+        if (!z.ward && fbLoop('heal_sparkles', z.x, z.y, gh, r / 2.2, WHITE, 0.85 * life, 0, z.x * 7)) for (let i = 0; i < 2; i++) { const a = z.y + i * 3.1416; fbLoop('heal_sparkles', z.x + Math.cos(a) * r * 0.55, z.y + Math.sin(a) * r * 0.55, gh, r / 3.2, WHITE, 0.7 * life, 0, 5 + i * 4); }
+        break;
+      }
+      case 'thurisaz': {   // Rune Jarl: the thorn-rune carved in the ground, charging for 0.75 s, then Thor's lightning
+        const k = clamp(z.t / Math.max(0.1, z.dur), 0, 1), hot = smoothstep(0.45, 1, k), fl = 0.6 + 0.4 * Math.sin(t * (20 + 40 * hot) + z.x), cw = lc('#fff6c8');
+        if (!fbLoop('rune_circle', z.x, z.y, gh, r * 2 / 5.333 * 1.02 * pop, c, (0.55 + 0.45 * hot) * life, t * (0.8 + 2 * hot), z.x * 3)) ground(GA, 'boltCircle', z.x, z.y, gh, r * 1.02 * pop, t * 0.5, c, (0.55 + 0.4 * hot) * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.25, 0, c, (0.14 + 0.36 * hot) * life);
+        runeGround(z.rune || 'ᚦ', z.x, z.y, gh + 0.02, r * (0.46 + 0.1 * hot), cw, (0.45 + 0.55 * hot * fl) * life);
+        runeBill(z.rune || 'ᚦ', z.x, z.y, gh + 1 + hot * 0.7, 0.75 + 0.55 * hot, c, (0.3 + 0.7 * hot) * fl * life);
+        if (Math.random() < dt * (6 + 34 * hot)) { const a = Math.random() * 6.2832, a2 = a + rand(0.35, 1), rr = r * rand(0.55, 0.98); bolt(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr, gh + 0.12, z.x + Math.cos(a2) * rr, z.y + Math.sin(a2) * rr, gh + 0.12, '#fff6a0', 0.09, 0.28); }
+        motes(z.x, z.y, gh, r * 0.9, 12 * r * life * (0.3 + hot), z.col || '#ffe070', 1.8, 0.07, false);
+        break;
+      }
+      case 'void': {       // Galdr Master: Ginnungagap, the yawning gap drinking the ground and everything on it inward
+        const dk = lc('#07020e'), vl = lc('#e2d0ff');
+        ground(GN, 'disc', z.x, z.y, gh - 0.015, r * 1.06 * pop, 0, dk, 0.72 * life);
+        ground(GN, 'swirl', z.x, z.y, gh - 0.01, r * 0.98, t * 1.7, dk, 0.85 * life);
+        ground(GA, 'swirl', z.x, z.y, gh, r * 1.02 * pop, t * 2.7, c, 0.6 * life);
+        ground(GA, 'swirl', z.x, z.y, gh + 0.01, r * 0.62, t * 4 + 1.3, vl, 0.42 * life);
+        ground(GA, 'ring', z.x, z.y, gh + 0.01, r * (1.03 - 0.05 * pulse), 0, c, 0.7 * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.3, 0, c, 0.12 * life);
+        runeGround(z.rune || 'ᛜ', z.x, z.y, gh + 0.02, r * 0.2, vl, 0.55 * life * (0.6 + 0.4 * pulse));
+        bill(BN, 'core', z.x, z.y, gh + 0.35, r * 0.34, r * 0.22, 0, dk, 0.55 * life);
+        if (q > 0.3) { const n = rate(38 * r * life), cc = srgb('#c0a0ff');   // matter spiralling in from the rim
+          for (let i = 0; i < n; i++) { const a = Math.random() * 6.2832, d = r * (0.85 + Math.random() * 0.3), sp = 2.4 + Math.random() * 1.2, ux = -Math.cos(a), uy = -Math.sin(a);
+            PFX.emit(false, z.x - ux * d, gh + 0.08 + Math.random() * 0.45, z.y - uy * d, (ux - uy * 0.9) * sp, 0.15, (uy + ux * 0.9) * sp, 0, 0.3, d / sp * 0.75, cc[0], cc[1], cc[2], 0.95, 0.08, 0.02, 0); } }
+        if (Math.random() < dt * 2.4 * life) { const a = Math.random() * 6.2832, d = Math.random() * r * 0.7; fbSpawn('shadow_smoke', z.x + Math.cos(a) * d, z.y + Math.sin(a) * d, gh, fbo(0.45 + Math.random() * 0.3, null, 0.9)); }
+        break;
+      }
+      case 'verse': {      // Voice of Bragi: a verse ringing out around the skald (follows the hero)
+        ground(GA, 'ringDash', z.x, z.y, gh, r * pop, t * 0.5, c, 0.5 * life);
+        ground(GA, 'ringDash', z.x, z.y, gh + 0.005, r * 0.7, -t * 0.75, c, 0.32 * life);
+        ground(GA, 'glow', z.x, z.y, gh, r * 1.1, 0, c, 0.08 * life);
+        for (let i = 0; i < 3; i++) { const ph = (t * 1.1 + i / 3) % 1; ground(GA, 'ring', z.x, z.y, gh + 0.01, r * (0.22 + 0.82 * ph), 0, c, 0.6 * (1 - ph) * (1 - ph) * life); }   // sound waves
+        for (let i = 0; i < 6; i++) { const a = t * 0.8 + i / 6 * 6.2832, nx = z.x + Math.cos(a) * r * 0.86, ny = z.y + Math.sin(a) * r * 0.86, nh = gh + 0.5 + 0.16 * Math.sin(t * 4 + i);   // notes riding the rim
+          bill(BA, 'glow', nx, ny, nh, 0.32, 0.32, 0, c, 0.3 * life); bill(BA, 'note', nx, ny, nh, 0.26, 0.26, Math.sin(t * 3 + i) * 0.3, c, 0.95 * life); bill(BA, 'note', nx, ny, nh, 0.19, 0.19, Math.sin(t * 3 + i) * 0.3, WHITE, 0.45 * life); }
         break;
       }
       case 'magnus': {
@@ -1153,7 +1341,7 @@ const VFX = (() => {
         break;
       }
       default: {
-        ground(GA, 'runeCircle', z.x, z.y, gh, r * pop, t * 0.3, c, 0.7 * life);
+        if (!fbLoop('rune_circle', z.x, z.y, gh, r * 2 / 5.333 * pop, c, 0.8 * life, t * 0.3, z.x * 3)) ground(GA, 'runeCircle', z.x, z.y, gh, r * pop, t * 0.3, c, 0.7 * life);
         ground(GA, 'glow', z.x, z.y, gh, r * 1.2, 0, c, 0.2 * life);
         runeGround(z.rune, z.x, z.y, gh + 0.01, r * 0.3, c, 0.7 * life);
         motes(z.x, z.y, gh, r, 6 * r * life, z.col || '#ffffff', 1, 0.08);
@@ -1175,11 +1363,11 @@ const VFX = (() => {
   function drawShape(g) {
     const s = g.s, a = g.a || {}, col = a.col || (g.m && g.m.d && g.m.d.glow) || (s.kind === 'cone' ? '#ff7a2a' : '#9fd8ff');
     const gh = groundH(s.x, s.y) + 0.06, delay = a.delay || g.dmin || 1, k = clamp(g.t / delay, 0, 1), late = smoothstep(0.65, 1, k), fl = 0.5 + 0.5 * Math.sin(time * (8 + 22 * late));
-    const c = lc(col), dark = lc(s.kind === 'cone' ? '#5a0a04' : '#0a2a4a');
+    const c = lc(col), dark = lc(s.kind === 'cone' ? '#2a0400' : '#021824');
     _hot[0] = c[0] + (1 - c[0]) * late * 0.6; _hot[1] = c[1] + (1 - c[1]) * late * 0.6; _hot[2] = c[2] + (1 - c[2]) * late * 0.6;
     if (s.kind === 'cone') {
       // dark scorched base, the heat front growing out to the full length, hot edges, heat ripples running outward
-      fan(GN, 'coneBase', s, 0.03, 0.3, s.len, dark, 0.5 + 0.2 * late);
+      fan(GN, 'coneBase', s, 0.03, 0.3, s.len, dark, 0.6 + 0.2 * late);
       fan(GA, 'coneFill', s, 0.05, 0.3, Math.max(0.4, s.len * (0.06 + 0.94 * k)), _hot, 0.45 + 0.45 * k);
       fan(GA, 'coneEdge', s, 0.06, 0.3, s.len, c, 0.6 + 0.35 * fl * (0.4 + 0.6 * k));
       for (let i = 0; i < 3; i++) { const ph = (time * 0.9 + i / 3) % 1, r = 0.4 + ph * (s.len - 0.4); fan(GA, 'bar', s, 0.07, Math.max(0.3, r - 0.35), r + 0.35, _hot, 0.5 * Math.sin(ph * Math.PI) * (0.3 + 0.7 * k)); }
@@ -1189,7 +1377,7 @@ const VFX = (() => {
       const spd = a.speed || 7, front = g.t > delay ? 1.2 + (g.t - delay) * spd : 0;
       for (let j = 0; j < s.n; j++) {
         const an = s.ang + (s.n > 1 ? (j - (s.n - 1) / 2) * s.spread : 0);
-        lane(GN, 'coneBase', s.x, s.y, an, 0.8, s.len, s.w, 0.03, dark, 0.5, 0.2);
+        lane(GN, 'coneBase', s.x, s.y, an, 0.8, s.len, s.w, 0.03, dark, 0.62, 0.3);
         lane(GA, 'laneEdge', s.x, s.y, an, 0.8, s.len, s.w, 0.05, c, (0.55 + 0.35 * fl) * (0.5 + 0.5 * k), 0.25);
         for (let i = 0; i < 4; i++) { const ph = (time * 0.8 + i / 4) % 1, d = 1 + ph * (s.len - 1.6); lane(GA, 'chev', s.x, s.y, an, d, d + 0.6, s.w * 0.8, 0.06, c, 0.8 * Math.sin(ph * Math.PI) * (0.4 + 0.6 * k)); }
         if (front > 0 && front < s.len + 0.5) lane(GA, 'bar', s.x, s.y, an, Math.max(0.8, front - 0.6), Math.min(s.len, front + 0.6), s.w * 1.1, 0.07, _hot, 0.95);
@@ -1229,6 +1417,7 @@ const VFX = (() => {
   function drawFx() {
     for (const f of fxs) {
       const k = f.t / f.dur;
+      if (f._fb) continue;   // a flipbook plays it (fbFx)
       if (f.k === 'strike') { const gh = groundH(f.x, f.y); if (!f._b) f._b = { x0: f.x + (hsh(f.seed, 1) - 0.5) * 1.2, y0: f.y + (hsh(f.seed, 2) - 0.5) * 1.2, h0: gh + 9, x1: f.x, y1: f.y, h1: gh, col: '#cfe6ff', seed: f.seed, w: 1 }; drawBolt(f._b, k, gh); }
       else if (f.k === 'pillar') {
         const e = f.e, gh = groundH(e.x, e.y), al = Math.sin(clamp(k, 0, 1) * Math.PI), w = f.big ? 1.3 : 0.9, c = lc(f.col || '#ffffff');
@@ -1248,7 +1437,7 @@ const VFX = (() => {
     const gh = groundH(P.x, P.y) + 0.05;
     for (const id in P.buffs) {
       const b = P.buffs[id], au = b.aura; if (!au) continue;
-      const c = lc(au.col || '#ffffff'), fade = Math.min(1, (b.max - b.t) / 0.3 + 0.2, b.t / 0.5 + 0.3), r = au.r || 1;
+      const c = lc(au.col || '#ffffff'), fade = b.perm ? 1 : Math.min(1, (b.max - b.t) / 0.3 + 0.2, b.t / 0.5 + 0.3), r = au.r || 1;   // perm (Reborn): never elapses, full strength
       if (au.bubble) {   // Kyrie: a shimmering prayer shell around the body
         const hh = typeof headH === 'function' ? headH(P) : 1.6, hits = b.hits || 5;
         sphere(P.x, gh + hh * 0.48, P.y, Math.max(0.75, r), hh * 0.62, au.col, 0.55 * fade * (0.8 + 0.2 * Math.sin(time * 5)), 7);
@@ -1277,9 +1466,102 @@ const VFX = (() => {
         pillarQ(BA, 'beam', P.x, P.y, gh, r * 1.4, 2.6, c, 0.16 * fade, 0);
         continue;
       }
+      const A3 = AURA3[id]; if (A3) { A3(b, c, fade, gh, r, typeof headH === 'function' ? headH(P) : 1.6); continue; }
       ground(GA, 'ring', P.x, P.y, gh, r, 0, c, 0.6 * fade); ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.15 * fade);
     }
   }
+  /* Round-6 auras (vfx round 7): the Reborn shimmer and a look of its own for every tier-3 buff that used to fall back
+     to the plain ring. f(buff, colour, fade, ground height, radius, head height); all atlas / flipbook quads + PFX. */
+  const orbit = (n, rad, h, spd, cell, size, c, a, glow) => { for (let i = 0; i < n; i++) { const an = time * spd + i / n * 6.2832, x = P.x + Math.cos(an) * rad, y = P.y + Math.sin(an) * rad, hh = h + Math.sin(time * 3 + i * 2) * 0.06; if (glow) bill(BA, 'glow', x, y, hh, size * 2.2, size * 2.2, 0, c, a * glow); bill(BA, cell, x, y, hh, size, size, time * 2 + i, c, a); } };
+  const under = (rad, a) => ground(GN, 'glow', P.x, P.y, groundH(P.x, P.y) + 0.03, rad, 0, lc('#140c04'), a);   // contrast for glows on bright ground
+  const AURA3 = {
+    reborn(b, c, fade, gh, r, hh) {   // golden shimmer: a soft light column, glints spiralling up around the hero and twinkling, drifting motes
+      const t = time, tw = 0.5 + 0.5 * Math.sin(t * 2.1);
+      under(r * 1.2, 0.2 * fade);
+      ground(GA, 'glow', P.x, P.y, gh, r * 1.4, 0, c, (0.22 + 0.1 * tw) * fade);
+      ground(GA, 'ringDash', P.x, P.y, gh + 0.005, r * 1.05, t * 0.25, c, 0.55 * fade);
+      ground(GA, 'ring', P.x, P.y, gh + 0.008, r * (0.72 + 0.06 * tw), 0, c, 0.35 * fade);
+      pillarQ(BA, 'beam', P.x, P.y, gh, r * 1.9, hh * 1.25, c, (0.2 + 0.07 * tw) * fade, 0);
+      for (let i = 0; i < 9; i++) {
+        const ph = (t * 0.22 + i / 9) % 1, an = i * 2.39 + t * 0.9, rr = r * (1.05 + 0.15 * Math.sin(i * 1.7 + t * 0.7)), tws = Math.max(0, Math.sin(t * 4.6 + i * 1.9)), sz = 0.2 + 0.2 * tws, x = P.x + Math.cos(an) * rr, y = P.y + Math.sin(an) * rr, h = gh + 0.15 + ph * hh * 1.1, al = Math.sin(ph * Math.PI) * fade;
+        bill(BA, 'glow', x, y, h, sz * 1.6, sz * 1.6, 0, c, 0.35 * al); bill(BA, 'star', x, y, h, sz, sz, t * 1.3 + i, c, al * (0.5 + 0.5 * tws));
+      }
+      motes(P.x, P.y, gh, r * 1.0, 9 * fade, '#ffe8a0', 1.0, 0.07);
+    },
+    fury(b, c, fade, gh, r, hh) {     // Einherjar's Fury: a spiked blood ring, flames licking up, heat throbbing
+      const pul = 0.6 + 0.4 * Math.sin(time * 9);
+      under(r * 1.2, 0.2 * fade); ground(GA, 'glow', P.x, P.y, gh, r * 1.35, 0, c, 0.28 * fade * pul);
+      ground(GA, 'hex', P.x, P.y, gh + 0.005, r * (0.95 + 0.05 * pul), time * 1.6, c, 0.6 * fade);
+      ground(GA, 'swirl', P.x, P.y, gh + 0.01, r * 0.75, -time * 4, lc('#ffb080'), 0.35 * fade);
+      bill(BA, 'glow', P.x, P.y, gh + hh * 0.5, 1.1, hh * 0.8, 0, c, 0.16 * fade * pul);
+      motes(P.x, P.y, gh, r * 0.55, 28 * fade, '#ff5a2a', 2.3, 0.1, false);
+    },
+    bearrage(b, c, fade, gh, r, hh) { // Bear-Skin Rage: claw marks torn into the ground, a hot orange pulse, embers
+      const pul = 0.5 + 0.5 * Math.sin(time * 5);
+      under(r * 1.2, 0.25 * fade); ground(GN, 'claw', P.x, P.y, gh + 0.004, r * 1.1, yawA + 0.4, lc('#1a0802'), 0.5 * fade);
+      ground(GA, 'claw', P.x, P.y, gh + 0.008, r * 1.05, yawA + 0.4, c, (0.75 + 0.25 * pul) * fade);
+      ground(GA, 'glow', P.x, P.y, gh, r * 1.4, 0, c, 0.2 * fade * (0.6 + 0.4 * pul));
+      ground(GA, 'ring', P.x, P.y, gh + 0.01, r * (0.7 + 0.45 * ((time * 1.4) % 1)), 0, c, 0.45 * (1 - (time * 1.4) % 1) * fade);
+      motes(P.x, P.y, gh, r * 0.6, 16 * fade, '#ff8a3a', 1.6, 0.08, false);
+    },
+    gloria(b, c, fade, gh, r, hh) {   // Gloria: a golden halo over the head, a holy circle, sparkles
+      under(r * 1.1, 0.15 * fade); ground(GA, 'holyCircle', P.x, P.y, gh, r, time * 0.25, c, 0.6 * fade);
+      ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.12 * fade);
+      const hy = gh + hh * 0.92 + 0.12 + 0.03 * Math.sin(time * 2.5); ground(GA, 'ring', P.x, P.y, hy, 0.3, 0, c, fade);
+      ground(GA, 'glow', P.x, P.y, hy - 0.02, 0.5, 0, c, 0.4 * fade);
+      motes(P.x, P.y, gh, r * 0.7, 6 * fade, '#fff0a0', 1.2, 0.07);
+    },
+    martyr(b, c, fade, gh, r, hh) {   // Tyr's Sacrifice: Tiwaz in blood on the ground, one red orb per strike left
+      under(r * 1.1, 0.22 * fade);
+      runeGround('ᛏ', P.x, P.y, gh + 0.01, r * 0.6, c, 0.85 * fade);
+      ground(GA, 'ring', P.x, P.y, gh, r, 0, c, 0.6 * fade);
+      orbit(Math.max(0, Math.min(5, b.count | 0)), 0.95, gh + hh * 0.45, 1.7, 'core', 0.2, c, fade, 0.6);
+    },
+    amplify(b, c, fade, gh, r, hh) {  // Galdr Amplify: the galdr circle turning under the caster, three runes circling
+      under(r * 1.1, 0.15 * fade);
+      if (!fbLoop('rune_circle', P.x, P.y, gh + 0.01, r * 2 / 5.333, c, 0.9 * fade, time * 0.6, 0)) ground(GA, 'runeCircle', P.x, P.y, gh, r, time * 0.6, c, 0.6 * fade);
+      for (let i = 0; i < 3; i++) { const an = time * 1.3 + i * 2.094, rn = ['ᚨ', 'ᚷ', 'ᛟ'][i]; const rx = P.x + Math.cos(an) * 0.95, ry = P.y + Math.sin(an) * 0.95, rh = gh + hh * 0.5 + Math.sin(time * 2 + i) * 0.1; bill(BA, 'glow', rx, ry, rh, 0.5, 0.5, 0, c, 0.4 * fade); runeBill(rn, rx, ry, rh, 0.34, c, fade); }
+    },
+    foresight(b, c, fade, gh, r, hh) { // Foresight: the seer's eye above the head, one blue orb per quickened spell
+      const bl = 0.75 + 0.25 * Math.sin(time * 3);
+      const eh = gh + hh * 0.9 + 0.15; under(r * 1.1, 0.2 * fade);
+      bill(BN, 'glow', P.x, P.y, eh, 0.6, 0.45, 0, lc('#06101c'), 0.45 * fade); bill(BA, 'glow', P.x, P.y, eh, 0.75, 0.55, 0, c, 0.45 * fade); bill(BA, 'eye', P.x, P.y, eh, 0.46, 0.46 * bl, 0, c, fade);
+      ground(GA, 'ringDash', P.x, P.y, gh, r, -time * 0.4, c, 0.6 * fade);
+      orbit(Math.max(0, Math.min(6, b.count | 0)), 0.9, gh + hh * 0.5, 1.2, 'core', 0.16, c, fade, 0.6);
+    },
+    sight(b, c, fade, gh, r, hh) {    // Völva's Sight: the three known bolts' sparks circling, waiting to be loosed
+      under(r * 1.1, 0.2 * fade);
+      ground(GA, 'boltCircle', P.x, P.y, gh, r, time * 0.2, c, 0.7 * fade);
+      runeGround('ᛞ', P.x, P.y, gh + 0.01, r * 0.35, c, 0.7 * fade);
+      const cs = SIGHTC; for (let i = 0; i < 3; i++) { const an = time * 1.5 + i * 2.094, x = P.x + Math.cos(an) * 0.95, y = P.y + Math.sin(an) * 0.95, h = gh + hh * 0.45 + Math.sin(time * 3 + i) * 0.08, cc = lc(cs[i]);
+        bill(BA, 'glow', x, y, h, 0.45, 0.45, 0, cc, 0.8 * fade); bill(BA, 'core', x, y, h, 0.16, 0.16, 0, WHITE, fade); }
+    },
+    harmonize(b, c, fade, gh, r, hh) { // Harmonize: two staves weaving, a note of each colour chasing the other
+      under(r * 1.2, 0.2 * fade);
+      ground(GA, 'ringDash', P.x, P.y, gh, r * 1.15, time * 0.5, c, 0.75 * fade);
+      ground(GA, 'ringDash', P.x, P.y, gh + 0.005, r * 0.9, -time * 0.5, lc('#9fd8ff'), 0.7 * fade);
+      for (let i = 0; i < 2; i++) { const an = time * 1.6 + i * 3.1416, x = P.x + Math.cos(an) * r * 1.15, y = P.y + Math.sin(an) * r * 1.15, h = gh + 0.6 + Math.sin(time * 4 + i * 3) * 0.2, cc = i ? lc('#9fd8ff') : c;
+        bill(BA, 'glow', x, y, h, 0.34, 0.34, 0, cc, 0.35 * fade); bill(BA, 'note', x, y, h, 0.26, 0.26, Math.sin(time * 3 + i) * 0.3, cc, fade); }
+    },
+    assumptio(b, c, fade, gh, r, hh) { // Assumptio: a Valkyrie's mantle, a pale rose shell and feathers of light drifting down
+      sphere(P.x, gh + hh * 0.48, P.y, Math.max(0.8, r * 0.85), hh * 0.62, '#ffd8f0', 0.28 * fade * (0.85 + 0.15 * Math.sin(time * 2)), 3);
+      ground(GA, 'wardRing', P.x, P.y, gh, r, time * 0.15, c, 0.4 * fade);
+      for (let i = 0; i < 4; i++) { const ph = (time * 0.35 + i / 4) % 1, an = i * 1.9 + Math.floor(time * 0.35 + i / 4) * 2.3, x = P.x + Math.cos(an) * 0.6, y = P.y + Math.sin(an) * 0.6;
+        bill(BA, 'shard', x + Math.sin(ph * 9 + i) * 0.12, y, gh + hh * 1.15 * (1 - ph), 0.07, 0.2, Math.sin(ph * 7 + i) * 0.6, c, Math.sin(ph * Math.PI) * 0.8 * fade); }
+    },
+    einherjar(b, c, fade, gh, r, hh) { // Einherjar's Call: the called dead circling you as soul fire, a golden war-ring
+      ground(GA, 'runeCircle', P.x, P.y, gh, r, -time * 0.2, c, 0.35 * fade);
+      ground(GA, 'glow', P.x, P.y, gh, r * 1.1, 0, c, 0.1 * fade);
+      if (!fbLoop('soul_wisps', P.x, P.y, gh, 0.9, WHITE, 0.8 * fade, 0, 0)) orbit(3, 0.8, gh + hh * 0.5, 1.4, 'core', 0.16, lc('#7affb4'), 0.9 * fade, 0.5);
+    },
+    bladestop(b, c, fade, gh, r, hh) { // Blade Stop: open hands, crossed blades of light before the chest, a tight pulsing ring
+      const pul = 0.5 + 0.5 * Math.sin(time * 14);
+      bill(BA, 'glow', P.x, P.y, gh + hh * 0.55, 0.9, 0.9, 0, c, 0.3 * fade);
+      bill(BA, 'cross', P.x, P.y, gh + hh * 0.55, 0.55 + 0.05 * pul, 0.55 + 0.05 * pul, 0.785, c, (0.65 + 0.35 * pul) * fade);
+      ground(GA, 'ring', P.x, P.y, gh, r * (0.9 + 0.1 * pul), 0, c, 0.65 * fade);
+    },
+  };
+  const SIGHTC = ['#ff7a2a', '#9fd8ff', '#fff6a0'];
   const SPHC = '#9fd0ff';
   function drawSpheres() {
     if (!P || P.dead || !(P.spheres > 0)) return;
@@ -1303,6 +1585,13 @@ const VFX = (() => {
       const col = (typeof PCOL !== 'undefined' && PCOL[p.kind]) || '#ffffff', c = lc(col), n = tr.n;
       if (p.kind === 'raven') { drawRaven(p, tr, c); continue; }
       if (p.kind === 'spear') { drawSpear(p, tr, c); continue; }
+      if (p.kind === 'fire' && fbTierOk('fireball_trail')) {   // the fireball sheet, turned along its flight on screen (authored flying to screen-right)
+        const r = fbRec('fireball_trail');
+        if (r) { const sx = p.vx * CR.x + p.vz * CR.y + p.vy * CR.z, sy = p.vx * CU.x + p.vz * CU.y + p.vy * CU.z, f = Math.floor(time * r.d.fps + p.x * 3) % r.n;
+          fbQuad(r, f < 0 ? f + r.n : f, p.x, p.y, p.zu, 0.8, WHITE, 1, Math.atan2(sy, sx), false);
+          if (Math.random() < dt * 40) { const cc = srgb(col); PFX.emit(true, p.x, p.zu, p.y, rand(-0.3, 0.3), rand(-0.2, 0.4), rand(-0.3, 0.3), 0, 1, 0.35, cc[0], cc[1], cc[2], 0.9, 0.12, 0.03, 0); }
+          continue; }
+      }
       const big = p.kind === 'bolt' ? 1.25 : p.kind === 'sphere' ? 0.8 : 1;
       for (let i = 0; i < n; i++) { RP[i * 3] = a[i * 3]; RP[i * 3 + 1] = a[i * 3 + 1]; RP[i * 3 + 2] = a[i * 3 + 2]; RW[i] = 0.42 * big * (1 - i / n); RA[i] = 0.9 * (1 - i / n); }
       ribbon(BA, n, c);
@@ -1317,7 +1606,16 @@ const VFX = (() => {
   function screenDir(p) {   // +1 when the projectile moves to screen-right
     _pv.set(p.x, p.zu, p.y).project(camera); _pw.set(p.x + p.vx, p.zu + p.vz, p.y + p.vy).project(camera); return _pw.x >= _pv.x ? 1 : -1;
   }
+  // Huginn: drawn from its pet sheet (pet_huginn, one instance of its sprite batch: syncRavenShots in gfx-sheets.js)
+  // once that sheet is loaded; this pixel raven is only the fallback. The feather trail stays either way.
+  const huginnSheet = () => typeof huginnRec === 'function' && recReady(huginnRec());
   function drawRaven(p, tr, c) {
+    if (huginnSheet()) {
+      const a = tr.a, n = tr.n; for (let i = 0; i < n; i++) { RP[i * 3] = a[i * 3]; RP[i * 3 + 1] = a[i * 3 + 1]; RP[i * 3 + 2] = a[i * 3 + 2]; RW[i] = 0.42 * (1 - i / n); RA[i] = 0.32 * (1 - i / n); }
+      ribbon(BA, n, c);
+      if (Math.random() < dt * 10) { const cc = srgb('#1a1a28'); PFX.emitDark(p.x, p.zu, p.y, rand(-0.3, 0.3), -0.3, rand(-0.3, 0.3), -0.6, 1.2, 1.1, cc[0], cc[1], cc[2], 0.95, 0.09, 0.07, 3); }
+      return;
+    }
     const f = Math.floor(time * 16) % 4, uv = PX.raven[f], s = 0.95, sd = screenDir(p), lit = lc('#c8d0ff');
     const rx = CR.x * s / 2 * sd, ry = CR.y * s / 2 * sd, rz = CR.z * s / 2 * sd, ux = CU.x * s / 2, uy = CU.y * s / 2, uz = CU.z * s / 2;
     quad(PB, uv, p.x - rx + ux, p.zu - ry + uy, p.y - rz + uz, p.x + rx + ux, p.zu + ry + uy, p.y + rz + uz, p.x - rx - ux, p.zu - ry - uy, p.y - rz - uz, p.x + rx - ux, p.zu + ry - uy, p.y + rz - uz, lit, 1);
@@ -1340,11 +1638,16 @@ const VFX = (() => {
 
   /* ---------- monsters: statuses, named / MVP auras ---------- */
   const COL_SNARE = '#d8b070', COL_MARK = '#cfe07a', COL_DISPEL = '#c8a8ff', COL_LEX = '#fff2b8', COL_STUN = '#ffe070', COL_FROST = '#bfe6ff';
+  const COL_WEAK = '#ff8a5a', COL_HEX = '#b070ff';
   function drawMobs() {
     for (const m of mobs) {
-      if (m.dead) continue;
       const d = m.d;
-      if (!(d.variant || d.boss || m.snare > 0 || m.slow > 0 || m.frozen > 0 || m.stun > 0 || m.mark > 0 || m.dispel > 0 || m.lex)) continue;   // nothing to draw: no per-mob cost
+      if (m.dead) { if (d.boss && !FB_SEEN.has(m) && m.deathT !== undefined && m.deathT < 1) { FB_SEEN.add(m); fbSpawn('mvp_burst', m.x, m.y, groundH(m.x, m.y), fbo(Math.max(1, Math.min(1.6, (d.size || 1) * 0.6)))); } continue; }   // an MVP falls
+      if (m.summoned && !FB_SEEN.has(m)) { FB_SEEN.add(m); fbSpawn('summon_smoke', m.x, m.y, groundH(m.x, m.y), fbo(0.8 * Math.max(1, (d.size || 1) * 0.7))); }   // an add called in
+      if (!(d.variant || d.boss || m.snare > 0 || m.slow > 0 || m.frozen > 0 || m.stun > 0 || m.mark > 0 || m.dispel > 0 || m.lex || m.weak > 0 || m.hexT > 0)) continue;   // nothing to draw: no per-mob cost
+      if (d.boss && FB.defs && fbTierOk('mvp_burst')) fbRec('mvp_burst');   // an MVP on the map: have its burst ready
+      if (m.frozen > 0) FB_FROZE.add(m);
+      if (m.hexT > 0) { const ph = FB_HEX.get(m) || 0; if (m.hexT > ph + 0.5) fbSpawn('shadow_smoke', m.x, m.y, groundH(m.x, m.y), fbo(0.6)); FB_HEX.set(m, m.hexT); }
       const gh = groundH(m.x, m.y) + 0.05, sz = Math.max(0.6, (d.size || (d.look && d.look.scale) || 1)), hh = typeof headH === 'function' ? headH(m) : 1.4;
       const nl = d.variant || d.boss ? (typeof namedLook === 'function' ? namedLook(d) : null) : null;
       if (d.variant || d.boss) {   // named rares and MVPs: a slow rune circle + glow in their colour, rising motes
@@ -1358,10 +1661,20 @@ const VFX = (() => {
       if (m.frozen > 0) { const c = lc(COL_FROST); ground(GA, 'frostCircle', m.x, m.y, gh + 0.01, 0.6 * Math.max(1, sz * 0.8), 0, c, 0.6); for (let i = 0; i < 3; i++) { const a = m.id + i * 2.1; bill(BA, 'shard', m.x + Math.cos(a) * 0.35, m.y + Math.sin(a) * 0.35, gh + 0.25 + i * 0.12, 0.12, 0.34, 0.4 * Math.sin(a), c, 0.8); } }
       if (m.stun > 0) { const c = lc(COL_STUN); for (let i = 0; i < 3; i++) { const a = time * 4 + i * 2.094; bill(BA, 'star', m.x + Math.cos(a) * 0.35, m.y + Math.sin(a) * 0.35, gh + hh + 0.15, 0.22, 0.22, time * 2, c, 0.9); } }
       let tags = 0; const top = gh + hh + 0.5;
-      if (m.mark > 0) tags++; if (m.dispel > 0) tags++; if (m.lex) tags++;
+      if (m.mark > 0) tags++; if (m.dispel > 0) tags++; if (m.lex) tags++; if (m.weak > 0) tags++;
       if (tags) { let i = 0; const x0 = -(tags - 1) * 0.2, pul = 0.75 + 0.25 * Math.sin(time * 5 + m.id);
         const put = (rn, col) => { const o = x0 + i * 0.4; runeBill(rn, m.x + CR.x * o, m.y + CR.z * o, top + CR.y * o, 0.34, lc(col), pul); bill(BA, 'glow', m.x + CR.x * o, m.y + CR.z * o, top + CR.y * o, 0.3, 0.3, 0, lc(col), 0.35 * pul); i++; };
-        if (m.mark > 0) put('ᛞ', COL_MARK); if (m.dispel > 0) put('ᚾ', COL_DISPEL); if (m.lex) put('ᛚ', COL_LEX); }
+        if (m.mark > 0) put('ᛞ', COL_MARK); if (m.dispel > 0) put('ᚾ', COL_DISPEL); if (m.lex) put('ᛚ', COL_LEX);
+        if (m.weak > 0) {   // weakened / armour broken: a cracked shield sagging over the head, a dull ember glow (fades out its last second)
+          const o = x0 + i * 0.4, wa = Math.min(1, m.weak) * (0.8 + 0.2 * pul), sag = 0.05 * Math.sin(time * 2.2 + m.id), c = lc(COL_WEAK), x = m.x + CR.x * o, y = m.y + CR.z * o, h = top + CR.y * o + sag;
+          bill(BN, 'glow', x, y, h, 0.4, 0.4, 0, lc('#1a0604'), 0.45 * wa); bill(BA, 'glow', x, y, h, 0.34, 0.34, 0, c, 0.3 * wa); bill(BA, 'brokenShield', x, y, h, 0.3, 0.3, 0.12 * Math.sin(time * 1.7 + m.id), c, wa); i++; } }
+      if (m.hexT > 0) {    // Seidr Hex: the völva's bind-rune turning over the head, a spiked hex ring at the feet, dark drops falling
+        const c = lc(COL_HEX), ha = Math.min(1, m.hexT * 1.5), hx = top + (tags ? 0.45 : 0.05), br = 0.8 + 0.2 * Math.sin(time * 3.3 + m.id);
+        bill(BN, 'glow', m.x, m.y, hx, 0.72, 0.72, 0, lc('#12041c'), 0.6 * ha); bill(BA, 'glow', m.x, m.y, hx, 0.6, 0.6, 0, c, 0.45 * ha * br);
+        bill(BA, 'seidr', m.x, m.y, hx, 0.48, 0.48, Math.sin(time * 0.9 + m.id) * 0.35, c, 0.95 * ha * br);
+        ground(GA, 'hex', m.x, m.y, gh + 0.01, 0.5 * Math.max(1, sz * 0.8), -time * 0.8 + m.id, c, 0.55 * ha);
+        if (q > 0.4 && Math.random() < dt * 5) { const cc = srgb('#2a0a3a'); PFX.emitDark(m.x + rand(-0.25, 0.25), gh + hh * rand(0.5, 0.9), m.y + rand(-0.15, 0.15), 0, -0.4, 0, -1.5, 0.8, 0.7, cc[0], cc[1], cc[2], 0.9, 0.06, 0.04, 0); }
+      }
     }
   }
 
@@ -1380,7 +1693,7 @@ const VFX = (() => {
         pillarQ(BA, 'beam', s.x, s.y, gh, 0.3, 3.6, WHITE, 0.3 * cine, 0);
         ground(GA, 'ring', s.x, s.y, gh, 0.62 + 0.04 * pulse, 0, c, 0.55 * cine);
         ground(GA, 'glow', s.x, s.y, gh, 0.9, 0, c, 0.3 * cine);
-        if (cine === 1) { bill(BA, 'glow', s.x, s.y, gh + 1.35 + bob, 0.5, 0.5, 0, c, 0.45); bill(BN, 'qmark', s.x, s.y, gh + 1.35 + bob, 0.3, 0.3, 0, c, 1); }
+        if (cine === 1) { bill(BA, 'glow', s.x, s.y, gh + 1.45 + bob, 0.65, 0.65, 0, c, 0.5); bill(BN, 'qmark', s.x, s.y, gh + 1.45 + bob, 0.4, 0.4, 0, c, 1); }
         motes(s.x, s.y, gh, 0.4, 5 * cine, col, 1, 0.07);
       } else if (s.kind === 'waves' || s.kind === 'survive') {
         ground(GA, 'runeCircle', s.x, s.y, gh, 2.3, time * 0.15, c, (0.35 + 0.15 * pulse) * cine);
@@ -1396,6 +1709,333 @@ const VFX = (() => {
     }
   }
 
+
+  /* ---------- Flipbooks (vfx round 7): the art team's hand-authored sheets, assets/vfx/index.json ----------
+     { id, file, frameW, frameH, frames, cols, fps, loop, blend, anchor, plane, ppu, tint? }: frame i at column i % cols,
+     row floor(i / cols); anchor = the pixel on the effect's world point; ppu px per world unit. blend 'add' = straight
+     alpha with a = max(r, g, b), drawn additively (rgb * a); 'alpha' = normal blending.
+     Textures load lazily on the first request (every sheet <= 128 colours: gfx-sheets.js palDecodeURL indexes it into an
+     R8 index texture + a 256x1 RGBA palette, 1 byte per texel like the sprite sheets; RGBA TextureLoader fallback), and
+     a sheet no frame used for FB_IDLE seconds gives its GPU memory back (the CPU copy stays; three re-uploads on use).
+     Each sheet is one dynamic quad batch (created once when its texture lands, shared by every instance: one draw per
+     sheet in use, no per-effect material or geometry); billboards face the camera and are pulled toward it in depth
+     only (uPull) so their ground rings do not sink into the terrain; ground decals follow the terrain like GA/GN.
+     Quality: FB_TIER gates each sheet by the adaptive level (fbLevel: low 0 .. ultra 3, minus 1-2 at deep auto levels),
+     FB_CAP caps live instances, low plays 25% faster. Until a sheet is ready (or when it is gated off) every caller
+     draws the procedural look it had before. */
+  const FB_BASE = (typeof window !== 'undefined' && window.AOM_VFX_BASE) || 'assets/';
+  const FB = { defs: null, loading: false, recs: {}, inst: [], free: [], pend: [], spawned: 0, dropped: 0, fails: 0, released: 0, sweep: 0 };
+  const FB_TIER = { levelup: 0, job_levelup: 0, mvp_burst: 0, crit_star: 0, fire_burst: 0, lightning_strike: 0, holy_column: 0, ice_shatter: 0, shadow_smoke: 0, poison_cloud: 0,
+    hit_spark: 1, lightning_impact: 1, impact_dust: 1, dodge_puff: 1, summon_smoke: 1, heal_sparkles: 1, soul_wisps: 1, rune_circle: 1, water_splash: 1, snow_puff: 1, fireball_trail: 1,
+    warp_portal: 2, waystone_embers: 2, rain_ripple: 2 };
+  const FB_CAP = [14, 28, 48, 64], FB_IDLE = 25, FB_PRE = ['hit_spark', 'crit_star', 'levelup', 'job_levelup'];
+  let fbL = 2;
+  function fbLevel() {
+    const qq = gfxQ(), b = qq === 'low' ? 0 : qq === 'medium' ? 1 : qq === 'ultra' ? 3 : 2, lv = typeof GFX !== 'undefined' && GFX ? GFX.level | 0 : 0;
+    return Math.max(0, b - (lv >= 6 ? 2 : lv >= 3 ? 1 : 0));
+  }
+  const fbTierOk = id => (FB_TIER[id] || 0) <= fbL;
+  function fbDefs() {
+    if (FB.defs || FB.loading) return FB.defs;
+    FB.loading = true;
+    const ok = j => { const D = {}; for (const e of (j && j.effects) || []) if (e && e.id && e.file && e.frameW > 0 && e.frameH > 0 && e.frames > 0 && e.cols > 0 && e.anchor) D[e.id] = e; FB.defs = D; };
+    if (typeof sheetXHR === 'function') sheetXHR(FB_BASE + 'vfx/index.json', ok, () => { FB.defs = {}; }); else FB.defs = {};
+    return null;
+  }
+  // Ready record of a sheet (textures + batch), else null; the first call starts its load.
+  function fbRec(id) {
+    const r = FB.recs[id];
+    if (r) { if (r.ok) { r.used = time; return r; } return null; }
+    const d = FB.defs && FB.defs[id]; if (!d) return null;
+    FB.recs[id] = { id, d, ok: false, err: false, tex: null, pal: null, B: null, W: 0, H: 0, uv: null, uvf: null, used: time, gpu: false };
+    fbLoad(FB.recs[id]); return null;
+  }
+  const fbReady = id => fbTierOk(id) && !!fbRec(id);
+  function fbLoad(r) {
+    const url = FB_BASE + r.d.file;
+    const rgba = () => { try { new THREE.TextureLoader().load(url, t => { t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.encoding = THREE.LinearEncoding; fbDone(r, t, null, t.image.width, t.image.height); }, undefined, () => { r.err = true; FB.fails++; }); } catch (e) { r.err = true; FB.fails++; } };
+    if (typeof palDecodeURL !== 'function') return rgba();
+    palDecodeURL(url, true, (x, why) => {
+      if (!x) { if (why !== 'off') { FB.fails++; if (typeof console !== 'undefined') console.warn('[vfx] ' + r.id + ': indexed decode failed (' + why + '), loading RGBA'); } return rgba(); }
+      const t = new THREE.DataTexture(x.idx, x.w, x.h, THREE.RedFormat, THREE.UnsignedByteType);
+      t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.flipY = false; t.needsUpdate = true;
+      const p = new THREE.DataTexture(new Uint8Array(x.pal.buffer, 0, 1024), 256, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+      p.magFilter = p.minFilter = THREE.NearestFilter; p.generateMipmaps = false; p.needsUpdate = true;
+      fbDone(r, t, p, x.w, x.h);
+    });
+  }
+  function fbDone(r, tex, pal, W, H) {
+    const d = r.d; r.tex = tex; r.pal = pal; r.W = W; r.H = H; tex.onUpdate = () => { r.gpu = true; };
+    const n = Math.min(d.frames, d.cols * Math.floor(H / d.frameH)); if (n < 1) { r.err = true; FB.fails++; tex.dispose(); if (pal) pal.dispose(); return; }
+    r.n = n; r.uv = []; r.uvf = [];
+    for (let i = 0; i < n; i++) {   // frame rects (rows top-down in the PNG; v = 1 at the top), a quarter texel in so NEAREST never takes a neighbour
+      const cx = i % d.cols, cy = Math.floor(i / d.cols), u0 = (cx * d.frameW + 0.25) / W, u1 = ((cx + 1) * d.frameW - 0.25) / W, v1 = 1 - (cy * d.frameH + 0.25) / H, v0 = 1 - ((cy + 1) * d.frameH - 0.25) / H;
+      r.uv.push([u0, v0, u1, v1]); r.uvf.push([u1, v0, u0, v1]);
+    }
+    r.B = fbBatch(r, tex, pal); r.ok = true; r.used = time;
+  }
+  const FVS = `attribute vec4 vcol; uniform float uPull; varying vec2 vUv; varying vec4 vC;
+    void main() { vUv = uv; vC = vcol; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+      if (uPull > 0.0) { vec4 q = projectionMatrix * (mv + vec4(0.0, 0.0, uPull, 0.0)); gl_Position.z = q.z / q.w * gl_Position.w; } }`;
+  const FFS = `uniform sampler2D map; uniform float uLin; varying vec2 vUv; varying vec4 vC;
+    #ifdef FB_PAL
+    uniform sampler2D uPal; ivec2 fbMx;
+    vec4 fbPal(ivec2 t) { return texelFetch(uPal, ivec2(int(texelFetch(map, clamp(t, ivec2(0), fbMx), 0).r * 255.0 + 0.5), 0), 0); }
+    #endif
+    void main() {
+    #ifdef FB_PAL
+      ivec2 ts = textureSize(map, 0); fbMx = ts - 1; vec2 p = vUv * vec2(ts), dx = dFdx(p), dy = dFdy(p); vec4 t;
+      if (max(dot(dx, dx), dot(dy, dy)) <= 1.0) t = fbPal(ivec2(floor(p)));
+      else { p -= 0.5; vec2 f = fract(p); ivec2 i = ivec2(floor(p)); vec4 a = fbPal(i), b = fbPal(i + ivec2(1, 0)), c = fbPal(i + ivec2(0, 1)), d = fbPal(i + ivec2(1, 1));
+        a.rgb *= a.a; b.rgb *= b.a; c.rgb *= c.a; d.rgb *= d.a; t = mix(mix(a, b, f.x), mix(c, d, f.x), f.y); t.rgb /= max(t.a, 0.0001); }
+    #else
+      vec4 t = texture2D(map, vUv);
+    #endif
+      if (t.a < 0.004) discard;
+    #ifdef FB_ADD
+      vec3 c = t.rgb * t.a; float a = 1.0;
+    #else
+      vec3 c = t.rgb; float a = t.a;
+    #endif
+      if (uLin > 0.5) c = pow(c, vec3(2.2));
+      gl_FragColor = vec4(c * vC.rgb, a * vC.a);
+      #include <tonemapping_fragment>
+      #include <encodings_fragment>
+    }`;
+  // A quad batch of one sheet (same buffers / flush as the atlas batches). add / ground pick blending and draw order:
+  // smoke under glows, ground decals with the ground batches.
+  function fbBatch(r, tex, pal, add, grd) {
+    if (r) { add = r.d.blend === 'add'; grd = r.d.plane === 'ground'; }
+    const defs = {}; if (pal) defs.FB_PAL = ''; if (add) defs.FB_ADD = '';
+    const mat = new THREE.ShaderMaterial({ uniforms: { map: { value: tex }, uPal: { value: pal }, uLin: { value: 0 }, uPull: { value: grd ? 0 : 1.6 } }, vertexShader: FVS, fragmentShader: FFS,
+      transparent: true, depthWrite: false, depthTest: true, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide, defines: defs });
+    if (grd) { mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -6; }
+    const B = { n: 0, cap: 0, mesh: null, pos: null, uv: null, col: null, mat, order: grd ? (add ? -0.92 : -1.1) : (add ? 3.2 : 2.9), pixel: false, warm: 0, fb: r };
+    qalloc(B, r ? 24 : 1); QB.push(B); return B;
+  }
+  // The four flipbook programs (index / RGBA x add / alpha) compile with the first frames, not on the first effect.
+  function fbWarm() {
+    const pal = typeof palOn === 'function' && palOn();
+    const t = pal ? new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RedFormat, THREE.UnsignedByteType) : new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+    if (pal) t.unpackAlignment = 1; t.needsUpdate = true;
+    const p = pal ? new THREE.DataTexture(new Uint8Array(1024), 256, 1, THREE.RGBAFormat, THREE.UnsignedByteType) : null; if (p) p.needsUpdate = true;
+    for (const add of [true, false]) { fbBatch(null, t, p, add, false); fbBatch(null, t, p, add, true); }
+  }
+  // One frame of a sheet: a camera-facing quad with the anchor on (x, h, y) (rot turns it in the screen plane, flip
+  // mirrors it), or for ground sheets a terrain-following decal centred there (rot = heading). sc = size multiplier.
+  function fbQuad(r, f, x, y, h, sc, c, a, rot, flip) {
+    if (a <= 0.003 || f < 0 || f >= r.n) return;
+    const d = r.d, B = r.B, s = sc / (d.ppu || 48); r.used = time;
+    if (d.plane === 'ground') {
+      const hw = d.frameW * 0.5 * s, hh = d.frameH * 0.5 * s, rx = Math.cos(rot || 0), rz = Math.sin(rot || 0), ux = rz, uz = -rx, n = segs(Math.max(hw, hh));
+      gquad(B, r.uv[f], x - rx * hw + ux * hh, y - rz * hw + uz * hh, x + rx * hw + ux * hh, y + rz * hw + uz * hh, x - rx * hw - ux * hh, y - rz * hw - uz * hh, x + rx * hw - ux * hh, y + rz * hw - uz * hh,
+        Math.max(0.02, h - groundH(x, y)), c, a, a, 0, 1, 0, 1, n, n);
+      return;
+    }
+    let l = -d.anchor[0] * s, rr = (d.frameW - d.anchor[0]) * s; const t = d.anchor[1] * s, b = -(d.frameH - d.anchor[1]) * s;
+    if (flip) { const k = l; l = -rr; rr = -k; }
+    const cs = Math.cos(rot || 0), sn = Math.sin(rot || 0);
+    const ax = CR.x * cs + CU.x * sn, ay = CR.y * cs + CU.y * sn, az = CR.z * cs + CU.z * sn, bx = CU.x * cs - CR.x * sn, by = CU.y * cs - CR.y * sn, bz = CU.z * cs - CR.z * sn;
+    quad(B, flip ? r.uvf[f] : r.uv[f], x + ax * l + bx * t, h + ay * l + by * t, y + az * l + bz * t, x + ax * rr + bx * t, h + ay * rr + by * t, y + az * rr + bz * t,
+      x + ax * l + bx * b, h + ay * l + by * b, y + az * l + bz * b, x + ax * rr + bx * b, h + ay * rr + by * b, y + az * rr + bz * b, c, a);
+  }
+  // A looping sheet drawn this frame (zones, auras, portals): true when drawn, false = draw the procedural look.
+  function fbLoop(id, x, y, h, sc, c, a, rot, ph, flip) {
+    if (!fbTierOk(id)) return false; const r = fbRec(id); if (!r) return false;
+    const f = Math.floor(time * r.d.fps * (fbL === 0 ? 1.25 : 1) + (ph || 0)) % r.n;
+    fbQuad(r, f < 0 ? f + r.n : f, x, y, h, sc, c, a, rot || 0, flip); return true;
+  }
+  /* Instances: one-shot sheets, or a looping sheet for dur seconds (fading in / out). Pooled objects.
+     o: sc (size), c (colour, a cached lc() array), a (alpha), rot, flip, dur (loops), spd (playback), follow (entity:
+     x / y / h become offsets from it, h above its ground). Returns the instance, or null (sheet gated / not loaded yet:
+     the caller keeps its procedural look). */
+  const FBO = { sc: 1, c: null, a: 1, rot: 0, flip: false, dur: 0, spd: 1, follow: null };
+  const fbo = (sc, c, a, rot, flip, dur, follow) => { FBO.sc = sc === undefined ? 1 : sc; FBO.c = c || null; FBO.a = a === undefined ? 1 : a; FBO.rot = rot || 0; FBO.flip = !!flip; FBO.dur = dur || 0; FBO.spd = 1; FBO.follow = follow || null; return FBO; };
+  function fbSpawn(id, x, y, h, o) {
+    if (!fbTierOk(id)) return null; const r = fbRec(id);
+    if (!r) {   // first use while the sheet loads: keep the request up to FB_WAIT s, then play it caught up (fbPending)
+      const lr = FB.recs[id]; o = o || fbo();
+      if (lr && !lr.err && FB.pend.length < 24) FB.pend.push({ id, x, y, h, sc: o.sc, c: o.c, a: o.a, rot: o.rot, flip: o.flip, dur: o.dur, fo: o.follow, t: time });
+      return null;
+    }
+    const I = FB.inst, cap = FB_CAP[fbL];
+    if (I.length >= cap) {   // full: a key effect (tier 0) replaces the oldest lesser one, anything else is dropped
+      let k = -1; if (!(FB_TIER[id] || 0)) for (let i = 0; i < I.length; i++) if ((FB_TIER[I[i].r.id] || 0) > 0) { k = i; break; }
+      if (k < 0) { FB.dropped++; return null; }
+      FB.free.push(I[k]); I.splice(k, 1);
+    }
+    const e = FB.free.pop() || {};
+    o = o || fbo();
+    e.r = r; e.x = x; e.y = y; e.h = h; e.t = 0; e.sc = o.sc; e.c = o.c || WHITE; e.a = o.a; e.rot = o.rot; e.flip = o.flip; e.dur = o.dur; e.spd = (o.spd || 1) * (fbL === 0 ? 1.25 : 1); e.fo = o.follow;
+    I.push(e); FB.spawned++; return e;
+  }
+  const FB_WAIT = 0.6;
+  function fbPending() {
+    const Q = FB.pend; let n = 0;
+    for (let i = 0; i < Q.length; i++) {
+      const p = Q[i], r = FB.recs[p.id], age = time - p.t;
+      if (r && r.ok && age >= 0 && age < FB_WAIT) { const e = fbSpawn(p.id, p.x, p.y, p.h, fbo(p.sc, p.c, p.a, p.rot, p.flip, p.dur, p.fo)); if (e) e.t = age; continue; }
+      if (!r || r.err || age < 0 || age >= FB_WAIT) continue;
+      Q[n++] = p;
+    }
+    Q.length = n;
+  }
+  function fbDrawInst() {
+    const I = FB.inst, fdt = SPRF.dt; let n = 0;   // game time (stops with the game, like the sprites)
+    for (let i = 0; i < I.length; i++) {
+      const e = I[i], r = e.r, d = r.d; e.t += fdt * e.spd;
+      const f = Math.floor(e.t * d.fps), loop = d.loop && e.dur > 0;
+      if (!r.ok || (loop ? e.t >= e.dur : f >= r.n) || (e.fo && e.fo.dead && e.fo !== P)) { e.r = null; e.fo = null; FB.free.push(e); continue; }
+      I[n++] = e;
+      let a = e.a; if (loop) a *= Math.min(1, e.t / 0.15, (e.dur - e.t) / 0.3);
+      let x = e.x, y = e.y, h = e.h; if (e.fo) { x += e.fo.x; y += e.fo.y; h += groundH(x, y) + (e.fo.z || 0) / PXU; }
+      fbQuad(r, loop ? f % r.n : f, x, y, h, e.sc, e.c, a, e.rot, e.flip);
+    }
+    I.length = n;
+  }
+  // GPU memory back from sheets nothing drew for FB_IDLE s (every ~2 s)
+  function fbSweep() {
+    for (const id in FB.recs) { const r = FB.recs[id]; if (!r.ok || !r.gpu || Math.abs(time - r.used) < FB_IDLE) continue; r.tex.dispose(); if (r.pal) r.pal.dispose(); r.gpu = false; FB.released++; }
+  }
+  function fbMem() { let b = 0, n = 0; for (const id in FB.recs) { const r = FB.recs[id]; if (r.ok && r.gpu) { b += r.pal ? r.W * r.H + 1024 : r.W * r.H * 4; n++; } } return { MB: +(b / 1048576).toFixed(2), sheets: n }; }
+
+  /* ---------- game events -> flipbooks (read from the runtime state, like everything here) ----------
+     fxs 'spark' -> hit_spark / crit_star (a red hit_spark when the hero is hurt); 'meteor' -> by colour: fire_burst,
+     poison_cloud (rot green), shadow_smoke (violet), ice_shatter (blue), holy_column (gold / white); 'strike' ->
+     lightning_strike + lightning_impact; 'pillar' -> levelup (base level, #ffd76a), job_levelup (job level #7fe0d4,
+     class change #f0d070), holy_column (gold / white pillars), else a tinted rune_circle flash under the procedural
+     column; 'rain' (Arrow Shower) -> impact_dust. Projectiles that reach their target: fire -> fire_burst, ice ->
+     ice_shatter, bolt -> lightning_impact, holy -> holy_column, soul -> shadow_smoke, spear -> impact_dust; fire bolts fly
+     as fireball_trail. Telegraph booms without their own effect -> impact_dust (water_splash on water, snow_puff on
+     snow); boss circle telegraphs get a heat-tinted rune_circle under the decal. Floats: a heal -> heal_sparkles once;
+     an SP drink (Soul Drain / Spell Breaker '+n' sp) -> soul_wisps once. Monsters: an MVP falls -> mvp_burst; a summoned
+     add appears -> summon_smoke; a freeze ends -> ice_shatter; Seidr Hex lands -> shadow_smoke. The hero: dodge ->
+     dodge_puff (snow_puff on snow, mirrored to the motion), footfalls on snow -> snow_puff. Ambient: warp portals ->
+     warp_portal, a kindled waystone -> waystone_embers, rain -> rain_ripple (splash rings on water tiles and puddles). */
+  const FB_SEEN = new WeakSet(), FB_HEX = new WeakMap(), FB_FROZE = new Set(), FB_PP = [], FB_PT = [], FB_PZ = [], FB_MET = [];
+  let fbMap = null, fbDodge = false, fbHealT = -9, fbSoulT = -9, fbStepT = -9;
+  const HUEC = new Map();
+  function hueClass(hex) {
+    let k = HUEC.get(hex); if (k) return k;
+    const hsl = { h: 0, s: 0, l: 0 }; new THREE.Color(hex || '#ffffff').getHSL(hsl); const hh = hsl.h * 360;
+    k = hsl.s < 0.22 || hsl.l > 0.86 ? 'holy' : hh < 38 || hh >= 330 ? 'fire' : hh < 70 ? 'holy' : hh < 170 ? 'rot' : hh < 250 ? 'ice' : 'shadow';
+    HUEC.set(hex, k); return k;
+  }
+  const FB_BY_CLASS = { fire: 'fire_burst', rot: 'poison_cloud', shadow: 'shadow_smoke', ice: 'ice_shatter', holy: 'holy_column' };
+  const onWater = (x, y) => typeof tileAt === 'function' && typeof T !== 'undefined' && T && tileAt(x, y) === T.WATER;
+  const onSnow = () => !!(map && map.d && map.d.look && map.d.look.floor === 'snow');
+  function fbImpact(x, y, sc) {   // generic ground impact: dust, a splash on water, a puff on snow
+    const gh = groundH(x, y);
+    if (onWater(x, y)) return fbSpawn('water_splash', x, y, gh, fbo(sc));
+    return fbSpawn(onSnow() ? 'snow_puff' : 'impact_dust', x, y, gh, fbo(sc));
+  }
+  function fbFx(f) {
+    const k = f.k;
+    if (k === 'spark') {
+      const rot = (Math.random() - 0.5) * 0.9, fl = Math.random() < 0.5;
+      if (f.hurt) { if (fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.5, lc('#ff6a50'), 1, rot, fl))) f._fb = 1; return; }
+      if (f.crit) { const e = fbSpawn('crit_star', f.x, f.y, f.h, fbo(0.72, null, 1, rot * 0.5)); fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62, null, 1, rot, fl)); if (e) f._fb = 1; return; }
+      if (fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62, null, 1, rot, fl))) f._fb = 1;
+    } else if (k === 'meteor') {
+      const cls = hueClass(f.col || '#ff7a2a'), gh = groundH(f.x, f.y);
+      if (fbSpawn(FB_BY_CLASS[cls], f.x, f.y, gh, fbo(cls === 'holy' ? 0.8 : cls === 'rot' ? 0.75 : 1))) f._fb = 1;
+      if (onWater(f.x, f.y)) fbSpawn('water_splash', f.x, f.y, gh, fbo(1.1));
+      FB_MET.push(f.x, f.y);
+    } else if (k === 'strike') {
+      const gh = groundH(f.x, f.y);
+      if (fbSpawn('lightning_strike', f.x, f.y, gh, fbo(1, lc('#e4f0ff')))) { f._fb = 1; fbSpawn('lightning_impact', f.x, f.y, gh, fbo(0.75, lc('#e4f0ff'))); }
+      FB_MET.push(f.x, f.y);
+    } else if (k === 'pillar') {
+      const e = f.e; if (!e || e.x === undefined) return;
+      const fo = e === P ? P : null, col = String(f.col || '#ffffff').toLowerCase(), x = fo ? 0 : e.x, y = fo ? 0 : e.y, h = fo ? 0 : groundH(e.x, e.y);
+      if (col === '#ffd76a') { if (fbSpawn('levelup', x, y, h, fbo(1, null, 1, 0, false, 0, fo))) f._fb = 1; return; }
+      if (col === '#7fe0d4') { if (fbSpawn('job_levelup', x, y, h, fbo(1, null, 1, 0, false, 0, fo))) f._fb = 1; return; }
+      if (col === '#f0d070') { if (fbSpawn('job_levelup', x, y, h, fbo(1.1, lc('#ffe8a0'), 1, 0, false, 0, fo))) { fbSpawn('holy_column', x, y, h, fbo(1.1, null, 1, 0, false, 0, fo)); f._fb = 1; } return; }
+      if (hueClass(col) === 'holy') { if (fbSpawn('holy_column', x, y, h, fbo(f.big ? 1 : 0.78, null, 1, 0, false, 0, fo))) f._fb = 1; return; }
+      fbSpawn('rune_circle', x, y, h + 0.04, fbo((f.big ? 1.3 : 1) * 0.5, lc(col), 0.9, time, false, f.dur || 0.9, fo));
+    } else if (k === 'rain') fbImpact(f.x, f.y, 1.25);
+  }
+  function fbProjEnd(p) {
+    const t = p.to; if (!t || t.x === undefined || Math.hypot(t.x - p.x, t.y - p.y) > 1.3) return;
+    const gh = groundH(t.x, t.y);
+    switch (p.kind) {
+      case 'fire': fbSpawn('fire_burst', t.x, t.y, gh, fbo(0.72)); break;
+      case 'ice': fbSpawn('ice_shatter', t.x, t.y, gh, fbo(0.7)); break;
+      case 'bolt': fbSpawn('lightning_impact', t.x, t.y, gh, fbo(0.85, lc('#fff6c8'))); break;
+      case 'holy': fbSpawn('holy_column', t.x, t.y, gh, fbo(0.6)); break;
+      case 'soul': fbSpawn('shadow_smoke', t.x, t.y, gh, fbo(0.55)); break;
+      case 'spear': fbImpact(t.x, t.y, 0.7); break;
+    }
+  }
+  const FB_PK = { fire: 1, ice: 1, bolt: 1, holy: 1, soul: 1, spear: 1 };
+  function fbBoom(t) {
+    if (t.shape && t.shape.kind === 'cone') return;   // breath cones: every circle of the ray booms with its own meteor
+    for (let i = 0; i < FB_MET.length; i += 2) if (Math.abs(FB_MET[i] - t.x) < 0.7 && Math.abs(FB_MET[i + 1] - t.y) < 0.7) return;
+    fbImpact(t.x, t.y, clamp((t.r || 1) / 1.1, 0.6, 2));
+  }
+  function fbEvents() {
+    if (fbMap !== map) { fbMap = map; FB_PP.length = 0; FB_PT.length = 0; FB_PZ.length = 0; FB_FROZE.clear(); fbDodge = false; }
+    FB_MET.length = 0;
+    for (let i = 0; i < fxs.length; i++) { const f = fxs[i]; if (f._fs) continue; f._fs = 1; fbFx(f); }
+    for (let i = 0; i < floats.length; i++) {
+      const f = floats[i]; if (f._fs) continue; f._fs = 1;
+      if (f.kind === 'heal' && !f.small && time - fbHealT > 0.35) { fbHealT = time; const me = P && Math.hypot(f.x - P.x, f.y - P.y) < 0.6; fbSpawn('heal_sparkles', me ? 0 : f.x, me ? 0 : f.y, me ? 0 : groundH(f.x, f.y), fbo(0.9, null, 1, 0, false, 1, me ? P : null)); }
+      else if (f.kind === 'sp' && f.txt && f.txt[0] === '+' && time - fbSoulT > 0.5) { fbSoulT = time; fbSpawn('soul_wisps', 0, 0, 0.15, fbo(0.85, null, 1, 0, false, 1.1, P)); }
+    }
+    // projectiles that left projs[] this frame at their target; telegraphs that went off (not cancelled)
+    for (let i = 0; i < FB_PP.length; i++) if (projs.indexOf(FB_PP[i]) < 0) fbProjEnd(FB_PP[i]);
+    FB_PP.length = 0; for (let i = 0; i < projs.length; i++) if (FB_PK[projs[i].kind]) FB_PP.push(projs[i]);
+    for (let i = 0; i < FB_PT.length; i++) { const t = FB_PT[i]; if (teles.indexOf(t) < 0 && t.t >= t.dur - 0.08 && !(t.m && t.m.dead)) fbBoom(t); }
+    FB_PT.length = 0; for (let i = 0; i < teles.length; i++) FB_PT.push(teles[i]);
+    // zones that ended: Thurisaz bursts
+    for (let i = 0; i < FB_PZ.length; i++) { const z = FB_PZ[i]; if (zones.indexOf(z) < 0 && z.t >= z.dur - 0.1) { const gh = groundH(z.x, z.y); fbSpawn('lightning_impact', z.x, z.y, gh, fbo(1.15, lc('#ffe070'), 0.85)); fbImpact(z.x, z.y, 1.3); } }
+    FB_PZ.length = 0; for (let i = 0; i < zones.length; i++) if (zones[i].kind === 'thurisaz') FB_PZ.push(zones[i]);
+    // freezes that ended
+    FB_FROZE.forEach(m => { if (m.dead || !(m.frozen > 0)) { FB_FROZE.delete(m); fbSpawn('ice_shatter', m.x, m.y, groundH(m.x, m.y), fbo(0.62)); } });
+    // the hero's dodge, footfalls on snow
+    if (P && started) {
+      const dg = P.dodgeT > 0;
+      if (dg && !fbDodge) { const sr = (P.fx || 0) * SPRF.rx + (P.fy || 0) * SPRF.ry; fbSpawn(onSnow() ? 'snow_puff' : 'dodge_puff', P.x, P.y, groundH(P.x, P.y), fbo(0.95, null, 0.9, 0, sr < 0)); }
+      fbDodge = dg;
+    }
+  }
+  V.step = (e, gh, mounted) => {   // sprMotion footfall hook: powder kicked up on snow maps
+    if (e !== P || !onSnow() || time - fbStepT < 0.18) return; fbStepT = time;
+    fbSpawn('snow_puff', e.x - (e.fx || 0) * 0.15, e.y - (e.fy || 0) * 0.15, gh, fbo(mounted ? 0.55 : 0.38, null, 0.85));
+  };
+  function fbAmbient() {
+    // warp portals near the view (locked ones keep the red procedural ring), the kindled waystone's embers
+    for (const wp of map.warps || []) {
+      const x = wp.x + 0.5, y = wp.y + 0.5; if (Math.abs(x - cam.tx) > 26 || Math.abs(y - cam.ty) > 26) continue;
+      if (typeof warpIsLocked === 'function' && warpIsLocked(wp)) continue;
+      fbLoop('warp_portal', x, y, groundH(x, y), 0.95, WHITE, 0.85, 0, wp.x * 3 + wp.y);
+    }
+    if (map.way && P && P.kindled && P.kindled[map.id] && Math.abs(map.way.x - cam.tx) < 26 && Math.abs(map.way.y - cam.ty) < 26) fbLoop('waystone_embers', map.way.x, map.way.y, groundH(map.way.x, map.way.y), 1.1, WHITE, 1, 0, 3);
+    // rain: splash rings around the hero (more of them on water)
+    const rain = typeof WX !== 'undefined' && WX ? WX.rain || 0 : 0;
+    if (rain > 0.25 && P && fbTierOk('rain_ripple')) {
+      const n = rate(22 * rain);
+      for (let i = 0; i < n; i++) { const x = P.x + rand(-7, 7), y = P.y + rand(-5, 6), tl = typeof tileAt === 'function' ? tileAt(x, y) : 0; if (typeof T !== 'undefined' && T && (tl === T.WALL || tl === T.TREE || tl === T.VOID || tl === T.LAVA)) continue;
+        fbSpawn('rain_ripple', x, y, groundH(x, y) + 0.03, fbo(tl === T.WATER ? rand(0.45, 0.7) : rand(0.25, 0.4), null, tl === T.WATER ? 0.8 : 0.5, Math.random() * 6.28)); }
+    }
+  }
+  // Boss circle telegraphs: a rune circle turning inside the ember decal, heating up to the blast.
+  const _heat = [0, 0, 0];
+  function fbTeles() {
+    for (const t of teles) {
+      if (t.shape || !(t.m && t.m.d && t.m.d.boss) || t.m.dead) continue;
+      const k = clamp(t.t / t.dur, 0, 1), late = smoothstep(0.6, 1, k), c0 = lc('#ff5a14'), c1 = lc('#fff0c0');
+      _heat[0] = c0[0] + (c1[0] - c0[0]) * late; _heat[1] = c0[1] + (c1[1] - c0[1]) * late; _heat[2] = c0[2] + (c1[2] - c0[2]) * late;
+      fbLoop('rune_circle', t.x, t.y, groundH(t.x, t.y) + 0.06, t.r * 2 / 5.333 * 0.84, _heat, 0.3 + 0.55 * k, -time * 0.6 - t.x, t.x * 5);
+    }
+  }
+  // The hero's cast circle (replaces the flat decal of syncDecals once the sheet is in)
+  function fbCast() {
+    if (!P || !P.casting || P.dead || typeof SKILLS === 'undefined' || !SKILLS[P.casting.id]) return;
+    const col = (typeof ELCOL !== 'undefined' && ELCOL[SKILLS[P.casting.id].el]) || '#ffffff';
+    fbLoop('rune_circle', P.x, P.y, groundH(P.x, P.y) + 0.07, 0.5 * (1 + 0.04 * Math.sin(time * 6)), lc(col), 0.95, time * 1.4, 0);
+  }
+
   /* ---------- per frame ---------- */
   function init() {
     atlas = paintAtlas(); pix = paintPixels();
@@ -1405,6 +2045,7 @@ const VFX = (() => {
     BA = qbatch({ add: true, order: 3, cap: 256 });
     BN = qbatch({ add: false, order: 3.5, cap: 16 });
     for (const B of QB) B.mat.uniforms.map.value = B === PB ? pix : atlas;
+    fbWarm(); fbDefs();
     V.ready = true;
     if (typeof QUEST_UI !== 'undefined') { QUEST_UI.skills = false; QUEST_UI.spots = false; }   // js/ui.js placeholders stand down
   }
@@ -1417,9 +2058,14 @@ const VFX = (() => {
     CR.set(e[0], e[1], e[2]).normalize(); CU.set(e[4], e[5], e[6]).normalize(); CP.set(e[12], e[13], e[14]);
     HR.set(CR.x, 0, CR.z).normalize(); yawA = -cam.yaw;
     for (const B of QB) B.n = 0; sphN = 0;
+    fbL = fbLevel();
+    if (FB.defs && !FB.pre) { FB.pre = true; for (const id of FB_PRE) if (fbTierOk(id)) fbRec(id); }
+    fbEvents();
     for (const z of zones) drawZone(z);
     for (let i = V.extra.length - 1; i >= 0; i--) { const X = V.extra[i]; X.t += dt; if (X.t >= X.dur) { V.extra.splice(i, 1); continue; } if (X.zone) { X.zone.t = X.t; drawZone(X.zone); } }
     drawShapes(); drawAuras(); drawSpheres(); drawProjs(); drawFx(); drawMobs(); drawSpots();
+    fbTeles(); fbCast(); fbAmbient(); fbPending(); fbDrawInst();
+    if (++FB.sweep % 120 === 0) fbSweep();
     for (let i = sphN; i < SPH.length; i++) SPH[i].visible = false;
     flush();
   };
@@ -1429,9 +2075,15 @@ const VFX = (() => {
   V.lines = o => { V.extra.push({ t: 0, dur: o.dur || 1, col: o.col, shape: { kind: 'lines', x: o.x, y: o.y, ang: o.ang, n: o.n || 1, spread: o.spread || 0.4, len: o.len || 9, w: o.w || 1.9 } }); };
   V.bolt = (x0, y0, h0, x1, y1, h1, col) => bolt(x0, y0, h0, x1, y1, h1, col, 0.25, 1);
   V.beam = (x, y, col, big) => fxs.push({ k: 'pillar', e: { x, y }, col, t: 0, dur: big ? 1.4 : 0.9, big });
-  V.clear = () => { BOLTS.length = 0; V.extra.length = 0; };
+  V.clear = () => { BOLTS.length = 0; V.extra.length = 0; for (const e of FB.inst) { e.r = null; e.fo = null; FB.free.push(e); } FB.inst.length = 0; FB.pend.length = 0; };
+  // Flipbooks (round 7): VFX.flip(id, x, y, h, { sc, c: '#hex', a, rot, flip, dur, follow }) plays a sheet once (loops for
+  // dur s); returns false while the sheet is loading / gated. VFX.fbReady(id) starts / checks a load. VFX.fbMem(): GPU MB.
+  V.flip = (id, x, y, h, o) => { o = o || {}; const e = fbSpawn(id, x, y, h === undefined ? groundH(x, y) : h, fbo(o.sc, o.c ? lc(o.c) : null, o.a, o.rot, o.flip, o.dur, o.follow)); if (e && o.t0) e.t = o.t0; return !!e; };
+  V.fbReady = id => V.ready && fbReady(id);
+  V.fbMem = fbMem;
+  V.fbInfo = () => ({ defs: FB.defs ? Object.keys(FB.defs).length : 0, loaded: Object.keys(FB.recs).filter(k => FB.recs[k].ok), pal: Object.keys(FB.recs).filter(k => FB.recs[k].pal).length, inst: FB.inst.length, spawned: FB.spawned, dropped: FB.dropped, fails: FB.fails, released: FB.released, level: fbL, mem: fbMem() });
   V.debugAtlas = () => atlas && atlas.image;   // for tools (tools/shoot.js can dump it)
-  V.stats = () => ({ quads: QB.map(B => B.n), spheres: sphN, bolts: BOLTS.length });
+  V.stats = () => ({ quads: QB.map(B => B.n), spheres: sphN, bolts: BOLTS.length, flipbooks: FB.inst.length });
   return V;
 })();
 
@@ -1562,6 +2214,7 @@ function drawOverlay() {
   for (const f of fxs) {
     const k = f.t / f.dur;
     if ((f.k === 'pillar' || f.k === 'strike') && VFX.ready && VFX.enabled) continue;   // 3D light columns / lightning (VFX)
+    if (f._fb && VFX.enabled) continue;   // played by a flipbook (hit_spark / crit_star / fire_burst ...)
     if (f.k === 'pillar') {
       const e = f.e, gh = groundH(e.x, e.y); projTo(b, e.x, e.y, gh); projTo(a, e.x, e.y, gh + 6); const t = a; const al = Math.sin(k * Math.PI), wd = (f.big ? 1.2 : 0.8) * PPU;
       ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = pillarGrad(f.col); ctx.translate(b[0] - wd / 2, t[1]); ctx.scale(wd, b[1] - t[1]); ctx.fillRect(0, 0, 1, 1); ctx.restore();
@@ -1594,11 +2247,15 @@ function drawPlates(sc, a, b) {
     projTo(a, d.x, d.y, groundH(d.x, d.y) + 0.9); if (a[2] > 1) continue;
     label(L.txt, a[0], a[1], L.col, 11, true);
   }
+  const lock = typeof CTRL !== 'undefined' ? CTRL.lock : null;
   for (const m of mobs) {
-    if (m.dead) continue; const gh = groundH(m.x, m.y); projTo(a, m.x, m.y, gh); if (a[2] > 1) continue;
-    const sel = hover === m || P.target === m || (typeof CTRL !== 'undefined' && CTRL.lock === m);
-    const k = m.hp / m.maxhp, lag = lagOf(m, k);
-    if ((k < 1 || sel) && !m.d.boss) { const wd = Math.round(40 * sc), y = Math.round(a[1] + 9 * sc); gauge(Math.round(a[0] - wd / 2), y, wd, 4, k, k < 0.3 ? '#ff7a4a' : '#ff5a4a', k < 0.3 ? '#c02810' : '#b81c1c', lag); }
+    if (m.dead) continue;
+    // bar / name only for hurt or selected mobs: the others skip the ground sample + projection (hordes: most mobs)
+    const sel = hover === m || P.target === m || lock === m;
+    const k = m.hp / m.maxhp, lag = lagOf(m, k), bar = (k < 1 || sel) && !m.d.boss;
+    if (!bar && !sel) continue;
+    const gh = groundH(m.x, m.y); projTo(a, m.x, m.y, gh); if (a[2] > 1) continue;
+    if (bar) { const wd = Math.round(40 * sc), y = Math.round(a[1] + 9 * sc); gauge(Math.round(a[0] - wd / 2), y, wd, 4, k, k < 0.3 ? '#ff7a4a' : '#ff5a4a', k < 0.3 ? '#c02810' : '#b81c1c', lag); }
     if (sel) { const lv = m.d.lvl - (P.lvl || 1), lc = lv >= 5 ? '#ff8a7a' : lv >= 0 ? '#ffe0b0' : '#c8f0c0'; label(mobLabel(m.d), a[0], a[1] + 28 * sc, m.d.aggro ? lc : '#ffffff', 12); }
   }
   if (P && started && !P.dead) {
@@ -1647,6 +2304,7 @@ function spCol(p, kind) {
     : kind === 'petal' ? `rgba(255,200,220,${0.5 * p.v})` : `rgba(215,212,205,${0.35 * p.v})`);
 }
 function drawScreenParts() {
+  if (typeof GFX !== 'undefined' && GFX.wx && GFX.wx.screenParts === false) return;   // graphics round 5: 3D GPU weather replaces the 2D screen particles
   const kind = map.d.part;
   for (const p of screenParts) {
     if (kind === 'ember') { p.y -= p.v * 0.9; p.x += Math.sin(time + p.ph) * 0.4; if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; } }

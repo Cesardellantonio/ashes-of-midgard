@@ -14,6 +14,11 @@
    - headgear (contract v3): hg_<key> (layer "headgear", body = ITEMS[id].headgear), drawn at the body frame's
      head anchor (anchors.head[action][dir][frame] = [x, y, rot, visible]) above the hair; `hideHair`
      'all' hides the hair layer, 'top' clips it along the hat's `hairClip` line (same maths as art's hglib.py).
+   - mounted player (contract v4): while P.mounted is truthy and <cls>_<g>.mount_body exists, the body / hair /
+     weapon (/ shield) layers swap to the <cls>_<g>.mount_* sheets (192x160 frames; sit / pickup / stance are alias
+     rows of idle). Mount entries are registered under their own keys ("<body>|mount:<layer>|<variant>"), so an
+     index that lists them next to the on-foot sheets never replaces an on-foot layer.
+   - companions (contract v4 pets): COMPANIONS[] entries drawn through the sprite batches (see "Companions" below).
 
    JSON layouts:
    - "blocks": block = r*dirs.length + d; bx = block % blocksPerRow;
@@ -28,7 +33,7 @@
 const SHEET_BASE = (typeof window !== 'undefined' && window.AOM_SPRITE_BASE) || 'assets/sprites/';
 // Missing index files are harmless. The same sheet id may appear in several files (index.json also lists the
 // index_classes2b.json sheets): the first file in this list that names an id wins, whatever order the XHRs finish in.
-const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json', 'index_npcs3.json', 'index_headgear.json'];
+const SHEET_INDEX_FILES = ['index.json', 'index_creatures.json', 'index_humanoids.json', 'index_npcs.json', 'index_classes2b.json', 'index_world2a.json', 'index_world2b.json', 'index_npcs2.json', 'index_npcs3.json', 'index_headgear.json', 'index_pets.json', 'index_tier3a.json', 'index_tier3b.json', 'index_npcs4.json', 'index_helheim.json'];
 const SHEETS = {
   byId: {},          // id -> load record (created on first request)
   entries: {},       // id -> { id, layer, body, variant } from the index files
@@ -37,7 +42,7 @@ const SHEETS = {
   loaded: [], failed: [], requests: 0,
 };
 const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
-const LAYER_ORDER = ['body', 'mob', 'npc', 'hair', 'headgear', 'shield', 'weapon'];
+const LAYER_ORDER = ['body', 'mob', 'npc', 'pet', 'hair', 'headgear', 'shield', 'weapon'];
 const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace',
   spear: 'spear', twohand: 'twohand', staff: 'staff', book: 'book', lute: 'lute', whip: 'whip', knuckle: 'knuckle' };  // fist -> none
 
@@ -59,29 +64,35 @@ function sheetXHR(url, ok, bad) {
 function sheetEntry(s) {
   if (!s || typeof s.id !== 'string') return null;
   const id = s.id; let layer = s.layer, body = s.body, variant = s.variant;
+  // contract v4: mounted variants (<cls>_<g>.mount_*, "mounted": true, body variant "mounted") get their own keys
+  const mounted = s.mounted === true || /\.mount_/.test(id) || variant === 'mounted';
   if (!layer) {
-    if (/^mob_/.test(id)) layer = 'mob'; else if (/^npc_/.test(id)) layer = 'npc'; else if (/^hg_/.test(id)) layer = 'headgear';
-    else { const m = /(?:^|\.)(body|hair|weapon|shield)(?:_|$)/.exec(id); layer = m ? m[1] : 'body'; }
+    if (/^mob_/.test(id)) layer = 'mob'; else if (/^npc_/.test(id)) layer = 'npc'; else if (/^hg_/.test(id)) layer = 'headgear'; else if (/^pet_/.test(id)) layer = 'pet';
+    else { const m = /\.mount_(body|hair|weapon|shield)(?:_|$)/.exec(id) || /(?:^|\.)(body|hair|weapon|shield)(?:_|$)/.exec(id); layer = m ? m[1] : 'body'; }
   }
   if (!body) {
     if (layer === 'mob') body = id.replace(/^mob_/, ''); else if (layer === 'npc') body = id.replace(/^npc_/, ''); else if (layer === 'headgear') body = id.replace(/^hg_/, '');
+    else if (layer === 'pet') body = id.replace(/^pet_/, '');
     else if (id.indexOf('.') > 0) body = id.slice(0, id.indexOf('.'));
   }
+  if (mounted && variant === 'mounted') variant = null;
   if (variant === undefined || variant === '') {
     variant = null;
     if (layer === 'hair') { const m = /hair_([a-z]+)/.exec(id); if (m) variant = m[1]; }
     else if (layer === 'weapon') { const m = /weapon_([a-z]+)/.exec(id); if (m) variant = m[1] === 'knife' ? 'dagger' : m[1]; }
     else if (layer === 'shield') { const m = /shield_([a-z]+)/.exec(id); variant = m ? m[1] : 'guard'; }
   }
-  return { id, layer, body, variant: variant || null };
+  return { id, layer, body, variant: variant || null, mounted };
 }
 const sheetKey = (body, layer, variant) => body + '|' + layer + '|' + (variant || '');
+// Index key of an entry: mounted sheets live under 'mount:<layer>' (never chosen for an on-foot layer).
+const entryKey = e => sheetKey(e.body, e.mounted ? 'mount:' + e.layer : e.layer, e.variant);
 // First registration of an id (and of a body|layer|variant key) wins: duplicates are ignored, never loaded twice.
 function registerIndex(file, j) {
   SHEETS.indexFiles.push(file);
   for (const s of (j && Array.isArray(j.sheets) ? j.sheets : [])) {
     const e = sheetEntry(s); if (!e || !e.body || SHEETS.entries[e.id]) continue;
-    SHEETS.entries[e.id] = e; const k = sheetKey(e.body, e.layer, e.variant); if (!SHEETS.byKey[k]) SHEETS.byKey[k] = e.id;
+    SHEETS.entries[e.id] = e; const k = entryKey(e); if (!SHEETS.byKey[k]) SHEETS.byKey[k] = e.id;
   }
 }
 function loadIndexes() {
@@ -98,6 +109,11 @@ function measureSheet(rec) {
   if (j.visibleH) return;
   try {
     const r = sheetRect(j, sheetHas(j, 'idle') ? 'idle' : Object.keys(j.actions)[0], 0, 0); if (!r) return;
+    if (rec.pal) {   // indexed sheet: scan the index rows (stored bottom-up) against the palette alpha
+      const X = rec.pal, W = X.W, H = X.H, idx = X.idx, al = X.alpha;
+      for (let y = 0; y < r.h; y++) { const o = (H - 1 - (r.y + y)) * W + r.x; for (let x = 0; x < r.w; x++) if (al[idx[o + x]] > 127) { rec.visH = Math.max(8, j.anchor[1] - y); return; } }
+      return;
+    }
     // willReadFrequently keeps this canvas in CPU memory: only the frame is copied and read back (no GPU upload of
     // the whole sheet + GPU readback, which made this 29% of boot CPU). The art pipeline should ship visibleH.
     const c = MEASURE_CV || (MEASURE_CV = document.createElement('canvas')); c.width = r.w; c.height = r.h;
@@ -118,40 +134,343 @@ function validateSheet(rec) {
   return true;
 }
 function loadSheet(id) {
-  const rec = { id, entry: SHEETS.entries[id] || null, json: null, tex: null, texW: 0, texH: 0, ok: false, done: false, err: null, visH: 0 };
+  const rec = { id, entry: SHEETS.entries[id] || null, json: null, tex: null, pal: null, pages: null, batches: null, texW: 0, texH: 0, ok: false, done: false, err: null, visH: 0 };
   SHEETS.byId[id] = rec; SHEETS.requests++;
   let left = 2;
   const fin = err => {
     if (err && !rec.err) rec.err = String(err && err.message || err);
     if (--left) return;
-    rec.ok = !rec.err && !!rec.json && !!rec.tex && validateSheet(rec);
-    if (rec.ok) { measureSheet(rec); SHEETS.loaded.push(id); } else { SHEETS.failed.push(id); if (rec.tex) { rec.tex.dispose(); rec.tex = null; } }
+    rec.ok = !rec.err && !!rec.json && !!(rec.tex || rec.pal) && validateSheet(rec);
+    if (rec.ok) { rec.pages = sheetPageDefs(rec); measureSheet(rec); SHEETS.loaded.push(id); }
+    else { SHEETS.failed.push(id); if (rec.tex) { rec.tex.dispose(); rec.tex = null; } if (rec.pal) { rec.pal.tex.dispose(); rec.pal = null; } }
     rec.done = true;
   };
   sheetXHR(SHEET_BASE + id + '.json', j => { rec.json = j; fin(); }, fin);
-  try {
-    new THREE.TextureLoader().load(SHEET_BASE + id + '.png', t => {
-      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; if (typeof sprTexEnc === 'function') sprTexEnc(t);
-      rec.tex = t; rec.texW = t.image.width; rec.texH = t.image.height; fin();
-    }, undefined, () => fin(new Error(id + '.png failed to load')));
-  } catch (e) { fin(e); }
+  if (palOn()) sheetLoadPal(rec, fin); else sheetLoadRGBA(rec, fin);
   return rec;
 }
+// RGBA path (WebGL1, no workers, a sheet the palette path rejects): the PNG as an image texture.
+function sheetLoadRGBA(rec, fin) {
+  try {
+    new THREE.TextureLoader().load(SHEET_BASE + rec.id + '.png', t => {
+      t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; if (typeof sprTexEnc === 'function') sprTexEnc(t);
+      t.onUpdate = () => { rec.upd = true; };
+      if (SHEETS.byId[rec.id] !== rec) { t.dispose(); return fin(new Error('released')); }
+      rec.tex = t; rec.texW = t.image.width; rec.texH = t.image.height; fin();
+    }, undefined, () => fin(new Error(rec.id + '.png failed to load')));
+  } catch (e) { fin(e); }
+}
+
+/* ---------- Indexed sheets + pages (perf round 4) ----------
+   Sprite sheets were ~70% of GPU memory (RGBA8: MVP sheets 64 MB, class layers 21-60 MB each). Every sheet is pixel
+   art with <= 49 colours and binary alpha, so a Worker decodes the PNG (createImageBitmap + OffscreenCanvas) into an
+   8-bit index image + a palette (rows stored bottom-up = the flipY layout of the old texture, so all UV maths is
+   unchanged); the GPU gets R8 index textures + a 256x1 palette (gfx-render.js SPR_PAL: exact NEAREST / LINEAR
+   emulation), 1 byte per texel instead of 4.
+   Pages: mob sheets larger than PAGE_MIN texels (8 M: MVPs / bosses) are split into bands of whole block rows: page 0 holds every row an
+   idle / walk / talk frame lives in (always resident while the sheet is shown), the other rows go into pages of at
+   most PAGE_ROWS px. A page is a zero-copy view into the index image; it is uploaded in idle time when its sheet
+   enters combat (sheetWantAll: mobs that chase / get hit / die) or,
+   at the latest, by three on the first frame that draws it (R8: ~1 ms for a 4 MB page). Pages other than page 0
+   that no frame has used for PAGE_IDLE s give their GPU memory back (sheetPagesSweep; the CPU copy stays, three
+   re-uploads on the next use). Layered sprites (player, bosses) switch their materials' map per page; batched
+   sheets get one instance batch per page (gfx-render.js sprBatch). Single-page sheets behave exactly as before.
+   Fallback: any failure (no WebGL2 / Worker / OffscreenCanvas, > 256 colours, semi-transparent pixels, worker error)
+   loads that sheet as an RGBA image texture (one page). window.AOM_SPR_PAL = false / AOM_SPR_PAGE = false: A/B. */
+const PAGE_MIN = 8 * 1048576, PAGE_ROWS = 1024, PAGE_IDLE = 20;   // texels (8 MB as R8: MVP / boss sheets, the larger class and mount layers; mid-size mob sheets stay one page = one batch)
+const SHEET_PAL = { ok: null, workers: [], next: 0, jobs: new Map(), seq: 0, fails: 0 };
+function palOn() {
+  if (typeof window !== 'undefined' && window.AOM_SPR_PAL === false) return false;
+  if (SHEET_PAL.ok !== null) return SHEET_PAL.ok;
+  let ok = false;
+  try { ok = typeof renderer !== 'undefined' && !!renderer.capabilities && renderer.capabilities.isWebGL2 === true && typeof Worker === 'function' && typeof Blob === 'function' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'; } catch (e) { ok = false; }
+  return (SHEET_PAL.ok = ok);
+}
+const pageOn = () => typeof window === 'undefined' || window.AOM_SPR_PAGE !== false;
+// RGBA pixels (canvas readback, rows top-down) -> { w, h, idx (rows bottom-up = flipY), pal (Uint32 RGBA, entry 0 =
+// transparent), n } or throws. Runs in the worker (source injected below) and, for harnesses, on the main thread.
+// semi (VFX flipbooks, vfx round 7): semi-transparent colours are allowed (the canvas round trip maps each source
+// colour to one fixed value, so a <= 128-colour flipbook stays <= 128 entries); fully transparent pixels -> entry 0.
+function palIndex(px, w, h, semi) {
+  const idx = new Uint8Array(w * h), pal = new Uint32Array(256), seen = new Map();
+  let n = 1, lc = 0, li = 0;
+  for (let y = 0; y < h; y++) {
+    const s = y * w, d = (h - 1 - y) * w;
+    for (let x = 0; x < w; x++) {
+      const c = px[s + x]; if (c === 0 || (semi && c >>> 24 === 0)) continue;
+      if (c !== lc) {
+        let i = seen.get(c);
+        if (i === undefined) {
+          const a = c >>> 24;
+          if (a !== 255 && !semi) throw new Error('semi-transparent pixel');   // canvas premultiplication would not round-trip
+          if (n >= 256) throw new Error('more than 255 colours');
+          i = n++; pal[i] = c; seen.set(c, i);
+        }
+        lc = c; li = i;
+      }
+      idx[d + x] = li;
+    }
+  }
+  return { w, h, idx, pal, n };
+}
+// Worker: PNG bytes -> palIndex result or { err }.
+const SHEET_WORKER_SRC = `'use strict';
+${palIndex.toString()}
+onmessage = async e => {
+  const job = e.data.job;
+  try {
+    if (typeof OffscreenCanvas !== 'function' || typeof createImageBitmap !== 'function') throw new Error('no OffscreenCanvas');
+    const bmp = await createImageBitmap(new Blob([e.data.buf], { type: 'image/png' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    const w = bmp.width, h = bmp.height, cv = new OffscreenCanvas(w, h), g = cv.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0); if (bmp.close) bmp.close();
+    const r = palIndex(new Uint32Array(g.getImageData(0, 0, w, h).data.buffer), w, h, !!e.data.semi); r.job = job;
+    postMessage(r, [r.idx.buffer, r.pal.buffer]);
+  } catch (err) { postMessage({ job, err: String(err && err.message || err) }); }
+};`;
+/* Headless screenshot harnesses (tools/shoot.py: --virtual-time-budget) fast-forward time while no network fetch is
+   pending, and Worker decode time is not a fetch: their settle() waits would end before the sheets land. There (headless,
+   not the perf harness, or window.AOM_SHEET_SYNC = true) sheets are decoded on the main thread right after the image
+   load (same pixels, same indexing); real browsers and tools/perf.py use the worker. */
+const SHEET_SYNC = typeof window !== 'undefined' && (window.AOM_SHEET_SYNC === true || (window.AOM_SHEET_SYNC !== false && !window.PERF_CFG && typeof navigator !== 'undefined' && /HeadlessChrome/.test(navigator.userAgent)));
+function sheetLoadPalSync(rec, fin) {
+  const img = new Image();
+  img.onload = () => {
+    if (SHEETS.byId[rec.id] !== rec) return fin(new Error('released'));
+    try {
+      const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+      palBuild(rec, palIndex(new Uint32Array(g.getImageData(0, 0, w, h).data.buffer), w, h)); fin();
+    } catch (e) { SHEET_PAL.fails++; sheetLoadRGBA(rec, fin); }
+  };
+  img.onerror = () => fin(new Error(rec.id + '.png failed to load'));
+  img.src = SHEET_BASE + rec.id + '.png';
+}
+function palWorker() {
+  if (!SHEET_PAL.workers.length) {
+    const url = URL.createObjectURL(new Blob([SHEET_WORKER_SRC], { type: 'text/javascript' }));
+    const n = Math.max(1, Math.min(2, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+    for (let i = 0; i < n; i++) {
+      const w = new Worker(url);
+      w.onmessage = e => { const J = SHEET_PAL.jobs.get(e.data.job); if (!J) return; SHEET_PAL.jobs.delete(e.data.job); J.done(e.data); };
+      // the worker script itself failed (CSP, no worker support): give up on the palette path, reload its jobs as RGBA
+      w.onerror = ev => { if (ev && ev.preventDefault) ev.preventDefault(); palDisable(); };
+      SHEET_PAL.workers.push(w);
+    }
+  }
+  return SHEET_PAL.workers[SHEET_PAL.next++ % SHEET_PAL.workers.length];
+}
+function palDisable() {
+  SHEET_PAL.ok = false;
+  for (const w of SHEET_PAL.workers) try { w.terminate(); } catch (e) { /* gone */ }
+  SHEET_PAL.workers.length = 0;
+  const jobs = [...SHEET_PAL.jobs.values()]; SHEET_PAL.jobs.clear(); for (const J of jobs) J.done({ err: 'worker failed' });
+}
+function sheetLoadPal(rec, fin) {
+  if (SHEET_SYNC) return sheetLoadPalSync(rec, fin);
+  const fallback = why => { SHEET_PAL.fails++; if (typeof console !== 'undefined') console.warn('[sheets] ' + rec.id + ': indexed decode failed (' + why + '), loading RGBA'); sheetLoadRGBA(rec, fin); };
+  try {
+    const x = new XMLHttpRequest(); x.open('GET', SHEET_BASE + rec.id + '.png', true); x.responseType = 'arraybuffer';
+    x.onload = () => {
+      if (!((x.status === 200 || x.status === 0) && x.response && x.response.byteLength)) return fin(new Error(rec.id + '.png -> HTTP ' + x.status));
+      if (!palOn()) return sheetLoadRGBA(rec, fin);
+      let w; try { w = palWorker(); } catch (e) { palDisable(); return sheetLoadRGBA(rec, fin); }
+      const job = ++SHEET_PAL.seq;
+      SHEET_PAL.jobs.set(job, { done: d => {
+        if (d.err) return d.err === 'worker failed' ? sheetLoadRGBA(rec, fin) : fallback(d.err);
+        if (SHEETS.byId[rec.id] !== rec) return fin(new Error('released'));
+        palBuild(rec, d); fin();
+      } });
+      w.postMessage({ job, buf: x.response }, [x.response]);
+    };
+    x.onerror = () => sheetLoadRGBA(rec, fin);   // e.g. file:// without XHR access: the image loader may still work
+    x.send();
+  } catch (e) { sheetLoadRGBA(rec, fin); }
+}
+/* Generic indexed decode for other sheet-like textures (vfx round 7: the VFX flipbooks, gfx-render.js "Flipbooks"):
+   url -> done({ w, h, idx (rows bottom-up), pal (Uint32Array 256), n }) or done(null, why) when the palette path is off
+   or fails (the caller then loads RGBA). Same worker pool / headless main-thread rule as the sprite sheets. */
+function palDecodeURL(url, semi, done) {
+  if (!palOn()) return done(null, 'off');
+  const viaImage = () => {
+    const img = new Image();
+    img.onload = () => { try { const w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0); done(palIndex(new Uint32Array(g.getImageData(0, 0, w, h).data.buffer), w, h, semi)); } catch (e) { done(null, String(e && e.message || e)); } };
+    img.onerror = () => done(null, 'load'); img.src = url;
+  };
+  if (SHEET_SYNC) return viaImage();
+  try {
+    const x = new XMLHttpRequest(); x.open('GET', url, true); x.responseType = 'arraybuffer';
+    x.onload = () => {
+      if (!((x.status === 200 || x.status === 0) && x.response && x.response.byteLength)) return done(null, 'HTTP ' + x.status);
+      if (!palOn()) return done(null, 'off');
+      let w; try { w = palWorker(); } catch (e) { palDisable(); return done(null, 'worker'); }
+      const job = ++SHEET_PAL.seq;
+      SHEET_PAL.jobs.set(job, { done: d => d.err ? done(null, d.err) : done(d) });
+      w.postMessage({ job, buf: x.response, semi: !!semi }, [x.response]);
+    };
+    x.onerror = () => viaImage();
+    x.send();
+  } catch (e) { done(null, 'xhr'); }
+}
+function palBuild(rec, d) {
+  const pb = new Uint8Array(d.pal.buffer, 0, 1024), alpha = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) alpha[i] = pb[i * 4 + 3];
+  const t = new THREE.DataTexture(pb, 256, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;   // raw bytes (LinearEncoding): the index map's encoding decodes
+  rec.pal = { W: d.w, H: d.h, idx: d.idx, tex: t, alpha, colours: d.n }; rec.texW = d.w; rec.texH = d.h;
+}
+// Page layout of a ready sheet: [{ y0, h, tex, gpu, used, q }] (see above). One page unless indexed + large.
+function sheetPageDefs(rec) {
+  const j = rec.json, H = rec.texH, fh = j.frameH, one = [{ y0: 0, h: H, tex: rec.tex || null, gpu: false, used: 0, q: false }];
+  // mob sheets only: the player's layers keep every page resident anyway (sheetWantAll keep), so paging them saves nothing
+  if (!rec.pal || rec.texW * H < PAGE_MIN || !pageOn() || ((rec.entry && rec.entry.layer) || j.layer) !== 'mob') return one;
+  const nd = j.dirs.length; let base = 0;
+  for (const a of ['idle', 'walk', 'talk']) {
+    if (!sheetHas(j, a)) continue;
+    for (let d = 0; d < nd; d++) { const r = sheetRect(j, a, d, 0); if (r) base = Math.max(base, r.y + fh); }
+  }
+  if (!base || base >= H) return one;
+  const P = [{ y0: 0, h: base, tex: null, gpu: false, used: 0, q: false }], per = Math.max(1, Math.floor(PAGE_ROWS / fh)) * fh;
+  for (let y = base; y < H; y += per) P.push({ y0: y, h: Math.min(per, H - y), tex: null, gpu: false, used: 0, q: false });
+  return P;
+}
+function sheetPages(rec) { return rec.pages || (rec.pages = [{ y0: 0, h: rec.texH, tex: rec.tex, gpu: false, used: 0, q: false }]); }   // (records made elsewhere, e.g. tools/shoot.js, have one page)
+// Page index of a frame whose rect starts at sheet row y.
+function sheetPageAt(rec, y) { const P = sheetPages(rec); for (let i = P.length - 1; i > 0; i--) if (y >= P[i].y0) return i; return 0; }
+// Texture of page i (created on first use; marks the page used now).
+function sheetPageTex(rec, i) {
+  const p = sheetPages(rec)[i]; p.used = typeof time !== 'undefined' ? time : 0;
+  if (p.tex) return p.tex;
+  if (!rec.pal) return (p.tex = rec.tex);
+  const X = rec.pal, a = (X.H - p.y0 - p.h) * X.W;
+  const t = new THREE.DataTexture(X.idx.subarray(a, a + p.h * X.W), X.W, p.h, THREE.RedFormat, THREE.UnsignedByteType);
+  t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.flipY = false;
+  t.onUpdate = () => { p.gpu = true; }; if (typeof sprTexEnc === 'function') sprTexEnc(t); t.needsUpdate = true;
+  return (p.tex = t);
+}
+// Queue every page of a sheet for an idle-time upload (combat prefetch). keep: never page out (the player's layers).
+function sheetWantAll(rec, keep) {
+  if (keep) rec.keep = true;
+  if (rec.allQ || !rec.ok) return; rec.allQ = true;
+  const P = sheetPages(rec), t = typeof time !== 'undefined' ? time : 0;
+  for (let i = 0; i < P.length; i++) { const p = P[i]; if (!p.gpu) { p.used = t; sheetUpQueue(rec, i); } }
+}
+// Give back the GPU memory of pages (other than page 0) nothing drew for PAGE_IDLE seconds. Called every ~2 s.
+function sheetPagesSweep() {
+  if (typeof time === 'undefined') return;
+  for (const id in SHEETS.byId) {
+    const rec = SHEETS.byId[id], P = rec.pages; if (!P || P.length < 2 || rec.keep) continue;
+    for (let i = 1; i < P.length; i++) { const p = P[i]; if (p.gpu && !p.q && time - p.used > PAGE_IDLE) { p.tex.dispose(); p.gpu = false; rec.allQ = false; SHEETS.pagedOut = (SHEETS.pagedOut || 0) + 1; } }
+  }
+}
+// GPU bytes of the sheets (textures three has uploaded): { MB, sheets, pages, rgbaMB, indexMB }.
+function sheetsMem() {
+  let idx = 0, rgba = 0, n = 0, pg = 0;
+  for (const id in SHEETS.byId) {
+    const rec = SHEETS.byId[id]; if (!rec.ok) continue; let any = false;
+    if (rec.pal) { for (const p of rec.pages || []) if (p.gpu) { idx += rec.texW * p.h; pg++; any = true; } if (any) idx += 1024; }
+    else if (rec.tex && (rec.up || rec.upd)) { rgba += rec.texW * rec.texH * 4; pg++; any = true; }
+    if (any) n++;
+  }
+  const MB = b => +(b / 1048576).toFixed(2);
+  return { MB: MB(idx + rgba), indexMB: MB(idx), rgbaMB: MB(rgba), sheets: n, pages: pg, loaded: SHEETS.loaded.length, palFails: SHEET_PAL.fails, pagedOut: SHEETS.pagedOut || 0 };
+}
+SHEETS.mem = sheetsMem;
 function sheetId(body, layer, variant) { return SHEETS.byKey[sheetKey(body, layer, variant)] || null; }
+// Mob / NPC sheet record by type (hot path: no key string per entity per frame). The id per (layer, body) is cached
+// once the index is ready; the record itself is looked up (and reloaded after a release) every call.
+const SHEET_IDC = { mob: new Map(), npc: new Map() };
+function sheetRecT(body, layer) {
+  const C = SHEET_IDC[layer]; let id = C.get(body);
+  if (id === undefined) { id = sheetId(body, layer, null); C.set(body, id); }
+  return id ? sheetTag(SHEETS.byId[id] || loadSheet(id)) : null;
+}
 // Load record for (body, layer, variant): starts the load on first call.
 // Returns null when the index has no such sheet.
-function sheetRec(body, layer, variant) {
+// tag: map id the sheet is wanted for (default: the current map); release (sheetsRelease) keeps the sheets of the
+// maps still resident in the world LRU. One compare per call on the hot path.
+function sheetRec(body, layer, variant, tag) {
   const id = sheetId(body, layer, variant); if (!id) return null;
-  return SHEETS.byId[id] || loadSheet(id);
+  return sheetTag(SHEETS.byId[id] || loadSheet(id), tag);
 }
+function sheetTag(rec, tag) {
+  const t = tag || (typeof map !== 'undefined' && map ? map.id : null);
+  if (t && rec.lt !== t) { rec.lt = t; (rec.maps || (rec.maps = new Set())).add(t); }
+  return rec;
+}
+// While a sheet is still loading, an entity shows only its contact blob: the procedural fallback frames (buildFrames:
+// every animation frame painted + pixelized) are built only for entities whose sheet is missing or failed. Building
+// them for every mob type on a map's first frame was 0.7-2.9 s per warp (perf round 3).
+function pendingBlob(e, r) { placeBlob(null, e.x, groundH(e.x, e.y), e.y, r, (e.z || 0) / PXU, true); e.sheetH = 0; return true; }
 const recReady = r => !!(r && r.ok);
+/* GPU upload in idle time: a mob / NPC sheet is shown (else its contact blob) once its texture has been uploaded by
+   renderer.initTexture in an idle callback, one sheet per callback, instead of three uploading every sheet that became
+   ready inside the same render. Only sheets an entity actually asks for are uploaded (a map's prefetched boss sheet,
+   60 MB, stays CPU-side until its boss appears). The player / companions / Huginn are not gated. */
+// Queue entries: rec, page pairs. Page 0 of a sheet sets rec.up (the sheet may be shown); page-0 uploads (entities
+// waiting to appear) go before prefetched pages (q1).
+const SHEET_UP = { q: [], q1: [], busy: false };
+function sheetUpQueue(rec, pg) {
+  pg = pg | 0; const p = rec.pages && rec.pages[pg];
+  if (pg === 0 ? (rec.up || rec.upQ) : (!p || p.q || p.gpu)) return;
+  if (pg === 0) rec.upQ = true; if (p) p.q = true;
+  (pg ? SHEET_UP.q1 : SHEET_UP.q).push(rec, pg); sheetUpPump();
+}
+// Upload the next queued (rec, page): page-0 uploads first. Returns false when the queue is empty.
+function sheetUpOne() {
+  const Q = SHEET_UP.q.length ? SHEET_UP.q : SHEET_UP.q1, rec = Q.shift(), pg = Q.shift();
+  if (!rec) return false;
+  const p = rec.pages && rec.pages[pg]; if (p) p.q = false; if (!pg) rec.upQ = false;
+  if (rec.ok && SHEETS.byId[rec.id] === rec) {
+    try { renderer.initTexture(sheetPageTex(rec, pg)); if (rec.pal) renderer.initTexture(rec.pal.tex); } catch (e) { /* uploads on first draw instead */ }
+    if (rec.tex && !rec.pal) rec.upd = true;
+  }
+  if (!pg) rec.up = true;
+  return true;
+}
+function sheetUpPump() {
+  if (SHEET_UP.busy || !(SHEET_UP.q.length || SHEET_UP.q1.length)) return; SHEET_UP.busy = true;
+  const idle = typeof requestIdleCallback === 'function' ? f => requestIdleCallback(f, { timeout: 120 }) : f => setTimeout(f, 30);
+  idle(() => { SHEET_UP.busy = false; sheetUpOne(); sheetUpPump(); });
+}
+/* Harnesses only (tools/shoot.js snap): upload everything queued now, synchronously. A harness that steps update() /
+   render() in a synchronous loop never yields to requestIdleCallback, so a sheet that finished decoding late in its
+   settle() wait was queued by the stepped frames and never uploaded before the capture (the Ashen King in 08_boss: only
+   his bar was drawn). Players never need this: the game loop yields every frame and the idle callback (timeout 120 ms)
+   runs. Returns the number of uploads. A still-pending idle callback later finds the queue empty and just re-pumps. */
+function sheetUpFlush() { let n = 0; while (sheetUpOne()) n++; return n; }
+SHEETS.flushUploads = sheetUpFlush;
+// True while the index or any requested sheet is still loading (harnesses wait on this before a capture).
+SHEETS.busy = () => { if (!SHEETS.indexReady) return true; for (const id in SHEETS.byId) if (!SHEETS.byId[id].done) return true; return false; };
+const recShow = r => !!(r && r.ok) && (r.up || (sheetUpQueue(r, 0), false));
 const recPending = r => !!(r && !r.done);
 
 /* ---------- Prefetch (current map + player gear) ---------- */
+// Mounted look (contract v4): P.mounted truthy and the class has a mount_body sheet. Every layer then comes from the
+// mount_* sheets (their frames differ from the on-foot ones); a layer without a mount sheet (e.g. a weapon family the
+// mount set does not cover, the shield) is left off while riding rather than drawn in the wrong frame.
+// Mount sets borrowed while a class has none of its own (vfx round 7): a riding Rune Jarl uses the Ash Knight's warg sheets
+// (knight_<g>.mount_*: same weapons, same warg) until rune_jarl_<g>.mount_* are in an index; its own set wins as soon as
+// it is listed (checked on every call, no caching). Keys are class ids, values the class whose mount set is borrowed.
+const MOUNT_BORROW = { rune_jarl: 'knight' };
+// Body key whose mount_* sheets a player body key rides with: its own, else the borrowed class's, else null.
+function mountBody(body) {
+  if (sheetId(body, 'mount:body', null)) return body;
+  const i = body.lastIndexOf('_'), fb = i > 0 ? MOUNT_BORROW[body.slice(0, i)] : null, alt = fb ? fb + body.slice(i) : null;
+  return alt && sheetId(alt, 'mount:body', null) ? alt : null;
+}
+function playerMountLook(body) { return !!(P && P.mounted) && !!mountBody(body); }
 function playerLayerWants() {
   if (!P) return null;
-  const body = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`;
-  const w = [[body, 'body', null], [body, 'hair', P.hairStyle === 'long' ? 'long' : 'spiky']];
+  const pb = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`, mb = P.mounted ? mountBody(pb) : null;
+  if (mb) {
+    const body = mb, hv = P.hairStyle === 'long' ? 'long' : 'spiky', wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null, w = [[body, 'mount:body', null]];
+    if (sheetId(body, 'mount:hair', hv)) w.push([body, 'mount:hair', hv]);
+    if (P.equip && P.equip.shield) { const sv = (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard'; if (sheetId(body, 'mount:shield', sv)) w.push([body, 'mount:shield', sv]); }
+    if (wv && sheetId(body, 'mount:weapon', wv)) w.push([body, 'mount:weapon', wv]);
+    const hk = playerHeadgearKey(); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
+    return w;
+  }
+  const body = pb, w = [[body, 'body', null], [body, 'hair', P.hairStyle === 'long' ? 'long' : 'spiky']];
   if (P.equip && P.equip.shield) w.push([body, 'shield', (typeof shieldVariant === 'function' && shieldVariant(body)) || 'guard']);   // shieldVariant: action.js (Oathkeeper -> 'tower')
   const wv = typeof S !== 'undefined' && S ? WTYPE_VARIANT[S.wtype] : null; if (wv) w.push([body, 'weapon', wv]);
   const hk = playerHeadgearKey(); if (hk && sheetId(hk, 'headgear', null)) w.push([hk, 'headgear', null]);
@@ -167,20 +486,66 @@ function prefetchSheets() {
   if (!SHEETS.indexReady) return;
   try {
     const pw = playerLayerWants(); if (pw && sheetId(pw[0][0], 'body', null)) for (const w of pw) sheetRec(w[0], w[1], w[2]);
+    if (P && P.cls === 'wolfhunter') huginnRec();                               // Blitz Beat's raven (small sheet)
+    for (const c of compList()) compRec(c);
     if (typeof map === 'undefined' || !map) return;
+    prefetchMapSheets(map, mobs, null);
+  } catch (e) { /* prefetch is best-effort */ }
+}
+// Sheets of a map (current, or a neighbour from GFX.prefetchHooks with its generated map object): its mob types
+// (with summons) and NPCs. tag = map id for the release bookkeeping.
+function prefetchMapSheets(M, live, tag) {
+  {
     // Generic over map data (no map list): every MOBS key the map definition names — spawns ([type, n] rows in any
     // array field), boss / bosses, plain type strings — plus live mobs, closed over summons (abil.mob, transitively).
     const types = new Set(), isMob = t => typeof t === 'string' && typeof MOBS !== 'undefined' && !!MOBS[t];
-    for (const k in map.d) {
-      const v = map.d[k];
+    for (const k in M.d) {
+      const v = M.d[k];
       if (isMob(v)) types.add(v);
       else if (Array.isArray(v)) for (const r of v) { if (isMob(r)) types.add(r); else if (Array.isArray(r) && isMob(r[0])) types.add(r[0]); else if (r && isMob(r.type)) types.add(r.type); }
     }
-    for (const m of mobs || []) types.add(m.type);
+    for (const m of live || []) types.add(m.type);
     for (const t of types) for (const a of (MOBS[t] && MOBS[t].abil) || []) if (a.mob) types.add(a.mob);   // Set iteration visits added summons too
-    for (const t of types) sheetRec(t, 'mob', null);
-    for (const n of map.npcs || []) sheetRec(n.id, 'npc', null);
-  } catch (e) { /* prefetch is best-effort */ }
+    for (const t of types) sheetRec(t, 'mob', null, tag);
+    for (const n of M.npcs || []) sheetRec(n.id, 'npc', null, tag);
+  }
+}
+/* ---------- Neighbour prefetch + release (perf round 3 hooks in gfx-world.js) ----------
+   GFX.prefetchHooks: in idle time after a map is entered, gfx-world generates each neighbour map; its sheets start
+   loading then (JSON + PNG decode; the GPU upload still happens on first draw). GFX.worldHooks: when the world LRU
+   frees a map, every loaded sheet that no resident map, no prefetched neighbour and not the player / companions need is
+   released (texture disposed, its sprite batch removed); sheetRec reloads it on demand. */
+const SHEET_NEAR = { map: null, ids: new Set() };
+function sheetsPrefetchNeighbour(id, m) {
+  if (!SHEETS.indexReady || !m || !m.d) return;
+  if (SHEET_NEAR.map !== map) { SHEET_NEAR.map = map; SHEET_NEAR.ids.clear(); }
+  SHEET_NEAR.ids.add(id); prefetchMapSheets(m, null, id);
+}
+function sheetsRelease(freedId, resident) {
+  const keepMaps = new Set(resident || []); if (typeof map !== 'undefined' && map) keepMaps.add(map.id);
+  if (SHEET_NEAR.map === map) for (const id of SHEET_NEAR.ids) keepMaps.add(id);
+  const keep = new Set();
+  const want = playerLayerWants(); if (want) for (const w of want) { const id = sheetId(w[0], w[1], w[2]); if (id) keep.add(id); }
+  if (P) { const b = `${P.cls}_${P.gender === 'f' ? 'f' : 'm'}`, mb = mountBody(b); for (const k in SHEETS.byId) if (k.indexOf(b + '.') === 0 || (mb && mb !== b && k.indexOf(mb + '.mount_') === 0)) keep.add(k); }   // on-foot + mount set of the current class (or the one it borrows)
+  for (const c of compList()) if (c && c._gid) keep.add(c._gid);
+  keep.add('pet_huginn');
+  let n = 0;
+  for (const id in SHEETS.byId) {
+    const rec = SHEETS.byId[id]; if (!rec.done || keep.has(id)) continue;
+    let used = false; if (rec.maps) for (const t of rec.maps) if (keepMaps.has(t)) { used = true; break; }
+    if (used) continue;
+    let live = false; VIS.forEach(v => { if (!live && v.recs && v.recs.indexOf(rec) >= 0) live = true; }); if (live) continue;
+    if (rec.batches && typeof ibDrop === 'function') for (const B of rec.batches.slice()) if (B) ibDrop(B);
+    if (rec.tex) rec.tex.dispose();
+    if (rec.pages) for (const p of rec.pages) if (p.tex && p.tex !== rec.tex) p.tex.dispose();
+    if (rec.pal) rec.pal.tex.dispose();
+    delete SHEETS.byId[id]; const i = SHEETS.loaded.indexOf(id); if (i >= 0) SHEETS.loaded.splice(i, 1); n++;
+  }
+  SHEETS.released = (SHEETS.released || 0) + n;
+}
+if (typeof GFX !== 'undefined' && GFX) {
+  if (Array.isArray(GFX.prefetchHooks)) GFX.prefetchHooks.push(sheetsPrefetchNeighbour);
+  if (Array.isArray(GFX.worldHooks)) GFX.worldHooks.push(sheetsRelease);
 }
 
 /* ---------- Frame math ---------- */
@@ -205,7 +570,8 @@ function sheetUV(rect, texW, texH) { return { u0: rect.x / texW, u1: (rect.x + r
 // +2 = E / screen right, +-4 = N). prev gives hysteresis so the facing does not flicker.
 const SHEET_DIR8 = ['S', 'SE', 'E', 'NE', 'N'];
 function facingSector(fx, fy, yaw, prev) {
-  const rx = Math.cos(yaw), ry = -Math.sin(yaw), fwx = -Math.sin(yaw), fwy = -Math.cos(yaw);
+  const same = typeof SPRF !== 'undefined' && SPRF.yaw === yaw, cy = same ? SPRF.cy : Math.cos(yaw), sy = same ? SPRF.sy : Math.sin(yaw);   // (syncEntities caches the camera yaw's cos / sin)
+  const rx = cy, ry = -sy, fwx = -sy, fwy = -cy;
   const sr = fx * rx + fy * ry, sf = fx * fwx + fy * fwy;
   if (Math.abs(sr) + Math.abs(sf) < 1e-6) return prev === undefined ? 0 : prev;
   const a = Math.atan2(sr, -sf), step = Math.PI / 4;
@@ -255,7 +621,7 @@ function sheetPlayerPose(v, body) {
   else if (P.hurtT > 0.12) { act = 'hurt'; f = held('hurt'); }
   else if (pk >= 0 && pk < 0.3 && sheetHas(body, 'pickup')) { act = 'pickup'; f = Math.floor(pk / 0.3 * n('pickup')); }
   else if (P.sitting) { act = 'sit'; f = 0; }
-  else if (P.moving) { act = 'walk'; f = Math.floor(P.walk * 1.26 * n('walk') / 6) % n('walk'); }
+  else if (P.moving) { act = 'walk'; f = Math.floor(P.walk * 1.26 * n('walk') / 6 * (v.stride || 1)) % n('walk'); }
   else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = Math.floor(time * fps('stance')) % n('stance'); }
   else { act = 'idle'; f = Math.floor(time * fps('idle')) % n('idle'); }
   const r = sheetFrame(body, act, f), ra = r ? r.act : 'idle', rf = r ? r.f : 0;
@@ -301,41 +667,53 @@ function makeSheetVis(recs, o = {}) {
   const sorted = recs.slice().sort((a, b) => LAYER_ORDER.indexOf(a.json.layer || (a.entry && a.entry.layer) || 'body') - LAYER_ORDER.indexOf(b.json.layer || (b.entry && b.entry.layer) || 'body'));
   // layers share one transform; creation order = draw order (same depth, LessEqual)
   for (const rec of sorted) {
-    const layer = layerOf(rec), base = { id: rec.id, rec, layer, rk: -1, ry: -1, r: { x: 0, y: 0, w: 0, h: 0 }, uv: [0, 0, 1, 1], on: false, geo: null, mat: null, mesh: null, xray: null, caster: null, fa: 'idle', ff: 0 };
+    const layer = layerOf(rec), base = { id: rec.id, rec, layer, rk: -1, ry: -1, pg: 0, r: { x: 0, y: 0, w: 0, h: 0 }, uv: [0, 0, 1, 1], on: false, geo: null, mat: null, mesh: null, xray: null, caster: null, fa: 'idle', ff: 0 };
     if (o.batch) { v.layers.push(base); continue; }
+    const tex = sheetPageTex(rec, 0);
     const hair = layer === 'hair', hat = layer === 'headgear';
     // Headgear: the plane's 4 vertices are rewritten every frame (anchor offset + head roll), so its mesh keeps the
     // body's transform (same sort depth as the other layers: creation order = draw order) and the sun caster and
     // the x-ray, which share the geometry, follow the hat exactly.
     const geo = hat ? new THREE.PlaneGeometry(1, 1) : sheetPlane(rec.json);
     if (hat) geo.attributes.position.setUsage(THREE.DynamicDrawUsage);
-    const mat = fxSpriteMat(rec.tex, hair); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+    const mat = fxSpriteMat(tex, hair, rec); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
     const L = Object.assign(base, { geo, uv0: geo.attributes.uv.array.slice(), mat, mesh });
     // hair: clip line uniform shared by the colour, x-ray and caster materials (hideHair 'top')
     if (hair) L.clipU = mat.userData.u.uClip;
-    if (!o.noCast) { L.caster = makeCaster(geo, rec.tex); if (hair) hairClipPatch(L.caster.customDepthMaterial, L.clipU); v.meshes.push(L.caster); }
+    if (!o.noCast) { L.caster = makeCaster(geo, tex, rec); if (hair) hairClipPatch(L.caster.customDepthMaterial, L.clipU); v.meshes.push(L.caster); }
     if (o.xray) {
-      const xm = spriteMat(rec.tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
+      const xm = sprPalMat(spriteMat(tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
         // stencil: each covered pixel is tinted once even where layers overlap
-        stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+        stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp }), rec);
       if (hair) hairClipPatch(xm, L.clipU);
       L.xray = new THREE.Mesh(geo, xm); L.xray.renderOrder = 5; scene.add(L.xray); v.meshes.push(L.xray);
     }
+    layerPage(L, 0);
     v.layers.push(L); v.meshes.push(mesh);
   }
   if (o.glow) { v.glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.glow, color: new THREE.Color(o.glow), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 })); scene.add(v.glow); v.meshes.push(v.glow); }
   v.dispose = () => { for (const m of v.meshes) disposeMesh(m); for (const L of v.layers) if (L.geo) L.geo.dispose(); };
   return v;
 }
-// Select frame f of `act` (direction d) on a layer. The UV rect is recomputed only when the frame changes.
+// Point a layer's own materials (colour, sun caster, x-ray) at page pi of its sheet.
+function layerPage(L, pi) {
+  const rec = L.rec, p = sheetPages(rec)[pi], t = sheetPageTex(rec, pi); L.pg = pi;
+  sprMapSet(L.mat, t); const u = L.mat.userData.u; if (u && u.uTexOff) u.uTexOff.value.set(0, rec.texH - p.y0 - p.h);
+  if (L.caster) L.caster.customDepthMaterial.map = t;
+  if (L.xray) L.xray.material.map = t;
+}
+// Select frame f of `act` (direction d) on a layer. The UV rect is recomputed only when the frame changes; UVs are
+// relative to the frame's page (the whole sheet when it has one page).
 function setLayerFrame(L, act, d, f) {
-  const j = L.rec.json, r0 = sheetFrame(j, act, f);
+  const rec = L.rec, j = rec.json, r0 = sheetFrame(j, act, f);
   if (!r0) { L.on = false; if (L.mesh) L.mesh.visible = false; return null; }
   const r = sheetRect(j, r0.act, d, r0.f, L.r);
   L.fa = r0.act; L.ff = r0.f; L.on = true; if (L.mesh) L.mesh.visible = true;
   if (L.rk !== r.x || L.ry !== r.y) {
     L.rk = r.x; L.ry = r.y;
-    const tw = L.rec.texW, th = L.rec.texH, u0 = r.x / tw, u1 = (r.x + r.w) / tw, v0 = 1 - (r.y + r.h) / th, v1 = 1 - r.y / th;
+    const P = sheetPages(rec), pi = P.length > 1 ? sheetPageAt(rec, r.y) : 0, pg = P[pi];
+    if (pi !== L.pg && L.mat) layerPage(L, pi); else L.pg = pi;
+    const y = r.y - pg.y0, tw = rec.texW, th = pg.h, u0 = r.x / tw, u1 = (r.x + r.w) / tw, v0 = 1 - (y + r.h) / th, v1 = 1 - y / th;
     L.uv[0] = u0; L.uv[1] = v0; L.uv[2] = u1; L.uv[3] = v1;
     if (L.geo) {
       const a = L.geo.attributes.uv, s = a.array, o = L.uv0;
@@ -358,6 +736,7 @@ function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
     else { r = setLayerFrame(L, act, d, f); if (!body) body = L; if (L.layer === 'hair') hair = L; }
     if (!rect) rect = r;
     if (v.batched) { if (r) sprInstance(L, e.x, gh + z, e.y, sx, st, flip); continue; }
+    if (L.pg) L.rec.pages[L.pg].used = time;
     L.mesh.scale.set(sx * st.sx * k, st.sy * k / COSP, 1); L.mesh.position.set(e.x, gh + z, e.y); L.mesh.rotation.y = cam.yaw;
     if (L.layer === 'hair') applyHairRamp(L.mat, hairHex);
     sprApply(L.mat, st, flip);
@@ -376,7 +755,8 @@ function placeSheetVis(v, e, act, d, f, flip, st, hairHex) {
    `rot` degrees about it. Vertices are in the body plane's local units (feet at the origin, y up); the mesh then
    gets the body's scale (mirror, squash, 1/COSP stretch), so the hat shears exactly like the composited image. */
 function headAnchor(bodyL) {
-  const j = bodyL.rec.json, H = j.anchors && j.anchors.head, A = H && H[bodyL.fa], D = A && A[_hatD];
+  const j = bodyL.rec.json, H = j.anchors && j.anchors.head; if (!H) return null;
+  const A = H[bodyL.fa] || (j.actions[bodyL.fa] && H[j.actions[bodyL.fa].alias]), D = A && A[_hatD];   // alias rows (mount sit/pickup/stance)
   return D ? D[Math.max(0, Math.min(D.length - 1, bodyL.ff | 0))] : null;
 }
 let _hatD = 0;
@@ -408,7 +788,7 @@ function hatHair(hair, hat) {
   if (clip === undefined) { U.value.set(0, 0, 1); return; }
   const ha = hat.head, rot = ha[2] * Math.PI / 180, dy = clip - hj.anchor[1];
   const px = ha[0] - Math.sin(rot) * dy, py = ha[1] + Math.cos(rot) * dy, nx = -Math.sin(rot), ny = Math.cos(rot);   // frame px, y down
-  const tw = hair.rec.texW, th = hair.rec.texH, rx = hair.r.x, ry = hair.r.y;
+  const pg = sheetPages(hair.rec)[hair.pg], tw = hair.rec.texW, th = pg.h, rx = hair.r.x, ry = hair.r.y - pg.y0;   // page-relative
   // pixel x = u*tw - rx, pixel y = (1 - v)*th - ry
   U.value.set(tw * nx, -th * ny, (-rx - px) * nx + (th - ry - py) * ny);
 }
@@ -442,22 +822,36 @@ function playerSheetRecs() {
   const bj = recs[0].json;   // a hat needs the body's head anchors (contract v3); without them it is left off
   return recs.filter(r => recReady(r) && (layerOf(r) !== 'headgear' || hasHeadAnchors(bj)));
 }
+// Mount / dismount: a dust puff at the swap (the new layer set appears once all its sheets have loaded) and the
+// squash-and-stretch wobble of sprFrame, so the rider does not just pop. Map changes and the first frame stay quiet.
+const MOUNTFX = { was: undefined, map: null };
+function mountSwap(v, mnt) {
+  const same = MOUNTFX.map === map; if (same && MOUNTFX.was !== undefined && MOUNTFX.was !== mnt && typeof PFX !== 'undefined') {
+    const gh = groundH(P.x, P.y); v.sqT = time;
+    PFX.dust(P.x, gh, P.y, 16, 1.9); PFX.dust(P.x + (P.fx || 0) * 0.5, gh, P.y + (P.fy || 0) * 0.5, 8, 1.2); PFX.dust(P.x - (P.fx || 0) * 0.5, gh, P.y - (P.fy || 0) * 0.5, 8, 1.2);
+    if (typeof VFX !== 'undefined' && VFX.flip) VFX.flip('impact_dust', P.x, P.y, gh, { sc: 1.25, a: 0.9 });   // the flipbook puff (vfx round 7)
+  }
+  MOUNTFX.was = mnt; MOUNTFX.map = map;
+}
 function usingSheetPlayer() { return !!(P && playerSheetRecs()); }
 const PLAYER_VIS_OPT = { xray: true };
 // Called from syncEntities. Returns false when the procedural sprite should be used.
 function syncSheetPlayer() {
-  const recs = playerSheetRecs(); if (!recs) { P.sheetH = 0; return false; }
-  const v = setVis(P, recs, PLAYER_VIS_OPT); v.pRecs = recs;
-  const body = v.layers[0].rec.json;
+  const recs = playerSheetRecs();
+  if (!recs) { P.sheetH = 0; if (!SHEETS.indexReady) return pendingBlob(P, 0.45); const W = playerLayerWants(), b = W && sheetRec(W[0][0], W[0][1], W[0][2]); return recPending(b) ? pendingBlob(P, 0.45) : false; }
+  const v0 = VIS.get(P), v = setVis(P, recs, PLAYER_VIS_OPT); v.pRecs = recs;
+  for (let i = 0; i < recs.length; i++) if (!recs[i].keep) sheetWantAll(recs[i], true);   // the player fights any time: every page resident (idle-time uploads)
+  const body = v.layers[0].rec.json, mnt = !!(recs[0].entry && recs[0].entry.mounted);
+  if (v !== v0) { v.mounted = mnt; v.stride = mnt ? 0.72 : 1; if (v0 && v0.sheet) v.sector = v0.sector; mountSwap(v, mnt); }
   v.sector = facingSector(P.fx === undefined ? 1 : P.fx, P.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body);
   const st = sprFrame(v, P, { tint: pose.tint });
   const pl = placeSheetVis(v, P, pose.act, dd, pose.f, dflip, st, P.hair);
-  placeBlob(v, P.x, pl.gh, P.y, 0.45, pl.z, true);
+  placeBlob(v, P.x, pl.gh, P.y, v.mounted ? 0.85 : 0.45, pl.z, true);
   P.sheetH = v.layers[0].rec.visH;
   const dg = v.diag || (v.diag = { ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer) });
   dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.d = dd; dg.flip = dflip; dg.sector = v.sector; dg.rect = pl.rect;
-  sprMotion(v, P, st, P.sheetH / PXU);
+  sprMotion(v, P, st, P.sheetH / PXU, pl.gh);
   return true;
 }
 
@@ -476,9 +870,10 @@ function namedLook(d) {
   return (d._nl = { tint, scl, col: d.tint || d.glow || '#ffd070' });
 }
 function syncSheetMob(m) {
-  if (!SHEETS.indexReady) return false;
-  const rec = sheetRec(m.type, 'mob', null); if (!recReady(rec)) { m.sheetH = 0; return false; }
+  if (!SHEETS.indexReady) return pendingBlob(m, 0.45);
+  const rec = sheetRecT(m.type, 'mob'); if (!recShow(rec)) { m.sheetH = 0; return recPending(rec) || recReady(rec) ? pendingBlob(m, 0.45 * Math.max(1, (m.d && m.d.size) || 1)) : false; }
   const d = m.d, ghost = isGhost(m), v = setVis1(m, rec, d.glow, ghost), J = rec.json;
+  if (!rec.allQ && rec.pages.length > 1 && (m.state === 'chase' || m.hitFlash > 0 || m.atkAnim >= 0 || m.dead)) sheetWantAll(rec);   // combat prefetch of the attack / hurt / dead pages
   const pose = sheetMobPose(m, v, J); if (!pose) { m.sheetH = 0; disposeVis(v); VIS.delete(m); return false; }
   v.sector = facingSector(m.fx === undefined ? (m.dir || 1) : m.fx, m.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
@@ -493,7 +888,7 @@ function syncSheetMob(m) {
   m.sheetH = rec.visH * k;
   const hu = rec.visH * k / PXU;
   if (v.glow) { v.glow.position.set(m.x, gh + pz + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
-  sprMotion(v, m, st, hu);
+  sprMotion(v, m, st, hu, gh);
   const dg = v.diag || (v.diag = { id: rec.id }); dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.flip = dflip; dg.rect = rect;
   return true;
 }
@@ -502,8 +897,8 @@ function syncSheetMob(m) {
 const _NPCO = {};
 function npcTalking(n) { return typeof talkNPC !== 'undefined' && talkNPC === n && typeof $ === 'function' && $('dialog') && !$('dialog').hidden; }
 function syncSheetNPC(n) {
-  if (!SHEETS.indexReady) return false;
-  const rec = sheetRec(n.id, 'npc', null); if (!recReady(rec)) { n.sheetH = 0; return false; }
+  if (!SHEETS.indexReady) return pendingBlob(n, 0.45);
+  const rec = sheetRecT(n.id, 'npc'); if (!recShow(rec)) { n.sheetH = 0; return recPending(rec) || recReady(rec) ? pendingBlob(n, 0.45) : false; }
   const v = setVis1(n, rec, undefined, false), J = rec.json, talk = npcTalking(n);
   let fx = n.fx === undefined ? n.dir : n.fx, fy = n.fy === undefined ? 0.4 : n.fy;
   if (talk && P) { const dx = P.x - n.x, dy = P.y - n.y, dd = Math.hypot(dx, dy); if (dd > 0.05) { fx = dx / dd; fy = dy / dd; } }
@@ -519,9 +914,173 @@ function syncSheetNPC(n) {
   const pl = placeSheetVis(v, n, ract, dd, rf, dflip, st);
   placeBlob(v, n.x, pl.gh, n.y, 0.45 * Math.max(1, ((n.look && n.look.scale) || 1) * 0.8), pl.z, true);
   n.sheetH = rec.visH;
-  if (walk) sprMotion(v, n, st, rec.visH / PXU);
+  if (walk) sprMotion(v, n, st, rec.visH / PXU, pl.gh);
   const dg = v.diag || (v.diag = { id: rec.id }); dg.act = ract; dg.f = rf; dg.dir = dname;
   return true;
+}
+
+/* ---------- Companions (contract v4 pets) ----------
+   COMPANIONS: array owned by content (defined here as an empty window property if content has not declared it):
+     { kind: 'pet' | 'raven', sheet: 'pet_huginn' | 'mob_<type>' | a MOBS key, x, y, z (px above the ground, like
+       entities), fx, fy (facing), state: 'idle' | 'walk' | 'fly' | 'attack' | 'perch', scale, owner (entity, default P),
+       optional: atkAnim (0..1 drives the attack frames, like mobs), walk (distance counter for the walk cycle),
+       tint [r, g, b], opacity, hidden (skip drawing), manual (true = content drives it: the default follow below
+       never touches the entry), update(c, dt) (per-entry logic, called instead of the default follow) }
+   Every entry is one instance of its sheet's sprite batch (same InstancedMesh as the mobs of that sheet: no extra
+   draw call for a pet poring next to wild porings). Mob sheets used as pets are scaled to 0.6 unless `scale` is set.
+   Actions: pet_huginn has idle / fly / attack / perch; mob sheets map fly -> walk, perch -> idle; Huginn's walk ->
+   fly. `perch` puts the pet's anchor at the owner's anchor + perchOffset[dir] (owner frame px, mirrored with the
+   owner); its `front` flag draws it in front of (1) or behind (0) the owner's layers. In fly / attack the sheet
+   already draws the bird flyZ px above its anchor: x, y stay the ground point under it (its blob is drawn there). */
+if (typeof COMPANIONS === 'undefined') window.COMPANIONS = [];
+const NO_COMP = [];
+function compList() { return typeof COMPANIONS !== 'undefined' && Array.isArray(COMPANIONS) ? COMPANIONS : NO_COMP; }
+function sheetRecById(id) { return SHEETS.entries[id] ? sheetTag(SHEETS.byId[id] || loadSheet(id)) : null; }
+function huginnRec() { return SHEETS.indexReady ? (sheetRecById('pet_huginn') || sheetRec('huginn', 'pet', null)) : null; }
+// Load record of a companion's sheet: a sheet id, else a pet or MOBS key. Cached on the entry per sheet value.
+function compRec(c) {
+  if (!SHEETS.indexReady || !c || !c.sheet) return null;
+  if (c._gs !== c.sheet) { c._gs = c.sheet; c._gid = SHEETS.entries[c.sheet] ? c.sheet : sheetId(c.sheet, 'pet', null) || sheetId(c.sheet, 'mob', null) || sheetId(String(c.sheet).replace(/^mob_/, ''), 'mob', null); }
+  return c._gid ? sheetRecById(c._gid) : null;
+}
+const COMP_FB = { walk: ['walk', 'fly', 'idle'], fly: ['fly', 'walk', 'idle'], attack: ['attack', 'idle'], perch: ['perch', 'idle'], idle: ['idle'] };
+function compAction(J, state) {
+  const L = COMP_FB[state] || COMP_FB.idle;
+  for (let i = 0; i < L.length; i++) if (sheetHas(J, L[i])) return L[i];
+  return 'idle';
+}
+// Blitz Beat: the raven projectiles in flight this frame (drawn with Huginn's sheet), last position for the return.
+const RAVENS = { n: 0, x: 0, y: 0, zu: 0, t: -9, map: null };
+const _CE = { x: 0, y: 0, z: 0 }, _CO = { tint: undefined, opacity: undefined, ghost: false, scl: 1 };
+const HUG_BODY = 48, HUG_SCALE = 0.85;   // Huginn is drawn a bit under its sheet size by default: at 1.0 the raven reads as half the rider's size   // px above the anchor to the middle of the bird in fly / attack frames (pet_huginn)
+function syncRavenShots() {
+  RAVENS.n = 0;
+  if (typeof projs === 'undefined' || !projs.length) return;
+  let rec = null;
+  for (const p of projs) {
+    if (p.kind !== 'raven') continue;
+    RAVENS.n++; RAVENS.x = p.x; RAVENS.y = p.y; RAVENS.zu = p.zu; RAVENS.t = time; RAVENS.map = map;
+    rec = rec || huginnRec(); if (!recReady(rec)) continue;
+    const J = rec.json, v = setVis1(p, rec, undefined, false), to = p.to;
+    const dx = to ? to.x - p.x : p.vx, dy = to ? to.y - p.y : p.vy, d = Math.hypot(dx, dy, to ? chestH(to) - p.zu : 0);
+    v.sector = facingSector(dx || p.vx || 1, dy || p.vy || 0, cam.yaw, v.sector);
+    const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip;
+    // far: flap; the last 3 units: the dive strike, reaching its hit frame at the target
+    let act = 'fly', f = Math.floor(time * actFps(J.actions, 'fly') + p.x);
+    if (d < 3 && sheetHas(J, 'attack')) { act = 'attack'; const hf = (J.hit && J.hit.attack) || 3; f = Math.min(hf, Math.floor((1 - d / 3) * (hf + 1))); }
+    _CO.tint = undefined; _CO.opacity = undefined; _CO.scl = HUG_SCALE;
+    const st = sprFrame(v, p, _CO), k = st.scl;
+    _CE.x = p.x; _CE.y = p.y; _CE.z = (p.zu - HUG_BODY * k / PXU / COSP - groundH(p.x, p.y)) * PXU;
+    const pl = placeSheetVis(v, _CE, act, dd, f, dflip, st);
+    const dg = v.diag || (v.diag = { id: rec.id }); dg.act = act; dg.f = f; dg.dir = dir.name; dg.rect = pl.rect;
+  }
+}
+/* ---- DEFAULT COMPANION BEHAVIOUR (gfx placeholder; content overrides it) ----
+   Runs only for entries that have no logic of their own: c.manual !== true and no c.update function. Content takes
+   over per entry (c.manual = true, or c.update = fn(c, dt)) or globally by defining its own companionFollow(c, dt).
+   Pets trot to a spot behind the owner; a raven flies beside a moving owner and perches on the shoulder once the
+   owner stands still; while a Blitz Beat raven is in flight the owner's raven is hidden (it is the one diving) and
+   then flies back from where the dive ended. */
+if (typeof companionFollow !== 'function') window.companionFollow = function (c, dt) {
+  const o = c.owner || P; if (!o) return;
+  const g = c._gf || (c._gf = { still: 0, map: null, away: false });
+  if (g.map !== map || c.x === undefined) { g.map = map; c.x = o.x - (o.fx || 0) * 0.8; c.y = o.y - (o.fy || 1) * 0.8; c.z = 0; c.fx = o.fx; c.fy = o.fy; }
+  g.still = o.moving ? 0 : g.still + dt;
+  const raven = c.kind === 'raven';
+  if (raven && o === P && RAVENS.n > 0) { c.hidden = true; g.away = true; return; }
+  if (g.away) { g.away = false; c.hidden = false; if (RAVENS.map === map) { c.x = RAVENS.x; c.y = RAVENS.y; c.z = Math.max(0, (RAVENS.zu - groundH(c.x, c.y)) * PXU - 40); } c.state = 'fly'; }
+  const ofx = o.fx === undefined ? 1 : o.fx, ofy = o.fy || 0, ol = Math.hypot(ofx, ofy) || 1, ux = ofx / ol, uy = ofy / ol;
+  let tx, ty;
+  if (raven) { tx = o.x - uy * 0.7 - ux * 0.3; ty = o.y + ux * 0.7 - uy * 0.3; }
+  else { tx = o.x - ux * 1.1 - uy * 0.45; ty = o.y - uy * 1.1 + ux * 0.45; }
+  let dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy);
+  if (d > 12) { c.x = tx; c.y = ty; d = 0; }
+  c.z = Math.max(0, (c.z || 0) * Math.exp(-dt * 3) - dt * 10);
+  c.moving = false;
+  if (raven && c.state === 'perch' && !o.moving) { c.x = o.x; c.y = o.y; return; }
+  if (raven && !o.moving && g.still > 0.6 && Math.hypot(o.x - c.x, o.y - c.y) < 1.3 && c.z < 4) { c.state = 'perch'; c.x = o.x; c.y = o.y; return; }
+  const moveEps = raven ? 0.12 : 0.3;
+  if (d > moveEps) {
+    const sp = Math.min(d, dt * (raven ? Math.min(8, Math.max(3.5, d * 1.8)) : Math.min(7, Math.max(3, d * 4))));
+    c.x += dx / d * sp; c.y += dy / d * sp; c.fx = dx / d; c.fy = dy / d; c.walk = (c.walk || 0) + sp * 3.4;
+    c.state = raven ? 'fly' : 'walk'; c.moving = !raven;
+  } else if (raven) { c.state = 'fly'; if (!o.moving) { c.x += (o.x - c.x) * Math.min(1, dt * 4); c.y += (o.y - c.y) * Math.min(1, dt * 4); } c.fx = ofx; c.fy = ofy; }
+  else { c.state = 'idle'; c.moving = false; if (o.moving) { c.fx = ofx; c.fy = ofy; } }
+};
+/* Screen-space separation (vfx round 7). Content places the pet behind the hero on one side and Huginn at the other
+   shoulder in the hero's own frame, so when the hero walks across the screen both land in the same screen column and the
+   raven covers the pet. At draw time only (c.x / c.y are never changed): along the camera's right axis the pet keeps at
+   least SEP.pet on its side of the owner and a flying Huginn at least SEP.raven on the other side, lifted SEP.lift
+   higher. The side follows the pet (hysteresis), offsets ease in and out, and fade to 0 as Huginn leaves on a dive. */
+const COMP_SEP = { pet: 0.62, raven: 0.8, lift: 0.42, near: 3.2, side: 1 };
+function compSeparate(L, dt) {
+  if (typeof window !== 'undefined' && window.AOM_COMP_SEP === false) { for (const c of L) if (c) c._sepL = c._sepH = 0; return; }   // A/B switch
+  let pet = null, rav = null;
+  for (let i = 0; i < L.length; i++) { const c = L[i]; if (!c || c.hidden || c.x === undefined) continue; if (c.kind === 'raven') { if (!rav && !c.tint) rav = c; } else if (!pet) pet = c; }
+  const k = 1 - Math.exp(-dt * 7), rx = SPRF.rx, ry = SPRF.ry;
+  const ease = (c, lat, lift) => { if (!c) return; c._sepL = (c._sepL || 0) + (lat - (c._sepL || 0)) * k; c._sepH = (c._sepH || 0) + (lift - (c._sepH || 0)) * k; };
+  if (!pet || !rav || (pet.owner || P) !== (rav.owner || P)) { for (const c of L) if (c && (c._sepL || c._sepH)) ease(c, 0, 0); return; }
+  const o = pet.owner || P, lp = (pet.x - o.x) * rx + (pet.y - o.y) * ry;
+  if (lp > 0.25) COMP_SEP.side = 1; else if (lp < -0.25) COMP_SEP.side = -1;
+  const sd = COMP_SEP.side, dp = Math.hypot(pet.x - o.x, pet.y - o.y), wp = clamp((COMP_SEP.near + 1 - dp) / 1, 0, 1);
+  ease(pet, Math.max(0, COMP_SEP.pet - sd * lp) * sd * wp, 0);
+  const lr = (rav.x - o.x) * rx + (rav.y - o.y) * ry, dr = Math.hypot(rav.x - o.x, rav.y - o.y);
+  const flying = rav.state !== 'perch' && rav.state !== 'attack', wr = flying ? clamp((COMP_SEP.near - dr) / 1.2, 0, 1) : 0;
+  ease(rav, -Math.max(0, COMP_SEP.raven + sd * lr) * sd * wr, COMP_SEP.lift * wr);
+}
+function syncCompanions() {
+  const L = compList(); if (!L.length || !SHEETS.indexReady) return;
+  const dt = typeof SPRF !== 'undefined' ? SPRF.dt : 0.016;
+  for (let i = 0; i < L.length; i++) {
+    const c = L[i]; if (!c) continue;
+    if (typeof c.update === 'function') c.update(c, dt);
+    else if (!c.manual && typeof companionFollow === 'function') companionFollow(c, dt);
+  }
+  compSeparate(L, dt);
+  for (let i = 0; i < L.length; i++) {
+    const c = L[i]; if (!c) continue;
+    if (c.hidden || c.x === undefined) continue;
+    const rec = compRec(c); if (!recReady(rec)) continue;
+    syncCompanion(c, rec);
+  }
+}
+function syncCompanion(c, rec) {
+  const J = rec.json, A = J.actions, v = setVis1(c, rec, undefined, false), o = c.owner || P;
+  const state = c.state || 'idle', perch = state === 'perch' && o, act = compAction(J, state);
+  // facing: the owner's when perched (same direction, mirrored together), else the entry's
+  const ov = perch ? VIS.get(o) : null;
+  if (perch) v.sector = ov && ov.sector !== undefined ? ov.sector : facingSector(o.fx === undefined ? 1 : o.fx, o.fy || 0, cam.yaw, v.sector);
+  else v.sector = facingSector(c.fx === undefined ? 1 : c.fx, c.fy || 0, cam.yaw, v.sector);
+  const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;
+  let f;
+  if (act === 'attack') f = c.atkAnim >= 0 ? Math.floor(c.atkAnim * actN(A, act)) : actHeld(v, A, act);
+  else if (act === 'walk' && c.walk !== undefined) f = Math.floor(c.walk * 1.26 * actN(A, act) / 6);
+  else { if (v.act !== act) { v.act = act; v.actT = time; } f = Math.floor(time * actFps(A, act) + (c.x || 0) * 0.37); }
+  if (act !== 'attack') v.act = act;
+  const mobSheet = rec.entry && rec.entry.layer === 'mob';
+  _CO.tint = c.tint; _CO.opacity = c.opacity; _CO.scl = c.scale || (mobSheet && c.kind !== 'raven' ? 0.6 : c.kind === 'raven' ? HUG_SCALE : 1);
+  const st = sprFrame(v, c, _CO), k = st.scl;
+  const sl = perch ? 0 : c._sepL || 0, sh = perch ? 0 : c._sepH || 0;   // screen-space separation (compSeparate)
+  let x = c.x + SPRF.rx * sl, y = c.y + SPRF.ry * sl, h;
+  if (perch) {
+    // anchor = owner anchor + perchOffset[dir] (owner frame px): dx along the camera's right (mirrored with the
+    // owner), dy up (stretched by 1/COSP like every sprite); front: nudge toward / away from the camera so the depth
+    // test puts the pet in front of or behind the owner's layers whatever the draw order
+    const po = J.perchOffset && (J.perchOffset[SHEET_DIR8[Math.abs(v.sector)]] || J.perchOffset.S) || [0, -36, 1];
+    const dxu = po[0] * (dflip ? -1 : 1) / PXU, front = po[2] ? 1 : -1, nud = 0.05 * front;
+    x = o.x + SPRF.rx * dxu + Math.sin(cam.yaw) * nud; y = o.y + SPRF.ry * dxu + Math.cos(cam.yaw) * nud;
+    const ost = ov && ov.st;
+    h = groundH(o.x, o.y) + (o.z || 0) / PXU + (ost ? ost.zoff : 0) - po[1] / PXU / COSP * (ost ? ost.sy : 1);
+  } else h = groundH(x, y) + (c.z || 0) / PXU + sh;
+  _CE.x = x; _CE.y = y; _CE.z = (h - groundH(x, y)) * PXU;
+  const pl = placeSheetVis(v, _CE, act, dd, f, dflip, st);
+  if (!perch) {
+    const air = act === 'fly' || act === 'attack' ? (J.flyZ || 0) / PXU : 0;
+    placeBlob(v, x, groundH(x, y), y, (mobSheet ? 0.5 : 0.28) * Math.max(0.5, k), air + (c.z || 0) / PXU + sh, st.a > 0.3);
+  }
+  c.sheetH = rec.visH * k;
+  if (act === 'walk') sprMotion(v, c, st, rec.visH * k / PXU);
+  const dg = v.diag || (v.diag = { id: rec.id }); dg.act = act; dg.f = f; dg.dir = dname; dg.flip = dflip; dg.rect = pl.rect;
 }
 
 /* ---------- headH: use the sheet's visible height while a sheet is shown ---------- */
