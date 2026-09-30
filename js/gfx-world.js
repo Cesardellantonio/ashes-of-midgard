@@ -86,7 +86,7 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), _v3 = new THREE.Ve
    Post (gfx-post.js): msaa = scene MSAA samples; mist = depth-based ground mist / height fog;
    heat = lava heat shimmer; ao = half-res SSAO (aoN taps); vol = ray-marched volumetric sun/moon
    light through the cached static shadow map (volN steps); pools = flickering ground light pools.
-   wx = weather / ambient-life particle count multiplier (round 5, see WX; drawRange only, no rebuild).
+   wx = weather / ambient-life particle count multiplier (round 5, see WXS; drawRange only, no rebuild).
    Shadows: the sun's static world shadows are cached (re-rendered only when the view drifts or the
    world changes, see SHADOW); a second zero-intensity light re-renders only the sprite casters.
    Adaptive quality (GFX.auto, default on in a real browser): GFX_STEPS are levels below the base preset (render scale
@@ -271,7 +271,7 @@ sun.shadow.camera.near = 1; sun.shadow.camera.far = 160; sun.shadow.bias = -0.00
       aimShadow(sun, BLD.R, BLD.cx, BLD.th, BLD.cz); sun.updateMatrixWorld(); SHADOW.cx = BLD.cx; SHADOW.cz = BLD.cz; SHADOW.R = BLD.R;
     }
   }
-  sm.render = function (lights, sc, c) {
+  const smRender = function (lights, sc, c) {
     if (!SHADOW.split || sc !== scene || !curWorld || lights.length !== 1 || lights[0] !== sun) return base.call(this, lights, sc, c);
     const prev = renderer.getRenderTarget(), clr = renderer.clear, v = curWorld.visible;
     if (!SHADOW.need && SHADOW.rt && sun.shadow.map) {
@@ -293,6 +293,8 @@ sun.shadow.camera.near = 1; sun.shadow.camera.far = 160; sun.shadow.bias = -0.00
     finally { renderer.clear = clr; curWorld.visible = v; renderer.setRenderTarget(prev); }
     SHADOW.tex = SHADOW.rt.texture;
   };
+  // cycle 9: sectored prop groups of big maps draw every instance in the shadow passes (see sectorUpdate)
+  sm.render = function (lights, sc, c) { const sw = sectorShadow(true); try { return smRender.call(this, lights, sc, c); } finally { if (sw) sectorShadow(false); } };
 })();
 /* ---------- Colour helpers (sRGB authoring -> linear lighting) ---------- */
 function linCol(hex) { return new THREE.Color(hex).convertSRGBToLinear(); }
@@ -393,22 +395,111 @@ const RLOOK_BASE = {
   },
 };
 const rlookBase = id => { for (const k in RLOOK_BASE) if (id === k || id.startsWith(k + '_')) return RLOOK_BASE[k]; return null; };
+/* ---------- Cycle 9 (world expansion, design/world-expansion.md): interiors and caves ----------
+   m.kind (core.js, from render.kind): 'interior' | 'cave' | null. The look of a kind map starts from RLOOK_KIND (tuned
+   below from render.interior / render.cave), then MAPDEFS.render refines it like any other map. Both kinds are
+   time-locked (tod false) with no sky, sun (a faint fill only) or weather; caves have their own ambient particles.
+   render.interior = { floor: 'plank'|'stone'|'flag'|'straw', wall: 'timber'|'stone'|'dwarf'|'hall', trim: '#hex' | 0xhex,
+     ceilingFade: true, windows: [[x, y], ...] (wall tiles with a window: pane + light shaft), beams: false (ceiling beams across the room) }
+   render.cave = { rock: 'basalt'|'ice'|'mud'|'crystal'|'mine', wet: 0..1, glow: 'mushroom'|'crystal'|null,
+     torch: 1 (hero torch radius / intensity scale), drips: 0..1, dust: 0..1, walls: true (procedural rock walls; false
+     = content draws T.WALL itself with props.wall models) } */
+function mapKind(m) {
+  if (!m) return '';
+  const k = m.kind !== undefined && m.kind !== null ? m.kind : (m.d && m.d.render && m.d.render.kind) || (m.d && (m.d.gen === 'cave' || m.d.gen === 'interior') ? m.d.gen : null);
+  return k === 'cave' || k === 'interior' ? k : '';
+}
+// Maps above the old 64 x 64: sector culling, capped ground canvas, weighted world LRU (a 64 x 64 map is untouched).
+const isBig = m => !!m && (m.w > 64 || m.h > 64);
+const INT_FLOOR = {
+  plank: { detail: 'plank', g1: [104, 70, 42], g2: [150, 108, 66], nrm: 1.1 },
+  stone: { detail: 'flag', g1: [98, 94, 90], g2: [140, 134, 126], nrm: 1.25 },
+  flag: { detail: 'flag', g1: [112, 100, 84], g2: [156, 142, 120], nrm: 1.25 },
+  straw: { detail: 'straw', g1: [138, 112, 60], g2: [190, 160, 94], nrm: 0.9 },
+};
+// wall: height, stub height when cut away (camera side), texture kind, default trim colour
+// (2.5 = the art kit's interior_wall_* / cave_wall* blocks, so procedural walls and kit pieces line up)
+const INT_WALL = { timber: { h: 2.5, stub: 0.5, trim: 0x4a2c16 }, stone: { h: 2.5, stub: 0.5, trim: 0x5a544c }, dwarf: { h: 2.5, stub: 0.5, trim: 0xc89a3a }, hall: { h: 2.5, stub: 0.5, trim: 0x3a2412 } };
+function interiorCfg(m) {
+  const I = (m.d && m.d.render && m.d.render.interior) || {};
+  let trim = null; try { if (I.trim !== undefined && I.trim !== null) trim = new THREE.Color(I.trim).getHex(); } catch (e) { trim = null; }
+  const wall = INT_WALL[I.wall] ? I.wall : 'timber';
+  return { floor: INT_FLOOR[I.floor] ? I.floor : 'plank', wall, trim: trim === null ? INT_WALL[wall].trim : trim, ceilingFade: I.ceilingFade !== false,
+    windows: Array.isArray(I.windows) ? I.windows.filter(p => Array.isArray(p) && p.length >= 2 && isFinite(p[0]) && isFinite(p[1])) : [], beams: !!I.beams };
+}
+// cave rock palettes: ground (sRGB 0-255), rock mass colours (low / high), detail layer, fog / mist / glow tints
+const CAVE_ROCK = {
+  basalt: { g1: [58, 56, 60], g2: [98, 94, 92], a: 0x34323a, b: 0x6a6660, detail: 'rock', floor: 'rock', haze: 0x06080c, mist: 0x6c7890, glow: 0x9a7aff, h: 2.8 },
+  ice: { g1: [96, 120, 140], g2: [150, 180, 202], a: 0x3c5a74, b: 0xa8c8e0, detail: 'rock', floor: 'snow', haze: 0x0a1420, mist: 0x8ab0d0, glow: 0x8ad8ff, h: 2.5, spec: 0.8 },
+  mud: { g1: [56, 44, 30], g2: [94, 76, 52], a: 0x3a2c1e, b: 0x6e5a40, detail: 'mud', floor: 'mud', haze: 0x0a0806, mist: 0x7a7060, glow: 0xa8f070, h: 2.1 },
+  crystal: { g1: [50, 42, 66], g2: [86, 74, 110], a: 0x2e2840, b: 0x5e5280, detail: 'rock', floor: 'rock', haze: 0x0a0612, mist: 0x8a78b8, glow: 0xc08aff, h: 2.7, veins: 1 },
+  mine: { g1: [72, 60, 46], g2: [108, 92, 72], a: 0x463a2e, b: 0x7a6a56, detail: 'rock', floor: 'dirt', haze: 0x0a0806, mist: 0x8a7a66, glow: 0xffb060, h: 2.4 },
+};
+function caveCfg(m) {
+  const C = (m.d && m.d.render && m.d.render.cave) || {}, n = (v, d, a, b) => clamp(isFinite(v) && v !== null && v !== '' ? +v : d, a, b);
+  return { rock: CAVE_ROCK[C.rock] ? C.rock : 'basalt', wet: n(C.wet, 0.5, 0, 1), glow: C.glow === 'mushroom' || C.glow === 'crystal' ? C.glow : null,
+    torch: n(C.torch, 1, 0.4, 2), drips: n(C.drips, 0.75, 0, 2), dust: n(C.dust, 0.6, 0, 2), walls: C.walls !== false };
+}
+// Base looks (RLOOK units). Interiors: warm bounce from the fires, a faint window fill (the shadow-casting "sun"), soft
+// SSAO, a warm grade with a stronger vignette. Caves: near-black cool ambient, the hero's torch, echo mist, drips.
+const RLOOK_KIND = {
+  interior: {
+    exposure: 1.0, sky: [0x0c0907, 0x16100b], haze: 0x0e0a07, fog: [36, 96],
+    sunDir: [-0.42, 1.25, 0.6], sun: [0xffe8c8, 0.3], hemi: [0xffd6a4, 0x3c2818, 0.5], torch: [0xffb070, 0, 9],
+    lights: { brazier: [0xff9a48, 1.5, 7], way: [0xffa048, 1.6, 9], warp: [0xffd8a0, 0.9, 5], heart: [0xffc060, 2, 10], lamp: [0xffc070, 1.0, 5.5] },
+    bloom: { threshold: 1.02, knee: 0.45, strength: 0.72 },
+    grade: { lift: [0.022, 0.014, 0.006], gamma: [1, 1, 0.98], gain: [1.06, 1.0, 0.9], sat: 1.08, contrast: 1.08, shadowTint: [0.014, 0.004, -0.004], highTint: [0.03, 0.014, -0.012] },
+    vignette: 0.56, grain: 0.028, dof: { band: 0.12, ramp: 0.42, top: 0.7, bottom: 0.5 },
+    lt: { amb: [0.66, 0.56, 0.46], sun: [0.16, 0.14, 0.1] },
+    motes: { n: 320, col: 0xffdcaa, size: 0.04, box: 16, hmin: 0.25, hmax: 2.8, lit: false, k: 0.55 },
+    ao: 1.25, aoR: 1.15, spec: [0x1c1612, 18], tod: false, weather: { amb: [], wind: [0.03, 0.01] },
+  },
+  cave: {
+    exposure: 1.18, sky: [0x020304, 0x05070a], haze: 0x05070a, fog: [38, 92],
+    sunDir: [-0.25, 1.35, 0.35], sun: [0x8aa0c8, 0.07], hemi: [0x7c8cac, 0x1e1c1a, 0.68], torch: [0xffae68, 2.6, 12.5],
+    lights: { brazier: [0xff8a38, 2.4, 8], way: [0xffa048, 2.6, 10], warp: [0x9ac8ff, 1.6, 6.5], heart: [0xffc060, 3, 10], lamp: [0xffb060, 1.6, 6.5] },
+    bloom: { threshold: 0.92, knee: 0.45, strength: 0.85 },
+    grade: { lift: [0.006, 0.01, 0.022], gamma: [1, 1, 1.02], gain: [1.04, 1.0, 0.96], sat: 1.02, contrast: 1.1, shadowTint: [-0.008, 0.002, 0.03], highTint: [0.03, 0.012, -0.012] },
+    vignette: 0.62, grain: 0.032, dof: { band: 0.12, ramp: 0.42, top: 0.75, bottom: 0.55 },
+    lt: { amb: [0.4, 0.43, 0.52], sun: [0.02, 0.02, 0.03] },
+    mist: { col: 0x6c7890, k: 1, amb: 0.08, lit: 1.9, amt: 0.42, h: 0.55, max: 0.34, scale: 0.06, wind: [0.012, 0.006], scatter: 0.65 },
+    hfog: { col: 0x0a0e14, k: 1, amt: 0.1, h: 1.6, max: 0.25 },
+    water: { color: 0x22404e, deep: 0x0c1c26, foam: 0x5a7a88, level: -0.45, still: 1 },
+    ao: 1.0, spec: [0x202428, 30], tod: false, weather: { amb: [], wind: [0.02, 0.01] },
+  },
+};
+// The kind look of one map (colours from its render.interior / render.cave), before MAPDEFS.render refines it.
+function kindLook(m, kind) {
+  const R = Object.assign({}, RLOOK_KIND[kind]);
+  if (kind === 'interior') {
+    const I = interiorCfg(m), F = INT_FLOOR[I.floor];
+    R.paint = { g1: F.g1, g2: F.g2 }; R.floorD = F.detail; R.floorN = F.nrm;
+    if (I.wall === 'dwarf') Object.assign(R, { hemi: [0xffc890, 0x2a1c14, 0.44], lt: { amb: [0.6, 0.5, 0.42], sun: [0.14, 0.12, 0.09] } });
+    else if (I.wall === 'stone') Object.assign(R, { hemi: [0xf0d8b8, 0x30281e, 0.48] });
+  } else {
+    const C = caveCfg(m), K = CAVE_ROCK[C.rock];
+    R.paint = { g1: K.g1, g2: K.g2 }; R.floorD = K.floor; R.floorN = 0.8; R.haze = K.haze; R.sky = [K.haze, K.haze];
+    R.mist = Object.assign({}, R.mist, { col: K.mist }); R.torch = [R.torch[0], R.torch[1] * C.torch, R.torch[2] * Math.sqrt(C.torch)];
+    if (C.rock === 'ice') Object.assign(R, { hemi: [0x8ab0d8, 0x141c24, 0.4], lt: { amb: [0.38, 0.44, 0.56], sun: [0.02, 0.03, 0.04] }, spec: [0x445460, 60] });
+  }
+  return R;
+}
 // Maps without an RLOOK entry: MAPDEFS[id].render (data hook for new maps), else derived from MAPDEFS.look.
 // render = { sky:[top,horizon], fog:[color,near,far], exposure, sun:[color,intensity,dir], hemi:[sky,ground,int],
 //   bloom:[threshold,strength], grade:{...}, mist, hfog, vol, heat, shafts, motes, lights, trees, flame, flameHalo,
-//   weather, tod, night, dusk } (all optional; weather / tod / night / dusk: see WX)
+//   weather, tod, night, dusk } (all optional; weather / tod / night / dusk: see WXS)
 const RLOOK_GEN = {};
 function rlookFor(m) {
   if (RLOOK[m.id]) return RLOOK[m.id];
   if (RLOOK_GEN[m.id]) return RLOOK_GEN[m.id];
-  const L = (m.d && m.d.look) || {}, fam = rlookBase(m.id), base = fam || RLOOK.ashen_fields, Rd = m.d && m.d.render, dark = m.d && m.d.gen === 'dungeon';
+  const L = (m.d && m.d.look) || {}, kind = mapKind(m), fam = kind ? kindLook(m, kind) : rlookBase(m.id), base = fam || RLOOK.ashen_fields, Rd = m.d && m.d.render, dark = m.d && m.d.gen === 'dungeon';
   let R;
   try {
     if (fam) R = Object.assign({}, fam);
     else R = Object.assign({}, base, { haze: L.fog !== undefined ? L.fog : base.haze, sky: [L.fog !== undefined ? L.fog : base.sky[0], L.fog !== undefined ? L.fog : base.sky[1]],
       hemi: L.hemi ? [L.hemi[0], L.hemi[1], L.hemi[2] * 0.8] : base.hemi, sun: L.sun ? [L.sun[0], L.sun[1] * 3] : base.sun, torch: [0xffa860, L.torch || 0, 10], mist: null, hfog: null });
-    if (dark && fam) Object.assign(R, { exposure: (fam.exposure || 1) * 1.08, fog: [30, 92], torch: [fam.torch[0], Math.max(1, fam.torch[1]), 9], lt: { amb: fam.lt.amb.map(v => v * 0.8), sun: fam.lt.sun.map(v => v * 0.4) } });
-    else if (dark) Object.assign(R, { exposure: 1.1, lights: RLOOK.gloamheim.lights, bloom: RLOOK.gloamheim.bloom, lt: RLOOK.gloamheim.lt });
+    if (dark && fam && !kind) Object.assign(R, { exposure: (fam.exposure || 1) * 1.08, fog: [30, 92], torch: [fam.torch[0], Math.max(1, fam.torch[1]), 9], lt: { amb: fam.lt.amb.map(v => v * 0.8), sun: fam.lt.sun.map(v => v * 0.4) } });
+    else if (dark && !kind) Object.assign(R, { exposure: 1.1, lights: RLOOK.gloamheim.lights, bloom: RLOOK.gloamheim.bloom, lt: RLOOK.gloamheim.lt });
     if (Rd) {
       const num = (v, d) => typeof v === 'number' && isFinite(v) ? v : d;
       if (Rd.sky) R.sky = [Rd.sky[0], Rd.sky[1] !== undefined ? Rd.sky[1] : Rd.sky[0]];
@@ -419,6 +510,11 @@ function rlookFor(m) {
       if (Rd.bloom) R.bloom = { threshold: num(Rd.bloom[0], base.bloom.threshold), knee: 0.4, strength: num(Rd.bloom[1], base.bloom.strength) };
       if (Rd.grade) R.grade = Object.assign({}, base.grade, Rd.grade);
       for (const k of ['mist', 'hfog', 'vol', 'heat', 'shafts', 'motes', 'lights', 'dof', 'vignette', 'grain', 'lt', 'spec', 'paint', 'ao', 'water', 'void', 'torch', 'flame', 'flameHalo', 'weather', 'tod', 'night', 'dusk']) if (Rd[k] !== undefined) R[k] = Rd[k];
+      // cycle 9, caves: the hero's torch is the player's view: content's render.torch can make it bigger, never weaker than
+      // the graphics default (scaled by render.cave.torch)
+      if (kind === 'cave' && Rd.torch && fam.torch) R.torch = [R.torch[0], Math.max(num(R.torch[1], 0), fam.torch[1]), Math.max(num(R.torch[2], 0), fam.torch[2])];
+      // (and its darkness comes from the light, not the fog: the fog starts beyond the camera, else it greys the hero's own circle)
+      if (kind && R.fog) R.fog = [Math.max(R.fog[0], 36), Math.max(R.fog[1], Math.max(R.fog[0], 36) + 40)];
       // sprite light tint from the lights when not given: ambient ~ hemi sky, direct ~ sun
       if (!Rd.lt && (Rd.hemi || Rd.sun)) {
         const h = new THREE.Color(R.hemi[0]).convertSRGBToLinear(), su = new THREE.Color(R.sun[0]).convertSRGBToLinear(), hi = R.hemi[2] / 0.42, si = R.sun[1] / 0.8;
@@ -517,7 +613,8 @@ function skirtTex(m) {
    layer edges: cobbles break up along their stones, dirt creeps between grass clumps).
    kind -> [size px, span in tiles, relief in world units]. Built once, shared by all maps. */
 const DETAIL = {};
-const DETAIL_KINDS = { grass: [256, 2, 0.035], dirt: [512, 4, 0.05], cobble: [512, 4, 0.075], flag: [512, 4, 0.06], ash: [512, 4, 0.03], basalt: [512, 4, 0.07], snow: [256, 4, 0.045], mud: [512, 4, 0.05], cloud: [256, 4, 0.03] };
+const DETAIL_KINDS = { grass: [256, 2, 0.035], dirt: [512, 4, 0.05], cobble: [512, 4, 0.075], flag: [512, 4, 0.06], ash: [512, 4, 0.03], basalt: [512, 4, 0.07], snow: [256, 4, 0.045], mud: [512, 4, 0.05], cloud: [256, 4, 0.03],
+  plank: [512, 4, 0.05], straw: [256, 2, 0.04], rock: [512, 4, 0.06] };   // cycle 9: interior floors, cave rock
 // look.floor -> ground detail texture (unknown floors fall back to the nearest existing one)
 const FLOOR_DETAIL = { grass: 'grass', flag: 'flag', carved: 'flag', stone: 'flag', rock: 'basalt', basalt: 'basalt', snow: 'snow', ice: 'snow', mud: 'mud', swamp: 'mud', dirt: 'dirt', sand: 'dirt', cloud: 'cloud', ash: 'ash', bone: 'dirt' };
 function floorDetail(f) { return FLOOR_DETAIL[f] || 'grass'; }
@@ -556,7 +653,7 @@ function detailTex(kind) {
   const [N, span, relief] = DETAIL_KINDS[kind], Hh = new Float32Array(N * N), Ll = new Float32Array(N * N), vo = [0, 0, 0], sd = kind.length * 131 + kind.charCodeAt(0);
   const hs = (a, b, k) => hash2(a, b, sd + k);
   const f8 = mkfbm(8, kind === 'dirt' ? 4 : 5, sd), f32 = mkfbm(32, 2, sd + 40), f16 = mkfbm(16, 3, sd + 9), fc = mkfbm(8, 3, sd + 20);
-  const V = kind === 'dirt' || kind === 'mud' ? mkvoro(64, 0.9, sd + 3) : kind === 'ash' ? mkvoro(12, 0.8, sd + 4) : kind === 'cobble' ? mkvoro(16, 0.62, sd) : kind === 'basalt' ? mkvoro(8, 0.55, sd) : null;
+  const V = kind === 'dirt' || kind === 'mud' ? mkvoro(64, 0.9, sd + 3) : kind === 'ash' || kind === 'rock' ? mkvoro(12, 0.8, sd + 4) : kind === 'cobble' ? mkvoro(16, 0.62, sd) : kind === 'basalt' ? mkvoro(8, 0.55, sd) : null;
   const FR = [0, 1, 2, 3].map(r => FLAG_ROWS[(hs(r, 1, 0) * FLAG_ROWS.length) | 0]), FO = [0, 1, 2, 3].map(r => Math.floor(hs(r, 2, 0) * 8) * 0.5), SL = new Float32Array(128 * 5).map((_, i) => hs(i, 3, 0));
   const cellR = new Float32Array(V ? 64 * 64 * 3 : 0);   // per-cell randoms (cell ids < 64*64 for every grid used) for (let i = 0; i < cellR.length / 3; i++) { cellR[i * 3] = hs(i, 3, 0); cellR[i * 3 + 1] = hs(i, 9, 0); cellR[i * 3 + 2] = hs(i, 11, 0); }
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -600,6 +697,25 @@ function detailTex(kind) {
     } else if (kind === 'basalt') {
       V(u * 8, v * 8, vo); const e = vo[1] - vo[0], r = cellR[vo[2] * 3], n = f16(u * 16, v * 16), top = smoothstep(0.01, 0.16, e);
       h = top * (0.75 + 0.25 * r) + (n - 0.5) * 0.16; l = (0.36 + 0.3 * r + (n - 0.5) * 0.32) * (0.4 + 0.6 * top) + sp * 0.06;
+    } else if (kind === 'plank') {
+      // cycle 9 interiors: floorboards 1/4 tile wide running along x, 1 tile long with staggered joints, grain streaks,
+      // knots and nail heads; seams between the boards are the dark low lines
+      const X = u * 16, Y = v * 16, row = Math.floor(Y), ry = Y - row, xs = (X + Math.floor(SL[row * 5] * 16)) % 16, seg = Math.floor(xs / 4), sx = xs / 4 - seg;
+      const id = row * 4 + seg, q = SL[(id * 5 + 2) % 640], e = Math.min(ry, 1 - ry), ej = Math.min(sx, 1 - sx) * 4, top = smoothstep(0.0, 0.08, Math.min(e, ej));
+      const grain = Math.sin((Y * 5 + f8(u * 8, v * 8) * 2.4 + SL[(id * 5 + 3) % 640] * 6) * 6.283) * 0.5 + 0.5;
+      const knot = SL[(id * 5 + 4) % 640] < 0.22 ? Math.exp(-(((sx - 0.3 - SL[(id * 5 + 1) % 640] * 0.4) * 4) ** 2 + ((ry - 0.5) * 2.2) ** 2) * 3) : 0;
+      const nx = Math.min(sx, 1 - sx) * 4, nail = nx > 0.07 && nx < 0.15 && Math.abs(ry - 0.5) > 0.2 && Math.abs(ry - 0.5) < 0.29 ? 1 : 0;
+      h = top * (0.72 + 0.1 * q) + (grain - 0.5) * 0.06 - knot * 0.15 - nail * 0.1;
+      l = (0.32 + 0.3 * q + (grain - 0.5) * 0.22 + (f32(u * 32, v * 32) - 0.5) * 0.12) * (0.4 + 0.6 * top) - knot * 0.2 - nail * 0.22 + sp * 0.05;
+    } else if (kind === 'rock') {
+      // cycle 9 caves: weathered stone, low fbm relief with faint hairline cracks (floors and the rock mass)
+      const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32); V(u * 12, v * 12, vo); const e = vo[1] - vo[0], r = cellR[vo[2] * 3], crack = 1 - smoothstep(0.012, 0.045, e);
+      h = a * 0.62 + b * 0.24 + r * 0.1 - crack * 0.08; l = 0.5 + (a - 0.5) * 0.6 + (b - 0.5) * 0.35 + (r - 0.5) * 0.12 - crack * 0.1 + sp * 0.08;
+    } else if (kind === 'straw') {
+      // strewn straw: two crossing sets of warped fibres, dark gaps between them
+      const a = f8(u * 8, v * 8), b = f32(u * 32, v * 32);
+      const s1 = Math.sin((u * 48 + v * 12 + a * 2.2) * 6.283), s2 = Math.sin((v * 40 - u * 16 + b * 1.6) * 6.283), f = Math.max(s1, s2 * 0.9);
+      h = 0.4 + a * 0.3 + Math.max(0, f) * 0.3; l = 0.5 + (a - 0.5) * 0.4 + f * 0.16 + (b - 0.5) * 0.2 + (sp > 0.44 ? -0.3 : sp * 0.2);
     }
     Hh[i] = h; Ll[i] = l;
   }
@@ -687,7 +803,7 @@ const GD_MAP = `vec2 gSl = vec2(0.0); float gH = 0.5, gWet = 0.0, gPud = 0.0;
   #ifdef GD_SHADE
   col *= texture2D(uShade, wp * uMapInv).rgb * 2.0;
   #endif
-  if (uWet.x > 0.001) {   // rain (WX): darker soaked ground, puddles in the low spots of the detail relief
+  if (uWet.x > 0.001) {   // rain (WXS): darker soaked ground, puddles in the low spots of the detail relief
     gPud = smoothstep(0.46, 0.68, (1.0 - gH) * 0.5 + (1.0 - lowN) * 0.45 + (texture2D(uDB, wp * 0.047 + vec2(0.61, 0.29)).a - 0.5) * 0.7) * uWet.y;
     gWet = uWet.x; col *= 1.0 - gWet * (0.24 + 0.22 * (1.0 - gH)) - gPud * 0.3;
   }
@@ -713,6 +829,7 @@ function groundDetail(mat, o) {
   if (o.path) { defs += '#define GD_PATH\n'; U.uDP = { value: o.path.tex }; U.uPathC = { value: o.pathC }; }
   if (o.cob) { defs += '#define GD_COB\n'; U.uDC = { value: o.cob.tex }; U.uCobC = { value: o.cobC }; }
   if (o.ash) { defs += '#define GD_ASH\n'; U.uDA = { value: o.ash.tex }; U.uAshC = { value: o.ashC }; }
+  if (o.cave) defs += '#define GD_CAVEWET\n';   // cycle 9: wet cave floor, puddles catch the torch
   mat.userData.texU = U;   // uniform textures (per-map mask / shade) for the world LRU and GFX.memory()
   const prev = mat.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile ? mat.onBeforeCompile : null, key = defs.replace(/#define GD_|\n/g, '');
   mat.onBeforeCompile = (sh, r) => {
@@ -722,7 +839,7 @@ function groundDetail(mat, o) {
     const d = defs + (q >= 1 ? '#define GD_NORMAL\n' : '') + (q >= 2 ? '#define GD_MACRO\n' : '');
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGW;').replace('#include <project_vertex>', '#include <project_vertex>\nvGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = d + sh.fragmentShader.replace('#include <common>', '#include <common>\n' + GD_PARS).replace('#include <map_fragment>', GD_MAP)
-      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GD_NORMAL).replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\nspecularStrength *= 0.3 + 1.4 * gH;')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GD_NORMAL).replace('#include <specularmap_fragment>', '#include <specularmap_fragment>\nspecularStrength *= 0.3 + 1.4 * gH;\n#ifdef GD_CAVEWET\nspecularStrength *= 1.0 + gPud * 3.0 + gWet * 0.4;\n#endif')
       .replace('#include <envmap_fragment>', '#include <envmap_fragment>\n' + GD_WET);
   };
   mat.customProgramCacheKey = () => 'gd' + key + GFX.preset.detail + (prev ? 'p' : '');
@@ -756,29 +873,41 @@ function groundMask(m) {
    applied after the shader layers so paths and cobbles get it too;
    base: 4 samples/tile of the linear base colour (grass tuft tint). */
 function paintGround(m, plan) {
-  const L = m.d.look, TP = 32, Wp = m.w * TP, Hp = m.h * TP, w = m.w, h = m.h;
+  // cycle 9: maps above 64 x 64 keep the macro canvas at <= 2048 px (fewer px per tile; ps scales the painted details),
+  // so a 96 x 96 field costs the GPU memory and paint time of a 64 x 64 one; 64 x 64 and smaller are unchanged
+  const big = isBig(m), TP = big ? Math.max(16, Math.floor(2048 / Math.max(m.w, m.h))) : 32, ps = TP / 32, Wp = m.w * TP, Hp = m.h * TP, w = m.w, h = m.h;
+  const kind = mapKind(m), L = kind ? Object.assign({}, m.d.look, { floor: '' }) : m.d.look;   // kind maps: no grass / flowers / lava cracks
   const c = mkCanvas(Wp, Hp), g = c.getContext('2d'), img = g.createImageData(Wp, Hp), D = img.data;
-  const PO = (RLOOK[m.id] && RLOOK[m.id].paint) || {};
+  const PO = (RLOOK[m.id] && RLOOK[m.id].paint) || (kind && rlookFor(m).paint) || {};
   const g1 = PO.g1 || L.g1, g2 = PO.g2 || L.g2, grain = (L.grain || 20) * 0.8;
-  for (let py = 0; py < Hp; py++) {
+  if (!big) for (let py = 0; py < Hp; py++) {
     for (let px = 0; px < Wp; px++) {
       const n1 = NZ.a[((py >> 3) & 255) * 256 + ((px >> 3) & 255)], n3 = NZ.a[((py >> 1) & 255) * 256 + ((px >> 1) & 255)], n2 = NZ.b[(py & 255) * 256 + (px & 255)];
       const n0 = NZ.a[((py >> 5) & 255) * 256 + ((px >> 5) & 255)];
       const t = n0 * 0.35 + n1 * 0.45 + n3 * 0.2, gr = (n2 - 0.5) * grain;
       const o = (py * Wp + px) * 4; D[o] = g1[0] + (g2[0] - g1[0]) * t + gr; D[o + 1] = g1[1] + (g2[1] - g1[1]) * t + gr; D[o + 2] = g1[2] + (g2[2] - g1[2]) * t + gr * 0.6; D[o + 3] = 255;
     }
+  } else {   // same noise in world units (32 px per tile space), sampled at TP px per tile
+    const qx = new Int32Array(Wp); for (let px = 0; px < Wp; px++) qx[px] = (px / ps) | 0;
+    for (let py = 0; py < Hp; py++) {
+      const qy = (py / ps) | 0, r0 = ((qy >> 5) & 255) * 256, r1 = ((qy >> 3) & 255) * 256, r3 = ((qy >> 1) & 255) * 256, r2 = (py & 255) * 256;
+      for (let px = 0; px < Wp; px++) {
+        const q = qx[px], t = NZ.a[r0 + ((q >> 5) & 255)] * 0.35 + NZ.a[r1 + ((q >> 3) & 255)] * 0.45 + NZ.a[r3 + ((q >> 1) & 255)] * 0.2, gr = (NZ.b[r2 + (px & 255)] - 0.5) * grain;
+        const o = (py * Wp + px) * 4; D[o] = g1[0] + (g2[0] - g1[0]) * t + gr; D[o + 1] = g1[1] + (g2[1] - g1[1]) * t + gr; D[o + 2] = g1[2] + (g2[2] - g1[2]) * t + gr * 0.6; D[o + 3] = 255;
+      }
+    }
   }
   g.putImageData(img, 0, 0);
   // base colour samples for the grass tufts (linear)
-  const BR = 4, base = new Float32Array(w * BR * h * BR * 3);
-  for (let y = 0; y < h * BR; y++) for (let x = 0; x < w * BR; x++) { const o = ((y * 8 + 4) * Wp + x * 8 + 4) * 4, k = (y * w * BR + x) * 3; base[k] = (D[o] / 255) ** 2.2; base[k + 1] = (D[o + 1] / 255) ** 2.2; base[k + 2] = (D[o + 2] / 255) ** 2.2; }
+  const BR = 4, base = new Float32Array(w * BR * h * BR * 3), st = TP / BR;
+  for (let y = 0; y < h * BR; y++) for (let x = 0; x < w * BR; x++) { const o = (Math.floor((y + 0.5) * st) * Wp + Math.floor((x + 0.5) * st)) * 4, k = (y * w * BR + x) * 3; base[k] = (D[o] / 255) ** 2.2; base[k + 1] = (D[o + 1] / 255) ** 2.2; base[k + 2] = (D[o + 2] / 255) ** 2.2; }
   const rng = mulberry32(m.d.seed * 3 + 1), T_ = m.t;
   const tileOpen = (x, y) => x >= 0 && y >= 0 && x < w && y < h && T_[y * w + x] === 0;
   // Dungeon: rough dark bedrock under the solid mass, moss where the floor meets walls
   if (floorDetail(L.floor) === 'flag' && m.d.gen === 'dungeon') for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const X = x * TP, Y = y * TP;
     if (!tileOpen(x, y)) { if (T_[y * w + x] === T.WALL) { g.fillStyle = `rgba(0,0,0,${0.25 + rng() * 0.1})`; g.fillRect(X, Y, TP, TP); } continue; }
-    if (!tileOpen(x, y - 1) || !tileOpen(x - 1, y)) for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(80,120,64,${0.18 + rng() * 0.3})`; g.fillRect(X + rng() * TP, Y + rng() * 8, 2 + rng() * 3, 2); }
+    if (!tileOpen(x, y - 1) || !tileOpen(x - 1, y)) for (let i = 0; i < 6; i++) { g.fillStyle = `rgba(80,120,64,${0.18 + rng() * 0.3})`; g.fillRect(X + rng() * TP, Y + rng() * 8 * ps, (2 + rng() * 3) * ps, 2 * ps); }
   }
   // Volcanic cracks: dark grooves in the albedo + a glowing emissive map (bloom picks them up)
   if (L.floor === 'rock') {
@@ -786,10 +915,10 @@ function paintGround(m, plan) {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if (!tileOpen(x, y) || rng() > 0.12) continue;
       const pts = [[(x + rng()) * TP, (y + rng()) * TP]]; let a = rng() * 6.28;
-      for (let k = 0, n = 4 + (rng() * 6 | 0); k < n; k++) { a += (rng() - 0.5) * 2.4; const [px, py] = pts[pts.length - 1], l = 3 + rng() * 6; pts.push([px + Math.cos(a) * l, py + Math.sin(a) * l]); }
+      for (let k = 0, n = 4 + (rng() * 6 | 0); k < n; k++) { a += (rng() - 0.5) * 2.4; const [px, py] = pts[pts.length - 1], l = (3 + rng() * 6) * ps; pts.push([px + Math.cos(a) * l, py + Math.sin(a) * l]); }
       const path = (cc, sc) => { cc.beginPath(); pts.forEach(([px, py], i) => i ? cc.lineTo(px * sc, py * sc) : cc.moveTo(px * sc, py * sc)); cc.stroke(); };
-      g.strokeStyle = 'rgba(18,8,6,.75)'; g.lineWidth = 2.2; g.lineJoin = 'miter'; path(g, 1);
-      const hot = rng(); eg.strokeStyle = `rgba(255,${110 + hot * 90 | 0},${30 + hot * 40 | 0},${0.5 + hot * 0.5})`; eg.lineWidth = 0.7 + hot * 0.6; eg.lineCap = 'butt'; eg.lineJoin = 'miter'; eg.shadowColor = '#ff6a1a'; eg.shadowBlur = 3; path(eg, 0.5);
+      g.strokeStyle = 'rgba(18,8,6,.75)'; g.lineWidth = 2.2 * ps; g.lineJoin = 'miter'; path(g, 1);
+      const hot = rng(); eg.strokeStyle = `rgba(255,${110 + hot * 90 | 0},${30 + hot * 40 | 0},${0.5 + hot * 0.5})`; eg.lineWidth = 0.7 + hot * 0.6; eg.lineCap = 'butt'; eg.lineJoin = 'miter'; eg.shadowColor = '#ff6a1a'; eg.shadowBlur = 3; path(eg, 16 / TP);
     }
     eg.shadowBlur = 0; eg.globalCompositeOperation = 'lighter';
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (T_[y * w + x] === T.LAVA && (tileOpen(x + 1, y) || tileOpen(x - 1, y) || tileOpen(x, y + 1) || tileOpen(x, y - 1))) { const gr = eg.createRadialGradient((x + 0.5) * 16, (y + 0.5) * 16, 0, (x + 0.5) * 16, (y + 0.5) * 16, 18); gr.addColorStop(0, 'rgba(255,90,20,.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); eg.fillStyle = gr; eg.fillRect(x * 16 - 18, y * 16 - 18, 52, 52); }
@@ -797,11 +926,11 @@ function paintGround(m, plan) {
   }
   // Grass blades & flowers (the 3D tufts carry most of this on medium+)
   if (L.floor === 'grass') {
-    for (let i = 0; i < w * h * 5; i++) { const x = rng() * w, y = rng() * h; if (!tileOpen(x | 0, y | 0) || m.deco[(y | 0) * w + (x | 0)] >= 5) continue; const X = x * TP, Y = y * TP; g.strokeStyle = rng() < 0.5 ? `rgba(40,70,20,.3)` : `rgba(200,230,140,.2)`; g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y); g.lineTo(X + (rng() - 0.5) * 3, Y - 3 - rng() * 3); g.stroke(); }
+    for (let i = 0; i < w * h * 5; i++) { const x = rng() * w, y = rng() * h; if (!tileOpen(x | 0, y | 0) || m.deco[(y | 0) * w + (x | 0)] >= 5) continue; const X = x * TP, Y = y * TP; g.strokeStyle = rng() < 0.5 ? `rgba(40,70,20,.3)` : `rgba(200,230,140,.2)`; g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y); g.lineTo(X + (rng() - 0.5) * 3 * ps, Y - 3 * ps - rng() * 3 * ps); g.stroke(); }
     const FL = ['#ffffff', '#ffe46a', '#ff9ac8', '#c8a0ff', '#ff7a5a'];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if (!tileOpen(x, y) || m.deco[y * w + x] >= 5 || rng() > L.flowers * 0.6) continue; const col = FL[(rng() * FL.length) | 0], cx = x * TP + rng() * TP, cy = y * TP + rng() * TP;
-      for (let k = 0; k < 2 + rng() * 4; k++) { const fx = cx + (rng() - 0.5) * 14, fy = cy + (rng() - 0.5) * 10; g.fillStyle = 'rgba(30,60,20,.45)'; g.fillRect(fx - 1, fy + 1, 3, 2); g.fillStyle = col; g.fillRect(fx - 1, fy - 1, 3, 3); }
+      for (let k = 0; k < 2 + rng() * 4; k++) { const fx = cx + (rng() - 0.5) * 14 * ps, fy = cy + (rng() - 0.5) * 10 * ps; g.fillStyle = 'rgba(30,60,20,.45)'; g.fillRect(fx - ps, fy + ps, 3 * ps, 2 * ps); g.fillStyle = col; g.fillRect(fx - ps, fy - ps, 3 * ps, 3 * ps); }
     }
   }
   // Walkable surface variants (m.surf): ice, mud, planks, snow, gravel, black sand, gold. One tile-resolution layer per
@@ -818,11 +947,11 @@ function paintGround(m, plan) {
   }
   // Scattered decorations (bones are 3D props now)
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const dc = m.deco[y * w + x]; if (!dc || !tileOpen(x, y)) continue; const X = x * TP + 8 + rng() * 16, Y = y * TP + 8 + rng() * 16;
-    if (dc === 2 && !(plan && plan.ok)) { g.fillStyle = 'rgba(236,228,206,.8)'; g.fillRect(X - 6, Y, 10, 2); g.beginPath(); g.arc(X + 6, Y - 1, 3, 0, 7); g.fill(); }
-    else if (dc === 3) { g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(X - 10, Y - 3); g.lineTo(X, Y + 2); g.lineTo(X + 9, Y - 4); g.stroke(); }
-    else if (dc === 4) { g.fillStyle = L.floor === 'rock' ? 'rgba(255,120,40,.3)' : 'rgba(110,106,100,.45)'; g.beginPath(); g.ellipse(X, Y, 9, 5, 0, 0, 7); g.fill(); }
-    else if (dc === 1 && L.floor === 'grass') { g.fillStyle = 'rgba(40,80,24,.4)'; g.beginPath(); g.ellipse(X, Y, 7, 4, 0, 0, 7); g.fill(); }
+    const dc = m.deco[y * w + x]; if (!dc || !tileOpen(x, y)) continue; const X = x * TP + 8 * ps + rng() * 16 * ps, Y = y * TP + 8 * ps + rng() * 16 * ps;
+    if (dc === 2 && !(plan && plan.ok)) { g.fillStyle = 'rgba(236,228,206,.8)'; g.fillRect(X - 6 * ps, Y, 10 * ps, 2 * ps); g.beginPath(); g.arc(X + 6 * ps, Y - ps, 3 * ps, 0, 7); g.fill(); }
+    else if (dc === 3) { g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(X - 10 * ps, Y - 3 * ps); g.lineTo(X, Y + 2 * ps); g.lineTo(X + 9 * ps, Y - 4 * ps); g.stroke(); }
+    else if (dc === 4) { g.fillStyle = L.floor === 'rock' ? 'rgba(255,120,40,.3)' : 'rgba(110,106,100,.45)'; g.beginPath(); g.ellipse(X, Y, 9 * ps, 5 * ps, 0, 0, 7); g.fill(); }
+    else if (dc === 1 && L.floor === 'grass') { g.fillStyle = 'rgba(40,80,24,.4)'; g.beginPath(); g.ellipse(X, Y, 7 * ps, 4 * ps, 0, 0, 7); g.fill(); }
   }
   // ---- shade layer ----
   const SR = 8, sc = mkCanvas(w * SR, h * SR), sg = sc.getContext('2d');
@@ -835,13 +964,14 @@ function paintGround(m, plan) {
     spot(x + 0.55, y + 0.6, rad, a);
   }
   if (plan) for (const [x, y, r, a] of plan.ao) spot(x, y, r, a);
-  // Dungeon: the solid mass between rooms falls off into darkness away from the lit floor
-  if (m.d.gen === 'dungeon') {
+  // Dungeon: the solid mass between rooms falls off into darkness away from the lit floor (cycle 9: caves, interiors too)
+  if (m.d.gen === 'dungeon' || kind) {
     const df = new Float32Array(w * h).fill(99), q = [];
     for (let i = 0; i < w * h; i++) if (T_[i] !== T.WALL) { df[i] = 0; q.push(i); }
     for (let qi = 0; qi < q.length; qi++) { const i = q[qi], x = i % w, y = (i / w) | 0; for (let k = 0; k < 8; k++) { const nx = x + DX[k], ny = y + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const j = ny * w + nx; if (df[j] > df[i] + 1) { df[j] = df[i] + 1; q.push(j); } } }
     const dc = mkCanvas(w, h), dg = dc.getContext('2d'), di = dg.createImageData(w, h);
-    for (let i = 0; i < w * h; i++) { const a = smoothstep(0.8, 4, df[i]) * 0.95; di.data[i * 4] = 3; di.data[i * 4 + 1] = 3; di.data[i * 4 + 2] = 7; di.data[i * 4 + 3] = a * 255; }
+    const f0 = kind === 'interior' ? 0.15 : 0.8, f1 = kind === 'interior' ? 1.1 : kind === 'cave' ? 2.5 : 4;   // (interiors: black right behind the walls)
+    for (let i = 0; i < w * h; i++) { const a = smoothstep(f0, f1, df[i]) * (kind === 'interior' ? 0.98 : 0.95); di.data[i * 4] = 3; di.data[i * 4 + 1] = 3; di.data[i * 4 + 2] = 7; di.data[i * 4 + 3] = a * 255; }
     dg.putImageData(di, 0, 0); sg.imageSmoothingEnabled = true; sg.drawImage(dc, 0, 0, sc.width, sc.height);
   }
   // Baked light pools (soft; real point lights add the rest on medium+)
@@ -849,8 +979,9 @@ function paintGround(m, plan) {
   const glow = (x, y, R, col) => { const gr = sg.createRadialGradient(x * SR, y * SR, 0, x * SR, y * SR, R * SR); gr.addColorStop(0, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); sg.fillStyle = gr; sg.fillRect((x - R) * SR, (y - R) * SR, R * 2 * SR, R * 2 * SR); };
   for (const b of m.braziers) glow(b.x, b.y, 3.2, 'rgba(255,140,50,.24)');
   if (m.way) glow(m.way.x, m.way.y, 4, 'rgba(255,150,60,.18)');
-  for (const wp of m.warps) glow(wp.x + 0.5, wp.y + 0.5, 2.4, 'rgba(90,150,255,.32)');
+  for (const wp of m.warps) { const dk = doorKind(wp, m); if (!dk) glow(wp.x + 0.5, wp.y + 0.5, 2.4, 'rgba(90,150,255,.32)'); else if (dk === 'mouth') { sg.globalCompositeOperation = 'source-over'; spot(wp.x + 0.5, wp.y + 0.5, 1.8, 0.5); sg.globalCompositeOperation = 'lighter'; } else glow(wp.x + 0.5, wp.y + 0.5, dk === 'exit' ? 2.6 : 2.0, dk === 'exit' ? 'rgba(170,200,255,.3)' : 'rgba(255,180,100,.26)'); }
   if (plan) for (const l of plan.lights) glow(l.x, l.z, 2.2, 'rgba(255,190,110,.16)');
+  for (const l of mapLights(m)) glow(l.x, l.y, Math.min(4.5, l.r * 0.6), cssRGBA(l.c, clamp(0.22 * l.i, 0.06, 0.4)));   // cycle 9: m.lights
   if (L.lava) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (T_[y * w + x] === T.LAVA && (tileOpen(x + 1, y) || tileOpen(x - 1, y) || tileOpen(x, y + 1) || tileOpen(x, y - 1))) glow(x + 0.5, y + 0.5, 1.6, 'rgba(255,90,20,.26)');
   sg.globalCompositeOperation = 'source-over';
   return { macro: c, shade: sc, base, BR };
@@ -998,7 +1129,7 @@ TEX.shaft = (() => {
   g.putImageData(img, 0, 0); return canvasTex(c);
 })();
 // All shafts of a map in one merged, additive mesh (crossed planes along the sun; per-shaft breathing phase).
-const SHAFTU = { uT: { value: 0 }, uFade: { value: 1 } };   // uFade: overcast / night (WX)
+const SHAFTU = { uT: { value: 0 }, uFade: { value: 1 } };   // uFade: overcast / night (WXS)
 function buildShafts(m, R, grp) {
   const S = R.shafts, r = mulberry32(m.d.seed * 31 + 3), dir = new THREE.Vector3(R.sunDir[0], R.sunDir[1], R.sunDir[2]).normalize();
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir), out = [], w = m.w, h = m.h, geos = [], M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
@@ -1087,7 +1218,7 @@ const PROP_LIGHT = { dng_brazier: [0, 1.05, 0], helheim_brazier: [0, 1.05, 0], t
 const brazierId = m => (m && (m.id === 'helheim' || /^helheim_/.test(m.id || ''))) ? 'helheim_brazier' : 'dng_brazier';
 const PROP_EMIT = { emissive_coals: 2.6, emissive_rune: 2.8, emissive_lamp: 3.4, emissive_obsidian: 2.4, emissive_basalt: 2.2, emissive_ember: 2.8,
   emissive_bifrost: 1.4, emissive_crystal_ice: 2.0, emissive_bog: 1.8, emissive_shroom: 2.0, emissive_amethyst: 2.2, emissive_lava: 2.6, emissive_rune_gold: 2.6,
-  emissive_soul: 2.2, emissive_soul_dim: 1.5, emissive_blacksun: 2.0, emissive_gjoll: 1.2 };
+  emissive_soul: 2.2, emissive_soul_dim: 1.5, emissive_blacksun: 2.0, emissive_gjoll: 1.2, emissive_daylight: 1.0 };   // (cycle 9: window panes of the interior kit)
 const PROP_SWAY = { leaves: 1, cloth_banner: 1.8, cloth_awning: 0.5, cloth_tatters: 1.8 };
 // Prop kinds whose parts dissolve around the player when they stand between the camera and the hero (canopy dither):
 // trees (wind shader) and the big set pieces / buildings (bridge portal roofs, Hel's hall, the World-Tree root, houses).
@@ -1217,6 +1348,7 @@ function makeTemplate(id, gltf) {
     if (id === 'dng_wall') capify(mat);
     if (nm === 'emissive_gjoll') gjollify(mat);
     if (!sway && PROP_OCC.has(kind) && kind !== 'tree') occify(mat);
+    if (kind === 'wall' && !sway) cutify(mat, /^cave_wall/.test(id));   // cycle 9: kit wall blocks (room side +Z) cut away like the procedural walls
     let depth = null;
     if (mat.alphaTest > 0 || sway) { depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: mat.alphaTest > 0 ? mat.map : null, alphaTest: mat.alphaTest || 0 }); if (sway) windify(depth, amp); }
     parts.push({ geo, mat, depth, name: nm });
@@ -1226,7 +1358,7 @@ function makeTemplate(id, gltf) {
 // Manifest (assets/models/index.json): kind, LODs (lod1), texture-sharing kits (kit_<family>.glb holding
 // several models as named root nodes at the origin). Everything degrades to per-file loading without it.
 PROPS.man = null; PROPS.kits = {};
-const KIT_FIRST = new Set(['town', 'rimeshore', 'mirewell', 'nidavellir', 'bifrost', 'skaldhaven', 'helheim']);
+const KIT_FIRST = new Set(['town', 'rimeshore', 'mirewell', 'nidavellir', 'bifrost', 'skaldhaven', 'helheim', 'interior', 'cave']);   // (cycle 9: kit_interior / kit_cave)
 PROPS.manifest = () => PROPS.manP || (PROPS.manP = new Promise(res => {
   const done = j => { try { const by = {}; for (const e of (j && j.models) || []) by[e.id] = e; PROPS.man = { by, kits: (j && j.kits) || {} }; } catch (e) { PROPS.man = null; } res(PROPS.man); };
   try { const l = new THREE.FileLoader(); l.setResponseType('json'); l.load(PROPS.url + 'index.json', done, undefined, () => res(null)); } catch (e) { res(null); }
@@ -1259,7 +1391,7 @@ PROPS.ensure = ids => Promise.all(ids.map(PROPS.load));
 PROPS.nb = { map: null, ids: [] };
 PROPS.prefetch = () => {
   const cur = typeof map !== 'undefined' ? map : null; if (!cur || PROPS.nb.map === cur.id || !THREE.GLTFLoader) return;
-  PROPS.nb.map = cur.id;
+  PROPS.nb.map = cur.id; PROPS.nb.done = false;   // done: every neighbour planned and its models loaded (perf.py waits on it)
   const ids = [...new Set(cur.warps.map(w => w.to))].filter(id => typeof MAPDEFS !== 'undefined' && MAPDEFS[id]);
   const idle = f => (typeof requestIdleCallback === 'function' ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 250));
   const q = []; let k = 0;
@@ -1268,7 +1400,7 @@ PROPS.prefetch = () => {
     if (!live()) return;
     while (q.length && (PROPS.tpl[q[0]] || PROPS.pend[q[0]])) q.shift();
     if (q.length) { const id = q.shift(); PROPS.nb.ids.push(id); PROPS.load(id).then(() => idle(step), () => idle(step)); return; }
-    if (k >= ids.length) return;
+    if (k >= ids.length) { PROPS.nb.done = true; return; }
     const id = ids[k++];
     PROPS.manifest().then(() => idle(() => {
       if (!live()) return;
@@ -1304,26 +1436,33 @@ function propIds(items, lq) {
 }
 // One InstancedMesh per (model part, tint, near/far) for the whole map + skirt: the old 32-tile chunks were
 // nearly always all in view at this camera distance, so chunking only multiplied the draw calls.
-function buildProps(grp, items, lq) {
+function buildProps(grp, items, lq, sec) {
   const CH = 128, by = new Map();
   for (const it0 of items) {
     const id = propId(it0, lq), it = it0, tpl = PROPS.tpl[id]; if (!tpl) continue;
-    const k = id + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + Math.floor((it.x + 32) / CH) + ',' + Math.floor((it.z + 32) / CH);
+    const k = id + '|' + (it.tint || '') + '|' + (it.far ? 'f' : '') + (sec ? '' : Math.floor((it.x + 32) / CH) + ',' + Math.floor((it.z + 32) / CH));   // (big maps: one group, sector-culled)
     let e = by.get(k); if (!e) by.set(k, e = { tpl, tint: it.tint, far: !!it.far, list: [] }); e.list.push(it);
   }
   const q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), M = new THREE.Matrix4(), Y = new THREE.Vector3(0, 1, 0);
-  for (const { tpl, tint, far, list } of by.values()) {
+  for (const e of by.values()) {
+    const { tpl, tint, far } = e; let list = e.list, starts = null;
+    if (sec) {   // big maps: instances sorted by sector (stable), sector bounds grown by each instance's extent
+      const G = sec.G, ns = G.nx * G.nz, si = list.map(it => secIndex(G, it.x, it.z)), ord = list.map((it, i) => i).sort((a, b) => si[a] - si[b] || a - b);
+      list = ord.map(i => list[i]); starts = new Int32Array(ns + 1); for (const i of ord) starts[si[i] + 1]++; for (let s2 = 0; s2 < ns; s2++) starts[s2 + 1] += starts[s2];
+      for (let i = 0; i < ord.length; i++) { const it = list[i], b = sec.box[si[ord[i]]], r = tpl.rad * it.s * Math.max(it.sx || 1, it.sz || 1) + 0.3; b.expandByPoint(_v3.set(it.x - r, it.y - 0.3, it.z - r)); b.expandByPoint(_v3.set(it.x + r, it.y + tpl.top * it.s * (it.sy || 1) + 0.3, it.z + r)); }
+    }
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, z0 = 1e9, z1 = -1e9, sm = 0;
-    for (const it of list) { x0 = Math.min(x0, it.x); x1 = Math.max(x1, it.x); y0 = Math.min(y0, it.y); y1 = Math.max(y1, it.y); z0 = Math.min(z0, it.z); z1 = Math.max(z1, it.z); sm = Math.max(sm, it.s * Math.max(1, it.sy || 1)); }
+    for (const it of list) { x0 = Math.min(x0, it.x); x1 = Math.max(x1, it.x); y0 = Math.min(y0, it.y); y1 = Math.max(y1, it.y); z0 = Math.min(z0, it.z); z1 = Math.max(z1, it.z); sm = Math.max(sm, it.s * Math.max(1, it.sy || 1, it.sx || 1, it.sz || 1)); }
     const c = new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2 + tpl.top * sm / 2, (z0 + z1) / 2), rad = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + Math.hypot(tpl.rad, tpl.top / 2) * sm + 0.2;
     for (const part of tpl.parts) {
       const geo = new THREE.BufferGeometry(); for (const a in part.geo.attributes) geo.setAttribute(a, part.geo.attributes[a]); geo.setIndex(part.geo.index);
       geo.boundingSphere = new THREE.Sphere(c.clone(), rad);
       const im = new THREE.InstancedMesh(geo, tint ? tintMat(part.mat, tint) : part.mat, list.length);
-      list.forEach((it, i) => { q.setFromAxisAngle(Y, it.r); p.set(it.x, it.y, it.z); s.set(it.s, it.s * (it.sy || 1), it.s); M.compose(p, q, s); im.setMatrixAt(i, M); });
+      list.forEach((it, i) => { q.setFromAxisAngle(Y, it.r); p.set(it.x, it.y, it.z); s.set(it.s * (it.sx || 1), it.s * (it.sy || 1), it.s * (it.sz || 1)); M.compose(p, q, s); im.setMatrixAt(i, M); });
       im.instanceMatrix.needsUpdate = true;
+      if (sec) { im.userData.sec = { full: im.instanceMatrix.array.slice(), starts, n: list.length, nView: list.length }; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); sec.meshes.push(im); }
       if (part.depth) im.customDepthMaterial = part.depth;
-      im.castShadow = !far; im.receiveShadow = true; im.userData.small = far ? null : tpl.small; im.userData.far = far;
+      im.castShadow = !far; im.receiveShadow = true; im.userData.small = far ? null : tpl.small; im.userData.far = far; im.userData.wall = PROPS.kind(tpl.id) === 'wall';
       im.matrixAutoUpdate = false; im.updateMatrix();
       grp.add(im);
     }
@@ -1377,8 +1516,15 @@ function decorUpgrade(m) {
   }
   return out;
 }
+// Cycle 9: T.WALL drawn by the renderer itself (no wall props): interior walls, cave rock, cave annexes in field maps.
+// Content keeps control with props.wall (models per wall tile, as before) and render.cave.walls = false.
+function wallsDrawn(m) {
+  if (m.d && m.d.props && Array.isArray(m.d.props.wall) && m.d.props.wall.length) return '';
+  const k = mapKind(m); if (k === 'interior') return 'interior'; if (k === 'cave') return caveCfg(m).walls ? 'rock' : '';
+  return m.d && m.d.gen === 'field' ? 'rock' : '';
+}
 function planProps(m) {
-  const w = m.w, h = m.h, sd = m.d.seed * 17 + 5, gen = m.d.gen, items = [], ao = [], lights = [], avoid = [];
+  const w = m.w, h = m.h, sd = m.d.seed * 17 + 5, gen = m.d.gen, items = [], ao = [], lights = [], avoid = [], mk = mapKind(m), ownWalls = wallsDrawn(m);
   const H = (x, z) => groundHm(m, x, z);
   const hs = (x, y, k) => hash2(x, y, sd + k);
   const add = (id, x, z, r, s, o) => { const it = { id, x, z, y: (o && o.y !== undefined ? o.y : H(x, z)) + (o && o.dy || 0), r, s, sy: o && o.sy, tint: o && o.tint, far: o && o.far }; items.push(it); return it; };
@@ -1421,9 +1567,9 @@ function planProps(m) {
   // -- walls: carved keep blocks (tinted warm and lower in town), random 90 deg turns hide the repeat
   const wallL = listFor('wall'), pillarL = listFor('pillar'), graveL = listFor('grave');
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x; if (m.t[i] !== T.WALL || !m.vis[i]) continue;
+    const i = y * w + x; if (m.t[i] !== T.WALL || !m.vis[i] || ownWalls) continue;
     const r = ((hs(x, y, 16) * 4) | 0) * Math.PI / 2;
-    if (wallL) opt(add(pickW(wallL, hs(x, y, 29)), x + 0.5, y + 0.5, r, 1, { dy: -0.02 }));
+    if (wallL) { const id = pickW(wallL, hs(x, y, 29)); if (PROPS.kind(id) === 'wall') { const [pid, pr] = wallPiece(m, x, y, id); opt(add(pid, x + 0.5, y + 0.5, pr, 1, { dy: -0.02 })); } else opt(add(id, x + 0.5, y + 0.5, r, 1, { dy: -0.02 })); }
     else if (gen === 'town') add('dng_wall', x + 0.5, y + 0.5, r, 1, { sy: 0.8, tint: 'town', dy: -0.12 });
     else add('dng_wall', x + 0.5, y + 0.5, r, 1, { dy: -0.02, tint: gen === 'dungeon' ? 'keep' : null });
   }
@@ -1459,7 +1605,7 @@ function planProps(m) {
     }
   }
   // -- keep dressing: banners and chains on the camera-facing wall faces, fallen blocks, bone piles
-  if (gen === 'dungeon') {
+  if (gen === 'dungeon' && !mk) {
     const banners = [];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const i = y * w + x; if (m.t[i] !== T.WALL || !m.vis[i]) continue; const r = hs(x, y, 30);
@@ -1493,17 +1639,26 @@ function planProps(m) {
   // missing model is skipped). Set pieces (fp = the T.PROP tiles they cover) get contact shade over the footprint and keep
   // grass out of it; `on: 'water'` floats the piece on the water plane (y = water level + dy) instead of the sea bed;
   // `light` sits at the model's light anchor (index.json `light`, rotated and scaled with the piece); lanterns / lamps /
-  // braziers (kind 'light' or the id says so) also get the lamp glows and come alive at night (WX).
+  // braziers (kind 'light' or the id says so) also get the lamp glows and come alive at night (WXS).
   // render-side upgrades of a map's decor with art that landed after its layout (only while the layout does not use
   // the new model itself): the list is m.decor with the swaps applied (see DECOR_UPGRADE)
   const decorList = decorUpgrade(m);
   const dlights = [], WL = (() => { try { const w = rlookFor(m).water; return w && isFinite(w.level) ? +w.level : -0.45; } catch (e) { return -0.45; } })();
   for (const d of decorList) {
     if (!d || !isFinite(d.x) || !isFinite(d.y)) continue;
-    const id = typeof d.kit === 'string' && hasModel(d.kit) ? d.kit : d.model;
+    let id = typeof d.kit === 'string' && hasModel(d.kit) ? d.kit : d.model;
+    // cycle 9: an interior / cave piece (or any piece on an interior / cave map) with no model yet: a neutral block over
+    // its footprint when it blocks tiles or gives light, else skipped (no request for a file that does not exist)
+    let ph = null;
+    if ((mk || /^(interior|cave)_/.test(String(d.kit || d.model || ''))) && !(typeof id === 'string' && hasModel(id))) {
+      const fpOk = Array.isArray(d.fp) && d.fp.length === 4 && d.fp.every(isFinite), lit = Array.isArray(d.light) && d.light.length >= 2;
+      if ((!fpOk && !lit) || /cave_mouth/.test(String(d.kit || d.model || ''))) continue;   // (the cave mouth has its procedural stand-in, see buildDoors)
+      placeholderTpl(); id = '__ph'; ph = fpOk ? { sx: Math.max(0.5, d.fp[2] - d.fp[0] + 1) * 0.92, sz: Math.max(0.5, d.fp[3] - d.fp[1] + 1) * 0.92, sy: 0.8 } : { sx: 0.4, sz: 0.4, sy: 0.45 };
+    }
     if (typeof id !== 'string' || !/^[\w-]+$/.test(id)) continue;
-    const sc = +d.scale || 1, rot = +d.rot || 0, onW = d.on === 'water';
+    const sc = ph ? 1 : +d.scale || 1, rot = +d.rot || 0, onW = d.on === 'water';
     const it = add(id, +d.x, +d.y, rot, sc, onW ? { y: WL + (+d.dy || 0) } : isFinite(d.y0) ? { y: +d.y0 } : { dy: +d.dy || 0, sy: isFinite(d.sy) && +d.sy > 0 ? +d.sy : undefined }); it.opt = true;
+    if (ph) { it.sx = ph.sx; it.sz = ph.sz; it.sy = ph.sy; it.ph = true; }
     if (Array.isArray(d.fp) && d.fp.length === 4 && d.fp.every(isFinite)) {
       const [x0, y0, x1, y1] = d.fp.map(Number), cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, rx = (x1 - x0 + 1) / 2, ry = (y1 - y0 + 1) / 2;
       if (!onW) ao.push([cx, cy, Math.min(4, Math.max(rx, ry) + 0.4), 0.3]);
@@ -1516,13 +1671,26 @@ function planProps(m) {
     if ((Array.isArray(d.light) && d.light.length >= 2) || (multi && multi.length && d.light !== false)) {
       const la = inf && Array.isArray(inf.light) ? inf.light : null, own = Array.isArray(d.light) && d.light.length >= 2;
       const col = own ? d.light[0] : inf.lightColor || '#ffc070', I = own ? +d.light[1] || 1 : 0.9, D = own ? +d.light[2] || 5 : 4.5;
-      const lamp = !!((inf && inf.kind === 'light') || /lamp|lantern|brazier|torch/.test(id) || multi);
+      const lamp = !!((inf && inf.kind === 'light') || /lamp|lantern|brazier|torch/.test(id) || multi || (mk && /crystal|shroom|mushroom|candle|hearth|chandelier|forge|fire/.test(String(d.kit || d.model || id))));
       for (const a of (multi && multi.length ? multi : [la])) {
         const ax = a ? (+a[0] || 0) * sc : 0, az = a ? (+a[2] || 0) * sc : 0;
         const lx = +d.x + Math.cos(rot) * ax + Math.sin(rot) * az, lz = +d.y - Math.sin(rot) * ax + Math.cos(rot) * az;
         dlights.push({ x: lx, z: lz, h: it.y + (a ? (+a[1] || 0) * sc * (it.sy || 1) : 1.2), col, i: multi && multi.length > 1 ? I * 0.7 : I, d: D, lamp });
       }
     }
+  }
+  // -- cycle 9: door:'cave' on an overworld map: the cave_mouth set piece, unless content placed one near the warp (without
+  // the model in the manifest buildDoors draws a procedural mouth)
+  const mouths = new Set();
+  for (const wp of m.warps) {
+    if (doorKind(wp, m) !== 'mouth') continue;
+    const cx = wp.x + 0.5, cz = wp.y + 0.5;
+    if (decorList.some(d => d && /cave_mouth/.test(String(d.kit || d.model || '')) && hasModel(typeof d.kit === 'string' && hasModel(d.kit) ? d.kit : d.model) && Math.hypot(+d.x - cx, +d.y - cz) < 3.2)) { mouths.add(wp); continue; }
+    const fl = (m.d.look && m.d.look.floor) || '', v = fl === 'snow' || fl === 'ice' ? 'cave_mouth_ice' : fl === 'mud' || fl === 'swamp' ? 'cave_mouth_mud' : 'cave_mouth', mid = hasModel(v) ? v : 'cave_mouth';
+    if (!hasModel(mid)) continue;
+    // (the kit's 3 x 3 arch opens toward +Z; the warp is its front-centre tile, so the piece stands one tile behind it)
+    const D = doorDir(wp, m), it = add(mid, cx - D.nx, cz - D.nz, Math.atan2(D.nx, D.nz), 1, { dy: -0.05 }); it.opt = true; mouths.add(wp);
+    avoid.push([cx, cz, 1.6]);
   }
   // -- wilderness outside the map: trees (and rocks / ruins) continue into the haze
   if (gen === 'field' || gen === 'town') {
@@ -1539,7 +1707,7 @@ function planProps(m) {
       else { const id = pickW(trees, r()), it = add(id, cx, cz, r() * 6.283, (TREE_S[id] || 0.74) * (0.95 + r() * 0.35), { y: gy - 0.05, far: !near }); if (!PROP_ALL.includes(id)) it.opt = true; }
     }
   }
-  return { items, ao, lights, dlights, avoid, ok: true };
+  return { items, ao, lights, dlights, avoid, ok: true, mouths };
 }
 
 /* ---------- Grass tufts (instanced camera-facing cards, wind-animated) ---------- */
@@ -1628,8 +1796,8 @@ function worldQuality(grp) {
   if (A.motes) A.motes.visible = !!Q.post;
   if (A.shaftGrp) A.shaftGrp.visible = !(Q.vol && Q.post && R.vol && POST_VOL());
   if (grp.userData.propLod !== undefined && grp.userData.propLod !== lodLow() && grp.userData.rebuildProps) grp.userData.rebuildProps(lodLow());
-  const pr = grp.userData.props; if (pr) for (const o of pr.children) { if (o.userData.small === true || o.userData.small === false) o.castShadow = !o.userData.small || Q.smallShadow; if (o.userData.far) o.visible = Q.farProps; }
-  const n = (m.d.look.floor || 'grass') === 'grass' ? Q.grass : 0;
+  const pr = grp.userData.props, mk = mapKind(m); if (pr) for (const o of pr.children) { if (o.userData.small === true || o.userData.small === false) o.castShadow = !o.userData.small || Q.smallShadow; if (o.userData.far) o.visible = Q.farProps; if (mk && o.userData.wall) o.castShadow = false; }
+  const n = !mapKind(m) && (m.d.look.floor || 'grass') === 'grass' ? Q.grass : 0;
   if (grp.userData.grassN !== n) {
     if (grp.userData.grass) { grp.remove(grp.userData.grass); disposeGrass(grp.userData.grass); grp.userData.grass = null; }
     if (n > 0) { grp.userData.grass = buildGrass(m, n); grp.add(grp.userData.grass); }
@@ -1740,7 +1908,7 @@ function heightTex(m) {
   const rg = Math.max(0.01, mx - mn), D = new Uint8Array(n * 4);
   // G = air mask: 0 over the hidden solid mass of a dungeon (no lit dust / mist in the void), else 1
   const TW = T.WATER, isW = (x, y) => { x = clamp(x, 0, m.w - 1); y = clamp(y, 0, m.h - 1); return m.t[y * m.w + x] === TW; };
-  const dng = m.d.gen === 'dungeon', solid = (x, y) => { if (x < 0 || y < 0 || x >= m.w || y >= m.h) return true; const i = y * m.w + x; return m.t[i] === T.WALL && !(m.vis && m.vis[i]); };
+  const dng = m.d.gen === 'dungeon' || !!mapKind(m), solid = (x, y) => { if (x < 0 || y < 0 || x >= m.w || y >= m.h) return true; const i = y * m.w + x; return m.t[i] === T.WALL && !(m.vis && m.vis[i]); };
   for (let y = 0; y < H1; y++) for (let x = 0; x < W1; x++) {
     const i = y * W1 + x, air = !dng || !(solid(x - 1, y - 1) && solid(x, y - 1) && solid(x - 1, y) && solid(x, y));
     D[i * 4] = clamp((HG[i] - mn) / rg * 255, 0, 255); D[i * 4 + 1] = air ? 255 : 0; D[i * 4 + 3] = 255;
@@ -1757,32 +1925,42 @@ function heightTex(m) {
    Water: depth from the terrain heightmap -> shallow/deep colour, soft shore foam, scrolling normals with a
    sky reflection (fresnel) and a sun glint; `murky` damps both and adds scum; `ice` freezes the shallows; `frozen`
    (0..1) extends the ice over deeper water (Helheim's river Gjoll: cracked grey ice, dark water in the leads);
-   `blackSun` reflects a black disc with a pale corona instead of the glint. Rain (WX) roughens the surface, rings it
+   `blackSun` reflects a black disc with a pale corona instead of the glint. Rain (WXS) roughens the surface, rings it
    with ripples and damps the glint (uRain, uGlint are shared by every water plane).
    Clouds: two layers of drifting fbm (opaque floor + a translucent upper layer), faint rainbow sheen. */
 const WATERU = { uT: { value: 0 }, uRain: { value: 0 }, uGlint: { value: 1 } };
+const TORCHU = { uTorchP: { value: new THREE.Vector3() }, uTorchC: { value: new THREE.Color() }, uTorchC2: { value: new THREE.Vector2(11, 0) } };   // cycle 9: the hero's torch in still cave pools
 const _hexOr = (v, d) => { try { return linCol(v === undefined || v === null ? d : v); } catch (e) { return linCol(d); } };
 function waterNoise() { return (GFX.composer && GFX.composer.noise) || TEX.soft; }
 function buildWater(m, W, R, hg) {
-  const lvl = isFinite(W.level) ? +W.level : -0.45, E = 26;
+  const lvl = isFinite(W.level) ? +W.level : -0.45, E = 26, still = W.still !== undefined ? +W.still > 0 : mapKind(m) === 'cave';   // cycle 9: still underground pools
   const U = Object.assign({
     tHgt: { value: hg.tex }, uHgt: { value: new THREE.Vector4(1 / hg.w1, 1 / hg.h1, hg.min, hg.range) }, tNoise: { value: waterNoise() }, uLevel: { value: lvl },
     uCol: { value: _hexOr(W.color, 0x1d3c56) }, uDeep: { value: _hexOr(W.deep, 0x0b1a2a) }, uFoam: { value: _hexOr(W.foam, 0xeaf4ff) }, uIce: { value: _hexOr(W.ice, 0xcfe6f6) },
     uFlags: { value: new THREE.Vector4(W.murky ? 1 : 0, W.ice || W.frozen ? 1 : 0, clamp(+W.frozen || 0, 0, 1), W.blackSun ? 1 : 0) }, uSky: { value: SKY.top }, uHor: { value: SKY.hor }, uSunDir: { value: SKY.sunDir }, uSunC: { value: sun.color },
     uFogCol: LAVAU.uFogCol, uFog: LAVAU.uFog,
-  }, WATERU);
+  }, WATERU, still ? TORCHU : {});
   const mat = new THREE.ShaderMaterial({
-    uniforms: U, transparent: true, depthWrite: false, fog: false,
+    uniforms: U, transparent: true, depthWrite: false, fog: false, defines: still ? { WATER_STILL: 1 } : {},
     vertexShader: 'varying vec3 vW; varying float vDepth; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mv = viewMatrix * w; vDepth = -mv.z; gl_Position = projectionMatrix * mv; }',
     fragmentShader: `uniform sampler2D tHgt, tNoise; uniform vec4 uHgt, uFlags; uniform float uLevel, uT, uRain, uGlint; uniform vec3 uCol, uDeep, uFoam, uIce, uSky, uHor, uSunDir, uSunC, uFogCol; uniform vec2 uFog;
+      #ifdef WATER_STILL
+      uniform vec3 uTorchP, uTorchC; uniform vec2 uTorchC2;
+      #endif
       varying vec3 vW; varying float vDepth;
       void main(){
         vec4 hs = texture2D(tHgt, (vW.xz + 0.5) * uHgt.xy);
         if (hs.b < 0.04) discard;   // not near any water tile: a dip in the land, not a lake
+        #ifdef WATER_STILL
+        float mEdge = smoothstep(0.04, 0.6, hs.b);   // (cave pools: a soft rim where the corner mask ends, no blocky tile edges)
+        #endif
         float gh = uHgt.z + uHgt.w * hs.r, dep = max(uLevel - gh, 0.0);
         vec2 p = vW.xz;
         vec2 n1 = texture2D(tNoise, p * 0.085 + vec2(uT * 0.018, uT * 0.011)).rg - 0.5, n2 = texture2D(tNoise, p * 0.23 - vec2(uT * 0.027, -uT * 0.019)).rg - 0.5;
         vec2 slope = (n1 + n2 * 0.7) * (0.55 + 0.5 * uRain);
+        #ifdef WATER_STILL
+        slope *= 0.16;
+        #endif
         float rip = 0.0;
         if (uRain > 0.01) {   // rain rings: one drop per cell, random phase and centre
           vec2 g = p * 1.7, id = floor(g), f = fract(g) - 0.5;
@@ -1804,6 +1982,11 @@ function buildWater(m, W, R, hg) {
         vec3 c = mix(body, sky, fres * (0.8 - murk * 0.55)) + uSunC * glint * (1.0 - murk * 0.85) * (1.0 - scum);
         float fn = texture2D(tNoise, p * 0.5 + vec2(uT * 0.04, -uT * 0.03)).r, wave = 0.12 + 0.07 * sin(uT * 1.4 - (p.x + p.y) * 0.9);
         float foam = (1.0 - smoothstep(0.0, wave, dep)) * smoothstep(0.3, 0.6, fn) * (1.0 - murk * 0.6);
+        #ifdef WATER_STILL
+        foam *= 0.25;
+        { vec3 tl = uTorchP - vW; float td = max(length(tl), 1e-3), tg = pow(max(dot(Rf, tl / td), 0.0), 90.0) * 3.0 + pow(max(dot(Rf, tl / td), 0.0), 12.0) * 0.08;
+          c += uTorchC * tg * pow(max(0.0, 1.0 - td / uTorchC2.x), 2.0) + uTorchC * 0.05 * pow(max(0.0, 1.0 - td / uTorchC2.x), 3.0); }
+        #endif
         c = mix(c, uFoam, foam * 0.8);
         c += (sky * 0.5 + 0.08) * rip * 0.35;
         if (uFlags.y > 0.5) {
@@ -1818,6 +2001,9 @@ function buildWater(m, W, R, hg) {
           c = mix(c, ice, fr * 0.9);
         }
         float a = mix(0.55, 0.96, smoothstep(0.0, 0.5, dep));
+        #ifdef WATER_STILL
+        a *= mEdge * smoothstep(0.02, 0.3, dep - 0.1 + texture2D(tNoise, p * 0.31).r * 0.36);   // an organic shoreline
+        #endif
         c = mix(c, uFogCol, smoothstep(uFog.x, uFog.y, vDepth));
         gl_FragColor = vec4(c, a);
         #include <tonemapping_fragment>
@@ -1968,7 +2154,7 @@ function buildHelgate(o, m, lam, A, GB, FB) {
 }
 
 /* ---------- Light pools: soft flickering ground glow under fires / lamps (1 draw call per map) ---------- */
-const POOLU = { uT: { value: 0 }, uWay: { value: 0 }, uLamp: { value: 1 } };   // uLamp: night boost (WX)
+const POOLU = { uT: { value: 0 }, uWay: { value: 0 }, uLamp: { value: 1 } };   // uLamp: night boost (WXS)
 function buildPools(m, plan, R) {
   const Lc = R.lights || RLOOK.ashen_fields.lights, E = [], dark = R.exposure > 1.05;
   const col = (hex, k) => linCol(hex).multiplyScalar(k);
@@ -1976,7 +2162,12 @@ function buildPools(m, plan, R) {
   if (m.way) E.push([m.way.x, m.way.y, 3.4, col(Lc.way[0], dark ? 0.4 : 0.22), 0.7, 1, 1]);
   const lamp = Lc.lamp || [0xffc070];
   for (const l of plan.lights) E.push([l.x, l.z, 1.9, col(lamp[0], dark ? 0.3 : 0.14), l.x * 1.7 + l.z, 0.25, 0]);
-  for (const wp of m.warps) E.push([wp.x + 0.5, wp.y + 0.5, 1.9, col(Lc.warp[0], 0.22), 2, 0.3, 0]);
+  for (const wp of m.warps) {
+    const dk = doorKind(wp, m);
+    if (!dk) E.push([wp.x + 0.5, wp.y + 0.5, 1.9, col(Lc.warp[0], 0.22), 2, 0.3, 0]);
+    else if (dk !== 'mouth') { const D = doorDir(wp, m), ex = dk === 'exit'; E.push([wp.x + 0.5 + D.nx * 0.5, wp.y + 0.5 + D.nz * 0.5, ex ? 2.2 : 1.7, col(ex ? 0xd8e6ff : 0xffb870, ex ? 0.3 : 0.26), wp.x + wp.y, ex ? 0.03 : 0.2, 0]); }
+  }
+  for (const l of mapLights(m)) E.push([l.x, l.y, clamp(0.45 * l.r, 1, 3.2), l.lin.clone().multiplyScalar((dark ? 0.3 : 0.2) * Math.min(1.5, l.i)), l.x * 2.1 + l.y, l.fl, 0]);   // cycle 9
   const openAt = (x, z) => { const i = clamp(Math.floor(z), 0, m.h - 1) * m.w + clamp(Math.floor(x), 0, m.w - 1); return m.t[i] === 0 || m.t[i] === T.PROP; };
   for (const l of (plan.dlights || [])) { if (!openAt(l.x, l.z)) continue; let c; try { c = col(l.col, dark ? 0.16 : 0.1); } catch (e) { continue; } E.push([l.x, l.z, Math.min(2.2, 0.35 * l.d), c, l.x * 2.3 + l.z, 0.15, 0]); }
   if (!E.length) return null;
@@ -2008,14 +2199,14 @@ function buildPools(m, plan, R) {
 }
 
 /* ---------- Dust motes drifting in the light (Points; lit only where the static shadow map sees the sun) ---------- */
-const MOTEU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uScale: { value: 400 }, tShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() }, uLitOn: { value: 0 }, uK: { value: 1 } };   // uK: night / overcast (WX)
+const MOTEU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uScale: { value: 400 }, tShadow: { value: null }, uShadowM: { value: new THREE.Matrix4() }, uLitOn: { value: 0 }, uK: { value: 1 } };   // uK: night / overcast (WXS)
 function buildMotes(S) {
   const n = S.n || 500, seed = new Float32Array(n * 4), r = mulberry32(4242);
   for (let i = 0; i < n * 4; i++) seed[i] = r();
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
   const vtx = renderer.capabilities.maxVertexTextures > 0 && S.lit;
   const mat = new THREE.ShaderMaterial({
-    uniforms: Object.assign({ uCol: { value: linCol(S.col || 0xfff0c0) }, uBox: { value: S.box || 24 }, uH: { value: new THREE.Vector2(S.hmin || 0.3, S.hmax || 4) }, uSize: { value: S.size || 0.05 } }, MOTEU),
+    uniforms: Object.assign({ uCol: { value: linCol(S.col || 0xfff0c0).multiplyScalar(S.k || 1) }, uBox: { value: S.box || 24 }, uH: { value: new THREE.Vector2(S.hmin || 0.3, S.hmax || 4) }, uSize: { value: S.size || 0.05 } }, MOTEU),
     defines: vtx ? { MOTE_LIT: 1 } : {}, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
     vertexShader: `attribute vec4 aSeed; uniform float uT, uBox, uScale, uSize, uLitOn; uniform vec3 uC; uniform vec2 uH; varying float vB;
       #ifdef MOTE_LIT
@@ -2047,7 +2238,7 @@ function buildMotes(S) {
 }
 
 /* ---------- Weather, ambient life and time of day (graphics round 5) ----------
-   WX keeps one world clock (time of day, WX.dayLen seconds per cycle) and a weather state per map.
+   WXS keeps one world clock (time of day, WXS.dayLen seconds per cycle) and a weather state per map.
    Time of day: day (p 0..0.47) = the map's own look, unchanged; dusk, moonlit night and dawn are blended toward on
    outdoor maps (field / town / sky gens). Locked: dungeons and arenas, RLOOK / render `tod: false` (or a fixed phase
    number), GFX.lockTime(p) for story scenes. What moves: sky / haze / fog colours, sun (moon) and hemisphere light,
@@ -2081,6 +2272,11 @@ const WX_KINDS = {
   motes:     { n: 620, box: 0.85, h: [-2.5, 6], fall: 0.25, sway: 0.5, size: [0.05, 0.05], col: 0xd8c8ff, a: 1, hdr: 2.2, move: 3, shape: 7, add: 1, blink: 1, rainbow: 1 },
   souls:     { n: 110, box: 0.8, h: [0.2, 4.5], fall: 0.22, sway: 0.7, size: [0.13, 0.13], col: 0x9affc8, a: 0.75, hdr: 1.8, move: 3, shape: 6, add: 1 },
   embers:    { n: 300, box: 0.75, h: [-0.5, 6], fall: 0.9, sway: 0.5, size: [0.028, 0.028], col: 0xff8a30, a: 1, hdr: 3.0, move: 3, shape: 6, add: 1, blink: 1 },
+  // cycle 9, caves (torch: brightest in the hero's torch light, tf = how much shows beyond it): water dripping from the
+  // ceiling with rings where it lands, dust hanging in the torch light
+  drip:      { n: 70, box: 0.45, h: [-0.3, 6.5], fall: 6.0, sway: 0, size: [0.01, 0.1], col: 0xbcd4ff, a: 0.6, hdr: 1.25, move: 0, shape: 1, add: 1, torch: 1, tf: 0.04 },
+  dripring:  { n: 50, box: 0.45, h: [0, 0], life: 0.7, size: [0.1, 0.1], col: 0xd4e4ff, a: 0.7, hdr: 1.2, move: 5, shape: 2, add: 1, torch: 1, tf: 0.04 },
+  cavedust:  { n: 380, box: 0.55, h: [0.2, 3.6], fall: 0, sway: 0, size: [0.02, 0.02], col: 0xffe2b8, a: 0.55, hdr: 1.5, move: 1, shape: 5, add: 1, torch: 1, tf: 0 },
 };
 // Per-map weather (MAPDEFS[id].render.weather overrides): amb = [[kind, intensity(, dayK)]] ambient life (fireflies:
 // dayK = how much of it shows by day, the rest comes with dusk / night); precip = [[kind | null, intensity, minutes,
@@ -2118,7 +2314,7 @@ const WX_DAWN = Object.assign({}, WX_DUSK, { sky: [0x5a68b0, 0xf4b8a4], haze: 0x
   grade: { lift: [0.016, 0.01, 0.024], gamma: [1, 1, 1], gain: [1.04, 0.99, 0.96], shadowTint: [0.0, 0.0, 0.024], highTint: [0.024, 0.012, 0.0] } });
 const WX_VS = `attribute vec4 aSeed; attribute vec2 aCorner;
   uniform float uT, uN, uCot, uBox, uFall, uSway, uLife, uPx, uHdr;
-  uniform vec3 uC, uCol, uCol2, uLit; uniform vec2 uCamD, uH, uSize, uWind;
+  uniform vec3 uC, uCol, uCol2, uLit; uniform vec2 uCamD, uH, uSize, uWind, uTorchR; uniform float uTF;
   #ifdef WX_GROUND
   uniform sampler2D tHgt; uniform vec4 uHgt; uniform float uLevel;
   #endif
@@ -2155,6 +2351,9 @@ const WX_VS = `attribute vec4 aSeed; attribute vec2 aCorner;
     vec2 o = ctr - 0.5 * uBox, xz = o + mod(xz0 + off - o, uBox);
     a *= 1.0 - smoothstep(0.36, 0.5, max(abs(xz.x - ctr.x), abs(xz.y - ctr.y)) / uBox);
     vec3 p = vec3(xz.x, uC.y + y, xz.y);
+    #ifdef WX_TORCH
+      a *= mix(uTF, 1.0, 1.0 - smoothstep(uTorchR.x * 0.15, uTorchR.x * 0.6, length(xz - uC.xz)));
+    #endif
     #ifdef WX_GROUND
       float gy = uHgt.w > 0.0 ? uHgt.z + uHgt.w * texture2D(tHgt, (xz + 0.5) * uHgt.xy).r : uC.y;
       p.y = max(gy, uLevel) + 0.03;
@@ -2233,16 +2432,16 @@ const WX_FS = `uniform float uA; varying vec2 vUv; varying float vA; varying vec
     #include <encodings_fragment>
   }`;
 // uniforms shared by every weather layer (set once per frame)
-const WXU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uCamD: { value: new THREE.Vector2(0, 1) }, uCot: { value: 0.83 }, uWind: { value: new THREE.Vector2() }, uPx: { value: 0.001 },
+const WXU = { uT: { value: 0 }, uC: { value: new THREE.Vector3() }, uCamD: { value: new THREE.Vector2(0, 1) }, uCot: { value: 0.83 }, uWind: { value: new THREE.Vector2() }, uPx: { value: 0.001 }, uTorchR: { value: new THREE.Vector2(11, 0) },
   uLit: { value: new THREE.Color(1, 1, 1) }, tHgt: { value: null }, uHgt: { value: new THREE.Vector4() }, uLevel: { value: -99 } };
-const WX = {
+const WXS = {
   on: false, layers: {}, maps: {}, cfg: null, used: null, t: 0, clock: 0.08, dayLen: 1440, phase: 0.08, lock: null, force: null, forceW: null,
-  n: 0, d: 0, dawnF: false, rain: 0, snow: 0, wet: 0, lamp: 1, look: null, day: null, night: null, dusk: null, dawn: null, dirty: true,
+  n: 0, d: 0, dawnF: false, rain: 0, snow: 0, wet: 0, caveWet: 0, torchI: 0, lamp: 1, look: null, day: null, night: null, dusk: null, dawn: null, dirty: true,
   _n: -1, _d: -1, _r: -1, _s: -1, _lampE: -1, emis: null, emisN: -1, screenParts: true,
 };
 const WX_DAYP = 0.2;
 function wxLayer(kind) {
-  if (WX.layers[kind]) return WX.layers[kind];
+  if (WXS.layers[kind]) return WXS.layers[kind];
   const K = WX_KINDS[kind]; if (!K) return null;
   const N = Math.ceil(K.n * 1.4), r = mulberry32(7919 + kind.length * 131 + kind.charCodeAt(0) * 17);
   const seed = new Float32Array(N * 16), cor = new Float32Array(N * 8), idx = new (N * 4 > 65535 ? Uint32Array : Uint16Array)(N * 6), C = [-1, -1, 1, -1, 1, 1, -1, 1];
@@ -2256,12 +2455,12 @@ function wxLayer(kind) {
   geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.setDrawRange(0, 0); geo.userData.shared = true;
   const defs = { WX_MOVE: K.move, WX_SHAPE: K.shape };
   if (K.add) defs.WX_ADD = 1; if (K.spin) defs.WX_SPIN = 1; if (K.blink) defs.WX_BLINK = 1; if (K.rainbow) defs.WX_RAINBOW = 1;
-  if (K.move === 5 && renderer.capabilities.maxVertexTextures > 0) defs.WX_GROUND = 1; if (kind === 'ash') defs.WX_EMBERS = 1; if (kind === 'leaves') defs.WX_LEAF = 1;
+  if (K.move === 5 && renderer.capabilities.maxVertexTextures > 0) defs.WX_GROUND = 1; if (kind === 'ash') defs.WX_EMBERS = 1; if (kind === 'leaves') defs.WX_LEAF = 1; if (K.torch) defs.WX_TORCH = 1;
   const U = Object.assign({ uN: { value: 0 }, uBox: { value: 30 }, uH: { value: new THREE.Vector2(K.h[0], K.h[1]) }, uFall: { value: K.fall || 0 }, uSway: { value: K.sway || 0 }, uLife: { value: K.life || 1 },
-    uSize: { value: new THREE.Vector2(K.size[0], K.size[1]) }, uCol: { value: linCol(K.col) }, uCol2: { value: linCol(K.col2 !== undefined ? K.col2 : K.col) }, uA: { value: K.a }, uHdr: { value: K.hdr || 1 } }, WXU);
+    uSize: { value: new THREE.Vector2(K.size[0], K.size[1]) }, uCol: { value: linCol(K.col) }, uCol2: { value: linCol(K.col2 !== undefined ? K.col2 : K.col) }, uA: { value: K.a }, uHdr: { value: K.hdr || 1 }, uTF: { value: K.tf || 0 } }, WXU);
   const mat = new THREE.ShaderMaterial({ uniforms: U, defines: defs, vertexShader: WX_VS, fragmentShader: WX_FS, transparent: true, depthWrite: false, blending: K.add ? THREE.AdditiveBlending : THREE.NormalBlending, fog: false });
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 6; mesh.visible = false; mesh.matrixAutoUpdate = false; mesh.name = 'wx_' + kind; scene.add(mesh);
-  return (WX.layers[kind] = { kind, K, N, mesh, U, want: 0 });
+  return (WXS.layers[kind] = { kind, K, N, mesh, U, want: 0 });
 }
 // Time-of-day target with the map's overrides, colours converted to linear once.
 function wxTarget(T, o) {
@@ -2274,24 +2473,29 @@ function wxTarget(T, o) {
 function wxEnter(m) {
   const R = RL, Rd = (m.d && m.d.render) || {};
   const famKey = Object.keys(RLOOK_BASE).find(k => m.id === k || m.id.startsWith(k + '_'));
-  const W = (Rd.weather && typeof Rd.weather === 'object' ? Rd.weather : null) || (R.weather && typeof R.weather === 'object' ? R.weather : null) || WX_MAPS[m.id] || (famKey && WX_MAPS[famKey]) || WX_FROM_PART[Rd.particles] || {};
+  let W = (Rd.weather && typeof Rd.weather === 'object' ? Rd.weather : null) || (R.weather && typeof R.weather === 'object' ? R.weather : null) || WX_MAPS[m.id] || (famKey && WX_MAPS[famKey]) || WX_FROM_PART[Rd.particles] || {};
+  // cycle 9: caves get drips and torch-lit dust unless render.weather lists its own (render.cave.drips / dust scale them)
+  const kd = mapKind(m);
+  if (kd === 'cave' && !(Array.isArray(W.amb) && W.amb.length) && !(Array.isArray(W.precip) && W.precip.length)) { const C = caveCfg(m); W = Object.assign({}, W, { amb: [['drip', C.drips], ['cavedust', C.dust]].filter(e => e[1] > 0) }); }
+  WXS.caveWet = kd === 'cave' ? caveCfg(m).wet * 0.75 : 0;
   const tod = Rd.tod !== undefined ? Rd.tod : R.tod !== undefined ? R.tod : W.tod !== undefined ? W.tod : (m.d.gen === 'field' || m.d.gen === 'town');
   const amb = (Array.isArray(W.amb) ? W.amb : []).filter(e => Array.isArray(e) && WX_KINDS[e[0]]);
   const precip = (Array.isArray(W.precip) ? W.precip : []).filter(e => Array.isArray(e) && (e[0] === null || e[0] === 'rain' || e[0] === 'snow'));
-  WX.cfg = { tod: tod === true ? true : typeof tod === 'number' && isFinite(tod) ? ((tod % 1) + 1) % 1 : false, amb, precip, wind: Array.isArray(W.wind) && W.wind.length === 2 ? W.wind.map(Number) : [0.5, 0.2] };
+  WXS.cfg = { tod: tod === true ? true : typeof tod === 'number' && isFinite(tod) ? ((tod % 1) + 1) % 1 : false, amb, precip, wind: Array.isArray(W.wind) && W.wind.length === 2 ? W.wind.map(Number) : [0.5, 0.2] };
   const kinds = new Set(amb.map(e => e[0])); for (const e of precip) if (e[0]) { kinds.add(e[0]); if (e[0] === 'rain') kinds.add('splash'); }
-  if (WX.forceW && WX.forceW.kind) { kinds.add(WX.forceW.kind); if (WX.forceW.kind === 'rain') kinds.add('splash'); }
-  WX.used = kinds; for (const k of kinds) wxLayer(k);
-  let st = WX.maps[m.id];
+  if (kinds.has('drip')) kinds.add('dripring');
+  if (WXS.forceW && WXS.forceW.kind) { kinds.add(WXS.forceW.kind); if (WXS.forceW.kind === 'rain') kinds.add('splash'); }
+  WXS.used = kinds; for (const k of kinds) wxLayer(k);
+  let st = WXS.maps[m.id];
   if (!st) {   // first visit: the first precip state (the map's usual weather), later ones picked at random
-    st = WX.maps[m.id] = { rng: mulberry32((m.d.seed || 1) * 7919 + 17), kind: null, i: 0, tgt: 0, until: 0 };
+    st = WXS.maps[m.id] = { rng: mulberry32((m.d.seed || 1) * 7919 + 17), kind: null, i: 0, tgt: 0, until: 0 };
     const e = precip[0]; st.kind = e && e[0] ? e[0] : ((precip.find(q => q[0]) || [null])[0]); st.tgt = st.i = e && e[0] ? clamp(+e[1] || 0, 0, 1.5) : 0;
-    st.until = WX.t + (e ? Math.max(0.3, +e[2] || 3) : 5) * 60;
+    st.until = WXS.t + (e ? Math.max(0.3, +e[2] || 3) : 5) * 60;
   }
-  WX.wet = st.kind === 'rain' ? Math.min(1, st.i) : 0;
-  WX.look = wxLook(R); GFX.look = WX.look; WX.day = wxDay(R);
-  WX.night = wxTarget(WX_NIGHT, R.night || Rd.night); WX.dusk = wxTarget(WX_DUSK, R.dusk || Rd.dusk); WX.dawn = wxTarget(WX_DAWN, R.dusk || Rd.dusk);
-  WX.on = true; WX.dirty = true; WX._lampE = -1;
+  WXS.wet = Math.max(st.kind === 'rain' ? Math.min(1, st.i) : 0, WXS.caveWet);
+  WXS.look = wxLook(R); GFX.look = WXS.look; WXS.day = wxDay(R);
+  WXS.night = wxTarget(WX_NIGHT, R.night || Rd.night); WXS.dusk = wxTarget(WX_DUSK, R.dusk || Rd.dusk); WXS.dawn = wxTarget(WX_DAWN, R.dusk || Rd.dusk);
+  WXS.on = true; WXS.dirty = true; WXS._lampE = -1;
   wxUpdate(0);
 }
 function wxLook(R) {
@@ -2309,45 +2513,45 @@ function wxDay(R) {
 }
 // Pick the next precipitation state (weighted, seeded per map).
 function wxPick(st) {
-  const L = WX.cfg.precip; if (!L.length) { st.tgt = 0; st.until = WX.t + 600; return; }
+  const L = WXS.cfg.precip; if (!L.length) { st.tgt = 0; st.until = WXS.t + 600; return; }
   let tot = 0; for (const e of L) tot += +e[3] || 1;
   let x = st.rng() * tot, e = L[L.length - 1]; for (const q of L) { x -= +q[3] || 1; if (x <= 0) { e = q; break; } }
   if (e[0]) st.kind = e[0];
   st.tgt = e[0] ? clamp(+e[1] || 0, 0, 1.5) : 0;
-  st.until = WX.t + Math.max(0.3, +e[2] || 3) * 60 * (0.7 + 0.6 * st.rng());
+  st.until = WXS.t + Math.max(0.3, +e[2] || 3) * 60 * (0.7 + 0.6 * st.rng());
 }
 const _wc = new THREE.Color(), _wl = new THREE.Color();
 const wxLerp = (a, b, t) => a + (b - a) * t;
 function wxUpdate(dt) {
-  if (!WX.on || !WX.cfg || !map) return;
-  WX.t += dt; if (WX.lock === null) WX.clock = (WX.clock + dt / WX.dayLen) % 1;
-  const cfg = WX.cfg, st = WX.maps[map.id];
-  const p = cfg.tod === false ? WX_DAYP : typeof cfg.tod === 'number' ? cfg.tod : WX.force !== null ? WX.force : WX.lock !== null ? WX.lock : WX.clock;
-  WX.phase = p;
-  WX.d = smoothstep(0.47, 0.55, p) * (1 - smoothstep(0.58, 0.645, p)) + smoothstep(0.865, 0.92, p) * (1 - smoothstep(0.95, 1.0, p));
-  WX.n = smoothstep(0.58, 0.645, p) * (1 - smoothstep(0.865, 0.92, p)); WX.dawnF = p > 0.8;
+  if (!WXS.on || !WXS.cfg || !map) return;
+  WXS.t += dt; if (WXS.lock === null) WXS.clock = (WXS.clock + dt / WXS.dayLen) % 1;
+  const cfg = WXS.cfg, st = WXS.maps[map.id];
+  const p = cfg.tod === false ? WX_DAYP : typeof cfg.tod === 'number' ? cfg.tod : WXS.force !== null ? WXS.force : WXS.lock !== null ? WXS.lock : WXS.clock;
+  WXS.phase = p;
+  WXS.d = smoothstep(0.47, 0.55, p) * (1 - smoothstep(0.58, 0.645, p)) + smoothstep(0.865, 0.92, p) * (1 - smoothstep(0.95, 1.0, p));
+  WXS.n = smoothstep(0.58, 0.645, p) * (1 - smoothstep(0.865, 0.92, p)); WXS.dawnF = p > 0.8;
   let rain = 0, snow = 0;
-  if (WX.forceW) { const k = WX.forceW.kind; if (k === 'rain') rain = WX.forceW.i; else if (k === 'snow') snow = WX.forceW.i; }
+  if (WXS.forceW) { const k = WXS.forceW.kind; if (k === 'rain') rain = WXS.forceW.i; else if (k === 'snow') snow = WXS.forceW.i; }
   else if (st) {
-    if (WX.t >= st.until) wxPick(st);
+    if (WXS.t >= st.until) wxPick(st);
     st.i += (st.tgt - st.i) * Math.min(1, dt / 9); if (Math.abs(st.tgt - st.i) < 0.002) st.i = st.tgt;
     if (st.kind === 'rain') rain = st.i; else if (st.kind === 'snow') snow = st.i;
   }
-  WX.rain = rain; WX.snow = snow;
+  WXS.rain = rain; WXS.snow = snow;
   // the ground soaks in ~6 s and dries over ~40 s
-  const wt = Math.min(1, rain); WX.wet += (wt - WX.wet) * Math.min(1, dt / (wt > WX.wet ? 6 : 40)); if (Math.abs(wt - WX.wet) < 0.002) WX.wet = wt;
-  if (WX.forceW) WX.wet = Math.min(1, rain);
+  const wt = Math.max(Math.min(1, rain), WXS.caveWet); WXS.wet += (wt - WXS.wet) * Math.min(1, dt / (wt > WXS.wet ? 6 : 40)); if (Math.abs(wt - WXS.wet) < 0.002) WXS.wet = wt;
+  if (WXS.forceW) WXS.wet = Math.min(1, rain);
   wxApply();
   wxParticles();
 }
-// Blend the live look (WX.look, read by gfx-post) and the scene lights from the day values toward dusk / dawn / night,
+// Blend the live look (WXS.look, read by gfx-post) and the scene lights from the day values toward dusk / dawn / night,
 // then overcast. At day with clear weather every value is the map's own (identical frames).
 function wxApply() {
-  const R = RL, X = WX.look, D = WX.day; if (!R || !X || !D) return;
-  const n = WX.n, d = WX.d, rain = WX.rain, snow = WX.snow, wet = WX.wet;
-  if (!WX.dirty && n === WX._n && d === WX._d && rain === WX._r && snow === WX._s && wet === WX._w) return;
-  WX._n = n; WX._d = d; WX._r = rain; WX._s = snow; WX._w = wet; WX.dirty = false;
-  const Tk = WX.dawnF ? WX.dawn : WX.dusk, N = WX.night, g = Math.max(rain, snow * 0.6), post = GFX.preset.post;
+  const R = RL, X = WXS.look, D = WXS.day; if (!R || !X || !D) return;
+  const n = WXS.n, d = WXS.d, rain = WXS.rain, snow = WXS.snow, wet = WXS.wet;
+  if (!WXS.dirty && n === WXS._n && d === WXS._d && rain === WXS._r && snow === WXS._s && wet === WXS._w) return;
+  WXS._n = n; WXS._d = d; WXS._r = rain; WXS._s = snow; WXS._w = wet; WXS.dirty = false;
+  const Tk = WXS.dawnF ? WXS.dawn : WXS.dusk, N = WXS.night, g = Math.max(rain, snow * 0.6), post = GFX.preset.post;
   const sky3 = (out, day, tc, nc) => {
     out.copy(day);
     if (d > 0) out.lerp(_wc.copy(day).multiplyScalar(Tk.dim).lerp(tc, Tk.mix), d);
@@ -2387,77 +2591,78 @@ function wxApply() {
     X.lt.amb[i] = wxLerp(la[i] * (1 + (Tk.lt.ambK[i] - 1) * d), N.lt.amb[i], n) * (1 - 0.08 * g);
     X.lt.sun[i] = wxLerp(ls[i] * (1 + (Tk.lt.sunK[i] - 1) * d), N.lt.sun[i], n) * sk;
   }
-  WX.lamp = 1 + 1.3 * n + 0.45 * d + 0.15 * g;
-  LT.amb = X.lt.amb; LT.sun = X.lt.sun; LT.lamp = WX.lamp;
-  torch.intensity = Math.max(D.torchI, N.torch * n + Tk.torch * d); torch.distance = n > 0.05 || d > 0.3 ? Math.max(D.torchD, 9) : D.torchD;
+  WXS.lamp = 1 + 1.3 * n + 0.45 * d + 0.15 * g;
+  LT.amb = X.lt.amb; LT.sun = X.lt.sun; LT.lamp = WXS.lamp;
+  torch.intensity = Math.max(D.torchI, N.torch * n + Tk.torch * d); torch.distance = n > 0.05 || d > 0.3 ? Math.max(D.torchD, 9) : D.torchD; WXS.torchI = torch.intensity;
   // rain / overcast / night on the other shaders
   WETU.uWet.value.set(wet, Math.min(1, wet * 1.3), 0); WETU.uWetSky.value.copy(SKY.hor).lerp(SKY.top, 0.5); WETU.uWetSunC.value.copy(sun.color).multiplyScalar(sun.intensity * 1.2);
   WATERU.uRain.value = rain; WATERU.uGlint.value = clamp(sun.intensity / Math.max(D.sunI, 0.01), 0, 1.3);
   SHAFTU.uFade.value = (1 - 0.85 * g) * (1 - n) * (1 - 0.4 * d);
   MOTEU.uK.value = (1 - 0.75 * n) * (1 - 0.6 * g);
-  POOLU.uLamp.value = 1 + (WX.lamp - 1) * 0.45;
+  POOLU.uLamp.value = 1 + (WXS.lamp - 1) * 0.45;
   wxEmissive();
 }
 // Lantern glass, coals and house windows come alive at night (the prop templates' materials, shared by every map).
 const WX_EMIS = { emissive_lamp: 1, emissive_coals: 0.6, emissive_bog: 0.8, emissive_rune_gold: 0.5, emissive_shroom: 0.6, emissive_crystal_ice: 0.4, emissive_soul: 0.5, emissive_soul_dim: 0.5 };
 function wxEmissive() {
   const nT = Object.keys(PROPS.tpl).length;
-  if (!WX.emis || WX.emisN !== nT) {
-    const seen = new Set(WX.emis ? WX.emis.map(e => e.m) : []), L = WX.emis || [];
+  if (!WXS.emis || WXS.emisN !== nT) {
+    const seen = new Set(WXS.emis ? WXS.emis.map(e => e.m) : []), L = WXS.emis || [];
     for (const id in PROPS.tpl) for (const pt of PROPS.tpl[id].parts) {
       const m = pt.mat; if (!m || seen.has(m) || !m.emissive) continue;
       if (WX_EMIS[m.name] !== undefined) { L.push({ m, k: WX_EMIS[m.name], base: m.emissiveIntensity }); seen.add(m); }
       else if (m.name === 'glass') { L.push({ m, glass: true, base: m.emissive.clone() }); seen.add(m); }
     }
-    WX.emis = L; WX.emisN = nT; WX._lampE = -1;
+    WXS.emis = L; WXS.emisN = nT; WXS._lampE = -1;
   }
-  if (WX._lampE === WX.lamp) return; WX._lampE = WX.lamp;
-  const k = WX.lamp - 1, win = 0.95 * WX.n + 0.3 * WX.d;
-  for (const e of WX.emis) {
+  if (WXS._lampE === WXS.lamp) return; WXS._lampE = WXS.lamp;
+  const k = WXS.lamp - 1, win = 0.95 * WXS.n + 0.3 * WXS.d;
+  for (const e of WXS.emis) {
     if (e.glass) e.m.emissive.copy(e.base).add(_wl.setRGB(1.0, 0.56, 0.24).multiplyScalar(win * 1.6));
     else e.m.emissiveIntensity = e.base * (1 + k * e.k * 0.6);
   }
 }
 const _wdb = new THREE.Vector2();
 function wxParticles() {
-  const cfg = WX.cfg, q = GFX.preset.wx === undefined ? 1 : GFX.preset.wx;
-  for (const k in WX.layers) WX.layers[k].want = 0;
+  const cfg = WXS.cfg, q = GFX.preset.wx === undefined ? 1 : GFX.preset.wx;
+  for (const k in WXS.layers) WXS.layers[k].want = 0;
   for (const e of cfg.amb) {
-    const L = WX.layers[e[0]]; if (!L) continue; let i = +e[1] || 0; const k = e[0];
-    if (k === 'fireflies') { const dk = e[2] !== undefined ? +e[2] : 0; i *= (dk + (1 - dk) * Math.max(WX.n, WX.d * 0.6)) * (1 - WX.rain); }
-    else if (k === 'pollen' || k === 'spores') i *= (1 - 0.7 * WX.n) * (1 - 0.8 * WX.rain);
-    else if (k === 'leaves') i *= 1 - 0.4 * WX.rain;
+    const L = WXS.layers[e[0]]; if (!L) continue; let i = +e[1] || 0; const k = e[0];
+    if (k === 'fireflies') { const dk = e[2] !== undefined ? +e[2] : 0; i *= (dk + (1 - dk) * Math.max(WXS.n, WXS.d * 0.6)) * (1 - WXS.rain); }
+    else if (k === 'pollen' || k === 'spores') i *= (1 - 0.7 * WXS.n) * (1 - 0.8 * WXS.rain);
+    else if (k === 'leaves') i *= 1 - 0.4 * WXS.rain;
     L.want += i;
   }
-  if (WX.layers.rain) WX.layers.rain.want += WX.rain; if (WX.layers.splash) WX.layers.splash.want += WX.rain; if (WX.layers.snow) WX.layers.snow.want += WX.snow;
-  const fk = WX.forceW && WX.forceW.kind; if (fk && fk !== 'rain' && fk !== 'snow' && WX.layers[fk]) WX.layers[fk].want = Math.max(WX.layers[fk].want, WX.forceW.i);
+  if (WXS.layers.rain) WXS.layers.rain.want += WXS.rain; if (WXS.layers.splash) WXS.layers.splash.want += WXS.rain; if (WXS.layers.snow) WXS.layers.snow.want += WXS.snow;
+  if (WXS.layers.dripring && WXS.layers.drip) WXS.layers.dripring.want += WXS.layers.drip.want;
+  const fk = WXS.forceW && WXS.forceW.kind; if (fk && fk !== 'rain' && fk !== 'snow' && WXS.layers[fk]) WXS.layers[fk].want = Math.max(WXS.layers[fk].want, WXS.forceW.i);
   let any = false;
-  for (const k in WX.layers) {
-    const L = WX.layers[k], u = WX.used.has(k) || k === fk ? clamp(L.want * q / 1.4, 0, 1) : 0, cnt = u > 0.0005 ? Math.min(L.N, Math.ceil(u * L.N) + 2) : 0;
+  for (const k in WXS.layers) {
+    const L = WXS.layers[k], u = WXS.used.has(k) || k === fk ? clamp(L.want * q / 1.4, 0, 1) : 0, cnt = u > 0.0005 ? Math.min(L.N, Math.ceil(u * L.N) + 2) : 0;
     L.U.uN.value = u; L.mesh.visible = cnt > 0; L.mesh.geometry.setDrawRange(0, cnt * 6); L.U.uBox.value = Math.max(12, cam.dist * L.K.box);
     if (cnt > 0 && k !== 'fireflies') any = true;
   }
-  WX.screenParts = !any;   // (a hint for the 2D screen particles in gfx-render.js: 3D weather replaces them)
+  WXS.screenParts = !any;   // (a hint for the 2D screen particles in gfx-render.js: 3D weather replaces them)
   const U = WXU, hg = GFX.world && GFX.world.hgt;
-  U.uT.value = typeof time === 'number' ? time : WX.t; U.uC.value.set(cam.tx, cam.th, cam.ty); U.uCamD.value.set(Math.sin(cam.yaw), Math.cos(cam.yaw)); U.uCot.value = 1 / Math.tan(cam.pitch);
-  U.uWind.value.set(cfg.wind[0], cfg.wind[1]);
+  U.uT.value = typeof time === 'number' ? time : WXS.t; U.uC.value.set(cam.tx, cam.th, cam.ty); U.uCamD.value.set(Math.sin(cam.yaw), Math.cos(cam.yaw)); U.uCot.value = 1 / Math.tan(cam.pitch);
+  U.uWind.value.set(cfg.wind[0], cfg.wind[1]); U.uTorchR.value.set(RL && RL.torch ? RL.torch[2] || 11 : 11, 0);
   U.uPx.value = 2 * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, renderer.getDrawingBufferSize(_wdb).y * (GFX.composer && GFX.composer.on ? GFX.composer.scale : 1));
-  const D = WX.day; if (D) { const den = D.hemiI + D.sunI * 0.55 || 1; U.uLit.value.copy(hemi.color).multiplyScalar(hemi.intensity / den).add(_wc.copy(sun.color).multiplyScalar(sun.intensity * 0.55 / den)); }
+  const D = WXS.day; if (D) { const den = D.hemiI + D.sunI * 0.55 || 1; U.uLit.value.copy(hemi.color).multiplyScalar(hemi.intensity / den).add(_wc.copy(sun.color).multiplyScalar(sun.intensity * 0.55 / den)); }
   if (hg) { U.tHgt.value = hg.tex; U.uHgt.value.set(1 / hg.w1, 1 / hg.h1, hg.min, hg.range); } else { U.tHgt.value = null; U.uHgt.value.set(0, 0, 0, 0); }
   const W = RL && RL.water; U.uLevel.value = map && map.anim && map.anim.water ? (W && isFinite(W.level) ? +W.level : -0.45) : -99;
 }
-GFX.wx = WX;
-GFX.wx.info = () => ({ phase: +WX.phase.toFixed(3), night: +WX.n.toFixed(3), dusk: +WX.d.toFixed(3), rain: +WX.rain.toFixed(3), snow: +WX.snow.toFixed(3), wet: +WX.wet.toFixed(3), lamp: +WX.lamp.toFixed(3),
-  tod: WX.cfg ? WX.cfg.tod : null, layers: Object.fromEntries(Object.entries(WX.layers).filter(e => e[1].mesh.visible).map(([k, L]) => [k, Math.round(L.U.uN.value * L.N)])) });
+GFX.wx = WXS;
+GFX.wx.info = () => ({ phase: +WXS.phase.toFixed(3), night: +WXS.n.toFixed(3), dusk: +WXS.d.toFixed(3), rain: +WXS.rain.toFixed(3), snow: +WXS.snow.toFixed(3), wet: +WXS.wet.toFixed(3), lamp: +WXS.lamp.toFixed(3),
+  tod: WXS.cfg ? WXS.cfg.tod : null, layers: Object.fromEntries(Object.entries(WXS.layers).filter(e => e[1].mesh.visible).map(([k, L]) => [k, Math.round(L.U.uN.value * L.N)])) });
 // p: 0..1 day phase (0.2 day, 0.55 dusk, 0.75 night, 0.93 dawn); null = the running clock
-GFX.setTime = p => { WX.force = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WX.dirty = true; return WX.force; };
+GFX.setTime = p => { WXS.force = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WXS.dirty = true; return WXS.force; };
 // story scenes: hold the clock at phase p (null releases it); maps with tod: false stay locked at day anyway
-GFX.lockTime = p => { WX.lock = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WX.dirty = true; return WX.lock; };
+GFX.lockTime = p => { WXS.lock = p === null || p === undefined || !isFinite(p) ? null : ((+p % 1) + 1) % 1; WXS.dirty = true; return WXS.lock; };
 // force a weather ('rain' | 'snow' | an ambient kind, intensity) on every map; null = back to the natural cycle
 GFX.setWeather = (kind, i) => {
-  WX.forceW = kind && WX_KINDS[kind] ? { kind, i: i === undefined ? 1 : +i || 0 } : null; WX.dirty = true;
-  if (WX.forceW) { wxLayer(kind); if (kind === 'rain') wxLayer('splash'); }
-  return WX.forceW;
+  WXS.forceW = kind && WX_KINDS[kind] ? { kind, i: i === undefined ? 1 : +i || 0 } : null; WXS.dirty = true;
+  if (WXS.forceW) { wxLayer(kind); if (kind === 'rain') wxLayer('splash'); }
+  return WXS.forceW;
 };
 
 /* ---------- Carved stone caps on the keep wall blocks (the model's top faces) ----------
@@ -2500,10 +2705,470 @@ function capify(mat) {
   return mat;
 }
 
+/* =========================================================
+   Cycle 9 (world expansion): m.lights, doors, interior walls, cave rock, cave mouths, placeholders, big-map sectors
+   ========================================================= */
+const cssRGBA = (c, a) => `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`;
+// m.lights (core.js, every map): [{ x, y, col, r, i }] plus optional render fields: h (height above the ground), kind
+// ('hearth' | 'fire' | 'forge' | 'candle' | 'torch' | 'lantern' | 'lamp' | 'chandelier' | 'crystal' | 'mushroom' | ...),
+// flame (true / false: draw a flame sprite; default for fire kinds), fl (flicker 0..1; default 0.55 fires, 0.12 others).
+function mapLights(m) {
+  const src = m && Array.isArray(m.lights) ? m.lights : [];
+  if (m._gl && m._glSrc === src && m._glN === src.length) return m._gl;
+  const out = [];
+  for (const l of src) {
+    if (!l || !isFinite(l.x) || !isFinite(l.y)) continue;
+    let c; try { c = new THREE.Color(l.col !== undefined && l.col !== null ? l.col : 0xffb060); } catch (e) { c = new THREE.Color(0xffb060); }
+    const kind = typeof l.kind === 'string' ? l.kind : '', fire = /fire|hearth|candle|torch|brazier|forge|lamp|lantern|chandelier/.test(kind);
+    out.push({ x: +l.x, y: +l.y, c, lin: c.clone().convertSRGBToLinear(), i: clamp(isFinite(l.i) ? +l.i : 1, 0, 8), r: clamp(isFinite(l.r) ? +l.r : 5, 0.5, 24), kind, fire,
+      flame: l.flame !== undefined ? !!l.flame : fire && !/lamp|lantern|chandelier/.test(kind),
+      h: isFinite(l.h) ? +l.h : kind === 'hearth' || kind === 'forge' || kind === 'fire' ? 0.55 : kind === 'candle' ? 1.0 : kind === 'torch' ? 1.9 : kind === 'chandelier' ? 2.4 : 1.3,
+      fl: isFinite(l.fl) ? clamp(+l.fl, 0, 1) : fire ? 0.55 : 0.12 });
+  }
+  m._gl = out; m._glSrc = src; m._glN = src.length; return out;
+}
+// Warp visuals: '' = the generic portal; 'door' = into a building / a deeper room (warm light); 'exit' = the way out of an
+// interior or a cave (daylight); 'mouth' = door:'cave' on an overworld map (the cave_mouth set piece, a dark opening).
+function doorKind(wp, m) {
+  if (!wp || !wp.door) return '';
+  const k = mapKind(m), to = typeof MAPDEFS !== 'undefined' && wp.to && MAPDEFS[wp.to], tk = to ? (to.render && to.render.kind) || (to.gen === 'cave' || to.gen === 'interior' ? to.gen : '') : '';
+  if (wp.door === 'cave') return k === 'cave' ? 'exit' : k === 'interior' ? 'door' : 'mouth';
+  return k && tk !== 'cave' && tk !== 'interior' ? 'exit' : 'door';
+}
+// A door tile's orientation: (nx, nz) = unit direction toward the walkable side; inWall = both sides along the wall line
+// are T.WALL (a doorway in a wall: it gets a frame).
+function doorDir(wp, m) {
+  const w = m.w, h = m.h, t = (x, y) => x < 0 || y < 0 || x >= w || y >= h ? T.WALL : m.t[y * w + x], open = (x, y) => t(x, y) === 0;
+  const x = wp.x, y = wp.y; let nx = 0, nz = 0;
+  const bx = !open(x - 1, y) && !open(x + 1, y), bz = !open(x, y - 1) && !open(x, y + 1);
+  if (bx && !bz) nz = open(x, y + 1) ? 1 : -1;
+  else if (bz && !bx) nx = open(x + 1, y) ? 1 : -1;
+  else { for (let k = 0; k < 8; k++) if (open(x + DX[k], y + DY[k])) { nx += DX[k]; nz += DY[k]; } if (!nx && !nz) nz = 1; }
+  const l = Math.hypot(nx, nz); nx /= l; nz /= l;
+  const ax = Math.round(nz), az = -Math.round(nx);   // along the wall line
+  return { nx, nz, inWall: (ax || az) ? t(x + ax, y + az) === T.WALL && t(x - ax, y - az) === T.WALL : false };
+}
+// warm glow painted in a doorway (bright at the threshold, fading up and to the jambs)
+TEX.door = (() => {
+  const W = 64, H = 128, c = mkCanvas(W, H), g = c.getContext('2d'), img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = Math.abs((x + 0.5) / W * 2 - 1), v = 1 - (y + 0.5) / H, top = v > 0.82 ? Math.hypot(u, (v - 0.82) / 0.18) : u;
+    const a = (1 - smoothstep(0.5, 1, top)) * (0.35 + 0.65 * (1 - smoothstep(0.0, 0.95, v))), o = (y * W + x) * 4;
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = 255; img.data[o + 3] = a * 255;
+  }
+  g.putImageData(img, 0, 0); return canvasTex(c);
+})();
+// the dark inside of a procedural cave mouth: an arch of black, soft at the rim
+TEX.mouth = (() => {
+  const S = 128, c = mkCanvas(S, S), g = c.getContext('2d'), img = g.createImageData(S, S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = (x + 0.5) / S * 2 - 1, v = 1 - (y + 0.5) / S, d = v < 0.45 ? Math.abs(u) : Math.hypot(u, (v - 0.45) / 0.55);
+    const a = 1 - smoothstep(0.62, 0.98, d), o = (y * S + x) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 0; img.data[o + 3] = a * 255;
+  }
+  g.putImageData(img, 0, 0); return canvasTex(c);
+})();
+// window pane: a bright sky with a cross mullion and a lead grid
+TEX.pane = (() => {
+  const W = 64, H = 80, c = mkCanvas(W, H), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, '#fff6dc'); gr.addColorStop(1, '#d8e4f0'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(40,28,18,.55)'; g.lineWidth = 1; for (let x = 8; x < W; x += 12) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); } for (let y = 8; y < H; y += 12) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.fillStyle = '#3a2616'; g.fillRect(W / 2 - 3, 0, 6, H); g.fillRect(0, H / 2 - 3, W, 6); g.lineWidth = 6; g.strokeStyle = '#3a2616'; g.strokeRect(0, 0, W, H);
+  return canvasTex(c);
+})();
+// window light (left half: a soft vertical shaft; right half: a round floor patch)
+TEX.winLight = (() => {
+  const W = 128, H = 128, c = mkCanvas(W, H), g = c.getContext('2d'), img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let a; const v = 1 - (y + 0.5) / H;
+    if (x < 64) { const u = Math.abs((x + 0.5) / 64 * 2 - 1); a = Math.pow(1 - u * u, 1.4) * smoothstep(0, 0.3, v) * (1 - smoothstep(0.7, 1, v) * 0.6) * (0.8 + 0.2 * tnoise(x / 9, y / 40, 8, 17)); }
+    else { const u = (x - 64 + 0.5) / 64 * 2 - 1, w = v * 2 - 1; a = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(u), 2.2) - Math.pow(Math.abs(w), 2.2)), 1.3); }
+    const o = (y * W + x) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = 255; img.data[o + 3] = a * 255;
+  }
+  g.putImageData(img, 0, 0); return canvasTex(c);
+})();
+
+/* ---------- Interior walls (render.kind 'interior'): T.WALL tiles as proper room walls ----------
+   One merged mesh: every drawn wall tile (m.vis) is a block of the wall kind's height with trim (top beam, baseboard) in
+   the wall texture; its four sides and a cap. Each vertex carries aW = (inward x, inward z, flag, base y): the walls whose
+   room lies beyond them from the camera (dot(inward, camera direction) < 0) are cut down to a low stub in the vertex
+   shader as the camera turns (HD-2D diorama), the cut caps go dark, and every wall between the camera and the hero
+   dissolves in the occluder dither (same as tree canopies). Flags: 0 bottom, 1 top (cut), 2 cap (cut), 3 static
+   (ceiling beams: they only dither). Walls do not cast sun shadows (the faint window fill would shade the room from walls
+   that are cut away). */
+const IWTEX = {};
+function interiorWallTex(kind, trim) {
+  const key = kind + '|' + trim; if (IWTEX[key]) return IWTEX[key];
+  const S = 256, c = mkCanvas(S, S), g = c.getContext('2d'), r = mulberry32(kind.length * 977 + (trim & 0xffff));
+  const tc = new THREE.Color(trim), tr = (k, a) => `rgba(${clamp(tc.r * 255 * k, 0, 255) | 0},${clamp(tc.g * 255 * k, 0, 255) | 0},${clamp(tc.b * 255 * k, 0, 255) | 0},${a === undefined ? 1 : a})`;
+  const speck = (n, a, c0, c1) => { for (let i = 0; i < n; i++) { g.fillStyle = r() < 0.5 ? c0 : c1; g.globalAlpha = a * r(); g.fillRect(r() * S, r() * S, 1 + r() * 3, 1 + r() * 3); } g.globalAlpha = 1; };
+  const grainV = (x, y, w, h) => { for (let i = 0; i < w / 2; i++) { g.strokeStyle = `rgba(20,10,4,${0.1 + r() * 0.15})`; g.lineWidth = 1; g.beginPath(); const gx = x + r() * w; g.moveTo(gx, y); g.lineTo(gx + (r() - 0.5) * 3, y + h); g.stroke(); } };
+  const grainH = (x, y, w, h) => { for (let i = 0; i < h / 2; i++) { g.strokeStyle = `rgba(20,10,4,${0.1 + r() * 0.15})`; g.lineWidth = 1; g.beginPath(); const gy = y + r() * h; g.moveTo(x, gy); g.lineTo(x + w, gy + (r() - 0.5) * 3); g.stroke(); } };
+  const BB = 22, TB = 20;   // baseboard / top beam (px of 256 = the wall's height; x: 256 px = 2 tiles)
+  if (kind === 'timber') {        // Tudor plaster panels in a dark timber frame
+    g.fillStyle = '#e6d5b0'; g.fillRect(0, 0, S, S); speck(900, 0.2, '#b89c70', '#fff4dc');
+    const st = g.createLinearGradient(0, S * 0.55, 0, S); st.addColorStop(0, 'rgba(90,60,30,0)'); st.addColorStop(1, 'rgba(90,60,30,.35)'); g.fillStyle = st; g.fillRect(0, S * 0.55, S, S * 0.45);
+    g.save(); g.lineWidth = 11; g.strokeStyle = tr(0.95); g.beginPath(); g.moveTo(10, S - BB); g.lineTo(118, 128); g.moveTo(246, 118); g.lineTo(138, TB); g.stroke(); g.restore();
+    g.fillStyle = tr(1); for (const x of [0, 128, 256]) g.fillRect(x - 8, 0, 16, S); g.fillRect(0, 116, S, 12);
+    grainV(0, 0, 8, S); grainV(120, 0, 16, S); grainV(248, 0, 8, S); grainH(0, 116, S, 12);
+  } else if (kind === 'stone') {  // ashlar courses
+    g.fillStyle = '#4a4640'; g.fillRect(0, 0, S, S);
+    for (let y = TB, row = 0; y < S - BB; y += 30, row++) { let x = row % 2 ? -30 : 0; while (x < S) { const bw = 44 + (r() * 40 | 0), v = 118 + r() * 40 | 0; g.fillStyle = `rgb(${v},${v - 6},${v - 14})`; g.fillRect(x + 2, y + 2, bw - 3, 27); g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(x + 2, y + 2, bw - 3, 3); g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(x + 2, y + 25, bw - 3, 4); x += bw; } }
+    speck(700, 0.22, '#3a3632', '#d8d0c4');
+  } else if (kind === 'dwarf') {  // dark dwarf-cut blocks with a gold rune band
+    g.fillStyle = '#1c1a1e'; g.fillRect(0, 0, S, S);
+    for (let y = TB, row = 0; y < S - BB; y += 46, row++) { let x = row % 2 ? -48 : 0; while (x < S) { const v = 56 + r() * 22 | 0; g.fillStyle = `rgb(${v},${v - 2},${v + 5})`; g.fillRect(x + 2, y + 2, 92, 42); g.strokeStyle = 'rgba(255,255,255,.08)'; g.lineWidth = 2; g.strokeRect(x + 6, y + 6, 84, 34); x += 96; } }
+    g.fillStyle = tr(0.45); g.fillRect(0, 150, S, 24); g.strokeStyle = tr(1.25); g.lineWidth = 2;
+    for (let x = 6; x < S; x += 16) { g.beginPath(); const k = r() * 4 | 0; if (k === 0) { g.moveTo(x, 156); g.lineTo(x + 8, 168); g.moveTo(x + 8, 156); g.lineTo(x, 168); } else if (k === 1) { g.moveTo(x, 156); g.lineTo(x, 168); g.moveTo(x, 160); g.lineTo(x + 8, 156); } else if (k === 2) { g.moveTo(x, 156); g.lineTo(x + 4, 168); g.lineTo(x + 8, 156); } else { g.moveTo(x + 4, 156); g.lineTo(x + 4, 168); g.moveTo(x, 162); g.lineTo(x + 8, 162); } g.stroke(); }
+    g.fillStyle = tr(1.1); g.fillRect(0, 147, S, 3); g.fillRect(0, 174, S, 3);
+  } else {                        // hall: vertical planks under a painted band
+    for (let x = 0; x < S;) { const pw = 18 + (r() * 10 | 0), v = 84 + r() * 30 | 0; g.fillStyle = `rgb(${v},${v * 0.66 | 0},${v * 0.42 | 0})`; g.fillRect(x, 0, pw, S); grainV(x, 0, pw, S); g.fillStyle = 'rgba(20,10,4,.6)'; g.fillRect(x, 0, 2, S); x += pw; }
+    g.fillStyle = '#6a2a1a'; g.fillRect(0, 42, S, 20); g.fillStyle = '#c89a4a'; for (let x = 0; x < S; x += 16) { g.beginPath(); g.moveTo(x, 62); g.lineTo(x + 8, 45); g.lineTo(x + 16, 62); g.closePath(); g.fill(); }
+  }
+  g.fillStyle = tr(1); g.fillRect(0, 0, S, TB); g.fillRect(0, S - BB, S, BB);
+  g.fillStyle = tr(1.4, 0.9); g.fillRect(0, TB - 3, S, 2); g.fillRect(0, S - BB, S, 2);
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, TB, S, 3); g.fillRect(0, S - 3, S, 3);
+  if (kind === 'timber' || kind === 'hall') { grainH(0, 0, S, TB); grainH(0, S - BB, S, BB); }
+  const t = canvasTex(c, { repeat: true }); t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return (IWTEX[key] = t);
+}
+const WALLU = { uCamD: { value: new THREE.Vector2(0, 1) }, uHero: { value: new THREE.Vector2(-999, -999) }, uCutOn: { value: 0 } };   // horizontal direction from the view target to the camera; the controlled hero
+function wallMaterial(tex, H, stub) {
+  const mat = new THREE.MeshPhongMaterial({ map: tex, specular: 0x141210, shininess: 10 });
+  const U = Object.assign({ uWallH: { value: H }, uStubH: { value: stub } }, WALLU, OCC);
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aW; attribute vec2 aC; uniform vec2 uCamD, uHero; uniform float uWallH, uStubH; varying float vCap;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+      { float cutK = max(smoothstep(0.12, 0.5, -dot(aW.xy, uCamD)), smoothstep(0.35, 1.1, dot(aC - uHero, uCamD))); vCap = step(1.5, aW.z) * step(aW.z, 2.5) * cutK;
+        if (aW.z > 0.5 && aW.z < 2.5) transformed.y = aW.w + mix(uWallH, uStubH, cutK);
+        #ifdef USE_UV
+        if (aW.z < 1.5) vUv.y = (transformed.y - aW.w) / uWallH;
+        #endif
+      }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCap;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= 1.0 - 0.62 * vCap;');
+    occluder(sh);
+  };
+  mat.customProgramCacheKey = () => 'iwall';
+  return mat;
+}
+// Kit wall blocks (manifest kind 'wall': interior_wall_*, cave_wall*; room side +Z): the same cutaway on interior / cave
+// maps, per instance (inward = the instance's +Z, the tile = its position): the block is squashed to a 0.5 stub (its
+// top face stays closed), plus the occluder dither. uCutOn is 0 on other maps.
+function cutify(mat, tint) {
+  if (mat.userData.cut) return mat; mat.userData.cut = true;
+  const prev = mat.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile ? mat.onBeforeCompile : null;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    Object.assign(sh.uniforms, WALLU, OCC);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec2 uCamD, uHero; uniform float uCutOn; varying vec3 vCW;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+      { vec2 cIn = normalize((instanceMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xz + 1e-5), cC = instanceMatrix[3].xz;
+        float cutK = uCutOn * max(smoothstep(0.12, 0.5, -dot(cIn, uCamD)), smoothstep(0.35, 1.1, dot(cC - uHero, uCamD)));
+        vCW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+        transformed.y *= mix(1.0, 0.2, cutK); }   // squashed to a 0.5 stub (the block keeps its top face)
+      #endif`);
+    if (tint) {   // cave walls: a world-space value-noise tint hides the per-tile seams of the repeated blocks
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        varying vec3 vCW;
+        float cwH(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float cwN(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(cwH(i), cwH(i + vec3(1, 0, 0)), f.x), mix(cwH(i + vec3(0, 1, 0)), cwH(i + vec3(1, 1, 0)), f.x), f.y),
+                     mix(mix(cwH(i + vec3(0, 0, 1)), cwH(i + vec3(1, 0, 1)), f.x), mix(cwH(i + vec3(0, 1, 1)), cwH(i + vec3(1, 1, 1)), f.x), f.y), f.z); }`)
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{ float cn = cwN(vCW * 1.7) * 0.55 + cwN(vCW * 0.45 + 7.1) * 0.45; diffuseColor.rgb *= 0.74 + 0.5 * cn; }');
+    }
+    if (!/vOccC/.test(sh.vertexShader)) occluder(sh);
+  };
+  const pk = mat.customProgramCacheKey && mat.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey ? mat.customProgramCacheKey() : '';
+  mat.customProgramCacheKey = () => pk + (tint ? 'cutt' : 'cut');
+  return mat;
+}
+// A kit wall block for tile (x, y) (art kit conventions, rotation about +Y): straight pieces face their room side +Z
+// (N 0, W +pi/2, E -pi/2, S pi); `<base>_corner` (a spur: open on +Z and +X) where two adjacent sides are open;
+// `<base>_inner` (open only toward the +X+Z diagonal) where only a diagonal is open. Returns [id, rotation].
+const ROT4 = [0, Math.PI / 2, Math.PI, -Math.PI / 2];   // +Z -> +Z, +X, -Z, -X
+function wallPiece(m, x, y, id) {
+  const w = m.w, h = m.h, open = (xx, yy) => xx >= 0 && yy >= 0 && xx < w && yy < h && m.t[yy * w + xx] !== T.WALL;
+  const S = [open(x, y + 1), open(x + 1, y), open(x, y - 1), open(x - 1, y)];   // +Z, +X, -Z, -X (same order as ROT4)
+  const n = S[0] + S[1] + S[2] + S[3], base = id.replace(/_b$/, '');
+  if (n === 2) for (let k = 0; k < 4; k++) if (S[k] && S[(k + 1) % 4] && hasModel(base + '_corner')) return [base + '_corner', ROT4[k]];
+  if (n === 0) { const D = [open(x + 1, y + 1), open(x + 1, y - 1), open(x - 1, y - 1), open(x - 1, y + 1)]; for (let k = 0; k < 4; k++) if (D[k] && hasModel(base + '_inner')) return [base + '_inner', ROT4[k]]; }
+  let nx = 0, nz = 0;
+  for (let k = 0; k < 8; k++) { if (!open(x + DX[k], y + DY[k])) continue; const wk = DX[k] && DY[k] ? 0.5 : 1; nx += DX[k] * wk; nz += DY[k] * wk; }
+  return [id, Math.abs(nx) > Math.abs(nz) ? (nx > 0 ? Math.PI / 2 : -Math.PI / 2) : nz < 0 ? Math.PI : 0];
+}
+function buildInteriorWalls(m, R, grp, A, plan) {
+  const I = interiorCfg(m), WD = INT_WALL[I.wall], H = WD.h, w = m.w, h = m.h, Tt = m.t, W1 = w + 1;
+  const wallAt = (x, y) => x < 0 || y < 0 || x >= w || y >= h || Tt[y * w + x] === T.WALL;
+  const pos = [], nor = [], uv = [], aw = [], idx = []; let nv = 0;
+  const ac = [], quad = (v, n, uvs, f, o) => { for (let k = 0; k < 4; k++) { pos.push(v[k][0], v[k][1], v[k][2]); nor.push(n[0], n[1], n[2]); uv.push(uvs[k][0], uvs[k][1]); aw.push(o[0], o[1], f[k], o[2]); ac.push(o[3] === undefined ? -999 : o[3], o[4] === undefined ? -999 : o[4]); } idx.push(nv, nv + 1, nv + 2, nv, nv + 2, nv + 3); nv += 4; };
+  const SIDE = [0, 0, 1, 1], CAP = [2, 2, 2, 2], FIX = [3, 3, 3, 3], inward = new Float32Array(w * h * 2), base = new Float32Array(w * h);
+  const kitWall = new Set(); for (const it of (plan && plan.items) || []) if (PROPS.kind(it.id) === 'wall') kitWall.add(Math.floor(it.z) * w + Math.floor(it.x));   // tiles a kit wall block draws
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (Tt[i] !== T.WALL || !m.vis[i]) continue;
+    let nx = 0, nz = 0; for (let k = 0; k < 8; k++) { const xx = x + DX[k], yy = y + DY[k]; if (wallAt(xx, yy)) continue; const wk = DX[k] && DY[k] ? 0.5 : 1; nx += DX[k] * wk; nz += DY[k] * wk; }
+    const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l; inward[i * 2] = nx; inward[i * 2 + 1] = nz;
+    const gb = Math.min(m.hgt[y * W1 + x], m.hgt[y * W1 + x + 1], m.hgt[(y + 1) * W1 + x], m.hgt[(y + 1) * W1 + x + 1]) - 0.04, tp = gb + H, o = [nx, nz, gb, x + 0.5, y + 0.5];
+    base[i] = gb; if (kitWall.has(i)) continue; const x0 = x, x1 = x + 1, z0 = y, z1 = y + 1;
+    quad([[x1, gb, z0], [x0, gb, z0], [x0, tp, z0], [x1, tp, z0]], [0, 0, -1], [[x1 / 2, 0], [x0 / 2, 0], [x0 / 2, 1], [x1 / 2, 1]], SIDE, o);
+    quad([[x0, gb, z1], [x1, gb, z1], [x1, tp, z1], [x0, tp, z1]], [0, 0, 1], [[x0 / 2, 0], [x1 / 2, 0], [x1 / 2, 1], [x0 / 2, 1]], SIDE, o);
+    quad([[x0, gb, z0], [x0, gb, z1], [x0, tp, z1], [x0, tp, z0]], [-1, 0, 0], [[z0 / 2, 0], [z1 / 2, 0], [z1 / 2, 1], [z0 / 2, 1]], SIDE, o);
+    quad([[x1, gb, z1], [x1, gb, z0], [x1, tp, z0], [x1, tp, z1]], [1, 0, 0], [[z1 / 2, 0], [z0 / 2, 0], [z0 / 2, 1], [z1 / 2, 1]], SIDE, o);
+    quad([[x0, tp, z1], [x1, tp, z1], [x1, tp, z0], [x0, tp, z0]], [0, 1, 0], [[x0 / 2, 0.955], [x1 / 2, 0.955], [x1 / 2, 0.97], [x0 / 2, 0.97]], CAP, o);
+  }
+  // ceiling beams across the room every third row (timber / hall walls): the room reads as a room without a roof
+  if (I.beams) for (let y = 2; y < h - 2; y += 3) {
+    let x = 0;
+    while (x < w) {
+      if (wallAt(x, y)) { x++; continue; }
+      let x2 = x; while (x2 < w && !wallAt(x2, y)) x2++;
+      if (x > 0 && x2 < w && x2 - x >= 3 && x2 - x <= 20) {
+        const gb = Math.min(base[y * w + x - 1] || 0, base[y * w + x2] || 0), yt = gb + H - 0.1, yb = yt - 0.24, z0 = y + 0.4, z1 = y + 0.6, a = x - 0.35, b = x2 + 0.35, o = [0, 0, gb];
+        quad([[a, yb, z1], [b, yb, z1], [b, yt, z1], [a, yt, z1]], [0, 0, 1], [[a / 2, 0.93], [b / 2, 0.93], [b / 2, 0.99], [a / 2, 0.99]], FIX, o);
+        quad([[b, yb, z0], [a, yb, z0], [a, yt, z0], [b, yt, z0]], [0, 0, -1], [[b / 2, 0.93], [a / 2, 0.93], [a / 2, 0.99], [b / 2, 0.99]], FIX, o);
+        quad([[a, yt, z1], [b, yt, z1], [b, yt, z0], [a, yt, z0]], [0, 1, 0], [[a / 2, 0.96], [b / 2, 0.96], [b / 2, 0.98], [a / 2, 0.98]], FIX, o);
+        quad([[a, yb, z0], [b, yb, z0], [b, yb, z1], [a, yb, z1]], [0, -1, 0], [[a / 2, 0.96], [b / 2, 0.96], [b / 2, 0.98], [a / 2, 0.98]], FIX, o);
+      }
+      x = x2;
+    }
+  }
+  m.wallIn = inward; m.wallBase = base;
+  if (!nv) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setAttribute('aW', new THREE.Float32BufferAttribute(aw, 4)); geo.setAttribute('aC', new THREE.Float32BufferAttribute(ac, 2));
+  geo.setIndex(nv > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1)); geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, wallMaterial(interiorWallTex(I.wall, I.trim), H, WD.stub)); mesh.receiveShadow = true; mesh.castShadow = false; mesh.name = 'interior_walls';
+  grp.add(mesh); A.cutVis = A.cutVis || [];
+  // windows: panes on the wall's inner face + a slanted shaft of daylight + a patch on the floor (render.interior.windows
+  // tiles and decor pieces whose id says window)
+  const wins = I.windows.map(p => [Math.floor(p[0]), Math.floor(p[1])]);
+  for (const d of (Array.isArray(m.decor) ? m.decor : [])) if (d && /window/.test(String(d.kit || d.model || '')) && isFinite(d.x) && isFinite(d.y)) wins.push([Math.floor(d.x), Math.floor(d.y), d]);
+  const seen = new Set(); A.windows = [];
+  for (const [wx, wy, dd] of wins) {
+    let tx = wx, ty = wy;
+    if (!(wallAt(tx, ty) && m.vis[ty * w + tx])) {   // a decor window standing in front of its wall: the wall tile behind it
+      let best = null; for (let k = 0; k < 4; k++) { const xx = wx + DX[k], yy = wy + DY[k]; if (xx >= 0 && yy >= 0 && xx < w && yy < h && Tt[yy * w + xx] === T.WALL && m.vis[yy * w + xx]) { best = [xx, yy]; break; } }
+      if (!best) continue; tx = best[0]; ty = best[1];
+    }
+    const k = ty * w + tx; if (seen.has(k)) continue; seen.add(k);
+    let nx = inward[k * 2], nz = inward[k * 2 + 1]; if (Math.abs(nx) >= Math.abs(nz)) { nx = Math.sign(nx) || 1; nz = 0; } else { nz = Math.sign(nz) || 1; nx = 0; }
+    const gb = base[k], py = gb + H * 0.6, cx = tx + 0.5 + nx * 0.52, cz = ty + 0.5 + nz * 0.52, rot = Math.atan2(nx, nz);
+    const g = new THREE.Group(); g.position.set(cx, 0, cz); g.rotation.y = rot;
+    if (!dd) { const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.8), new THREE.MeshBasicMaterial({ map: TEX.pane, color: new THREE.Color(1.9, 1.8, 1.6), fog: false })); pane.position.set(0, py, 0.01); g.add(pane); }
+    // light: two crossed slanted sheets from the pane down to the floor (local +z = into the room) and a floor patch
+    const drop = py - gb, reach = drop * 0.8, lg = [], cols = [], L = (x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, u0, u1) => { lg.push(x0, y0, z0, x1, y1, z1, x2, y2, z2, x0, y0, z0, x2, y2, z2, x3, y3, z3); for (const [u, v] of [[u0, 0], [u1, 0], [u1, 1], [u0, 0], [u1, 1], [u0, 1]]) cols.push(u, v); };
+    L(-0.45, gb + 0.02, reach, 0.45, gb + 0.02, reach, 0.31, py + 0.4, 0, -0.31, py + 0.4, 0, 0, 0.5);
+    L(0, gb + 0.02, reach + 0.35, 0, gb + 0.02, reach - 0.35, 0, py + 0.4, 0.02, 0, py + 0.4, 0.02, 0, 0.5);
+    L(-0.55, gb + 0.03, reach + 0.6, 0.55, gb + 0.03, reach + 0.6, 0.55, gb + 0.03, reach - 0.6, -0.55, gb + 0.03, reach - 0.6, 0.5, 1);
+    const lgeo = new THREE.BufferGeometry(); lgeo.setAttribute('position', new THREE.Float32BufferAttribute(lg, 3)); lgeo.setAttribute('uv', new THREE.Float32BufferAttribute(cols, 2));
+    const lm = new THREE.Mesh(lgeo, new THREE.MeshBasicMaterial({ map: TEX.winLight, color: linCol(0xfff0d0).multiplyScalar(0.42), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    lm.renderOrder = 3; g.add(lm); grp.add(g);
+    A.cutVis.push({ o: g, nx, nz, x: tx + 0.5, z: ty + 0.5 }); A.windows.push({ x: tx + 0.5 + nx * (0.5 + reach), z: ty + 0.5 + nz * (0.5 + reach), h: gb + 1.4 });
+  }
+  return mesh;
+}
+
+/* ---------- Cave rock (render.kind 'cave', and cave annexes: T.WALL in field maps) ----------
+   T.WALL becomes a rock mass: a heightfield over the wall tiles at 3 (2 on big caves) vertices per tile, rising from the
+   floor at the wall's edge to ~2-3.5 units with noise, jittered for an organic outline. Triplanar rock shader: the
+   floor detail layer of the rock kind, strata, dusty tops, wet (darker, glossy) toward the floor with specular highlights
+   from the hero's torch, faint glowing veins in crystal rock. Dithers between the camera and the hero like trees. */
+function caveRockMaterial(K, C) {
+  const U = { uRD: { value: detailTex(K.detail).tex }, uRA: { value: linCol(K.a) }, uRB: { value: linCol(K.b) }, uRG: { value: linCol(K.glow).multiplyScalar(1.8) },
+    uRK: { value: new THREE.Vector4(C.wet, K.veins ? 1 : 0, K.spec || 0, 0.21) } };
+  const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, specular: new THREE.Color(0.5, 0.53, 0.58), shininess: K.spec ? 70 : 42 });
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, U, OCC);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aRH; varying vec3 vRW, vRN; varying float vRH;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvRW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRN = normalize(mat3(modelMatrix) * objectNormal); vRH = aRH;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uRD; uniform vec3 uRA, uRB, uRG; uniform vec4 uRK; varying vec3 vRW, vRN; varying float vRH; float rkWet; vec3 rkSl;')
+      .replace('#include <map_fragment>', `{
+        vec3 an = abs(normalize(vRN)); an = an * an * an; an /= (an.x + an.y + an.z);
+        vec4 tx = texture2D(uRD, vRW.zy * uRK.w), ty = texture2D(uRD, vRW.xz * uRK.w), tz = texture2D(uRD, vRW.xy * uRK.w);
+        vec4 d = tx * an.x + ty * an.y + tz * an.z;
+        float lowN = texture2D(uRD, vRW.xz * 0.043 + vec2(vRW.y * 0.031, 0.17)).a;
+        vec3 col = mix(uRA, uRB, smoothstep(0.2, 0.8, lowN * 0.65 + d.a * 0.35)) * (0.45 + 1.1 * d.b);
+        col *= 0.84 + 0.16 * sin(vRW.y * 6.3 + lowN * 7.0);
+        float up = smoothstep(0.55, 0.95, vRN.y);
+        col = mix(col, col * 1.2 + 0.012, up * 0.5);
+        rkWet = uRK.x * (0.3 + 0.7 * (1.0 - smoothstep(0.05, 1.5, vRH))) * (0.55 + 0.45 * d.a) * (1.0 - up * 0.5);
+        col *= 1.0 - rkWet * 0.4;
+        diffuseColor.rgb *= col;
+        rkSl = vec3((ty.r - 0.5) * an.y + (tz.r - 0.5) * an.z, (tz.g - 0.5) * an.z + (tx.g - 0.5) * an.x, (ty.g - 0.5) * an.y + (tx.r - 0.5) * an.x) * 4.0;
+        if (uRK.y > 0.0) totalEmissiveRadiance += uRG * smoothstep(0.8, 0.94, d.a) * smoothstep(0.35, 0.7, lowN) * uRK.y;
+      }`)
+      .replace('#include <specularmap_fragment>', 'float specularStrength = 0.06 + rkWet * 1.5 + uRK.z * 0.5;')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(normal - 0.6 * (viewMatrix * vec4(rkSl, 0.0)).xyz);');
+    occluder(sh);
+  };
+  mat.customProgramCacheKey = () => 'caverock';
+  return mat;
+}
+function buildCaveRock(m, K, C) {
+  const w = m.w, h = m.h, Tt = m.t, S = w * h > 4200 ? 2 : 3, NX = w * S, NZ = h * S, V1 = NX + 1, NV = V1 * (NZ + 1), sd = (m.d.seed | 0) + 7;
+  const td = new Uint8Array(w * h).fill(99), q = [];
+  for (let i = 0; i < w * h; i++) if (Tt[i] !== T.WALL) { td[i] = 0; q.push(i); }
+  if (!q.length || q.length === w * h) return null;
+  for (let qi = 0; qi < q.length; qi++) { const i = q[qi], x = i % w, y = (i / w) | 0; if (td[i] >= 6) continue; for (let k = 0; k < 8; k++) { const nx = x + DX[k], ny = y + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const j = ny * w + nx; if (td[j] > td[i] + 1) { td[j] = td[i] + 1; q.push(j); } } }
+  const pos = new Float32Array(NV * 3), rh = new Float32Array(NV), jit = 0.36 / S;
+  for (let j = 0; j <= NZ; j++) for (let i = 0; i <= NX; i++) {
+    const k = j * V1 + i; let px = i / S, pz = j / S; const fx = Math.floor(px), fz = Math.floor(pz);
+    let near = 99; for (let oz = -1; oz <= 0; oz++) for (let ox = -1; ox <= 0; ox++) { const tx = fx + ox, tz = fz + oz; if (tx >= 0 && tz >= 0 && tx < w && tz < h) near = Math.min(near, td[tz * w + tx]); }
+    let d;
+    if (near === 0) d = 0;
+    else if (near >= 4) d = near - 0.5;
+    else { let best = 1e9; for (let tz = fz - near - 1; tz <= fz + near; tz++) for (let tx = fx - near - 1; tx <= fx + near; tx++) { if (tx < 0 || tz < 0 || tx >= w || tz >= h || Tt[tz * w + tx] === T.WALL) continue; const dx = Math.max(tx - px, 0, px - tx - 1), dz = Math.max(tz - pz, 0, pz - tz - 1), d2 = dx * dx + dz * dz; if (d2 < best) best = d2; } d = best < 1e9 ? Math.sqrt(best) : near; }
+    const g = groundHm(m, px, pz), n3 = vnoise(px / 5.5, pz / 5.5, sd + 43), n1 = vnoise(px / 1.9, pz / 1.9, sd + 41), n2 = vnoise(px / 0.7, pz / 0.7, sd + 42);
+    const topH = K.h * (0.62 + 0.7 * n3) + (n1 - 0.5) * 1.1, y = g - 0.05 + topH * Math.pow(smoothstep(0, 2.0, d), 0.5) + (n2 - 0.5) * 0.3 * smoothstep(0, 0.5, d);
+    // (the foot wanders up to ~0.12 over the tile edge: no ruler-straight outlines)
+    { const jk = 0.24 + smoothstep(0.2, 0.7, d) * (2.6 * jit - 0.24); px += (vnoise(px * 1.7 + 3.1, pz * 1.7, sd + 44) - 0.5) * jk; pz += (vnoise(px * 1.7, pz * 1.7 + 5.3, sd + 45) - 0.5) * jk; }
+    pos[k * 3] = px; pos[k * 3 + 1] = y; pos[k * 3 + 2] = pz; rh[k] = y - g;
+  }
+  const idx = [];
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    if (Tt[Math.floor(j / S) * w + Math.floor(i / S)] !== T.WALL) continue;
+    const a = j * V1 + i, b = a + 1, c = a + V1, dd = c + 1;
+    if ((i + j) & 1) idx.push(a, c, b, b, c, dd); else idx.push(a, c, dd, a, dd, b);
+  }
+  if (!idx.length) return null;
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aRH', new THREE.BufferAttribute(rh, 1));
+  geo.setIndex(NV > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1)); geo.computeVertexNormals(); geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, caveRockMaterial(K, C)); mesh.receiveShadow = true; mesh.castShadow = false; mesh.name = 'cave_rock';
+  return mesh;
+}
+// the rock palette of a field map's cave annexes (T.WALL in a field): its own rock colour
+function annexRock(m) { const L = m.d.look || {}, b = new THREE.Color(L.rock !== undefined ? L.rock : 0x8a867e); return Object.assign({}, CAVE_ROCK.basalt, { a: b.clone().multiplyScalar(0.55).getHex(), b: b.getHex(), h: 2.4 }); }
+
+/* ---------- Doors (warps with door: true | 'cave') ----------
+   Doors replace the generic portal: a warm glow painted in the doorway and a light at its threshold (daylight for the way
+   out of an interior or cave), a timber frame when the doorway is a gap in a wall line (the building's model has its own
+   door otherwise); door:'cave' on an overworld map is the cave mouth: the art set piece `cave_mouth` (placed by
+   planProps when content did not) or, until it is in the manifest, a procedural rock arch with a black opening.
+   Interior doors on a cut-away wall hide with the wall. Locked doors glow red. */
+function rockBlob(r, seed, sx, sy, sz) {
+  const g = new THREE.IcosahedronGeometry(r, 1), p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), n = 0.76 + 0.46 * vnoise(x * 2.1 / r + seed, y * 2.1 / r + z * 1.3 / r, seed + 7); p.setXYZ(i, x * n * sx, y * n * sy, z * n * sz); }
+  g.computeVertexNormals(); return g;
+}
+function buildCaveMouth(wp, m, D) {
+  const cx = wp.x + 0.5, cz = wp.y + 0.5, gh = groundHm(m, cx, cz), parts = [], cols = [];
+  const add = (geo, x, y, z, ao) => { geo.translate(x, y, z); const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const k = clamp(0.5 + p.getY(i) * 0.16 + (p.getZ(i) + 1.2) * 0.14, 0.3, 1.05) * ao; cols.push(k, k, k * 0.96); } parts.push(geo); };
+  add(rockBlob(1, 3, 2.7, 1.9, 1.5), 0, 0.3, -1.8, 0.85);
+  for (let k = 0; k <= 8; k++) { const a = Math.PI * k / 8, r = 0.46 + 0.1 * Math.sin(k * 2.3); add(rockBlob(r, k + 11, 1, 1.1, 0.95), -Math.cos(a) * 1.3, Math.sin(a) * 1.5 + 0.05, -0.32, 1); }
+  add(rockBlob(0.72, 21, 1.2, 0.9, 1), 1.8, 0.32, -0.15, 0.95); add(rockBlob(0.66, 27, 1.1, 0.85, 1), -1.85, 0.28, -0.1, 0.95);
+  add(rockBlob(0.34, 31, 1, 0.7, 1), 1.2, 0.1, 0.42, 1); add(rockBlob(0.3, 37, 1, 0.7, 1), -1.25, 0.08, 0.5, 1);
+  const geo = merge(parts); geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  const L = m.d.look || {}, rock = new THREE.MeshPhongMaterial({ color: linCol(L.rock !== undefined ? L.rock : 0x8a867e), vertexColors: true, specular: 0x0c0c0c, shininess: 6 });
+  const mesh = new THREE.Mesh(geo, rock); mesh.castShadow = mesh.receiveShadow = true;
+  const op = new THREE.Mesh(new THREE.PlaneGeometry(2.25, 2.4).translate(0, 1.08, -0.5), new THREE.MeshBasicMaterial({ map: TEX.mouth, color: 0x000000, transparent: true, depthWrite: false }));
+  op.renderOrder = 1;
+  const g = new THREE.Group(); g.add(mesh, op); g.position.set(cx - D.nx * 0.12, gh - 0.08, cz - D.nz * 0.12); g.rotation.y = Math.atan2(D.nx, D.nz); g.name = 'cave_mouth_proc';
+  return g;
+}
+function buildDoors(m, R, grp, A, GB, lam, plan) {
+  const kind = mapKind(m), I = kind === 'interior' ? interiorCfg(m) : null, fr = [], gl = [], glC = [], glUV = [], M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), P0 = new THREE.Vector3(), ONE = new THREE.Vector3(1, 1, 1);
+  A.doors = []; A.cutVis = A.cutVis || [];
+  const frameMat = () => lam({ color: linCol(I ? I.trim : m.d.gen === 'dungeon' ? 0x6a6470 : 0x5a3a20), specular: 0x111111, shininess: 12 });
+  for (const wp of m.warps) {
+    const dk = doorKind(wp, m); if (!dk) continue;
+    const D = doorDir(wp, m), cx = wp.x + 0.5, cz = wp.y + 0.5, gh = groundHm(m, cx, cz), rot = Math.atan2(D.nx, D.nz), rec = { wp, dk, D, halo: null };
+    A.doors.push(rec);
+    if (dk === 'mouth') { if (!(plan && plan.mouths && plan.mouths.has(wp))) grp.add(buildCaveMouth(wp, m, D)); continue; }
+    const exit = dk === 'exit', col = exit ? (kind === 'cave' ? new THREE.Color(0.75, 0.84, 0.98) : new THREE.Color(1.3, 1.42, 1.62)) : new THREE.Color(2.0, 1.15, 0.5);
+    // (a doorway in a wall line: the plane stands in the gap; a building's door tile: on the facade, the tile's open edge)
+    const off = D.inWall || kind ? 0.44 : -0.53, dx = cx - D.nx * off, dz = cz - D.nz * off, ht = I ? Math.min(2.25, INT_WALL[I.wall].h - 0.3) : 2.2;
+    const cut = kind === 'interior';
+    let fg = null;
+    if (kind === 'interior' || (D.inWall && kind !== 'cave')) {   // a frame in the wall gap: posts, lintel, threshold
+      const parts = [boxAt(-0.6, 0, 0, 0.17, ht, 0.24), boxAt(0.6, 0, 0, 0.17, ht, 0.24), boxAt(0, ht, 0, 1.38, 0.2, 0.28), boxAt(0, -0.03, 0.06, 1.08, 0.07, 0.36)];
+      if (cut) { fg = new THREE.Group(); const fm = new THREE.Mesh(merge(parts), frameMat()); fm.castShadow = false; fm.receiveShadow = true; fg.add(fm); fg.position.set(dx, gh, dz); fg.rotation.y = rot; grp.add(fg); }
+      else { M.compose(P0.set(dx, gh, dz), Q.setFromAxisAngle(Y, rot), ONE); for (const p of parts) { p.applyMatrix4(M); fr.push(p); } }
+    }
+    // the doorway glow (local plane facing the walkable side)
+    const pg = new THREE.PlaneGeometry(1.0, ht * 0.95).translate(0, ht * 0.475, -0.03);
+    if (cut) {
+      const gm = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ map: TEX.door, color: col, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+      gm.renderOrder = 2; if (!fg) { fg = new THREE.Group(); fg.position.set(dx, gh, dz); fg.rotation.y = rot; grp.add(fg); } fg.add(gm);
+      A.cutVis.push({ o: fg, nx: D.nx, nz: D.nz, x: cx, z: cz });
+    } else {
+      M.compose(P0.set(dx, gh, dz), Q.setFromAxisAngle(Y, rot), ONE); pg.applyMatrix4(M);
+      gl.push(ni(pg)); for (let i = 0; i < 6; i++) glC.push(col.r, col.g, col.b);
+    }
+    // a soft halo at the threshold (batched glows), and in a cave a shaft of daylight falling in at the way out
+    const hop = exit ? (kind === 'cave' ? 0.14 : 0.26) : 0.3, halo = GB.add(exit ? linCol(0xdce8ff) : linCol(0xffb870), hop, 2.4, 2.8); halo.position.set(cx - D.nx * 0.2, gh + 1.1, cz - D.nz * 0.2);
+    rec.halo = halo; rec.col = halo.material.color.clone(); A.halos.push({ s: halo, op: hop, ph: wp.x * 1.3 + wp.y, fl: exit ? 0.02 : 0.15 });
+    if (exit && kind === 'cave') {
+      const sg = new THREE.PlaneGeometry(1.4, 4.6).translate(0, 2.3, 0); sg.rotateX(-0.38); const sm = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: TEX.shaft, color: linCol(0xe8f0ff).multiplyScalar(0.26), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+      sm.position.set(cx - D.nx * 0.6, gh, cz - D.nz * 0.6); sm.rotation.y = rot; sm.renderOrder = 3; grp.add(sm);
+    }
+  }
+  if (fr.length) { const fm = new THREE.Mesh(merge(fr), frameMat()); fm.castShadow = fm.receiveShadow = true; grp.add(fm); }
+  if (gl.length) {
+    const geo = merge(gl); geo.setAttribute('color', new THREE.Float32BufferAttribute(glC, 3));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: TEX.door, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    mesh.renderOrder = 2; grp.add(mesh);
+  }
+}
+
+/* ---------- Placeholders: decor ids without a model (the interior_* / cave_* kits may land mid-round) ----------
+   A neutral stone block of the entry's footprint (entries with fp) or a small one (entries with a light); other unknown
+   ids are skipped without a request. When the kit lands in assets/models/index.json the real model is drawn. */
+function placeholderTpl() {
+  if (PROPS.tpl.__ph) return PROPS.tpl.__ph;
+  const geo = new THREE.BoxGeometry(0.9, 1, 0.9); geo.translate(0, 0.5, 0);
+  const mat = new THREE.MeshPhongMaterial({ name: 'placeholder', color: linCol(0x8e8a82), specular: 0x0c0c0c, shininess: 6 });
+  return (PROPS.tpl.__ph = { id: '__ph', parts: [{ geo, mat, depth: null, name: 'placeholder' }], rad: 0.64, top: 1, small: true });
+}
+
+/* ---------- Big maps (> 64 x 64): sectors ----------
+   Terrain: one mesh per 32 x 32-tile sector (frustum culled). Props: every instanced group keeps its instances sorted by
+   sector; each frame the sectors whose bounds meet the view frustum are found and, when that set changes, their
+   instances are copied to the front of the instance buffer: the main pass draws only those (count), the sun's static
+   shadow cache (re-rendered only when the view drifts) draws all. No extra draw calls; grass is already in 32-tile chunks. */
+const SECT = { frustum: new THREE.Frustum(), pm: new THREE.Matrix4(), on: true };
+function sectorGrid(m) { let S = 32; while (Math.ceil(m.w / S) * Math.ceil(m.h / S) > 30) S += 8; return { S, nx: Math.ceil(m.w / S), nz: Math.ceil(m.h / S) }; }
+function secIndex(G, x, z) { return clamp(Math.floor(z / G.S), 0, G.nz - 1) * G.nx + clamp(Math.floor(x / G.S), 0, G.nx - 1); }
+function groundSectors(m, HG, mat) {
+  const G = sectorGrid(m), w = m.w, h = m.h, W1 = w + 1, out = [], Hn = (x, z) => HG[clamp(z, 0, h) * W1 + clamp(x, 0, w)];
+  for (let sz = 0; sz < G.nz; sz++) for (let sx = 0; sx < G.nx; sx++) {
+    const x0 = sx * G.S, x1 = Math.min(w, x0 + G.S), z0 = sz * G.S, z1 = Math.min(h, z0 + G.S), cw = x1 - x0, ch = z1 - z0, n = (cw + 1) * (ch + 1);
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), idx = new (n > 65535 ? Uint32Array : Uint16Array)(cw * ch * 6);
+    for (let j = 0; j <= ch; j++) for (let i = 0; i <= cw; i++) {
+      const x = x0 + i, z = z0 + j, k = j * (cw + 1) + i, gx = (Hn(x + 1, z) - Hn(x - 1, z)) * 0.5, gz = (Hn(x, z + 1) - Hn(x, z - 1)) * 0.5, l = Math.hypot(gx, 1, gz);
+      pos[k * 3] = x; pos[k * 3 + 1] = Hn(x, z); pos[k * 3 + 2] = z; nor[k * 3] = -gx / l; nor[k * 3 + 1] = 1 / l; nor[k * 3 + 2] = -gz / l; uv[k * 2] = x / w; uv[k * 2 + 1] = 1 - z / h;
+    }
+    let o = 0; for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) { const a = j * (cw + 1) + i, b = a + cw + 1, c = b + 1, d = a + 1; idx[o++] = a; idx[o++] = b; idx[o++] = d; idx[o++] = b; idx[o++] = c; idx[o++] = d; }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeBoundingSphere(); const me = new THREE.Mesh(geo, mat); me.receiveShadow = true; me.name = 'ground_' + sx + '_' + sz; out.push(me);
+  }
+  return out;
+}
+// Per frame: the view's sector set; rewrite the instance buffers when it changes.
+function sectorUpdate() {
+  const S = curWorld && curWorld.userData.sec; if (!S || !S.meshes.length) return;
+  let vis = 0;
+  if (SECT.on) { camera.updateMatrixWorld(); SECT.pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); SECT.frustum.setFromProjectionMatrix(SECT.pm); for (let s = 0; s < S.box.length; s++) if (!S.box[s].isEmpty() && SECT.frustum.intersectsBox(S.box[s])) vis |= 1 << s; }
+  else vis = (1 << S.box.length) - 1;
+  if (vis === S.view) return; S.view = vis; S.changes++;
+  for (const im of S.meshes) {
+    const u = im.userData.sec, dst = im.instanceMatrix.array, src = u.full, st = u.starts; let n = 0;
+    for (let s = 0; s < st.length - 1; s++) if (vis & (1 << s) && st[s + 1] > st[s]) { dst.set(src.subarray(st[s] * 16, st[s + 1] * 16), n * 16); n += st[s + 1] - st[s]; }
+    u.nView = n;
+    for (let s = 0; s < st.length - 1; s++) if (!(vis & (1 << s)) && st[s + 1] > st[s]) { dst.set(src.subarray(st[s] * 16, st[s + 1] * 16), n * 16); n += st[s + 1] - st[s]; }
+    im.count = u.nView; im.instanceMatrix.needsUpdate = true;
+  }
+}
+// the sun's shadow passes draw every instance of a sectored group (the cached static shadow covers more than the view)
+function sectorShadow(all) {
+  const S = curWorld && curWorld.userData.sec; if (!S || !S.meshes.length) return false;
+  for (const im of S.meshes) { const u = im.userData.sec; im.count = all ? u.n : u.nView; }
+  return true;
+}
+
 /* ---------- World building ---------- */
 function buildWorld(m) {
   if (m.world) return m.world;
-  const L = m.d.look, R = rlookFor(m), grp = new THREE.Group(), w = m.w, h = m.h, W1 = w + 1;
+  const L = m.d.look, R = rlookFor(m), grp = new THREE.Group(), w = m.w, h = m.h, W1 = w + 1, kind = mapKind(m), big = isBig(m);
   const A = { flames: [], warps: [], lava: null, heart: null, way: null };
   const spec = R.spec;
   const lam = (o) => new THREE.MeshPhongMaterial(Object.assign({ specular: spec ? spec[0] : 0x000000, shininess: spec ? spec[1] : 1 }, o));
@@ -2511,25 +3176,25 @@ function buildWorld(m) {
   const plan = (PROPS.man && m.plan) || planProps(m); if (PROPS.man) m.plan = plan; m.propLights = plan.lights; m.propDLights = plan.dlights; m.propAvoid = plan.avoid; m.propItems = plan.items;
   m.hgtInfo = heightTex(m); A.halos = [];
   // Ground: painted macro + detail layers (see groundDetail)
-  const gg = new THREE.PlaneGeometry(w, h, w, h); gg.rotateX(-Math.PI / 2); gg.translate(w / 2, 0, h / 2);
-  const pos = gg.attributes.position, HG = renderHgt(m); for (let i = 0; i < pos.count; i++) pos.setY(i, HG[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]);
-  gg.computeVertexNormals();
+  const HG = renderHgt(m); let gg = null;
+  if (!big) { gg = new THREE.PlaneGeometry(w, h, w, h); gg.rotateX(-Math.PI / 2); gg.translate(w / 2, 0, h / 2); const pos = gg.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, HG[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]); gg.computeVertexNormals(); }
   const pg = paintGround(m, plan), mk = groundMask(m); m.gbase = pg; m.gmask = mk;
   const shadeT = new THREE.CanvasTexture(pg.shade); shadeT.flipY = false; shadeT.generateMipmaps = false; shadeT.minFilter = THREE.LinearFilter; pg.shade = null;
   // low: the painted macro layer at half resolution (1024 instead of 2048 px on a 64-tile map: 5 MB instead of 21 MB
   // with mips); medium and up keep the full 32 px per tile
   let macro = pg.macro; if (GFX.quality === 'low' && macro.width >= 512) { const hc = mkCanvas(macro.width >> 1, macro.height >> 1), hg = hc.getContext('2d'); hg.imageSmoothingQuality = 'high'; hg.drawImage(macro, 0, 0, hc.width, hc.height); macro = hc; }
   const gmat = lam({ map: canvasTex(macro, { aniso: GFX.quality !== 'low' }) }); pg.macro = null;
-  const baseK = floorDetail(L.floor);
+  const baseK = kind ? R.floorD || 'flag' : floorDetail(L.floor);
   groundDetail(gmat, {
-    base: detailTex(baseK), mask: mk.tex, shade: shadeT, mapInv: new THREE.Vector2(1 / w, 1 / h), nrm: baseK === 'flag' ? 1.25 : 1,
+    base: detailTex(baseK), mask: mk.tex, shade: shadeT, mapInv: new THREE.Vector2(1 / w, 1 / h), nrm: kind ? R.floorN || 1 : baseK === 'flag' ? 1.25 : 1, cave: kind === 'cave',
     path: mk.hasP ? detailTex('dirt') : null, pathC: rgbLin(L.path || [150, 130, 100]),
     cob: mk.hasC ? detailTex('cobble') : null, cobC: rgbLin(L.path || [176, 164, 140]).multiplyScalar(1.12),
     ash: mk.hasA ? detailTex('ash') : null, ashC: rgbLin(L.ash || [130, 128, 120]),
   });
   if (m.emisCanvas) { gmat.emissiveMap = canvasTex(m.emisCanvas); gmat.emissive = new THREE.Color(1.5, 0.62, 0.25); A.groundEmis = gmat; m.emisCanvas = null; }
-  const ground = new THREE.Mesh(gg, gmat); ground.receiveShadow = true; grp.add(ground); grp.userData.ground = ground;
-  if (!L.lava) { const sk = buildSkirt(m, skirtTex(m), spec); groundDetail(sk.material, { base: detailTex(baseK) }); grp.add(sk); }
+  if (!big) { const ground = new THREE.Mesh(gg, gmat); ground.receiveShadow = true; grp.add(ground); grp.userData.ground = ground; grp.userData.grounds = [ground]; }
+  else { const gs = groundSectors(m, HG, gmat); for (const g of gs) grp.add(g); grp.userData.ground = gs[0]; grp.userData.grounds = gs; }   // cycle 9: sector meshes
+  if (!L.lava && !kind) { const sk = buildSkirt(m, skirtTex(m), spec); groundDetail(sk.material, { base: detailTex(baseK) }); grp.add(sk); }   // (interiors / caves: darkness beyond the walls)
   const GB = glowBatch(TEX.glow), FB = glowBatch(TEX.flame); A.glowB = GB; A.flameB = FB;
   const glowSprite = (col, op, sx, sy) => GB.add(col, op, sx, sy);
   const flameSprite = (r, g, b) => FB.add(new THREE.Color(r, g, b), 1, 1, 1);
@@ -2541,8 +3206,9 @@ function buildWorld(m) {
     const halo = glowSprite(linCol(0xff8a30), 0.35, 3, 3); halo.position.set(m.way.x, gh + ay + 0.3, m.way.y); A.halos.push({ s: halo, op: 0.35, ph: 0.7, fl: 1 });
     A.way = { fl, halo, rune: null }; A.flames.push({ s: fl, sx: 0.9, sy: 1.35 });
   }
-  // Warp portals
+  // Warp portals (cycle 9: doors and cave mouths instead for warps with `door`, see buildDoors)
   for (const wp of m.warps) {
+    if (doorKind(wp, m)) continue;
     const gh = groundHm(m, wp.x + 0.5, wp.y + 0.5);
     const ringM = new THREE.MeshBasicMaterial({ map: TEX.magic, color: 0x7ab8ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), ringM); ring.rotation.x = -Math.PI / 2; ring.position.set(wp.x + 0.5, gh + 0.05, wp.y + 0.5); grp.add(ring);
@@ -2561,7 +3227,7 @@ function buildWorld(m) {
     A.flames.push({ s: fl, sx: 0.5, sy: 0.75 });
   }
   // Lamp-post lanterns: a soft glow (the emissive glass blooms; the light pool adds the rest)
-  // (a wide faint outer halo reads as night glow in the lantern's own haze; both swell at night, see WX)
+  // (a wide faint outer halo reads as night glow in the lantern's own haze; both swell at night, see WXS)
   for (const l of plan.lights) {
     const s = glowSprite(linCol(0xffc070), 0.4, 1.1, 1.1); s.position.set(l.x, l.h, l.z); A.halos.push({ s, op: 0.4, ph: l.x * 1.7 + l.z, fl: 0.25, lamp: true });
     const o = glowSprite(linCol(0xffb060), 0.1, 3.2, 3.2); o.position.set(l.x, l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.2 : 0.1, ph: l.x * 1.7 + l.z, fl: 0.3, lamp: true, night: 0.12 });
@@ -2570,8 +3236,20 @@ function buildWorld(m) {
   for (const l of (plan.dlights || [])) {
     if (!l.lamp) continue; let c; try { c = linCol(l.col); } catch (e) { continue; }
     const s = glowSprite(c, 0.32, 1.0, 1.0); s.position.set(l.x, l.h, l.z); A.halos.push({ s, op: 0.32, ph: l.x * 1.7 + l.z, fl: 0.25, lamp: true });
-    const o = glowSprite(c, 0.08, 3.0, 3.0); o.position.set(l.x, l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.16 : 0.08, ph: l.x * 1.7 + l.z, fl: 0.3, lamp: true, night: 0.1 });
+    const oz = kind ? Math.min(3.0, Math.max(0.8, (l.h - groundHm(m, l.x, l.z)) * 2.2)) : 3.0, o = glowSprite(c, 0.08, oz, oz); o.position.set(l.x, kind ? Math.max(l.h - 0.15, groundHm(m, l.x, l.z) + oz * 0.45) : l.h - 0.15, l.z); A.halos.push({ s: o, op: R.exposure > 1.05 ? 0.16 : 0.08, ph: l.x * 1.7 + l.z, fl: 0.3, lamp: true, night: 0.1 });
   }
+  // Cycle 9: m.lights (hearths, candles, lanterns, crystals...): a soft glow in the light's colour, a flame for fires
+  for (const l of mapLights(m)) {
+    const gh = groundHm(m, l.x, l.y), y = gh + l.h, k = clamp(l.r / 5, 0.45, 1.6), hk = kind ? 1 : 0.8;
+    const s = glowSprite(l.lin, 0.3 * hk * Math.min(1.4, 0.5 + l.i * 0.5), 1.0 * k, 1.0 * k); s.position.set(l.x, y + 0.05, l.y); A.halos.push({ s, op: 0.3 * hk * Math.min(1.4, 0.5 + l.i * 0.5), ph: l.x * 1.9 + l.y, fl: l.fl * 0.6, lamp: true });
+    const oz = Math.min(3.2 * k, Math.max(0.8, l.h * 2.4)), o = glowSprite(l.lin, 0.07 * hk, oz, oz); o.position.set(l.x, gh + Math.max(l.h - 0.1, oz * 0.45), l.y); A.halos.push({ s: o, op: 0.07 * hk, ph: l.x * 1.9 + l.y, fl: l.fl * 0.5, lamp: true });
+    if (l.flame) {
+      const fs = l.kind === 'candle' ? [0.16, 0.26] : l.kind === 'hearth' || l.kind === 'forge' || l.kind === 'fire' ? [0.62, 0.9] : l.kind === 'torch' ? [0.34, 0.52] : [0.4, 0.6];
+      const warm = l.c.r >= l.c.b, fl = flameSprite(warm ? fc[0] : 1.2 + l.lin.r, warm ? fc[1] : 1.2 + l.lin.g * 1.6, warm ? fc[2] : 0.8 + l.lin.b * 2); fl.position.set(l.x, y + fs[1] * 0.38, l.y); fl.scale.set(fs[0], fs[1], 1); A.flames.push({ s: fl, sx: fs[0], sy: fs[1] });
+    }
+  }
+  // Doors and cave mouths (warps with `door`)
+  buildDoors(m, R, grp, A, GB, lam, plan);
   // Bounty boards (quest objects): a 3D notice board replaces the 2D overlay placeholder (model via props,
   // primitive mesh when the model can't load, see dress())
   const boards = plan.items.filter(it => it.board); A.boards = boards.length;
@@ -2600,24 +3278,31 @@ function buildWorld(m) {
     const glowS = glowSprite(linCol(0xffc060), 0, 5, 5); glowS.position.set(hx, gh + 1.3, hz);
     A.heart = { coreM, glowS };
   }
-  // Volumetric-looking light shafts (additive crossed planes along the sun direction)
-  if (R.shafts) { const sg = new THREE.Group(); grp.add(sg); A.shafts = buildShafts(m, R, sg); A.shaftGrp = sg; }
+  // Cycle 9: interior walls / cave rock (T.WALL drawn by the renderer, see wallsDrawn)
+  const own = wallsDrawn(m);
+  try {
+    if (own === 'interior') buildInteriorWalls(m, R, grp, A, plan);
+    else if (own === 'rock' && m.t.some(t => t === T.WALL)) { const C = kind === 'cave' ? caveCfg(m) : { wet: 0.12 }, rk = buildCaveRock(m, kind === 'cave' ? CAVE_ROCK[C.rock] : annexRock(m), C); if (rk) { grp.add(rk); A.rock = rk; } }
+  } catch (e) { console.warn('[gfx] walls / rock', e); }
+  // Volumetric-looking light shafts (additive crossed planes along the sun direction; big maps: more of them)
+  if (R.shafts) { const sg = new THREE.Group(); grp.add(sg); A.shafts = buildShafts(m, big ? Object.assign({}, R, { shafts: Object.assign({}, R.shafts, { n: Math.round(R.shafts.n * w * h / 4096) }) }) : R, sg); A.shaftGrp = sg; }
   GB.build(grp); FB.build(grp);
   // 3D props: instanced from the glTF templates once loaded (cached => immediate on revisits)
   const props = new THREE.Group(); grp.add(props); grp.userData.props = props; grp.userData.map = m;
+  const sec = grp.userData.sec = big ? (() => { const G = sectorGrid(m), box = []; for (let i = 0; i < G.nx * G.nz; i++) box.push(new THREE.Box3()); return { G, box, meshes: [], view: -1, changes: 0 }; })() : null;
   // Required models must all load (else the legacy primitives). The world dresses as soon as they are in; optional
   // ones (decor, LODs, the board model, kit variants) follow and trigger one rebuild; missing ones are skipped.
   // (the instanced geometries share the templates' attribute buffers: only their own VAO / instance buffers are freed)
-  const clearProps = () => { const keep = tplAttrs(); for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } };
+  const clearProps = () => { const keep = tplAttrs(); for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } if (sec) { sec.meshes.length = 0; for (const b of sec.box) b.makeEmpty(); sec.view = -1; } };
   let have = null;
-  const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
+  const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq, sec); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
   const optional = lq => PROPS.manifest().then(() => { const { opt } = propIds(plan.items, lq); return Promise.all(opt.map(id => PROPS.load(id).catch(() => null))).then(() => opt); });
   const finish = lq => optional(lq).then(opt => { if (grp.userData.propLod !== lq || grp.userData.dead) return; if (opt.some(id => PROPS.tpl[id] && !have.has(id))) dress(lq, true); else boardFallback(); });
   const lq0 = lodLow(), ids0 = propIds(plan.items, lq0);
   if (PROPS.man && PROPS.ready(ids0.req) && PROPS.ready(ids0.opt)) dress(lq0, true);
   else PROPS.ensure(ids0.req).then(() => { dress(lq0, false); finish(lq0); }, e => {
     console.warn('[props] models unavailable, using placeholders:', e && e.message || e); legacyProps(m, props, lam, A); grp.userData.legacy = true;
-    optional(lq0).then(() => { if (grp.userData.dead) return; buildProps(props, plan.items.filter(it => it.opt), lq0); boardFallback(); SHADOW.need = true; });
+    optional(lq0).then(() => { if (grp.userData.dead) return; buildProps(props, plan.items.filter(it => it.opt), lq0, sec); boardFallback(); SHADOW.need = true; });
   });
   grp.userData.rebuildProps = lq => { if (grp.userData.legacy) return; grp.userData.propLod = lq; optional(lq).then(() => { if (grp.userData.propLod === lq) dress(lq, true); }); };
   m.world = grp; m.anim = A;
@@ -2670,9 +3355,17 @@ function worldRefs(root, R) {
   });
   return R;
 }
+// Cycle 9: resident worlds are counted by weight: a map above 64 x 64 weighs its area / 4096 (a 96 x 96 field = 2.25), a
+// small interior or cave a quarter (entering a tavern keeps the town resident); every other map weighs 1 (as before).
+function worldWeight(m) { const a = m.w * m.h / 4096; return a > 1 ? a : mapKind(m) ? Math.max(0.25, a) : 1; }
 function worldLRU(m) {
-  const i = WORLD_LRU.indexOf(m); if (i >= 0) WORLD_LRU.splice(i, 1); WORLD_LRU.push(m);
-  while (WORLD_LRU.length > WORLD_KEEP()) freeWorld(WORLD_LRU.shift());
+  const i = WORLD_LRU.indexOf(m); if (i >= 0) WORLD_LRU.splice(i, 1);
+  // a regenerated map (a new Deep run, a floor rebuilt after its cache was dropped) is a new object with an old id: the
+  // stale object's world can never be shown again, so it is freed now instead of holding a slot (and GPU memory)
+  for (let j = WORLD_LRU.length - 1; j >= 0; j--) { const o = WORLD_LRU[j]; if (o.id === m.id || (typeof mapCache !== 'undefined' && mapCache[o.id] !== o)) { WORLD_LRU.splice(j, 1); freeWorld(o); } }
+  WORLD_LRU.push(m);
+  const keep = WORLD_KEEP(); let sum = 0; for (const o of WORLD_LRU) sum += worldWeight(o);
+  while (WORLD_LRU.length > 1 && sum > keep + 1e-6) { const o = WORLD_LRU.shift(); sum -= worldWeight(o); freeWorld(o); }
 }
 function freeWorld(m) {
   const grp = m && m.world; if (!grp || grp === curWorld) return;
@@ -2788,7 +3481,7 @@ function applyLook() {
   sun.color.copy(linCol(R.sun[0])); sun.intensity = R.sun[1];
   SKY.sunDir.set(R.sunDir[0], R.sunDir[1], R.sunDir[2]).normalize();
   torch.color.copy(linCol(R.torch[0])); torch.intensity = R.torch[1]; torch.distance = R.torch[2]; torch.decay = 2;
-  WX.dirty = true;   // time of day / weather re-applied on top (next wxUpdate)
+  WXS.dirty = true;   // time of day / weather re-applied on top (next wxUpdate)
 }
 // With the loading gate, a world that must be built is built one frame later, behind the already painted fade
 // (gloadReady): the warp shows black at once instead of freezing on the old map while the new one is built.
@@ -2818,7 +3511,13 @@ function enterWorldNow(deferred) {
   LSRC.length = 0; const Lc = RL.lights;
   for (const b of map.braziers) LSRC.push({ x: b.x, y: b.y, h: groundH(b.x, b.y) + 1.35, c: linCol(Lc.brazier[0]), i: Lc.brazier[1], d: Lc.brazier[2], fl: 1, ph: b.x * 3.1 + b.y, lamp: true });
   if (map.way) LSRC.push({ x: map.way.x, y: map.way.y, h: groundH(map.way.x, map.way.y) + 3.2, c: linCol(Lc.way[0]), i: Lc.way[1], d: Lc.way[2], fl: 1, ph: 0.7, way: true });
-  for (const wp of map.warps) LSRC.push({ x: wp.x + 0.5, y: wp.y + 0.5, h: groundH(wp.x + 0.5, wp.y + 0.5) + 1.2, c: linCol(Lc.warp[0]), i: Lc.warp[1], d: Lc.warp[2], fl: 0.3, ph: 2, warp: wp });
+  for (const wp of map.warps) {
+    const dk = doorKind(wp, map);
+    if (!dk) LSRC.push({ x: wp.x + 0.5, y: wp.y + 0.5, h: groundH(wp.x + 0.5, wp.y + 0.5) + 1.2, c: linCol(Lc.warp[0]), i: Lc.warp[1], d: Lc.warp[2], fl: 0.3, ph: 2, warp: wp });
+    else if (dk !== 'mouth') { const D = doorDir(wp, map), ex = dk === 'exit', x = wp.x + 0.5 + D.nx * 0.6, y = wp.y + 0.5 + D.nz * 0.6; LSRC.push({ x, y, h: groundH(x, y) + 1.3, c: linCol(ex ? 0xd8e6ff : 0xffb870), i: ex ? 1.2 : 0.9, d: ex ? 6 : 4.5, fl: ex ? 0.02 : 0.15, ph: wp.x + wp.y, door: wp }); }
+  }
+  for (const l of mapLights(map)) LSRC.push({ x: l.x, y: l.y, h: groundH(l.x, l.y) + l.h + 0.15, c: l.lin, i: l.i, d: l.r, fl: l.fl, ph: l.x * 2.1 + l.y, lamp: true });   // cycle 9
+  for (const wv of (map.anim && map.anim.windows) || []) LSRC.push({ x: wv.x, y: wv.z, h: wv.h, c: linCol(0xffe8c8), i: 0.7, d: 4.5, fl: 0, ph: 0 });
   const Ll = Lc.lamp || [0xffc070, 0.5, 4.5];
   for (const l of (map.propLights || [])) LSRC.push({ x: l.x, y: l.z, h: l.h, c: linCol(Ll[0]), i: Ll[1], d: Ll[2], fl: 0.12, ph: l.x * 1.7 + l.z, lamp: true });
   for (const o of map.objs) if (o.kind === 'helgate') LSRC.push({ x: o.x, y: o.y + 0.7, h: groundH(o.x, o.y) + 1.8, c: new THREE.Color(), i: 0, d: 7, fl: 0.1, ph: 3, gate: true });
@@ -2826,7 +3525,7 @@ function enterWorldNow(deferred) {
   if (map.heart) LSRC.push({ x: map.heart.x, y: map.heart.y + 0.6, h: groundH(map.heart.x, map.heart.y) + 1.8, c: linCol(Lc.heart[0]), i: Lc.heart[1], d: Lc.heart[2], fl: 0.2, ph: 1, heart: true });
   if (!deferred) clearVis();   // (deferred: cleared when the warp started; sprites made since belong to this map)
   if (P) { cam.tx = P.x; cam.ty = P.y; cam.th = groundH(P.x, P.y); }
-  try { wxEnter(map); } catch (e) { console.warn('[gfx] weather', e); WX.on = false; GFX.look = null; }
+  try { wxEnter(map); } catch (e) { console.warn('[gfx] weather', e); WXS.on = false; GFX.look = null; }
   LT.key = ''; buildLightGrid();
   mapEntryLoad(fresh);
   PROPS.prefetch();
@@ -2840,7 +3539,7 @@ function snapCam() { cam.tx = P.x; cam.ty = P.y; cam.th = groundH(P.x, P.y); }
    plus the few dynamic spell lights of this frame. Pass `out` to avoid allocation. */
 // (round 5: baked as two layers so time of day / overcast can re-light sprites every frame without a rebake:
 //  LT.lit = sun visibility 0..1, LT.g = the static fires' light (rgb). lightTint = amb + sun * lit + fires * lamp, with
-//  amb / sun / lamp from WX (the map's lt at day: identical to the old single bake).)
+//  amb / sun / lamp from WXS (the map's lt at day: identical to the old single bake).)
 const LT = { g: null, lit: null, gw: 0, gh: 0, key: '', dyn: [], nd: 0, amb: [1, 1, 1], sun: [0, 0, 0], lamp: 1 };
 const LT_RES = 2;
 function casterSpan(t, m, x, y) {
@@ -2883,13 +3582,15 @@ function buildLightGrid() {
   for (const b of m.braziers) splat(b.x, b.y, 4.2, fire, 0.8 * dim);
   const wayLit = !!(P && P.kindled && P.kindled[m.id]), kingSlain = !!(P && P.flags && P.flags.kingSlain);
   if (m.way && wayLit) splat(m.way.x, m.way.y, 5.5, warm, 0.7 * dim);
-  for (const wp of m.warps) splat(wp.x + 0.5, wp.y + 0.5, 2.8, blue, 0.5);
+  for (const wp of m.warps) { const dk = doorKind(wp, m); if (!dk) splat(wp.x + 0.5, wp.y + 0.5, 2.8, blue, 0.5); else if (dk === 'door') splat(wp.x + 0.5, wp.y + 0.5, 2.4, warm, 0.45); else if (dk === 'exit') splat(wp.x + 0.5, wp.y + 0.5, 3, _dayC, 0.5); }
+  for (const l of mapLights(m)) { const c = l.lin, mx = Math.max(c.r, c.g, c.b, 1e-3); _col.setRGB(c.r / mx, c.g / mx, c.b / mx); splat(l.x, l.y, l.r * 0.8, _col, Math.min(1.1, 0.45 * l.i) * dim); }   // cycle 9
+  for (const wv of (m.anim && m.anim.windows) || []) splat(wv.x, wv.z, 3, _dayC, 0.35);
   for (const l of (m.propLights || [])) splat(l.x, l.z, 2.6, warm, 0.25 * dim);
   if (m.heart && kingSlain) splat(m.heart.x, m.heart.y + 1, 7, gold, 0.7);
   if (m.d.look.lava) for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { if (m.t[y * m.w + x] !== T.LAVA) continue; let open = false; for (let k = 0; k < 4 && !open; k++) { const nx = x + DX[k], ny = y + DY[k]; open = nx >= 0 && ny >= 0 && nx < m.w && ny < m.h && m.t[ny * m.w + nx] === 0; } if (open) splat(x + 0.5, y + 0.5, 2.2, lava, 0.18); }
   for (let i = 0; i < G.length; i++) G[i] = Math.min(G[i], 2.2);
   LT.g = G; LT.lit = LI; LT.gw = gw; LT.gh = gh; LT.key = m.id + '|' + wayLit + '|' + kingSlain;
-  if (!WX.on) { LT.amb = R.lt.amb; LT.sun = R.lt.sun; LT.lamp = 1; }
+  if (!WXS.on) { LT.amb = R.lt.amb; LT.sun = R.lt.sun; LT.lamp = 1; }
 }
 function lightTint(x, y, out) {
   out = out || { r: 1, g: 1, b: 1 };
@@ -2908,11 +3609,19 @@ function lightTint(x, y, out) {
 GFX.lightTint = lightTint;
 
 /* ---------- Per-frame: point-light pool, sun/shadow follow, fog ---------- */
-const DYN = []; for (let i = 0; i < 24; i++) DYN.push({ x: 0, y: 0, h: 0, c: new THREE.Color(), i: 0, d: 0, dyn: true, s: 0, rad: 0, r2: 0, k: 0 });
+const DYN = []; for (let i = 0; i < 24; i++) DYN.push({ x: 0, y: 0, h: 0, c: new THREE.Color(), i: 0, d: 0, dyn: true, s: 0, rad: 0, r2: 0, k: 0, noPL: false });
+const _dayC = new THREE.Color(0.85, 0.92, 1.0), _lockC = new THREE.Color(1.6, 0.3, 0.15), _torchC = linCol(0xffae68), _allyC = linCol(0xffb878);
 const _cand = [], _col = new THREE.Color();
 function spellLights() {
   let n = 0;
-  const add = (x, y, h, hex, I, d) => { if (n >= DYN.length) return; const o = DYN[n++]; o.x = x; o.y = y; o.h = h; o.c.copy(linCol(hex)); o.i = I; o.d = d; o.rad = d * 0.7; o.r2 = o.rad * o.rad; o.k = Math.min(1.2, I * 0.35); };
+  const add = (x, y, h, hex, I, d) => { if (n >= DYN.length) return; const o = DYN[n++]; o.x = x; o.y = y; o.h = h; o.c.copy(linCol(hex)); o.i = I; o.d = d; o.rad = d * 0.7; o.r2 = o.rad * o.rad; o.k = Math.min(1.2, I * 0.35); o.noPL = false; };
+  // cycle 9, caves: the controlled hero's torch lights the sprites around it (the torch PointLight lights the world), every
+  // other hero of the party carries a smaller glow (a real light from the pool + the sprite tint)
+  if (map && P && mapKind(map) === 'cave' && WXS.torchI > 0) {
+    const L = ctrlHero(), R = RL && RL.torch;
+    if (L && n < DYN.length) { const o = DYN[n++]; o.x = L.x; o.y = L.y; o.h = groundH(L.x, L.y) + 1.8; o.c.copy(_torchC); o.i = WXS.torchI; o.d = R ? R[2] : 11; o.rad = o.d * 0.72; o.r2 = o.rad * o.rad; o.k = Math.min(0.9, WXS.torchI * 0.38); o.noPL = true; }
+    if (typeof gfxHeroes === 'function') { const Hs = gfxHeroes(); for (let i = 0; i < Hs.length && n < DYN.length; i++) { const hh = Hs[i]; if (!hh || hh === L || hh.dead) continue; const o = DYN[n++]; o.x = hh.x; o.y = hh.y; o.h = groundH(hh.x, hh.y) + 1.6; o.c.copy(_allyC); o.i = 1.15; o.d = 6.5; o.rad = 4.6; o.r2 = o.rad * o.rad; o.k = 0.42; o.noPL = false; } }
+  }
   if (typeof projs !== 'undefined') for (const p of projs) if (p.kind !== 'arrow') add(p.x, p.y, p.zu, PCOL[p.kind] || '#ffffff', 2.6, 5.5);
   if (typeof fxs !== 'undefined') for (const f of fxs) {
     const k = 1 - f.t / f.dur;
@@ -2934,7 +3643,7 @@ function updateLights() {
     if (s.way && !wayLit) continue; if (s.heart && !slain) continue;
     s.s = (s.x - tx) ** 2 + (s.y - ty) ** 2; if (s.s > 26 * 26) continue; _cand.push(s);
   }
-  for (let k = 0; k < nd; k++) { const o = DYN[k]; o.s = (o.x - tx) ** 2 + (o.y - ty) ** 2 - 400; _cand.push(o); }
+  for (let k = 0; k < nd; k++) { const o = DYN[k]; if (o.noPL) continue; o.s = (o.x - tx) ** 2 + (o.y - ty) ** 2 - 400; _cand.push(o); }
   _cand.sort((a, b) => a.s - b.s);
   for (let k = 0; k < PL.length; k++) {
     const l = PL[k], s = _cand[k];
@@ -2942,9 +3651,9 @@ function updateLights() {
     let I = s.i;
     let jx = 0, jz = 0;
     if (s.fl && !s.dyn) { I *= flick(s.fl, s.ph); if (s.fl >= 1) { jx = Math.sin(time * 7.1 + s.ph) * 0.05; jz = Math.cos(time * 8.3 + s.ph) * 0.05; } }
-    if (s.lamp) I *= WX.lamp;
+    if (s.lamp) I *= WXS.lamp;
     if (s.gate) { const G = map.anim && map.anim.gate, k = G ? G.k : 0; I = 0.25 + 2.2 * k; l.color.copy(GATEU.uCol.value); l.intensity = I * flick(0.1, s.ph); l.distance = s.d; l.position.set(s.x, s.h, s.y); continue; }
-    if (s.warp) { const locked = warpIsLocked(s.warp); _col.setRGB(locked ? 1 : s.c.r, locked ? 0.25 : s.c.g, locked ? 0.12 : s.c.b); l.color.copy(_col); } else l.color.copy(s.c);
+    if (s.warp) { const locked = warpIsLocked(s.warp); _col.setRGB(locked ? 1 : s.c.r, locked ? 0.25 : s.c.g, locked ? 0.12 : s.c.b); l.color.copy(_col); } else if (s.door && warpIsLocked(s.door)) l.color.setRGB(1, 0.25, 0.12); else l.color.copy(s.c);
     l.intensity = I; l.distance = s.d; l.position.set(s.x + jx, s.h, s.y + jz);
   }
 }
@@ -2973,7 +3682,7 @@ function updateSun() {
   }
 }
 function updateAtmosphere() {
-  const k = cam.dist / 40, F = (WX.on && WX.look ? WX.look : RL); if (scene.fog && F) { scene.fog.near = F.fog[0] * k; scene.fog.far = F.fog[1] * k; LAVAU.uFog.value.set(scene.fog.near, scene.fog.far); }
+  const k = cam.dist / 40, F = (WXS.on && WXS.look ? WXS.look : RL); if (scene.fog && F) { scene.fog.near = F.fog[0] * k; scene.fog.far = F.fog[1] * k; LAVAU.uFog.value.set(scene.fog.near, scene.fog.far); }
   skyDome.position.copy(camera.position);
 }
 const _dbs = new THREE.Vector2();
@@ -2999,8 +3708,8 @@ function animateWorld(dt) {
   }
   SHAFTU.uT.value = time;
   wxUpdate(dt);
-  const lk = 1 + (WX.lamp - 1) * 0.35;
-  if (A.halos) for (const h of A.halos) h.s.material.opacity = (h.night ? h.op + h.night * WX.n : h.op) * flick(h.fl, h.ph) * (h.lamp ? lk : 1);
+  const lk = 1 + (WXS.lamp - 1) * 0.35;
+  if (A.halos) for (const h of A.halos) h.s.material.opacity = (h.night ? h.op + h.night * WXS.n : h.op) * flick(h.fl, h.ph) * (h.lamp ? lk : 1);
   POOLU.uT.value = time; POOLU.uWay.value = lit ? 1 : 0;
   if (A.motes) {
     MOTEU.uT.value = time; MOTEU.uC.value.set(cam.tx, cam.th, cam.ty); MOTEU.uScale.value = renderer.getDrawingBufferSize(_dbs).y * (GFX.composer && GFX.composer.on ? GFX.composer.scale : 1) * 0.5 * camera.projectionMatrix.elements[5];
@@ -3018,9 +3727,19 @@ function animateWorld(dt) {
     G.fl.visible = G.lp.visible = shut; if (shut) { const k = 1 + Math.sin(time * 11) * 0.08; G.fl.scale.set(0.28 * (2 - k), 0.42 * k, 1); }
   }
   if (A.glowB) A.glowB.update(); if (A.flameB) A.flameB.update();
-  torch.position.set(P.x, groundH(P.x, P.y) + 2.2, P.y);
+  const TH = ctrlHero() || P, cave = mapKind(map) === 'cave'; torch.position.set(TH.x, groundH(TH.x, TH.y) + (cave ? 1.8 : 2.2), TH.y);
   const key = map.id + '|' + lit + '|' + !!(P.flags && P.flags.kingSlain); if (LT.key !== key) buildLightGrid();
   updateLights(); updateSun(); updateAtmosphere();
+  kindFrame(A, cave);
+}
+// Cycle 9 per frame: interior cutaway direction + the pieces that hide with a cut wall (doors, windows), locked-door tint,
+// the cave torch's flicker, big-map sector culling.
+function kindFrame(A, cave) {
+  const cx = Math.sin(cam.yaw), cz = Math.cos(cam.yaw), H = ctrlHero(); WALLU.uCamD.value.set(cx, cz); if (H) WALLU.uHero.value.set(H.x, H.y); WALLU.uCutOn.value = mapKind(map) ? 1 : 0;
+  if (A.cutVis) for (const c of A.cutVis) c.o.visible = c.nx * cx + c.nz * cz > -0.3 && !(H && (c.x - H.x) * cx + (c.z - H.y) * cz > 0.75);
+  if (A.doors) for (const d of A.doors) if (d.halo) d.halo.material.color.copy(warpIsLocked(d.wp) ? _lockC : d.col);
+  if (cave && WXS.torchI > 0) { torch.intensity = WXS.torchI * flick(0.16, 1.7); TORCHU.uTorchP.value.copy(torch.position); TORCHU.uTorchC.value.copy(torch.color).multiplyScalar(torch.intensity * 0.5); TORCHU.uTorchC2.value.set(torch.distance, 0); }
+  sectorUpdate();
 }
 /* Squad mode: when the player swaps heroes (P changes to another member of the same PARTY, same map), the camera eases
    from where it is to the new hero over CAMSW.dur s (smoothstep, tracking the hero while it moves) instead of the
@@ -3066,7 +3785,7 @@ const _w2s = [0, 0, 0];
 function w2s(x, y) { const p = proj(x, y, groundH(x, y), _w2s); return [p[0], p[1]]; }
 function s2w(sx, sy) {
   ndc.set(sx / W * 2 - 1, -(sy / H) * 2 + 1); ray.setFromCamera(ndc, camera);
-  if (curWorld && curWorld.userData.ground) { const hit = ray.intersectObject(curWorld.userData.ground, false)[0]; if (hit) return [hit.point.x, hit.point.z]; }
+  if (curWorld && curWorld.userData.ground) { const gs = curWorld.userData.grounds, hit = (gs && gs.length > 1 ? ray.intersectObjects(gs, false) : ray.intersectObject(curWorld.userData.ground, false))[0]; if (hit) return [hit.point.x, hit.point.z]; }
   const o = ray.ray.origin, d = ray.ray.direction, t = (cam.th - o.y) / d.y; return [o.x + d.x * t, o.z + d.z * t];
 }
 const CURSORS = (() => {

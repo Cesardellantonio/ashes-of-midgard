@@ -243,7 +243,8 @@ function sprLights() {
   const L = [];
   for (const b of map.braziers || []) L.push({ x: b.x, y: b.y, r: 4.6, c: [1.0, 0.58, 0.22], i: 0.62, h: 0.2 });
   if (map.way) L.push({ x: map.way.x, y: map.way.y, r: 5.5, c: [1.0, 0.62, 0.25], i: 0.7, h: 0.9, way: true });
-  for (const w of map.warps || []) L.push({ x: w.x + 0.5, y: w.y + 0.5, r: 3.2, c: [0.55, 0.78, 1.0], i: 0.45, h: 0.1 });
+  for (const w of map.warps || []) { const dk = typeof doorKind === 'function' ? doorKind(w, map) : ''; if (dk === 'mouth') continue; L.push({ x: w.x + 0.5, y: w.y + 0.5, r: 3.2, c: dk === 'door' ? [1.0, 0.66, 0.34] : dk === 'exit' ? [0.82, 0.9, 1.0] : [0.55, 0.78, 1.0], i: 0.45, h: 0.1 }); }   // (cycle 9: doors)
+  if (typeof mapLights === 'function') for (const l of mapLights(map)) L.push({ x: l.x, y: l.y, r: Math.min(6, l.r * 0.8), c: [l.c.r, l.c.g, l.c.b], i: Math.min(0.8, 0.4 * l.i), h: 0.2 });
   SPRF.lights = L; SPRF.lightsMap = map; SPRF.lgrid = null; return L;
 }
 /* Rim lights near a point (perf round 4): sprRim looped over every brazier / waystone / warp of the map for every
@@ -2368,12 +2369,12 @@ const VFX = (() => {
     // warp portals near the view (locked ones keep the red procedural ring), the kindled waystone's embers
     for (const wp of map.warps || []) {
       const x = wp.x + 0.5, y = wp.y + 0.5; if (Math.abs(x - cam.tx) > 26 || Math.abs(y - cam.ty) > 26) continue;
-      if (typeof warpIsLocked === 'function' && warpIsLocked(wp)) continue;
+      if ((typeof warpIsLocked === 'function' && warpIsLocked(wp)) || wp.door) continue;   // (cycle 9: doors / cave mouths are drawn by gfx-world)
       fbLoop('warp_portal', x, y, groundH(x, y), 0.95, WHITE, 0.85, 0, wp.x * 3 + wp.y);
     }
     if (map.way && P && P.kindled && P.kindled[map.id] && Math.abs(map.way.x - cam.tx) < 26 && Math.abs(map.way.y - cam.ty) < 26) fbLoop('waystone_embers', map.way.x, map.way.y, groundH(map.way.x, map.way.y), 1.1, WHITE, 1, 0, 3);
     // rain: splash rings around the hero (more of them on water)
-    const rain = typeof WX !== 'undefined' && WX ? WX.rain || 0 : 0;
+    const rain = typeof GFX !== 'undefined' && GFX.wx ? GFX.wx.rain || 0 : 0;
     if (rain > 0.25 && P && fbTierOk('rain_ripple')) {
       const n = rate(22 * rain);
       for (let i = 0; i < n; i++) { const x = P.x + rand(-7, 7), y = P.y + rand(-5, 6), tl = typeof tileAt === 'function' ? tileAt(x, y) : 0; if (typeof T !== 'undefined' && T && (tl === T.WALL || tl === T.TREE || tl === T.VOID || tl === T.LAVA)) continue;

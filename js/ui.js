@@ -237,7 +237,7 @@ function renderHUD() {
   if (chg('zeny', P.zeny, 0)) setText('zeny', fmt(P.zeny));
   const sc = shardCount(); if (chg('shards', sc, 0)) setText('shardct', sc ? `Shards ${sc}/3` : '');
   if (chg('pips', P.statPts > 0, P.skillPts > 0)) { $('pipS').className = P.statPts > 0 ? 'pip' : ''; $('pipK').className = P.skillPts > 0 ? 'pip' : ''; }
-  if (chg('map', map.id, 0)) setText('mapn', map.d.name);
+  const rgn = RG.cur ? RG.cur.name : ''; if (chg('map', map.id, rgn)) { setText('mapn', rgn ? map.d.name + ' · ' + rgn : map.d.name); $('mapn').title = $('mapn').textContent; }   // UI round 10: the region you are in
   const cx = Math.floor(P.x), cy = Math.floor(P.y); if (chg('mapc', cx, cy)) setText('mapc', cx + ', ' + cy);
   // Hotbar cooldowns and counts (element refs are cached by renderHotbar)
   for (let i = 0; i < HOTEL.length; i++) {
@@ -513,17 +513,17 @@ const RENDER = {
     const at = atWaystone(), E = worldEdges(), ids = MAP_ORDER.filter(k => MAPDEFS[k]);
     const lines = E.map(e => { const a = MAPDEFS[e.a].world, b = MAPDEFS[e.b].world; const seen = P.flags.seen[e.a] || P.flags.seen[e.b]; return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${e.locked ? '#b0402a' : seen ? '#c8a860' : '#6a6258'}" stroke-width="${e.locked ? 2 : 2.5}" ${e.locked || !seen ? 'stroke-dasharray="6 5"' : ''} opacity="${seen ? 0.9 : 0.55}"/>`; }).join('');
     const nodes = ids.map(k => {
-      const d = MAPDEFS[k], [x, y] = d.world, here = map.id === k, seen = !!P.flags.seen[k], lit = !!P.kindled[k], hasWay = !!genMap(k).way, can = at && lit && !here;
+      const d = MAPDEFS[k], [x, y] = d.world, here = map.id === k || wmRoot(map.id) === k, seen = !!P.flags.seen[k], lit = !!P.kindled[k], hasWay = !!genMap(k).way, can = at && lit && !here;
       const lv = d.lv ? `Lv ${d.lv[0]}–${d.lv[1]}` : 'Safe haven', warn = d.lv && P.lvl < d.lv[0] - 4;
       const way = hasWay ? `<text x="${x + 64}" y="${y + 16}" text-anchor="end" font-size="12" fill="${lit ? '#ffb050' : '#7a7068'}">${lit ? '✦' : '◇'}</text>` : '';
       return `<g ${can ? `data-act="travel:${k}" style="cursor:pointer"` : ''} data-tip="wm:${k}"><rect x="${x - 70}" y="${y - 22}" width="140" height="44" rx="6" fill="${here ? '#4a3a1c' : seen ? '#221c18' : '#15120f'}" stroke="${here ? '#ffd070' : can ? '#ffb050' : seen ? '#8a7a5a' : '#4a4038'}" stroke-width="${here || can ? 2 : 1}"/>`
         + `<text x="${x}" y="${y - 3}" text-anchor="middle" font-size="13" font-weight="700" fill="${seen ? '#f4e8d0' : '#9a9088'}">${esc(d.name)}</text>`
-        + `<text x="${x}" y="${y + 13}" text-anchor="middle" font-size="11" fill="${warn ? '#ff8a6a' : seen ? '#c8b898' : '#7a7068'}">${seen ? lv : lv + ' · unexplored'}</text>${way}${here ? `<circle cx="${x - 58}" cy="${y - 8}" r="4" fill="#ffd070"/>` : ''}</g>`;
+        + `<text x="${x}" y="${y + 13}" text-anchor="middle" font-size="11" fill="${warn ? '#ff8a6a' : seen ? '#c8b898' : '#7a7068'}">${seen ? lv : lv + ' · unexplored'}</text>${way}${seen ? wmBadge(k, x, y) : ''}${here ? `<circle cx="${x - 58}" cy="${y - 8}" r="4" fill="#ffd070"/>` : ''}</g>`;
     }).join('');
     const svg = `<svg viewBox="0 0 640 400" style="width:100%;height:auto;display:block;background:radial-gradient(ellipse at 40% 55%,#2a241c,#0e0c0a);border:1px solid #4a4038;border-radius:6px;font-family:inherit">${lines}${nodes}</svg>`;
     const kindled = travelList().filter(k => k !== map.id);
     const list = kindled.map(k => travelButton(k, !at)).join('');
-    return `${svg}<p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">✦ kindled Waystone · ◇ Waystone not yet kindled · dashed red: sealed road. ${at ? 'You stand by a Waystone: pick a kindled one to travel there.' : 'Travel between kindled Waystones from any Waystone.'}</p><div class="sec">Kindled Waystones</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}`;
+    return `${svg}<p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">✦ kindled Waystone · ◇ Waystone not yet kindled · <span class="wmleg">${placeIcon('interior')}</span> rooms and <span class="wmleg">${placeIcon('cave')}</span> caves found · dashed red: sealed road. ${at ? 'You stand by a Waystone: pick a kindled one to travel there.' : 'Travel between kindled Waystones from any Waystone.'}</p><div class="sec">Kindled Waystones</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}${wmPlacesHTML()}`;
   },
 };
 // Kindled waystones in story order; the travel buttons show the level range.
@@ -535,7 +535,11 @@ let WM_EDGES = null;
 function worldEdges() {
   if (!WM_EDGES) {
     const seen = {}; WM_EDGES = [];
-    for (const k of Object.keys(MAPDEFS)) for (const wp of genMap(k).warps) { if (!MAPDEFS[wp.to]) continue; const key = [k, wp.to].sort().join('|'); if (seen[key]) { if (wp.lock) seen[key].lock = wp.lock; continue; } seen[key] = { a: k, b: wp.to, lock: wp.lock }; WM_EDGES.push(seen[key]); }
+    for (const k of Object.keys(MAPDEFS)) for (const wp of genMap(k).warps) {
+      // UI round 10: an interior / cave counts as its parent map; maps without a place on the world map draw no road
+      const a = wmRoot(k), b = wmRoot(wp.to); if (!MAPDEFS[a] || !MAPDEFS[b] || a === b || !MAPDEFS[a].world || !MAPDEFS[b].world) continue;
+      const key = [a, b].sort().join('|'); if (seen[key]) { if (wp.lock) seen[key].lock = wp.lock; continue; } seen[key] = { a, b, lock: wp.lock }; WM_EDGES.push(seen[key]);
+    }
   }
   for (const e of WM_EDGES) e.locked = !!(e.lock && WARP_LOCKS[e.lock] && !WARP_LOCKS[e.lock].open());
   return WM_EDGES;
@@ -768,7 +772,8 @@ function tipFor(key) {
   if (k === 'shop') return ITEMS[v] ? itemTooltip({ id: v }, true) : null;
   if (k === 'hotitem') { if (!ITEMS[v]) return null; const it = P.inv.find(i => i.id === v); return it ? itemTooltip(it) : itemTooltip({ id: v }, true); }
   if (k === 'skill') return skillTooltip(v);
-  if (k === 'wm') { const d = MAPDEFS[v]; if (!d) return null; const ms = [...new Set(d.spawns.map(s => s[0]))].map(id => MOBS[id].name); return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${esc(d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : d.sub)}${P.flags.seen[v] && ms.length ? '<br>' + esc(ms.join(', ')) : ''}${P.flags.seen[v] && d.boss && MOBS[d.boss] ? `<br>MVP: ${esc(MOBS[d.boss].name)}${P.flags.bosses[d.boss] ? ' (slain)' : ''}` : ''}</div><div class="muted">${P.kindled[v] ? 'Waystone kindled' : genMap(v).way ? 'Waystone not kindled' : ''}</div>`; }
+  if (k === 'wm') { const d = MAPDEFS[v]; if (!d) return null; const ms = [...new Set(d.spawns.map(s => s[0]))].map(id => MOBS[id].name); return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${esc(d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : d.sub)}${P.flags.seen[v] && ms.length ? '<br>' + esc(ms.join(', ')) : ''}${P.flags.seen[v] && d.boss && MOBS[d.boss] ? `<br>MVP: ${esc(MOBS[d.boss].name)}${P.flags.bosses[d.boss] ? ' (slain)' : ''}` : ''}</div><div class="muted">${P.kindled[v] ? 'Waystone kindled' : genMap(v).way ? 'Waystone not kindled' : ''}</div>${P.flags.seen[v] ? wmTipSubs(v) : ''}`; }
+  if (k === 'wms') { const d = MAPDEFS[v]; if (!d) return null; const kd = wmSubs().kind[v], par = MAPDEFS[wmRoot(v)]; return `<div class="tt-name">${esc(d.name)}</div><div class="tt-l">${kd === 'cave' ? 'Cave' : 'Interior'}${par ? ' · ' + esc(par.name) : ''}${d.lv ? `<br>Base Lv ${d.lv[0]} – ${d.lv[1]}` : ''}</div><div class="muted">${map.id === v ? 'You are here' : P.flags.seen[v] ? 'Explored' : 'Entrance found, not yet entered'}</div>`; }
   if (k === 'buff') { const b = P.buffs[v]; return b ? `<div class="tt-name">${b.name}</div><div class="tt-l">${[...Object.entries(b.bonus || {}).map(([a, n]) => bonusLine(a, n)), ...buffLines(b)].join('<br>')}</div><div class="muted">${b.perm ? 'Permanent' : b.count !== undefined ? `×${b.count}` : Math.ceil(b.t) + 's left'}</div>` : null; }
   return null;
 }
@@ -1306,7 +1311,7 @@ let questMigrate = false;
 function applySave(o) {
   P = Object.assign(newPlayer(o.name, o.hair), o); uidc = Math.max(uidc, o.uidc || 1);
   P.flags = Object.assign({ shards: {}, bosses: {}, lore: { ash: true }, tips: {}, talked: {} }, P.flags);
-  for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked', 'seen']) P.flags[k] = P.flags[k] || {};
+  for (const k of ['shards', 'bosses', 'lore', 'tips', 'talked', 'seen', 'found']) P.flags[k] = P.flags[k] || {};   // found: doors / cave mouths you have seen (UI round 10)
   for (const k in P.kindled || {}) P.flags.seen[k] = true; if (P.map) P.flags.seen[P.map] = true; // saves from before the World Map
   P.quests = questNorm(o.quests); questMigrate = !o.quests; // saves from before the quest system: story quests are caught up without rewards
   // Round 4: titles, achievements, counters and standing. Older saves start empty; cards you already own count.
@@ -1398,22 +1403,13 @@ function frame(now) {
     if (started) hover = pickAt(mouse.x, mouse.y);
     update(dt);
     render(dt);
-    if (started) { renderHUD(); if (UI.dirty) renderAll(); if (time % 0.25 < dt) { drawMinimap(); drawMinimapExtras(); } }
+    if (started) { renderHUD(); if (UI.dirty) renderAll(); worldUIFrame(dt); }   // UI round 10: minimap layers, door prompt, regions
     setCursor(hover ? (hover.kind === 'mob' ? 'atk' : hover.kind === 'drop' ? 'pick' : 'talk') : 'def');
   } catch (err) { console.error(err); showErr(err); }
 }
-// Minimap additions drawn over drawMinimap() (js/gfx-render.js): the Waystone, sealed warps of any lock kind, the MVP lair.
-function drawMinimapExtras() {
-  const mc = $('mini'); if (!mc || !map) return; const g = mc.getContext('2d');
-  const s = Math.min(mc.width / map.w, mc.height / map.h), ox = (mc.width - map.w * s) / 2, oy = (mc.height - map.h * s) / 2, X = x => ox + x * s, Y = y => oy + y * s;
-  g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.lineWidth = 1.5;
-  if (map.way) { const x = X(map.way.x), y = Y(map.way.y), r = 5; g.fillStyle = P.kindled[map.id] ? '#ffb050' : '#8a8078'; g.strokeStyle = '#1a1008'; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.stroke(); }
-  for (const wp of map.warps) if (wp.lock && wp.lock !== 'gate' && warpLocked(wp)) { g.fillStyle = '#b03020'; g.strokeStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.arc(X(wp.x + 0.5), Y(wp.y + 0.5), 4, 0, 7); g.fill(); g.stroke(); }
-  for (const q of questSpots()) { const x = X(q.x), y = Y(q.y); g.fillStyle = q.kind === 'inspect' ? '#ffe070' : q.kind === 'waves' || q.kind === 'hunt' ? '#ff8a4a' : '#8ad8ff'; g.strokeStyle = '#1a1008'; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); g.stroke(); }
-  for (const m of mobs) if (!m.dead && m.variant) { g.fillStyle = '#ff4a2a'; g.strokeStyle = '#1a0806'; g.beginPath(); g.arc(X(m.x), Y(m.y), 4, 0, 7); g.fill(); g.stroke(); }
-  if (map.d.boss && map.bossPos && !P.flags.bosses[map.d.boss] && P.flags.seen[map.id]) { g.strokeStyle = 'rgba(255,122,42,.8)'; g.setLineDash([3, 3]); g.beginPath(); g.arc(X(map.bossPos.x), Y(map.bossPos.y), 7 * s / 2 + 4, 0, 7); g.stroke(); g.setLineDash([]); }
-  g.restore();
-}
+// UI round 10: the minimap lives in ui.js now (see "UI round 10" below). drawMinimapExtras / drawMinimap stay callable
+// (tests, tools/perf.js) and redraw the marker layer.
+function drawMinimapExtras() { if (typeof miniMarkers === 'function' && map) { if (MM.map !== map) miniRebuild(); miniMarkers(); } }
 // Title line under the name in the HUD (index.html is not ours; add it at load).
 (function titleLine() {
   const nm = $('pname'); if (!nm || $('ptitle')) return;
@@ -1425,6 +1421,292 @@ function drawMinimapExtras() {
   const menu = document.querySelector('#info .menu'); if (!menu || menu.querySelector('[data-win="worldmap"]')) return;
   const b = document.createElement('button'); b.className = 'btn'; b.dataset.win = 'worldmap'; b.style.gridColumn = '1 / -1'; b.innerHTML = 'World Map<kbd>W</kbd>'; menu.appendChild(b);
 })();
+/* =========================================================
+   UI round 10: the bigger world (design/world-expansion.md, "UI")
+   - Minimap in two canvas layers inside one wrapper (#mmw): #minibase is painted once per map and zoom, #mini
+     (markers) is redrawn 8 times a second, and the wrapper and the player arrow (#mmp) move with CSS transforms
+     every frame. Maps larger than 64 tiles follow the player at a fixed scale; #mmz toggles whole map / local
+     (remembered in localStorage 'aom-mmzoom'). Interiors (render.kind or gen 'interior') get a parchment floor
+     plan, caves ('cave') dark stone, and their entry banner becomes a small plaque.
+   - Door prompt (#doorp) near `door` warps. Warps fire when you walk onto them (core postMove), so the prompt is a
+     label in both control modes; it adds no key of its own.
+   - World Map: caves and interiors under their parent map. Parent: MAPDEFS[id].parent if set, else the first map
+     whose warp leads there. Found = its door seen within 6 tiles (P.flags.found, saved with flags) or entered
+     (P.flags.seen); only found places are listed, greyed until entered.
+   - Landmarks (m.landmarks = [{ id, name, x, y, r }], world team) count as regions by radius; visited ones are kept in
+     P.flags.found['<map>#<id>'] and listed in the World Map tooltip.
+   - Signs: m.objs of kind 'sign' / 'signpost' ({ name, text: string | [pages], dirs: [[dir, label], ...] }) read as a
+     carved board (content's OBJ_TALK.sign runs inside that style; signs with `dirs` get the arms drawn here). Regions: m.regions or MAPDEFS[id].regions = [{ name, x0, y0, x1, y1 }] (tiles, inclusive): a
+     toast when you walk into one, and its name next to the map's under the minimap.
+   ========================================================= */
+const SUBKIND = { interior: 1, cave: 1 };
+function uiDefKind(d) { if (!d) return null; const r = d.render && d.render.kind; return SUBKIND[r] ? r : SUBKIND[d.gen] ? d.gen : null; }
+// A generated map's style: core's m.kind ('cave' | 'interior' | null, from render.kind), else the def's render.kind / gen.
+const uiMapKind = m => (m && SUBKIND[m.kind] ? m.kind : m ? uiDefKind(m.d) : null);
+const MM_BIG = 64, MM_LOCAL = 44, MM_TILE = 8;   // local view: 44 tiles across, painted at 8 px a tile
+const MM = { map: null, mode: '', kind: null, V: 64, S: 4, x0: 0, y0: 0, t: 0, dirty: true, tf: '', pf: '', rf: '', px: NaN, py: NaN, pa: NaN, el: null, zoom: store('aom-mmzoom') === 'whole' ? 'whole' : 'local' };
+// Marker colours per minimap style (field / town / dungeon: the old ones).
+const MM_COL = {
+  field: { mob: '#e04848', boss: '#ff7a2a', npc: '#6aa8ff', warp: '#4ad0ff', lock: '#b03020', ally: '#7ae07a', down: '#8a8078', door: '#ffcf70', doorIn: '#2a1a0c', edge: 'rgba(0,0,0,.6)', sign: '#d0a060' },
+  interior: { mob: '#a8281e', boss: '#c85a10', npc: '#2a5aa8', warp: '#1a7a9a', lock: '#9a2010', ally: '#2a8a3a', down: '#8a7a68', door: '#8a4a1a', doorIn: '#f4e4c0', edge: 'rgba(58,36,16,.7)', sign: '#7a5028' },
+  cave: { mob: '#ff5a48', boss: '#ff8a3a', npc: '#7ab4ff', warp: '#5ad8ff', lock: '#c03a28', ally: '#8ae88a', down: '#8a8078', door: '#e8d49a', doorIn: '#1a1614', edge: 'rgba(0,0,0,.7)', sign: '#b89060' },
+};
+function mmEls() {
+  if (MM.el) return MM.el;
+  const box = $('mapw'); if (!box) return null;
+  MM.el = { box, wr: $('mmw'), base: $('minibase'), mk: $('mini'), p: $('mmp'), arrow: $('mmp').firstElementChild, z: $('mmz') };
+  MM.el.z.addEventListener('click', e => { e.stopPropagation(); Sfx.click(); MM.zoom = MM.mode === 'local' ? 'whole' : 'local'; store('aom-mmzoom', MM.zoom); MM.dirty = true; });
+  return MM.el;
+}
+function miniRebuild() {
+  const E = mmEls(); if (!E || !map) return;
+  const m = map, big = Math.max(m.w, m.h) > MM_BIG, local = big && MM.zoom === 'local';
+  MM.map = m; MM.dirty = false; MM.kind = uiMapKind(m); MM.mode = local ? 'local' : 'whole';
+  MM.V = local ? MM_LOCAL : Math.max(m.w, m.h); MM.S = local ? MM_TILE : Math.max(3, Math.ceil(320 / MM.V));
+  const cw = m.w * MM.S, ch = m.h * MM.S;
+  for (const c of [E.base, E.mk]) if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+  E.wr.style.width = (m.w / MM.V * 100) + '%'; E.wr.style.height = (m.h / MM.V * 100) + '%';
+  E.box.className = 'mapw' + (MM.kind ? ' mm-' + MM.kind : '') + (local ? ' mm-local' : '');
+  E.z.hidden = !big; E.z.classList.toggle('whole', !local);
+  E.z.title = local ? 'Show the whole map' : 'Follow me (local map)'; E.z.setAttribute('aria-label', E.z.title);
+  miniPaintBase(E.base, m, MM.S, MM.kind);
+  MM.tf = MM.pf = MM.rf = ''; MM.px = NaN; MM.t = 1;
+  // The entry banner of an interior / cave becomes a plaque in that style (core's banner() drew it this frame).
+  const b = MM.kind && $('banner').firstElementChild; if (b && b.classList.contains('bnr')) b.classList.add('loc', MM.kind);
+}
+// The base layer: the map's own minimap bitmap (fields, towns, dungeons), or a floor plan / cave painted per tile.
+function miniPaintBase(c, m, S, kind) {
+  const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
+  if (!kind) { g.imageSmoothingEnabled = false; g.drawImage(m.mini, 0, 0, m.w * S, m.h * S); return; }
+  const inn = kind === 'interior', w = m.w, h = m.h;
+  const C = inn ? { bg: [201, 177, 132], floor: [238, 222, 184], wall: [92, 66, 42], prop: [176, 140, 96], water: [125, 156, 176], lava: [200, 90, 40], cry: [150, 110, 200], rim: '#3a2614' }
+    : { bg: [11, 10, 10], floor: [70, 66, 61], wall: [36, 33, 31], prop: [104, 98, 90], water: [28, 52, 68], lava: [200, 80, 30], cry: [154, 106, 216], rim: 'rgba(150,140,124,.85)' };
+  const col = (c3, v) => `rgb(${clamp(c3[0] + v, 0, 255)},${clamp(c3[1] + v, 0, 255)},${clamp(c3[2] + v, 0, 255)})`;
+  const open = t => t === 0 || t === T.WAY;
+  g.fillStyle = col(C.bg, 0); g.fillRect(0, 0, w * S, h * S);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, t = m.t[i], v = ((m.var[i] || 0) % 13) - 6;
+    let c3 = null;
+    if (open(t)) c3 = C.floor; else if (t === T.WALL) c3 = m.vis && m.vis[i] ? C.wall : null;
+    else if (t === T.WATER) c3 = C.water; else if (t === T.LAVA) c3 = C.lava; else if (t === T.CRYSTAL) c3 = C.cry;
+    else if (t === T.VOID) c3 = null; else c3 = C.prop;
+    if (!c3) continue;
+    g.fillStyle = col(c3, inn ? (open(t) ? (x + y) % 2 * 4 - 2 + (v >> 2) : v >> 1) : v); g.fillRect(x * S, y * S, S, S);
+  }
+  // Ink / rim lines where the floor meets a wall: the floor plan's outline.
+  g.fillStyle = C.rim; const lw = Math.max(1, Math.round(S * (inn ? 0.22 : 0.18)));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const t = m.t[y * w + x]; if (t === T.WALL || t === T.VOID) continue;
+    const wl = (xx, yy) => xx < 0 || yy < 0 || xx >= w || yy >= h || m.t[yy * w + xx] === T.WALL;
+    if (wl(x, y - 1)) g.fillRect(x * S, y * S, S, lw); if (wl(x, y + 1)) g.fillRect(x * S, (y + 1) * S - lw, S, lw);
+    if (wl(x - 1, y)) g.fillRect(x * S, y * S, lw, S); if (wl(x + 1, y)) g.fillRect((x + 1) * S - lw, y * S, lw, S);
+  }
+  // Light: hearths and candles warm a parchment plan; crystals, mushrooms and torches glow in the dark.
+  const lights = [].concat(m.lights || [], (m.braziers || []).map(b => ({ x: b.x, y: b.y, r: 3 })));
+  if (lights.length) {
+    g.globalCompositeOperation = inn ? 'multiply' : 'lighter';
+    for (const L of lights) {
+      const r = (L.r || 4) * S * (inn ? 0.9 : 0.8), cx = L.x * S, cy = L.y * S, gr = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+      const lc = typeof L.col === 'number' ? '#' + L.col.toString(16).padStart(6, '0') : L.col || (inn ? '#ffc070' : '#ffb060');
+      gr.addColorStop(0, inn ? '#f0b060' : lc); gr.addColorStop(1, inn ? '#ffffff' : 'rgba(0,0,0,0)');
+      g.globalAlpha = inn ? 0.55 : 0.32; g.fillStyle = gr; g.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1;
+  }
+  if (inn) {   // paper grain
+    const rnd = mulberry32((m.d.seed || 1) * 7 + 3); g.fillStyle = 'rgba(90,60,30,.10)';
+    for (let k = 0, n = (w * h * S * S) / 90; k < n; k++) g.fillRect(rnd() * w * S, rnd() * h * S, 1 + rnd() * 1.5, 1);
+  }
+}
+// Per frame: two transforms at most (only when the view or the player moved), the markers 8 times a second.
+function miniFrame(dt) {
+  const E = mmEls(); if (!E || !map || !P) return;
+  if (MM.map !== map || MM.dirty) miniRebuild();
+  const m = map, V = MM.V, a = Math.atan2(P.fy || 0, P.fx || 1);
+  if (P.x !== MM.px || P.y !== MM.py || a !== MM.pa || !MM.tf) {
+    MM.px = P.x; MM.py = P.y; MM.pa = a;
+    const x0 = MM.mode === 'local' && m.w > V ? clamp(P.x - V / 2, 0, m.w - V) : (m.w - V) / 2;
+    const y0 = MM.mode === 'local' && m.h > V ? clamp(P.y - V / 2, 0, m.h - V) : (m.h - V) / 2;
+    MM.x0 = x0; MM.y0 = y0;
+    const tf = `translate(${(-x0 / m.w * 100).toFixed(2)}%,${(-y0 / m.h * 100).toFixed(2)}%)`;
+    if (tf !== MM.tf) { MM.tf = tf; E.wr.style.transform = tf; }
+    const pf = `translate(${((P.x - x0) / V * 100).toFixed(2)}%,${((P.y - y0) / V * 100).toFixed(2)}%)`;
+    if (pf !== MM.pf) { MM.pf = pf; E.p.style.transform = pf; }
+    const rf = `rotate(${a.toFixed(2)}rad)`; if (rf !== MM.rf) { MM.rf = rf; E.arrow.style.transform = rf; }
+  }
+  MM.t += dt; if (MM.t >= 0.125) { MM.t = 0; miniMarkers(); }
+}
+drawMinimap = function () { if (!map) return; if (MM.map !== map || MM.dirty) miniRebuild(); miniMarkers(); };   // tools/perf.js calls this
+// The marker layer, in map coordinates (the wrapper's transform scrolls it with the base). Sizes are in "old
+// minimap pixels" (the 300 px canvas of before), so markers keep their look at every zoom and HUD size.
+function miniMarkers() {
+  const E = MM.el; if (!E || MM.map !== map) return;
+  const m = map, S = MM.S, u = MM.V * S / 300, g = E.mk.getContext('2d'), C = MM_COL[MM.kind || 'field'];
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, E.mk.width, E.mk.height); g.lineWidth = 1.2 * u;
+  const pad = 3, vx0 = MM.x0 - pad, vy0 = MM.y0 - pad, vx1 = MM.x0 + MM.V + pad, vy1 = MM.y0 + MM.V + pad;
+  const inV = (x, y) => x >= vx0 && x <= vx1 && y >= vy0 && y <= vy1;
+  const dot = (x, y, c, r) => { if (!inV(x, y)) return; g.fillStyle = c; g.beginPath(); g.arc(x * S, y * S, r * u, 0, 7); g.fill(); g.strokeStyle = C.edge; g.stroke(); };
+  // lair ring, warps and doors, signs, the Waystone
+  if (m.d.boss && m.bossPos && !P.flags.bosses[m.d.boss] && P.flags.seen[m.id]) { g.strokeStyle = 'rgba(255,122,42,.8)'; g.setLineDash([3 * u, 3 * u]); g.beginPath(); g.arc(m.bossPos.x * S, m.bossPos.y * S, 7 * u + 3.5 * S, 0, 7); g.stroke(); g.setLineDash([]); }
+  for (const wp of m.warps) {
+    const x = wp.x + 0.5, y = wp.y + 0.5; if (!inV(x, y)) continue;
+    const locked = wp.lock === 'gate' ? !P.flags.gate : wp.lock ? !!warpLocked(wp) : false;
+    if (wp.door) mmDoor(g, x * S, y * S, u, wp.door === 'cave' || uiDefKind(MAPDEFS[wp.to]) === 'cave' ? 'cave' : 'door', locked ? C.lock : C.door, C);
+    else dot(x, y, locked ? C.lock : C.warp, 4);
+  }
+  for (const o of m.objs) if (SIGN_KINDS[o.kind] && inV(o.x, o.y)) { const x = o.x * S, y = o.y * S; g.fillStyle = C.sign; g.strokeStyle = C.edge; g.fillRect(x - 0.7 * u, y - 2 * u, 1.4 * u, 6 * u); g.fillRect(x - 3.6 * u, y - 4 * u, 7.2 * u, 3 * u); g.strokeRect(x - 3.6 * u, y - 4 * u, 7.2 * u, 3 * u); }
+  if (m.way && inV(m.way.x, m.way.y)) { const x = m.way.x * S, y = m.way.y * S, r = 5 * u; g.fillStyle = P.kindled[m.id] ? '#ffb050' : '#8a8078'; g.strokeStyle = '#1a1008'; g.beginPath(); g.moveTo(x, y - r); g.lineTo(x + r, y); g.lineTo(x, y + r); g.lineTo(x - r, y); g.closePath(); g.fill(); g.stroke(); }
+  // monsters (named variants larger), lost zeny
+  for (const e of mobs) if (!e.dead) dot(e.x, e.y, e.variant ? '#ff4a2a' : e.d.boss ? C.boss : C.mob, e.d.boss ? 5 : e.variant ? 4 : 2.4);
+  for (const d of drops) if (d.lost) dot(d.x, d.y, '#ff2a2a', 4);
+  // NPCs with their quest mark ('!' new, '?' ready), quest spots (clamped to the view's edge in the local view)
+  for (const n of m.npcs) {
+    if (!inV(n.x, n.y)) continue;
+    if (!(n._qmT > time - 0.3) || n._qmT > time) { n._qm = typeof questMarkerInfo === 'function' ? questMarkerInfo(n) : null; n._qmT = time; }
+    const q = n._qm; dot(n.x, n.y, q ? (q.mark === '?' ? '#6ad0ff' : '#ffd040') : C.npc, q ? 4.4 : 3.5);
+    if (q) { g.fillStyle = '#1a1008'; g.font = `800 ${7 * u}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(q.mark, n.x * S, n.y * S + 0.4 * u); }
+  }
+  const spots = typeof questSpots === 'function' ? questSpots() : [];
+  for (const q of spots) {
+    const c = q.kind === 'inspect' ? '#ffe070' : q.kind === 'waves' || q.kind === 'hunt' ? '#ff8a4a' : '#8ad8ff';
+    if (inV(q.x, q.y) || MM.mode !== 'local') { dot(q.x, q.y, c, 3.5); continue; }
+    const e = 1.4, x = clamp(q.x, MM.x0 + e, MM.x0 + MM.V - e), y = clamp(q.y, MM.y0 + e, MM.y0 + MM.V - e), an = Math.atan2(q.y - y, q.x - x);
+    g.save(); g.translate(x * S, y * S); g.rotate(an); g.fillStyle = c; g.strokeStyle = C.edge; g.beginPath(); g.moveTo(5 * u, 0); g.lineTo(-3 * u, -4 * u); g.lineTo(-3 * u, 4 * u); g.closePath(); g.fill(); g.stroke(); g.restore();
+  }
+  // squad mode: the other heroes
+  if (typeof gfxHeroes === 'function') { const Hs = gfxHeroes(); if (Hs.length > 1) for (const h of Hs) if (h && h !== P && (!h.map || h.map === m.id)) dot(h.x, h.y, h.dead ? C.down : C.ally, 3.2); }
+}
+// A door (arched leaf) or a cave mouth (dark arch in a rock rim), centred on (x, y) in canvas pixels.
+function mmDoor(g, x, y, u, kind, col, C) {
+  const w = 4.6 * u, h = 7 * u;
+  g.beginPath(); g.moveTo(x - w, y + h * 0.55); g.lineTo(x - w, y - h * 0.1); g.arc(x, y - h * 0.1, w, Math.PI, 0); g.lineTo(x + w, y + h * 0.55); g.closePath();
+  g.fillStyle = col; g.fill(); g.strokeStyle = C.edge; g.lineWidth = 1.2 * u; g.stroke();
+  g.fillStyle = kind === 'cave' ? '#0e0c0b' : C.doorIn;
+  g.beginPath(); const w2 = w * 0.55; g.moveTo(x - w2, y + h * 0.55); g.lineTo(x - w2, y + h * 0.05); g.arc(x, y + h * 0.05, w2, Math.PI, 0); g.lineTo(x + w2, y + h * 0.55); g.closePath(); g.fill();
+}
+/* ---------- Door prompt, found doors, regions (10 times a second; the prompt follows its door every frame) ---------- */
+const DP = { wp: null, key: '', tf: '', t: 0, below: false };
+const RG = { cur: null, pend: null, since: 0, map: null, shown: {}, t: 0 };
+const SIGN_KINDS = { sign: 1, signpost: 1 };
+// Place icons (door prompt, World Map): a house for rooms, a rock arch for caves (currentColor fill).
+const PLACE_PATH = { interior: '<path d="M1.5 7.2L7 2.2L12.5 7.2V12.5H1.5Z" fill="currentColor"/><path d="M5.5 12.5V8.6H8.5V12.5Z" fill="rgba(0,0,0,.5)"/>',
+  cave: '<path d="M.8 12.8C.8 6.2 3.6 2.2 7 2.2S13.2 6.2 13.2 12.8Z" fill="currentColor"/><path d="M4 12.8C4 8.9 5.3 6.6 7 6.6S10 8.9 10 12.8Z" fill="rgba(0,0,0,.72)"/>' };
+const placeIcon = k => `<svg viewBox="0 0 14 14" aria-hidden="true">${PLACE_PATH[k === 'cave' ? 'cave' : 'interior']}</svg>`;
+function worldUIFrame(dt) {
+  miniFrame(dt);
+  DP.t += dt; if (DP.t >= 0.1) { DP.t = 0; doorTick(); regionTick(); }
+  const el = $('doorp'); if (!el || !DP.wp) return;
+  // Above the door; below its threshold when that label would sit on the hero (a door behind you, toward the camera).
+  const wp = DP.wp, x = wp.x + 0.5, y = wp.y + 0.5, gh = groundH(x, y), a = pj(x, y, gh + 2.1), b = pj(x, y, gh), f = pj(P.x, P.y, groundH(P.x, P.y));
+  const below = a[1] > f[1] - 150 * clamp(PPU / 34, 0.6, 1.6) && a[1] < f[1] + 10 && Math.abs(a[0] - f[0]) < 110, q = below ? b : a[1] < H * 0.26 ? b : a;   // near the top edge (the HUD): on the threshold
+  const tf = q[2] > 1 ? '' : `translate(${Math.round(q[0])}px,${Math.round(q[1] + (below ? 6 : 0))}px)`;
+  if (tf !== DP.tf) { DP.tf = tf; el.style.transform = tf; el.style.visibility = tf ? '' : 'hidden'; }
+  if (below !== DP.below) { DP.below = below; el.classList.toggle('below', below); }
+}
+function doorTick() {
+  const el = $('doorp'); if (!el || !map || !P) return;
+  const F = P.flags.found || (P.flags.found = {}); let best = null, bd = 1.6;
+  const busy = P.dead || !$('dialog').hidden || (typeof CINE !== 'undefined' && CINE.active);
+  for (const wp of map.warps) {
+    if (!wp.door) continue; const d = hyp(P.x - wp.x - 0.5, P.y - wp.y - 0.5);
+    if (d < 6 && !F[wp.to] && MAPDEFS[wp.to]) { F[wp.to] = 1; if (UI.open.worldmap) UI.dirty = true; }
+    if (d < bd) { bd = d; best = wp; }
+  }
+  if (busy) best = null;
+  const key = best ? best.to + '|' + best.x + '|' + best.y + '|' + (warpLocked(best) ? 1 : 0) : '';
+  if (key === DP.key) return; DP.key = key; DP.wp = best; DP.tf = ''; DP.below = false;
+  if (!best) { el.hidden = true; return; }
+  const to = MAPDEFS[best.to], kin = uiDefKind(to) || (typeof mapCache !== 'undefined' && mapCache[best.to] ? uiMapKind(mapCache[best.to]) : null), cave = best.door === 'cave' || kin === 'cave', out = !kin && !!uiMapKind(map);
+  const name = best.label || (to && to.name) || '';
+  const verb = warpLocked(best) ? 'Sealed' : out ? 'Exit to' : 'Enter';
+  el.className = 'doorp' + (cave ? ' cave' : '') + (warpLocked(best) ? ' locked' : '');
+  el.innerHTML = `<div><span class="di">${placeIcon(cave ? 'cave' : 'interior')}</span><span class="dv">${verb}</span> <b>${esc(name)}</b></div>`; DP.cls = el.className;
+  el.hidden = false; el.style.visibility = 'hidden';
+}
+function mapRegions(m) { return (m && (m.regions || (m.d && m.d.regions))) || null; }
+// Rectangles (m.regions) first, else the nearest landmark whose radius you stand in (m.landmarks = [{ id, name, x, y, r }]).
+function regionAt(m, x, y) {
+  const L = mapRegions(m); if (L) for (const r of L) if (x >= r.x0 && x < r.x1 + 1 && y >= r.y0 && y < r.y1 + 1) return r;
+  let best = null, bd = 1e9; if (m && m.landmarks) for (const l of m.landmarks) { const d = hyp(x - l.x, y - l.y); if (l.name && d <= (l.r || 6) && d < bd) { bd = d; best = l; } }
+  return best;
+}
+function regionTick() {
+  if (!map || !P) return;
+  const r = regionAt(map, P.x, P.y);
+  if (RG.map !== map) { RG.map = map; RG.cur = r; RG.pend = r; RG.since = time; return; }   // the map banner names the place
+  if (r !== RG.pend) { RG.pend = r; RG.since = time; return; }
+  if (r === RG.cur || time - RG.since < 0.5) return;
+  RG.cur = r;
+  if (r) { const F = P.flags.found || (P.flags.found = {}), k = map.id + '#' + (r.id || r.name); if (!F[k]) { F[k] = 1; if (UI.open.worldmap) UI.dirty = true; } }   // places you have been (World Map tooltip)
+  if (r && !(time - (RG.shown[map.id + '|' + r.name] || -1e9) < 45)) { RG.shown[map.id + '|' + r.name] = time; regionToast(r.name, map.d.name); }
+}
+function regionToast(name, sub) {
+  const el = $('rgnt'); if (!el) return;
+  el.innerHTML = `<div class="rg"><div class="a">${esc(name)}</div><div class="b">${esc(sub || '')}</div></div>`;
+}
+/* ---------- Signs ---------- */
+if (typeof useObj === 'function') { const baseUseObj = useObj; useObj = function (o) { return o && SIGN_KINDS[o.kind] ? readSign(o) : baseUseObj(o); }; }
+const SIGN_ARROW = { N: '↑', S: '↓', E: '→', W: '←', NE: '↗', NW: '↖', SE: '↘', SW: '↙' };
+function signHTML(o, page) {
+  const dirs = Array.isArray(o.dirs) && o.dirs.length && page === 0 ? `<div class="sgn-dirs">${o.dirs.map(([d, l]) => { const dd = String(d).toUpperCase(); return `<div class="sgn-arm ${/W/.test(dd) && !/E/.test(dd) ? 'l' : 'r'}"><b>${SIGN_ARROW[dd] || esc(d)}</b>${esc(l)}</div>`; }).join('')}</div>` : '';
+  const pages = Array.isArray(o.text) ? o.text : o.text ? [o.text] : [];
+  return dirs + (pages[page] ? `<div class="sgn-t">${pages[page]}</div>` : '');
+}
+async function readSign(o) {
+  const dg = $('dialog'); dg.classList.add('sign');
+  try {
+    // content's own reader (OBJ_TALK.sign: say(name, text)) runs inside the board style; direction arms (o.dirs) are drawn here
+    if (!(Array.isArray(o.dirs) && o.dirs.length) && typeof OBJ_TALK !== 'undefined' && OBJ_TALK[o.kind]) { await OBJ_TALK[o.kind](o); return; }
+    const n = Math.max(1, Array.isArray(o.text) ? o.text.length : 1), pages = [];
+    for (let i = 0; i < n; i++) pages.push(signHTML(o, i) || '<i>The letters have weathered away.</i>');
+    await say(o.name || 'Signpost', pages);
+  } finally { dg.classList.remove('sign'); }
+}
+/* ---------- World Map: caves and interiors under their parent map ---------- */
+let WM_SUBS = null;
+function wmSubs() {
+  if (WM_SUBS) return WM_SUBS;
+  const par = {}, kind = {}, list = {}, ids = Object.keys(MAPDEFS).filter(k => !MAPDEFS[k].deep);
+  for (const k of ids) { const d = MAPDEFS[k], mk = uiDefKind(d); if (mk) kind[k] = mk; if (d.parent && MAPDEFS[d.parent] && d.parent !== k) par[k] = d.parent; }
+  const order = MAP_ORDER.filter(k => MAPDEFS[k]).concat(ids.filter(k => !MAP_ORDER.includes(k)));
+  for (const k of order) {
+    let gm; try { gm = genMap(k); } catch (e) { continue; }
+    const ws = gm.warps; if (!kind[k] && uiMapKind(gm)) kind[k] = uiMapKind(gm);
+    for (const wp of ws) {
+      const t = wp.to; if (!MAPDEFS[t] || MAPDEFS[t].deep || t === k || MAP_ORDER.includes(t)) continue;
+      if (!kind[t] && wp.door) kind[t] = wp.door === 'cave' ? 'cave' : 'interior';
+      if (!par[t]) par[t] = k;
+    }
+  }
+  WM_SUBS = { par, kind, list };
+  for (const k of order) if (kind[k] && !MAP_ORDER.includes(k)) { const r = wmRoot(k); if (r !== k) (list[r] = list[r] || []).push(k); }
+  return WM_SUBS;
+}
+function wmRoot(k) { if (!WM_SUBS && !MAP_ORDER.includes(k)) wmSubs(); let n = 0; while (WM_SUBS && !MAP_ORDER.includes(k) && WM_SUBS.par[k] && n++ < 8) k = WM_SUBS.par[k]; return k; }
+const wmFound = k => !!(P.flags.seen[k] || (P.flags.found && P.flags.found[k]));
+function wmBadge(k, x, y) {
+  const L = (wmSubs().list[k] || []).filter(wmFound); if (!L.length) return '';
+  const nI = L.filter(s => WM_SUBS.kind[s] !== 'cave').length, nC = L.length - nI;
+  let bx = x - 66, out = '';
+  for (const [k, n] of [['interior', nI], ['cave', nC]]) if (n) { out += `<svg x="${bx}" y="${y + 7}" width="11" height="11" viewBox="0 0 14 14" color="#c8a860">${PLACE_PATH[k]}</svg><text x="${bx + 11.5}" y="${y + 16.5}" font-size="10" fill="#c8a860">${n}</text>`; bx += 12 + 6.5 * String(n).length + 2; }
+  return out;
+}
+function wmTipSubs(k) {
+  const all = wmSubs().list[k] || [], L = all.filter(wmFound), F = P.flags.found || {};
+  const m = mapCache[k], places = m ? [].concat(mapRegions(m) || [], m.landmarks || []).filter(r => r.name && F[k + '#' + (r.id || r.name)]).map(r => r.name) : [];
+  return (all.length ? `<div class="tt-l" style="margin-top:3px">${L.length ? esc(L.map(s => MAPDEFS[s].name).join(', ')) : 'No caves or rooms found yet'}${all.length > L.length ? ` <span class="muted">(+${all.length - L.length} undiscovered)</span>` : ''}</div>` : '')
+    + (places.length ? `<div class="tt-l" style="margin-top:3px">Visited: ${esc(places.join(', '))}</div>` : '');
+}
+function wmPlacesHTML() {
+  const S = wmSubs(), rows = [];
+  for (const k of MAP_ORDER) {
+    const all = S.list[k] || [], L = all.filter(wmFound); if (!L.length) continue;
+    const chips = L.map(s => { const cave = S.kind[s] === 'cave', here = map.id === s; return `<span class="wms${cave ? ' cave' : ''}${P.flags.seen[s] ? '' : ' unv'}${here ? ' here' : ''}" data-tip="wms:${s}"><i>${placeIcon(cave ? 'cave' : 'interior')}</i>${esc(MAPDEFS[s].name)}</span>`; }).join('');
+    rows.push(`<div class="wmg"><b>${esc(MAPDEFS[k].name)}</b><div>${chips}${all.length > L.length ? `<span class="wmu">+${all.length - L.length} undiscovered</span>` : ''}</div></div>`);
+  }
+  return rows.length ? `<div class="sec">Caves and interiors</div><div class="wmplaces">${rows.join('')}</div>` : '';
+}
+addEventListener('resize', () => { MM.tf = ''; });
 function boot(data) {
   resize();
   P = newPlayer('Unkindled', '#b9b3a8'); resetRuntime(); calcStats();

@@ -882,3 +882,659 @@ MAP_ORDER.push('helheim');
   R('nidavellir', { weather: { amb: [['embers', 0.7]], wind: [0.1, 0.05] }, tod: false });
   R('bifrost', { weather: { amb: [['motes', 1]], wind: [0.3, 0.1] }, tod: false });
 }
+
+/* =========================================================
+   Cycle 9: world expansion (design/world-expansion.md). Every overworld map grows east and south; its original
+   region keeps every tile, path, tree, warp and coordinate (genMap: MAPDEFS[id].grow, js/core.js mapGrow). The new
+   area has its own seeded stream, its own landmarks, trails, signposts, spawn regions, critters and a cave mouth or
+   two. Caves (`<field>_cave_<name>`, gen 'cave') are joined to their field by `door: 'cave'` warps.
+   New object kinds (map.objs; OBJ_TALK in js/data/npcs.js): 'sign' (a readable signpost: name, text pages), 'lore'
+   (a lore find: name, text, lore key unlocked on reading), 'chest' (id, loot table CHEST_LOOT[loot], opened once per
+   save; o.open for the renderer). m.landmarks = [{ id, name, x, y, r }] lists the named places of the new areas (UI:
+   minimap / world map labels). Props use the art kits' ids (`cave_*`, `interior_*`, `field_*`) with a fallback model
+   that is in the manifest today (mdl()): when a kit model lands in assets/models/index.json the renderer draws it.
+   ========================================================= */
+// Kit ids requested from the art team (see docs/CONTENT.md, cycle 9) and today's fallbacks.
+const WXKIT = {
+  mouth: ['cave_mouth', 'ruin_wall_c'], mouthIce: ['cave_mouth_ice', 'ruin_wall_c'], mouthMud: ['cave_mouth_mud', 'ruin_wall_c'],
+  stalagmite: [['cave_stalagmite_a', 'rock_field_b'], ['cave_stalagmite_b', 'rock_field_d'], ['cave_stalagmite_c', 'rock_field_c']],
+  stalagmiteIce: [['cave_stalagmite_ice', 'rimeshore_ice_rock_b'], ['cave_stalagmite_a', 'rimeshore_ice_rock_a']], stalagmiteMud: [['cave_stalagmite_mud', 'rock_field_a'], ['cave_stalagmite_b', 'rock_field_d']],
+  pillar: ['cave_pillar', 'throne_basalt_rock'], crystal: ['cave_crystal_violet', 'nidavellir_crystal_b'], crystalBlue: ['cave_crystal_blue', 'rimeshore_ice_crystal'], mushroom: ['cave_mushrooms', 'mirewell_mushrooms'],
+  bones: ['cave_bones', 'dng_bones'], support: ['cave_mine_support', 'nidavellir_support_beams'], cart: ['cave_cart', 'nidavellir_mine_cart'], rail: ['cave_rail', 'nidavellir_rail'], railCurve: ['cave_rail_curve', 'nidavellir_rail_curve'],
+  poolRim: ['cave_pool_rim', null], stalactite: ['cave_stalactite', null],
+  chest: ['interior_chest', 'town_crates'], runestone: ['field_runestone', 'rock_field_c'], shrine: ['field_shrine', 'dng_grave_b'],
+  tent: ['field_tent', 'town_market_stall'], campfire: ['field_campfire', 'dng_brazier'], stump: ['field_stump', 'rock_field_d'], log: ['field_log', 'mirewell_mossy_log'],
+  haystack: ['field_haystack', 'town_crates'], barrow: ['field_barrow_mound', 'rock_field_a'], weapons: ['field_broken_weapons', 'dng_rubble_b'],
+};
+// The cave kit (kits.cave in assets/models/index.json) and the interior chest landed during cycle 9.
+for (const id of ['cave_bones', 'cave_cart', 'cave_crystal_blue', 'cave_crystal_violet', 'cave_mine_support', 'cave_mouth', 'cave_mouth_ice', 'cave_mouth_mud', 'cave_mushrooms', 'cave_pillar', 'cave_pool_rim', 'cave_pool_rim_corner', 'cave_pool_rim_inner', 'cave_rail', 'cave_rail_curve', 'cave_stalactite', 'cave_stalagmite_a', 'cave_stalagmite_b', 'cave_stalagmite_c', 'cave_stalagmite_ice', 'cave_stalagmite_mud', 'cave_wall', 'cave_wall_b', 'cave_wall_corner', 'cave_wall_inner', 'cave_wall_ice', 'cave_wall_ice_b', 'cave_wall_ice_corner', 'cave_wall_ice_inner', 'cave_wall_mud', 'cave_wall_mud_b', 'cave_wall_mud_corner', 'cave_wall_mud_inner', 'interior_chest']) MODEL_IDS.add(id);
+const wxKitId = (k, i) => { const v = WXKIT[k]; return Array.isArray(v[0]) ? v[(i || 0) % v.length] : v; };
+function wxKit(m, K) {
+  const L = LK(m, K), { rng, w, h } = K, lm = m.landmarks = m.landmarks || [];
+  const at = L.at, isOpen = (x, y) => at(x, y) === T.FLOOR;
+  const kit = (k, x, y, rot, s, o, i) => { const [a, b] = wxKitId(k, i); return L.decor(a, b, x, y, rot, s, o); };
+  // A winding trail from point to point: clears radius r and paints the path (6: dirt, 5: cobble, 0: none).
+  const trail = (pts, r, paint) => {
+    r = r || 1; const pv = paint === undefined ? 6 : paint;
+    for (let i = 0; i < pts.length - 1; i++) {
+      let [x, y] = pts[i]; const [x1, y1] = pts[i + 1]; let g = 0;
+      while ((x !== x1 || y !== y1) && g++ < 4000) {
+        K.clearC(x, y, r); if (pv && L.inb(x, y)) m.deco[y * w + x] = pv;
+        if (rng() < 0.78) { if (Math.abs(x1 - x) > Math.abs(y1 - y)) x += Math.sign(x1 - x); else y += Math.sign(y1 - y); }
+        else if (Math.abs(x1 - x) > Math.abs(y1 - y)) y += rng() < 0.5 ? 1 : -1; else x += rng() < 0.5 ? 1 : -1;
+        x = clamp(x, 1, w - 2); y = clamp(y, 1, h - 2);
+      }
+      K.clearC(x1, y1, r); if (pv) m.deco[y1 * w + x1] = pv;
+    }
+  };
+  const clearing = (cx, cy, r, jag) => L.disc(cx, cy, r, jag === undefined ? 0.3 : jag, (x, y) => { if (x > 1 && y > 1 && x < w - 2 && y < h - 2) L.put(x, y, T.FLOOR); });
+  const landmark = (id, name, x, y, r) => { lm.push({ id, name, x, y, r: r || 5 }); };
+  const openNear = (x, y) => { if (isOpen(x | 0, y | 0)) return [x, y]; for (let rr = 1; rr < 4; rr++) for (let k = 0; k < 8; k++) { const nx = (x | 0) + DX[k] * rr, ny = (y | 0) + DY[k] * rr; if (isOpen(nx, ny)) return [nx + 0.5, ny + 0.5]; } return [x, y]; };
+  // A readable signpost (stands on open ground, blocks nothing).
+  const sign = (x, y, name, text, rot) => { L.put(x | 0, y | 0, T.FLOOR); m.objs.push({ kind: 'sign', x: (x | 0) + 0.5, y: (y | 0) + 0.5, name: name || 'Signpost', text: Array.isArray(text) ? text : [text] }); L.decor('signpost', 'signpost', (x | 0) + 0.5, (y | 0) + 0.5, rot || 0, 1, {}); };
+  // A lore find: a runestone (or `k`) on one blocked tile; reading it unlocks LORE[key].
+  const lore = (x, y, key, name, text, k, rot) => { x |= 0; y |= 0; L.put(x, y, T.PROP); m.objs.push({ kind: 'lore', lore: key, x: x + 0.5, y: y + 0.5, name, text: Array.isArray(text) ? text : [text] }); kit(k || 'runestone', x + 0.5, y + 0.5, rot || 0, 1, { fp: [x, y, x, y] }); };
+  // A treasure chest on one blocked tile, opened once per save (chestOpen in js/core.js).
+  const chest = (x, y, id, loot, name, rot, o) => { x |= 0; y |= 0; L.put(x, y, T.PROP); m.objs.push(Object.assign({ kind: 'chest', id, loot, x: x + 0.5, y: y + 0.5, name: name || 'Chest' }, o || {})); kit('chest', x + 0.5, y + 0.5, rot || 0, 0.9, { fp: [x, y, x, y], chest: id }); };
+  // A cave mouth: the warp on (x, y) with door 'cave'; rock on the three tiles behind it (`face`: the side the rock is
+  // on, 'n' | 's' | 'e' | 'w') and on both sides, drawn by one cave_mouth piece; the approach in front is cleared.
+  const mouth = (x, y, face, to, tx, ty, label, variant) => {
+    const [bx, by] = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[face], sx = by ? 1 : 0, sy = bx ? 1 : 0;
+    for (let k = -1; k <= 1; k++) { L.put(x + bx + sx * k, y + by + sy * k, T.PROP); L.put(x + bx * 2 + sx * k, y + by * 2 + sy * k, T.PROP); }
+    L.put(x + sx, y + sy, T.PROP); L.put(x - sx, y - sy, T.PROP);
+    K.clearC(x - bx * 2, y - by * 2, 1.5); L.put(x - bx, y - by, T.FLOOR); L.put(x, y, T.FLOOR);
+    const rot = { n: 0, s: Math.PI, e: -Math.PI / 2, w: Math.PI / 2 }[face];   // the piece's opening faces +Z at rot 0; the rock is on the `face` side, the opening the other way
+    const fp = [Math.min(x - sx, x + bx * 2 - sx), Math.min(y - sy, y + by * 2 - sy), Math.max(x + sx, x + bx * 2 + sx), Math.max(y + sy, y + by * 2 + sy)];
+    kit(variant || 'mouth', x + 0.5 + bx, y + 0.5 + by, rot, 1, { fp, caveMouth: to });   // centred on the 3 x 3; the warp is its front-centre tile
+    m.warps.push({ x, y, to, tx, ty, label, door: 'cave' });
+  };
+  // A farm plot / hut as a blocked decor footprint.
+  const hut = (x0, y0, x1, y1, k, fb, rot, o) => { const fp = L.footprint(x0, y0, x1, y1); return L.decor(k, fb, (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2, rot || 0, 1, Object.assign({ fp }, o || {})); };
+  const fence = (x0, y0, x1, y1) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)), rot = Math.abs(x1 - x0) > Math.abs(y1 - y0) ? 0 : Math.PI / 2; for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / (n || 1), y = y0 + (y1 - y0) * i / (n || 1); if (isOpen(x | 0, y | 0)) L.decor('town_fence', 'town_fence', x, y, rot, 1, { on: 'open' }); } };
+  // A ruined watchtower: a ring of RUIN tiles with a gap to the `gap` side, a chest or lore inside, fallen stones.
+  const tower = (cx, cy, r, gap) => {
+    clearing(cx, cy, r + 2.5, 0.15);
+    const ga = { s: Math.PI / 2, n: -Math.PI / 2, e: 0, w: Math.PI }[gap || 's'];
+    for (let a = 0; a < 6.283; a += 0.18) { const d = Math.abs(((a - ga + 9.4248) % 6.283) - 3.1416); if (d < 0.5) continue; const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r); if (at(x, y) === T.FLOOR) L.put(x, y, T.RUIN); }
+    for (let i = 0; i < 5; i++) { const a = rng() * 6.283, d = r + 1 + rng() * 2; L.decor(rng() < 0.5 ? 'ruin_column_fallen' : 'dng_rubble_a', 'dng_rubble_a', cx + Math.cos(a) * d, cy + Math.sin(a) * d, rng() * 6.28, 0.8 + rng() * 0.3, { on: 'open' }); }
+  };
+  // Scatter decor on open tiles in a disc.
+  const scatter = (cx, cy, r, n, k, s0, s1, o) => { for (let i = 0; i < n; i++) { const a = rng() * 6.283, d = Math.sqrt(rng()) * r, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d; if (!isOpen(x | 0, y | 0)) continue; if (typeof k === 'string' && WXKIT[k]) kit(k, x, y, rng() * 6.28, s0 + rng() * (s1 - s0), Object.assign({ on: 'open' }, o || {}), i); else L.decor(k[0], k[1], x, y, rng() * 6.28, s0 + rng() * (s1 - s0), Object.assign({ on: 'open' }, o || {})); } };
+  const light = (x, y, col, r, i, kind, o) => m.lights.push(Object.assign({ x, y, col, r: r || 5, i: i || 1 }, kind ? { kind } : {}, o || {}));   // kind: 'fire' | 'torch' | 'lantern' | 'crystal' | 'mushroom' (renderer look)
+  return { L, rng, w, h, at, isOpen, kit, trail, clearing, landmark, openNear, sign, lore, chest, mouth, hut, fence, tower, scatter, light };
+}
+// Declare a map's growth: new size, the new area's layout, and the new area's spawns. The map's existing spawn entries
+// (without a region or a spawnRgn) are pinned to the original area, so it keeps its density.
+function growMap(id, W, H, o) {
+  const d = MAPDEFS[id], w0 = d.w, h0 = d.h;
+  d.grow = { w0, h0, seed: o.seed || (d.seed * 7919 + 104729), gen: o.gen, terrain: o.terrain, layout: o.layout };
+  d.w = W; d.h = H;
+  const rg = [2, 2, w0 - 3, h0 - 3];
+  d.spawns = d.spawns.map(e => e[2] || (d.spawnRgn && d.spawnRgn[e[0]]) ? e : [e[0], e[1], rg]).concat(o.spawns || []);
+  if (o.critters) d.critters = (d.critters || []).concat(o.critters);
+  if (o.elites) d.elites = (d.elites || []).concat(o.elites);
+  if (o.sub) d.sub = o.sub;
+  return d;
+}
+// Cave definitions: a gen 'cave' map joined to its parent field. The render block follows the contract
+// (render.kind 'cave', render.cave { rock, wet, glow }); light comes from the torch plus m.lights.
+const CAVE_LOOK = {
+  basalt: { floor: 'rock', g1: [70, 66, 62], g2: [102, 96, 90], path: [60, 54, 48], grain: 18, rock: 0x5a5650, tint: [0.9, 0.9, 0.92], fog: 0x0c0b0a, fogN: 22, fogF: 70, hemi: [0x8a8680, 0x141210, 0.42], sun: [0xc8c0b0, 0.08], torch: 1.9 },
+  ice: { floor: 'snow', g1: [150, 170, 190], g2: [196, 214, 232], path: [90, 110, 130], grain: 12, rock: 0x8aa6c0, tint: [0.88, 0.96, 1.08], fog: 0x0a1420, fogN: 22, fogF: 72, hemi: [0xb8d4ff, 0x1a2230, 0.46], sun: [0xc8e0ff, 0.1], torch: 1.7 },
+  mud: { floor: 'mud', g1: [58, 60, 40], g2: [86, 90, 58], path: [30, 32, 22], grain: 18, rock: 0x4e5240, tint: [0.88, 0.96, 0.84], fog: 0x0a0d08, fogN: 20, fogF: 66, hemi: [0x98a888, 0x121610, 0.4], sun: [0xc0d0a0, 0.06], torch: 1.8 },
+  crystal: { floor: 'rock', g1: [70, 62, 84], g2: [104, 92, 124], path: [60, 50, 70], grain: 16, rock: 0x6a5a86, tint: [0.92, 0.88, 1.04], fog: 0x0c0a12, fogN: 22, fogF: 72, hemi: [0xa890d0, 0x141018, 0.46], sun: [0xc8b0ff, 0.08], torch: 1.7 },
+  mine: { floor: 'carved', g1: [80, 70, 60], g2: [116, 102, 88], path: [52, 36, 26], grain: 16, rock: 0x6a5e56, tint: [0.96, 0.9, 0.84], fog: 0x100c08, fogN: 22, fogF: 72, hemi: [0xa89888, 0x1a1410, 0.44], sun: [0xffc890, 0.08], torch: 1.9 },
+  roots: { floor: 'ash', g1: [80, 82, 80], g2: [112, 114, 108], path: [70, 68, 60], grain: 16, rock: 0x5a5c5a, tint: [0.88, 0.95, 0.9], fog: 0x0a0c0c, fogN: 20, fogF: 66, hemi: [0x8a9894, 0x101212, 0.42], sun: [0xc4d4cc, 0.06], torch: 1.6 },
+};
+function caveDef(id, o) {
+  const P0 = MAPDEFS[o.parent], rock = o.rock || 'basalt', look = Object.assign({}, CAVE_LOOK[rock] || CAVE_LOOK.basalt, o.look || {});
+  const glowCol = { crystal: 0xb07aff, mushroom: 0x6affe0 }[o.glow] || 0xffb060;
+  MAPDEFS[id] = Object.assign({ name: o.name, sub: o.sub, lv: o.lv, world: P0.world, parent: o.parent, w: o.w, h: o.h, seed: o.seed, gen: 'cave', water: o.water || 0, cave: o.cave || { fill: 0.49, steps: 5, min: 12 },
+    ground: ['#3a3834', '#403d38', '#353330', '#46423c'], wall: ['#5a5650', '#44403a', '#2e2c28'], void: '#040404', dark: 0.86, part: 'dust', look, spawns: o.spawns || [], elites: o.elites, critters: o.critters, intro: o.intro,
+    // torch and fog are the renderer's tuned cave defaults (render.cave.torch scales the torch, 0.4-2)
+    render: { kind: 'cave', cave: { rock, wet: o.wet || 0.3, glow: o.glow || null, torch: o.torch || 1 }, tod: false, weather: { amb: [] }, particles: null,
+      water: o.water ? { color: { ice: 0x1d3c56, mud: 0x141a12 }[rock] || 0x10161a, deep: 0x040608, foam: 0x5a6a70, level: -0.45, murky: rock === 'mud', ice: rock === 'ice' ? 0xcfe6f6 : undefined } : undefined,
+      lights: { warp: [0x9ab8ff, 1.2, 6], crystal: [glowCol, 1.3, 5] } },
+    props: (() => { const sfx = rock === 'ice' ? '_ice' : rock === 'mud' ? '_mud' : ''; return { wall: propList([['cave_wall' + sfx, 2, 'dng_wall'], ['cave_wall' + sfx + '_b', 1, 'dng_wall']]), rock: propList(rock === 'ice' ? [['cave_stalagmite_ice', 2, 'rimeshore_ice_rock_b'], ['cave_stalagmite_a', 1, 'rock_field_b']] : rock === 'mud' ? [['cave_stalagmite_mud', 2, 'rock_field_a'], ['cave_stalagmite_b', 1, 'rock_field_d']] : [['cave_stalagmite_a', 1, 'rock_field_b'], ['cave_stalagmite_b', 1, 'rock_field_d'], ['cave_stalagmite_c', 1, 'rock_field_c']]), crystal: propList([[rock === 'ice' ? 'cave_crystal_blue' : 'cave_crystal_violet', 1, 'nidavellir_crystal_a']]), pillar: propList([['cave_pillar', 1, 'throne_basalt_rock']]) }; })(),
+    layout(m, K) { caveLayout(m, K, o); } }, o.extra || {});
+  return MAPDEFS[id];
+}
+/* A cave's plan (all from K.rng): the mouth chamber by the south edge with the way out, `rooms` chambers carved on top
+   of the cellular automaton, every one joined to the mouth by a winding tunnel; the elite's chamber (o.elites[0]) is
+   the farthest, with the chest; the lore find in its own chamber. Dressing: stalagmites by the walls, crystals or
+   mushrooms (lights), bones, mine supports (mines), pool rims. */
+function caveLayout(m, K, o) {
+  const X = wxKit(m, K), { L, rng, w, h } = X, TT = K.T;
+  const [ex, ey] = o.mouth;   // the way out: warp on the south edge
+  X.clearing(ex, ey - 3, 3.2, 0.2);
+  for (let y = ey - 1; y <= ey; y++) L.put(ex, y, TT.FLOOR);
+  m.entry = { x: ex, y: ey - 1 };
+  m.warps.push({ x: ex, y: ey, to: o.parent, tx: o.back[0], ty: o.back[1], label: MAPDEFS[o.parent].name, door: 'cave' });
+  const rooms = [{ x: ex, y: ey - 3, r: 3.2, kind: 'mouth' }];
+  for (const c of o.rooms) { X.clearing(c[0], c[1], c[2], 0.35); rooms.push({ x: c[0], y: c[1], r: c[2], kind: c[3] || 'room' }); }
+  for (let i = 1; i < rooms.length; i++) { const a = rooms[o.links ? o.links[i - 1] : i - 1], b = rooms[i]; K.carve(Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y), o.tunnel || 1); }
+  m.rooms = rooms;
+  const boss = rooms.find(r => r.kind === 'boss'), loreR = rooms.find(r => r.kind === 'lore') || rooms[rooms.length - 1];
+  if (boss) { m.bossPos = { x: boss.x + 0.5, y: boss.y + 0.5 }; }
+  if (o.chest) { const [cx, cy] = o.chest.at || [boss ? boss.x + 2 : ex + 2, boss ? boss.y - 2 : ey - 5]; X.chest(cx, cy, o.chest.id, o.chest.loot, o.chest.name, rng() * 6.28); if (!X.isOpen(cx + 1, cy) && !X.isOpen(cx - 1, cy) && !X.isOpen(cx, cy + 1) && !X.isOpen(cx, cy - 1)) L.put(cx, cy + 1, TT.FLOOR); }
+  if (o.lore) { const [lx, ly] = o.lore.at || [Math.round(loreR.x), Math.round(loreR.y) - 1]; X.lore(lx, ly, o.lore.key, o.lore.name, o.lore.text, o.lore.kit); L.put(lx, ly + 1, TT.FLOOR); }
+  if (o.post) o.post(m, K, X, rooms);
+  // dressing: stalagmites by the walls (the rock's own variant), crystals or glowing caps (lit sparingly), bones, mine
+  // frames across 3-wide passages (cave_mine_support spans X at rot 0), pool rims on the land round the water
+  const glow = o.glow, mine = o.rock === 'mine', stal = o.rock === 'ice' ? 'stalagmiteIce' : o.rock === 'mud' ? 'stalagmiteMud' : 'stalagmite';
+  const W_ = (x, y) => L.at(x, y) === TT.WALL, F_ = (x, y) => L.at(x, y) === TT.FLOOR;
+  let lastSup = -9;
+  for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+    if (!F_(x, y) || m.warps.some(wp => Math.abs(wp.x - x) + Math.abs(wp.y - y) < 3)) continue;
+    const byWall = L.near(x, y, TT.WALL), r = rng();
+    if (mine && y - lastSup > 3 && F_(x - 1, y) && F_(x + 1, y) && W_(x - 2, y) && W_(x + 2, y) && r < 0.5) { X.kit('support', x + 0.5, y + 0.5, 0, 1, { on: 'open' }); lastSup = y; continue; }
+    if (mine && F_(x, y - 1) && F_(x, y + 1) && W_(x, y - 2) && W_(x, y + 2) && r < 0.12) { X.kit('support', x + 0.5, y + 0.5, Math.PI / 2, 1, { on: 'open' }); continue; }
+    if (byWall && r < 0.07) X.kit(stal, x + 0.2 + rng() * 0.6, y + 0.2 + rng() * 0.6, rng() * 6.28, 0.5 + rng() * 0.5, { on: 'open' }, (rng() * 3) | 0);
+    else if (byWall && glow && r < 0.095) { const cx = x + 0.3 + rng() * 0.4, cy = y + 0.3 + rng() * 0.4, col = glow === 'crystal' ? (o.rock === 'ice' ? 0x8ac8ff : 0xb07aff) : 0x6affe0, lit = glow === 'crystal' || rng() < 0.3; X.kit(glow === 'crystal' ? (o.rock === 'ice' ? 'crystalBlue' : 'crystal') : 'mushroom', cx, cy, rng() * 6.28, 0.6 + rng() * 0.4, lit && glow !== 'crystal' ? { on: 'open', light: [col, 0.8, 3.5] } : { on: 'open' }); if (lit && rng() < 0.4) X.light(cx, cy, col, 4, 0.8, glow === 'crystal' ? 'crystal' : 'mushroom'); }
+    else if (r < 0.11) X.kit('bones', x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.4, { on: 'open' });
+    if (L.near(x, y, TT.WATER)) { const wr = L.at(x, y - 1) === TT.WATER ? 0 : L.at(x, y + 1) === TT.WATER ? Math.PI : L.at(x - 1, y) === TT.WATER ? Math.PI / 2 : L.at(x + 1, y) === TT.WATER ? -Math.PI / 2 : null; if (wr !== null) X.kit('poolRim', x + 0.5, y + 0.5, wr, 1, { on: 'open' }); }
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (L.at(x, y) === TT.WATER) m.deco[y * w + x] = 6;
+  X.light(ex + 0.5, ey - 0.5, 0x9ab8ff, 5, 0.8);   // daylight at the mouth
+}
+
+/* ---------- Ashen Fields 64 x 64 -> 96 x 96: the East Reach (Hallbera's farmstead, the old watchtower) and the
+   Barrow Downs (the burial mound, Freyr's wayside shrine, Grimsfield battlefield, the Wolf Den) ---------- */
+growMap('ashen_fields', 96, 96, {
+  spawns: [['blight_poring', 8, [66, 4, 93, 60]], ['hollow_hare', 6, [66, 30, 93, 70]], ['scarecrow_husk', 6, [68, 6, 92, 30]], ['cinder_drop', 5, [66, 36, 93, 62]],
+    ['ash_grub', 8, [4, 66, 58, 93]], ['cinder_drop', 5, [4, 66, 58, 93]], ['hollow_hare', 4, [4, 66, 40, 93]], ['scarecrow_husk', 5, [58, 72, 93, 93]], ['ash_wolf', 3, [74, 76, 92, 93]]],
+  critters: [['crow', 6, [66, 6, 93, 34]], ['crow', 4, [6, 66, 60, 93]], ['deer', 3, [66, 36, 93, 70]], ['crow', 3, [58, 74, 90, 93]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X;
+    // trails out of the old fields (through the tree line) and between the new places
+    X.trail([[57, 22], [66, 22], [72, 20], [79, 20]]); X.trail([[58, 44], [66, 46], [76, 48], [83, 50]]);
+    X.trail([[80, 22], [82, 34], [85, 46]]); X.trail([[86, 54], [85, 66], [80, 76], [71, 84]]);
+    X.trail([[12, 56], [12, 66], [16, 74], [20, 79]]); X.trail([[48, 56], [46, 66], [46, 71]]); X.trail([[47, 76], [56, 82], [66, 84]]); X.trail([[25, 82], [36, 78], [43, 75]]);
+    X.trail([[74, 86], [84, 86], [88, 86]]);
+    // Hallbera's farmstead: a farmhouse, a barn, a well, a fenced field of burnt barley with haystacks
+    X.clearing(80, 19, 7.5, 0.2);
+    X.hut(76, 13, 78, 15, 'town_house_small', 'town_house_small', 0, { light: [0xffb060, 0.7, 5] }); X.hut(82, 12, 86, 15, 'town_house_big', 'town_house_big', Math.PI);
+    L.decor('town_well', 'town_well', 85, 20, 0, 1, { fp: L.footprint(84, 19, 85, 20) });
+    for (let y = 22; y <= 26; y++) for (let x = 73; x <= 79; x++) if (X.isOpen(x, y) && y % 2 === 0) m.deco[y * K.w + x] = 5;
+    X.fence(72.5, 21.6, 79.5, 21.6); X.fence(72.5, 27.2, 79.5, 27.2); X.fence(72.4, 21.6, 72.4, 27.2);
+    X.scatter(76, 24.5, 2.5, 3, 'haystack', 0.8, 1); L.decor('town_barrel', 'town_barrel', 79.4, 16.8, 0, 0.9, { on: 'open' }); L.decor('town_crates', 'town_crates', 86.8, 17.2, 0.4, 0.9, { on: 'open' });
+    X.chest(87, 13, 'ashen_barn', 'farm', 'Barn Chest');
+    X.landmark('farmstead', 'Hallbera’s Farmstead', 80, 19, 8);
+    X.sign(66, 24, 'Signpost', ['<b>East</b>: Hallbera’s farmstead.', '<b>West</b>: the Ashen Road and Emberhold.', '<i>Someone has added in charcoal: “She has bread. Be polite.”</i>']);
+    // the old watchtower on the rise: a ring of broken wall, the chest the last watch left behind
+    X.tower(86, 50, 3, 'w'); X.chest(87, 49, 'ashen_tower', 'tower', 'Watchman’s Chest');
+    X.lore(85, 51, 'af_watch', 'The Watch Log', ['<i>A slate hung on a nail inside the tower, the last lines scratched with a knife:</i>', '“Day 41 of the Ash. Smoke from Emberhold. Smoke from the Wood. No smoke from the farms: nobody left to light a fire.”', '“Day 43. Wolves in the barley. I have eight arrows. I will go down at first light.” <i>There is no Day 44.</i>']);
+    X.landmark('watchtower', 'The Old Watchtower', 86, 50, 6);
+    X.sign(67, 47, 'Signpost', ['<b>North</b>: the farmstead. <b>East</b>: the old watchtower.', '<b>South</b>: Grimsfield and the Wolf Den. <i>(Beware.)</i>']);
+    // the Barrow Downs: an old burial mound ringed with grave-stones
+    X.clearing(22, 82, 6.5, 0.25);
+    L.decor(wxKitId('barrow')[0], wxKitId('barrow')[1], 22, 82.5, 0.3, 1.6, { fp: L.footprint(21, 82, 22, 83) });
+    for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283 + 0.4, x = Math.round(22 + Math.cos(a) * 4.2), y = Math.round(82.5 + Math.sin(a) * 4.2); if (X.isOpen(x, y) && !(x >= 18 && x <= 21 && y <= 80)) L.put(x, y, T.GRAVE); }
+    X.lore(23, 78, 'af_barrow', 'The Barrow-Stone', ['<i>Runes, worn almost smooth:</i> “Here lie the Nine of Hallr, who kept these fields before the Tree was young. Wake them and the barley dies.”', '<i>Under it, newer and cut badly: “The barley died anyway.”</i>']);
+    X.landmark('barrow_downs', 'The Barrow Downs', 22, 82, 7);
+    X.sign(13, 64, 'Signpost', ['<b>South</b>: the Barrow Downs. Leave the stones be.', '<b>North</b>: the Ashen Fields.']);
+    // Freyr's wayside shrine
+    X.clearing(46, 73.5, 4, 0.2); X.kit('shrine', 46.5, 73.2, 0, 1, { fp: L.footprint(46, 73, 46, 73), light: [0xffd080, 0.9, 5] });
+    X.scatter(46, 74, 3, 4, ['town_barrel', 'town_barrel'], 0.5, 0.6);
+    X.lore(44, 72, 'af_shrine', 'Freyr’s Shrine', ['<i>A stone boar, its snout rubbed bright by a thousand hands. Someone has left a heel of bread in front of it, fresh.</i>', 'Freyr gave the fields their harvest. When the Ash came he did not answer, but the farmers kept leaving bread, in case he was only slow.']);
+    X.sign(47, 69, 'Signpost', ['Freyr’s wayside shrine. <i>Take nothing. Leave bread.</i>', '<b>South-east</b>: Grimsfield, where the Ash-war was lost. <b>West</b>: the Barrow Downs.']);
+    X.landmark('shrine', 'Freyr’s Wayside Shrine', 46, 74, 4);
+    // Grimsfield: the lost battle of the first Ash-winter
+    X.clearing(70, 84, 8.5, 0.45);
+    X.scatter(70, 84, 7.5, 16, 'weapons', 0.7, 1.1); X.scatter(70, 84, 7.5, 10, 'bones', 0.7, 1.1); X.scatter(70, 84, 7, 4, ['ruin_column_fallen', 'ruin_column_fallen'], 0.8, 1);
+    for (let i = 0; i < 6; i++) { const x = 64 + ((rng() * 12) | 0), y = 79 + ((rng() * 10) | 0); if (X.isOpen(x, y) && Math.abs(x - 70) > 1) L.put(x, y, T.GRAVE); }
+    X.lore(70, 81, 'af_grimsfield', 'The Banner-Pole', ['<i>A charred banner-pole, driven into the ground. Nails hold a scrap of cloth: a black boar on red.</i>', 'This is where Emberhold’s levy met the first dead that walked out of the Ash. The ground is still warm in places. Nobody knows who won. Nobody came back to say.'], 'weapons');
+    X.landmark('grimsfield', 'Grimsfield', 70, 84, 8);
+    // the Wolf Den: a rocky knoll in the south-east corner
+    X.L.disc(91.5, 86, 3.6, 0.4, (x, y) => { if (X.at(x, y) === T.FLOOR || X.at(x, y) === T.TREE) L.put(x, y, T.ROCK); });
+    X.mouth(89, 86, 'e', 'ashen_fields_cave_wolfden', 24.5, 40.5, 'The Wolf Den');
+    X.scatter(86, 86, 2.5, 5, 'bones', 0.6, 0.9);
+    X.sign(80, 84, 'Signpost', ['The Wolf Den. <i>The wolves came out of the Wood the first Ash-winter and never went back.</i>', '<i>Scratched below: “The mother is bigger than a cart. Do not.”</i>']);
+    X.landmark('wolfden', 'The Wolf Den', 89, 86, 3);
+  } });
+caveDef('ashen_fields_cave_wolfden', { parent: 'ashen_fields', name: 'The Wolf Den', sub: 'Base Lv 10 – 15 · Ashen Fields', lv: [10, 15], w: 48, h: 44, seed: 901, rock: 'basalt', wet: 0.15,
+  intro: 'The Wolf Den. It smells of wet fur and old bones, and it is warmer than it should be.',
+  mouth: [24, 42], back: [88.5, 86.5], rooms: [[24, 31, 4], [11, 24, 4.2], [35, 21, 4, 'lore'], [22, 9, 5.8, 'boss']],
+  spawns: [['ash_wolf', 9], ['hollow_hare', 3]], critters: [['bat', 4]],
+  elites: [{ key: 'den_mother', x: 22.5, y: 8.5, respawn: 1800 }],
+  chest: { id: 'wolfden_hoard', loot: 'den', name: 'The Den’s Hoard', at: [25, 6] },
+  lore: { key: 'af_wolfden', name: 'A Keeper’s Satchel', text: ['<i>A leather satchel, chewed through. Inside: flint, a crust gone to stone, a Waystone-keeper’s tally stick with forty notches.</i>', 'Sigrun lost a keeper in the first Ash-winter, on the road to the farms. She still lights a candle for him. Now you know where he went.'] } });
+
+/* ---------- Withered Wood 64 x 64 -> 96 x 96: the Hunters' Lodge, the Skaði stone, Brook Hollow and the barrow ---------- */
+growMap('withered_wood', 96, 96, {
+  spawns: [['ash_wolf', 6, [66, 4, 93, 60]], ['rotwood_kobold', 5, [66, 4, 93, 40]], ['kobold_archer', 4, [66, 10, 93, 44]], ['thorn_willow', 4, [66, 40, 93, 70]],
+    ['mourning_spore', 6, [4, 66, 62, 93]], ['thorn_willow', 5, [4, 66, 62, 93]], ['ash_wolf', 4, [20, 66, 62, 93]], ['rotwood_kobold', 4, [62, 62, 93, 93]], ['mourning_spore', 4, [62, 62, 93, 93]]],
+  critters: [['crow', 4, [66, 20, 93, 60]], ['hare', 4, [6, 66, 60, 93]], ['deer', 4, [60, 44, 93, 93]], ['crow', 3, [6, 66, 50, 93]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w;
+    // Brook Hollow: a cold brook across the south, with plank bridges where the trails cross it
+    const brook = new Set();
+    for (const [a, b] of [[[2, 72], [22, 77]], [[22, 77], [44, 74]], [[44, 74], [64, 80]], [[64, 80], [94, 76]]]) L.stroke(a[0], a[1], b[0], b[1], 1.15, (x, y) => { if (y > 64 && x > 1 && x < w - 2) { L.put(x, y, T.WATER); brook.add(y * w + x); } });
+    X.trail([[55, 34], [66, 36], [73, 36]]); X.trail([[78, 31], [83, 20], [86, 15]]); X.trail([[79, 41], [84, 52], [87, 60]]);
+    X.trail([[14, 56], [16, 66], [18, 74]]); X.trail([[20, 78], [30, 84], [38, 84]]); X.trail([[86, 64], [70, 72], [54, 80], [42, 83]]);
+    X.trail([[40, 58], [44, 66], [46, 72]]);
+    for (const i of brook) if (m.t[i] === T.FLOOR) { m.surf[i] = SURF.BRIDGE; L.decor('mirewell_boardwalk', null, i % w + 0.5, ((i / w) | 0) + 0.5, 0, 1, { dy: -0.32, on: 'open' }); }
+    for (const i of brook) if (m.t[i] === T.WATER) { m.deco[i] = 6; if (rng() < 0.12) L.decor('mirewell_reeds_a', null, i % w + 0.5 + rng() - 0.5, ((i / w) | 0) + 0.5, rng() * 6.28, 0.8, {}); }
+    // the Hunters' Lodge: tents, drying racks, a fire
+    X.clearing(78, 36, 6.5, 0.2);
+    X.hut(74, 32, 76, 33, wxKitId('tent')[0], wxKitId('tent')[1], 0.2); X.hut(80, 32, 82, 33, wxKitId('tent')[0], wxKitId('tent')[1], -0.2);
+    X.kit('campfire', 78.5, 37.5, 0, 1, { fp: L.footprint(78, 37, 78, 37), light: [0xff9a48, 1.3, 7] }); X.light(78.5, 37.5, 0xff9a48, 7, 1.2, 'fire', { flame: true, fl: 0.6, h: 0.4 });
+    L.decor('rimeshore_drying_rack', 'town_fence', 74.5, 39.2, 0.1, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 82.5, 39.6, -0.2, 1, { on: 'open' });
+    L.decor('town_crates', 'town_crates', 83.4, 35.2, 0.5, 0.8, { on: 'open' }); X.chest(84, 34, 'wood_lodge', 'lodge', 'Hunters’ Chest');
+    X.landmark('lodge', 'The Hunters’ Lodge', 78, 36, 7);
+    X.sign(65, 37, 'Signpost', ['<b>East</b>: the Hunters’ Lodge. <i>Knock. They have bows.</i>', '<b>West</b>: the Waystone and the Ashen Fields.']);
+    // the ruined watchtower on the north ridge
+    X.tower(86, 12, 3, 's'); X.lore(86, 11, 'ww_tower', 'Carved Beam', ['<i>A beam from the tower roof, fallen in. Carved along it, in the tight runes of a bored sentry:</i>', '“Watched the Wood 9 years. Saw a wolf eat the moon. Nobody believed me.” <i>Below, in another hand:</i> “We believe you now, Ulf.”']);
+    X.chest(85, 13, 'wood_tower', 'wtower', 'Sentry’s Chest'); X.landmark('wood_tower', 'The North Watch', 86, 12, 5);
+    // Skaði's stone: a standing stone in a ring of pines
+    X.clearing(87, 62, 4, 0.2); X.kit('shrine', 87.5, 62.3, 0, 1.1, { fp: L.footprint(87, 62, 87, 62), light: [0xc8e0ff, 0.8, 5] });
+    X.lore(85, 60, 'ww_skadi', 'Skaði’s Stone', ['<i>A tall grey stone with a bow and a pair of skis cut into it. Hunters have tied strips of hide around it, dozens, the old ones gone white.</i>', 'Skaði, the huntress of the mountains, married a god of the sea and hated every day of it. The hunters of the Wood still ask her for a clean kill. She still gives it, sometimes.']);
+    X.landmark('skadi', 'Skaði’s Stone', 87, 62, 4);
+    // the woodcutters' clearing: stumps and stacked logs
+    X.clearing(18, 76, 4.5, 0.3); X.scatter(18, 76, 4, 8, 'stump', 0.8, 1.1); X.scatter(18, 76, 3, 3, 'log', 0.9, 1.1);
+    X.sign(15, 65, 'Signpost', ['<b>South</b>: the woodcutters’ clearing and Brook Hollow.', '<b>South-east</b>: the old barrow. <i>The hunters go round it.</i>']);
+    X.landmark('woodcut', 'The Woodcutters’ Clearing', 18, 76, 5);
+    // the barrow: a long mound, its mouth stopped with a fallen stone that something has pushed aside
+    X.clearing(40, 86, 5, 0.25);
+    L.disc(40, 90.5, 3.4, 0.2, (x, y) => { if (y > 87 && X.at(x, y) !== T.WATER) L.put(x, y, T.ROCK); });
+    X.mouth(40, 87, 's', 'withered_wood_cave_barrow', 22.5, 38.5, 'The Old Barrow');
+    for (const [gx, gy] of [[36, 84], [44, 84], [37, 88], [43, 88]]) if (X.isOpen(gx, gy)) L.put(gx, gy, T.GRAVE);
+    X.sign(38, 82, 'Signpost', ['The Old Barrow. <i>Whoever pushed the stone aside did it from the inside.</i>']);
+    X.landmark('barrow', 'The Old Barrow', 40, 86, 5);
+  } });
+caveDef('withered_wood_cave_barrow', { parent: 'withered_wood', name: 'The Old Barrow', sub: 'Base Lv 18 – 25 · Withered Wood', lv: [18, 25], w: 44, h: 42, seed: 913, rock: 'basalt', wet: 0.4, glow: 'mushroom',
+  cave: { fill: 0.5, steps: 5, min: 12 },
+  intro: 'The Old Barrow. Roots hang through the roof. The dead down here were buried with their swords, and they have not let go of them.',
+  mouth: [22, 40], back: [40.5, 85.5], rooms: [[22, 30, 4], [9, 21, 4, 'lore'], [33, 19, 4], [21, 8, 5.6, 'boss']],
+  spawns: [['skeleton_soldier', 7], ['grave_archer', 4], ['wraith', 3]], critters: [['bat', 3]],
+  elites: [{ key: 'barrow_wight', x: 21.5, y: 7.5, respawn: 1800 }],
+  chest: { id: 'barrow_hoard', loot: 'barrow', name: 'Grave-Goods', at: [24, 5] },
+  lore: { key: 'ww_barrow', name: 'The Grave-Slab', text: ['<i>A slab over an empty grave, cut deep:</i> “Hrothgar Bear-Arm, who held the Wood against the frost-giants. He will hold it still.”', '<i>The grave is empty. The sword that should be on it is gone. Somewhere in the dark, iron scrapes on stone.</i>'] } });
+
+/* ---------- Rimeshore 64 x 64 -> 96 x 96: the Frozen Reach (sea ice, the frozen ship, the ice cave in the berg) and the
+   south shore (Kolfinna's sealing camp, the whale-bone shrine, the headland watch) ---------- */
+growMap('rimeshore', 96, 96, {
+  spawns: [['snow_wolf', 6, [4, 66, 44, 93]], ['rime_poring', 6, [4, 66, 44, 93]], ['draugr_fisher', 4, [20, 66, 50, 93]],
+    ['shell_knight', 5, [56, 30, 93, 84]], ['ice_wraith', 5, [56, 26, 93, 84]], ['rime_poring', 4, [56, 40, 93, 84]], ['draugr_fisher', 3, [56, 40, 93, 84]]],
+  critters: [['gull', 6, [36, 60, 93, 93]], ['gull', 4, [54, 30, 93, 70]], ['crow', 3, [4, 66, 40, 93]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, w0 = K.w0, h0 = K.h0, isNew = (x, y) => x >= w0 || y >= h0;
+    const coast = y => Math.round(46 + (L.noise(y / 7, 3.3, 1) - 0.5) * 10);
+    // the coast runs on south; everything east of it is sea
+    for (let y = 0; y < h; y++) { const c = coast(y); for (let x = 0; x < w; x++) { if (!isNew(x, y)) continue; if (x >= c) L.put(x, y, T.WATER); else if (x >= c - 5 && y < h - 2 && x > 1) { L.put(x, y, rng() < 0.035 ? T.ROCK : T.FLOOR); L.surf(x, y, SURF.SAND); } } }
+    // the Frozen Reach: a shelf of sea ice with open leads and seracs
+    for (let y = 22; y < 86; y++) for (let x = 54; x < w - 2; x++) {
+      if (!isNew(x, y) || L.at(x, y) !== T.WATER) continue;
+      const n = L.noise(x / 8, y / 8, 40) * 0.7 + L.noise(x / 3, y / 3, 41) * 0.3, edge = Math.min(x - 52, w - 3 - x, y - 20, 86 - y) / 4;
+      if (n + Math.min(0, edge - 1) * 0.3 > 0.47) { if (n > 0.74) L.put(x, y, T.ICE); else { L.put(x, y, T.FLOOR); L.surf(x, y, SURF.ICE); } }
+    }
+    // the causeway: the lagoon's ice runs east over the old sea to the shelf
+    L.stroke(47, 50, 66, 51, 1.6, (x, y) => { if (L.at(x, y) === T.WATER || L.at(x, y) === T.ICE) { L.put(x, y, T.FLOOR); L.surf(x, y, SURF.ICE); m.deco[y * w + x] = 0; } });
+    m.decor = m.decor.filter(e => !(e.kit === 'rimeshore_ice_floe' && L.at(e.x | 0, e.y | 0) !== T.WATER));
+    // trails; on the sea they are ice roads
+    X.trail([[24, 58], [26, 66], [30, 74]]); X.trail([[26, 78], [18, 82], [13, 85]]); X.trail([[32, 80], [36, 86], [37, 89]]);
+    X.trail([[34, 76], [42, 72], [50, 68], [58, 62], [62, 56]], 1, 0); X.trail([[66, 51], [74, 49], [80, 46], [86, 38], [88, 31]], 1, 0);
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) if (L.at(x, y) === T.FLOOR && x >= coast(y) && !m.surf[y * w + x]) { L.surf(x, y, SURF.ICE); m.deco[y * w + x] = 0; }
+    // the frozen ship: a longship locked in the ice, heeled over
+    X.clearing(77.5, 46.5, 2.5, 0.1);
+    const ship = L.footprint(74, 42, 81, 44);
+    L.decor('rimeshore_longship', 'ruin_column_fallen', 77.9, 43.5, 1.45, 1.05, { fp: ship, frozen: true }); for (let y = 45; y <= 48; y++) for (let x = 75; x <= 80; x++) if (L.at(x, y) === T.FLOOR) L.surf(x, y, SURF.ICE);
+    X.chest(82, 44, 'rime_ship', 'ship', 'Sea-Chest'); X.lore(73, 45, 'rs_ship', 'The Name-Board', ['<i>A carved prow-board, split by the ice:</i> “ORMSVÍN”. The Serpent’s Wine.', 'Captain Ormr of Skaldhaven named his own ship the Sea-Snake after this one: his father’s. It sailed to find the Drowned Jarl and came back in the ice, empty. Ormr has never come this far out to look.']);
+    X.landmark('frozen_ship', 'The Frozen Ship', 78, 45, 5);
+    // the berg: an iceberg frozen into the shelf, a cave in its south face
+    L.disc(88, 24, 5.5, 0.3, (x, y) => { if (y < 29 && x < w - 2) L.put(x, y, T.ICE); });
+    X.mouth(88, 29, 'n', 'rimeshore_cave_ice', 22.5, 38.5, 'The Ice Cave', 'mouthIce');
+    for (const [x, y] of [[87, 31], [88, 31], [89, 31], [88, 32]]) if (L.at(x, y) !== T.ICE) { L.put(x, y, T.FLOOR); L.surf(x, y, SURF.ICE); }
+    X.sign(85, 33, 'Signpost', ['<i>A harpoon driven into the ice, a board lashed to it:</i> “The berg sings at night. Do not go in to see what is singing.” <i>Signed with a seal-hunter’s mark.</i>']);
+    X.landmark('berg', 'The Singing Berg', 88, 25, 6);
+    // Kolfinna's sealing camp on the south shore
+    X.clearing(30, 77, 5, 0.2);
+    X.hut(25, 74, 27, 76, 'rimeshore_fishing_hut', 'town_house_small', 0.2, { light: [0xffb060, 0.9, 5] });
+    X.kit('campfire', 31.5, 76.5, 0, 1, { fp: L.footprint(31, 76, 31, 76), light: [0xff9a48, 1.2, 6] }); X.light(31.5, 76.5, 0xff9a48, 6, 1.1, 'fire', { flame: true, fl: 0.6, h: 0.4 });
+    L.decor('rimeshore_drying_rack', 'town_fence', 34.4, 79.2, 0.3, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 28.2, 80.4, -0.1, 1, { on: 'open' });
+    L.decor('rimeshore_barrel', 'town_barrel', 33.6, 74.6, 0, 0.9, { on: 'open' }); L.decor('rimeshore_crate', 'town_crates', 27.6, 78.8, 0.4, 0.85, { on: 'open' });
+    X.landmark('seal_camp', 'Kolfinna’s Camp', 30, 77, 6);
+    X.sign(25, 66, 'Signpost', ['<b>South</b>: the sealers’ camp. <b>Across the ice, east</b>: the frozen ship.', '<b>North</b>: the Waystone camp and the Withered Wood road.']);
+    // the whale-bone shrine: ribs of a great whale set in a ring, Njörðr's altar
+    X.clearing(12, 86, 4.2, 0.2);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283, x = 12 + Math.cos(a) * 3.2, y = 86 + Math.sin(a) * 3.2; if (i !== 2) L.decor('ruin_column_fallen', 'ruin_column_fallen', x, y, a + 1.57, 0.9, { on: 'open', rib: true }); }
+    X.lore(12, 86, 'rs_whale', 'Njörðr’s Altar', ['<i>Whale ribs, taller than a man, set in a ring around a flat stone. Salt and fish-bones on the stone, and a copper ring.</i>', 'Njörðr of the sea and the wind. The sealers still pay him a ring a year. They say he does not answer, but the ice has not taken the camp yet, so they keep paying.'], 'shrine');
+    X.landmark('whale_shrine', 'The Whale-Bone Shrine', 12, 86, 4);
+    // the headland watch
+    X.tower(38, 89, 2.6, 'n'); X.chest(38, 89, 'rime_headland', 'rtower', 'Watch-Chest');
+    X.landmark('headland', 'The Headland Watch', 38, 89, 4);
+  } });
+caveDef('rimeshore_cave_ice', { parent: 'rimeshore', name: 'The Ice Cave', sub: 'Base Lv 33 – 40 · Rimeshore', lv: [33, 40], w: 46, h: 42, seed: 921, rock: 'ice', wet: 0.7, glow: 'crystal', water: 0.18,
+  look: { floor: 'snow' },
+  intro: 'The Ice Cave. The walls are blue all the way down, and something far inside is singing without breath.',
+  mouth: [22, 40], back: [88.5, 30.5], rooms: [[22, 31, 4], [35, 24, 4.5], [10, 20, 4, 'lore'], [24, 9, 6, 'boss']], links: [0, 1, 1, 2],
+  spawns: [['ice_wraith', 6], ['snow_wolf', 4], ['rime_poring', 4], ['shell_knight', 2]], critters: [['bat', 2]],
+  elites: [{ key: 'frozen_helmsman', x: 24.5, y: 8.5, respawn: 2400 }],
+  chest: { id: 'icecave_hoard', loot: 'icecave', name: 'The Helmsman’s Chest', at: [27, 6] },
+  lore: { key: 'rs_icecave', name: 'Frozen Log-Book', text: ['<i>A log-book frozen into a block of clear ice. You can read one page through it:</i>', '“We found the Jarl’s hall under the berg. He was singing. Half the crew went down to listen. I am writing this so Ormr knows. I am going down to listen.”'] } });
+
+/* ---------- Mirewell 64 x 64 -> 96 x 96: Stilt-Home (the stilt village), the peat-cutters, the Drowned Grove and the
+   Flooded Grotto ---------- */
+growMap('mirewell', 96, 96, {
+  spawns: [['bog_toad', 6, [66, 4, 93, 60]], ['mire_leech', 5, [66, 4, 93, 60]], ['wisp', 4, [66, 20, 93, 60]], ['marsh_hag', 3, [66, 40, 93, 62]],
+    ['mire_leech', 5, [4, 66, 93, 93]], ['mire_troll', 5, [30, 66, 93, 93]], ['marsh_hag', 4, [4, 66, 60, 93]], ['bog_toad', 4, [4, 66, 60, 93]], ['wisp', 3, [4, 70, 50, 93]]],
+  critters: [['crow', 5, [66, 4, 93, 60]], ['raven', 3, [4, 66, 93, 93]], ['toad', 5, [4, 66, 93, 93]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, w0 = K.w0, h0 = K.h0, isNew = (x, y) => x >= w0 || y >= h0;
+    // the same black pools as the old bog (the noise runs on across the border)
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+      if (!isNew(x, y) || x < w0 + 1 && y < h0 || y < h0 + 1 && x < w0) continue;
+      const n = L.noise(x / 6.5, y / 6.5, 5) * 0.75 + L.noise(x / 2.5, y / 2.5, 6) * 0.25;
+      if (n > 0.57) L.put(x, y, T.WATER); else if (n > 0.49 && L.at(x, y) === T.FLOOR) L.surf(x, y, SURF.MUD);
+    }
+    // Stilt-Home: huts on piles around a black pond, joined by boardwalks
+    L.disc(80, 30, 9, 0.2, (x, y) => L.put(x, y, T.WATER));
+    const wet = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) if (m.t[i] === T.WATER) wet[i] = 1;
+    L.stroke(73, 30, 87, 30, 0.8, (x, y) => L.put(x, y, T.FLOOR)); L.stroke(80, 23, 80, 37, 0.8, (x, y) => L.put(x, y, T.FLOOR));
+    for (let y = 28; y <= 32; y++) for (let x = 78; x <= 82; x++) L.put(x, y, T.FLOOR);   // the meeting deck
+    const huts = [[72, 24], [86, 24], [72, 34], [86, 34]];
+    for (const [hx, hy] of huts) { L.stroke(hx + 1.5, hy + 1.5, 80, 30, 0.6, (x, y) => L.put(x, y, T.FLOOR)); X.hut(hx, hy, hx + 2, hy + 2, 'mirewell_hag_hut', 'town_house_small', rng() * 0.6 - 0.3, { light: [0xffc070, 0.8, 5], stilts: true }); }
+    X.trail([[57, 20], [66, 23], [72, 29]], 1, 0); X.trail([[87, 38], [86, 50], [84, 60]], 1, 0); X.trail([[84, 60], [72, 76], [64, 84]], 1, 0);
+    X.trail([[50, 57], [46, 66], [40, 72]], 1, 0); X.trail([[36, 76], [26, 80], [21, 80]], 1, 0); X.trail([[42, 77], [54, 83], [61, 86]], 1, 0); X.trail([[20, 60], [18, 70], [19, 76]], 1, 0);
+    for (let i = 0; i < w * h; i++) if (m.t[i] === T.FLOOR && wet[i]) m.surf[i] = SURF.BRIDGE;
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+      if (!isNew(x, y)) continue; const i = y * w + x;
+      if (m.t[i] === T.WATER) m.deco[i] = 6; else if (m.deco[i] === 6) m.deco[i] = 0;
+      if (m.t[i] === T.FLOOR && m.surf[i] === SURF.BRIDGE) { const ns = (m.surf[i - w] === SURF.BRIDGE) + (m.surf[i + w] === SURF.BRIDGE), ew = (m.surf[i - 1] === SURF.BRIDGE) + (m.surf[i + 1] === SURF.BRIDGE); L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, ns >= ew ? 0 : 1.571, 1, { dy: -0.32, on: 'open' }); }
+      else if (m.t[i] === T.FLOOR && L.near(x, y, T.WATER) && rng() < 0.2) L.decor(rng() < 0.6 ? 'mirewell_reeds_a' : 'mirewell_reeds_b', null, x + 0.2 + rng() * 0.6, y + 0.2 + rng() * 0.6, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' });
+      else if (m.t[i] === T.WATER && rng() < 0.05) L.decor('mirewell_lily_pads', null, x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.4, { dy: 0.42 });
+    }
+    for (const [lx, ly] of [[76.5, 30.5], [83.5, 29.5], [80.5, 25.5], [80.5, 35.5], [66.5, 23.5]]) L.decor('mirewell_lantern_post', 'town_lamp_post', lx, ly, rng() * 6.28, 1, { light: [0xffc070, 1.1, 5] });
+    X.chest(82, 28, 'mire_stilts', 'stilts', 'Village Chest');
+    X.landmark('stilthome', 'Stilt-Home', 80, 30, 9);
+    X.sign(62, 22, 'Signpost', ['<b>East</b>: Stilt-Home. <i>Mind the planks. The water is deeper than it looks, and hungrier.</i>', '<b>West</b>: Eira’s camp.']);
+    // the peat-cutters' cut: dry ground, stacked peat, a sledge
+    X.clearing(40, 74, 4.5, 0.25); for (let y = 70; y <= 78; y++) for (let x = 35; x <= 45; x++) if (L.at(x, y) === T.FLOOR) m.surf[y * w + x] = 0;
+    X.scatter(40, 74, 3.5, 6, 'haystack', 0.7, 0.9); L.decor('town_crates', 'town_crates', 43.2, 72.4, 0.2, 0.9, { on: 'open' });
+    X.sign(45, 66, 'Signpost', ['<b>South</b>: the peat-cut. <b>West</b>: the Drowned Grove. <b>South-east</b>: the Grotto.', '<i>Nailed under it, a list of names with a line through each.</i>']);
+    X.landmark('peat_cut', 'The Peat-Cut', 40, 74, 5);
+    // the Drowned Grove: a ring of standing stones up to their chests in black water
+    L.disc(16, 82, 5.5, 0.3, (x, y) => { if (L.at(x, y) !== T.PROP) L.put(x, y, T.WATER); m.deco[y * w + x] = 6; });
+    for (let i = 0; i < 7; i++) { const a = i / 7 * 6.283 + 0.3, x = Math.round(16 + Math.cos(a) * 3.3), y = Math.round(82 + Math.sin(a) * 3.3); L.put(x, y, T.RUIN); }
+    X.clearing(21.5, 80.5, 1.6, 0.1); X.lore(20, 79, 'mw_grove', 'The Drowned Stone', ['<i>The one standing stone above the water. Its runes are for Nerthus, the old earth-mother the bog-folk gave their best to, alive.</i>', 'Eira says the bog does not forget a gift. It gives back, eventually. Usually the wrong thing.']);
+    X.landmark('drowned_grove', 'The Drowned Grove', 16, 82, 6);
+    // the Flooded Grotto: a mud bank with a black mouth
+    L.disc(62, 91, 3.5, 0.25, (x, y) => { if (y >= 89) L.put(x, y, T.ROCK); });
+    X.mouth(62, 88, 's', 'mirewell_cave_grotto', 22.5, 38.5, 'The Flooded Grotto', 'mouthMud');
+    X.landmark('grotto', 'The Flooded Grotto', 62, 88, 3);
+  } });
+caveDef('mirewell_cave_grotto', { parent: 'mirewell', name: 'The Flooded Grotto', sub: 'Base Lv 40 – 46 · Mirewell', lv: [40, 46], w: 46, h: 42, seed: 931, rock: 'mud', wet: 0.9, glow: 'mushroom', water: 0.3,
+  intro: 'The Flooded Grotto. Black water to the knee, then the waist. Glowing caps on every wall, and in the water, something that glows back.',
+  mouth: [22, 40], back: [62.5, 86.5], rooms: [[22, 31, 4], [9, 24, 4], [34, 23, 4.2, 'lore'], [22, 10, 6, 'boss']], links: [0, 1, 1, 3],
+  spawns: [['mire_leech', 7], ['bog_toad', 4], ['wisp', 4], ['mire_troll', 2]], critters: [['bat', 3]],
+  elites: [{ key: 'grotto_lurker', x: 22.5, y: 9.5, respawn: 2400 }],
+  chest: { id: 'grotto_hoard', loot: 'grotto', name: 'Bog-Offering', at: [25, 7] },
+  lore: { key: 'mw_grotto', name: 'Offering-Stone', text: ['<i>A flat stone half under water, covered in rotted offerings: brooches, a child’s shoe, a sword bent double so no one else could use it.</i>', 'The bog-folk drowned their gifts to Nerthus here. Something has been taking them, and leaving the bones.'] } });
+
+/* ---------- Helheim 64 x 64 -> 96 x 96: Náströnd, the corpse-shore (north of Gjöll), the Unburied Field, the Road of the
+   Dead with its broken waystation and the way down to the Grey Roots ---------- */
+growMap('helheim', 96, 96, {
+  spawns: [['corpse_bride', 4, [66, 3, 93, 26]], ['nidhogg_spawn', 3, [66, 3, 93, 26]], ['bone_colossus', 2, [66, 8, 93, 26]], ['hel_draugr', 3, [66, 3, 93, 26]],
+    ['hel_hound', 5, [66, 36, 93, 62]], ['hel_draugr', 4, [66, 36, 93, 62]], ['soul_wisp', 4, [66, 36, 93, 62]],
+    ['soul_wisp', 5, [4, 66, 93, 93]], ['hel_draugr', 5, [4, 66, 93, 93]], ['hel_hound', 4, [30, 66, 93, 93]], ['corpse_bride', 3, [4, 70, 60, 93]]],
+  critters: [['raven', 4, [4, 66, 93, 93]], ['crow', 4, [66, 36, 93, 62]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, w0 = K.w0, H = helKit(m, K, L), TT = K.T;
+    // Gjöll runs on east: the ice rows blocked (T.PROP, drawn by the river pieces), the banks walkable
+    for (let x = w0; x < w; x++) {
+      for (let y = HEL_RIVER.y0 + 1; y < HEL_RIVER.y1; y++) L.put(x, y, TT.PROP);
+      for (const y of [HEL_RIVER.y0, HEL_RIVER.y1]) if (x < w - 2) L.put(x, y, TT.FLOOR);
+      L.decor(x % 3 ? 'helheim_gjoll_edge' : 'helheim_gjoll_edge_b', 'rock_field_b', x + 0.5, HEL_RIVER.y0 + 0.5, Math.PI, 1, { y0: 0 });
+      L.decor(x % 4 === 1 ? 'helheim_gjoll_edge_b' : 'helheim_gjoll_edge', 'rock_field_b', x + 0.5, HEL_RIVER.y1 + 0.5, 0, 1, { y0: 0 });
+      for (let y = HEL_RIVER.y0 + 1; y < HEL_RIVER.y1; y++) L.decor('helheim_gjoll_ice', null, x + 0.5, y + 0.5, ((rng() * 4) | 0) * Math.PI / 2, 1, { y0: 0 });
+    }
+    for (const y of [HEL_RIVER.y0, HEL_RIVER.y1]) for (const x of [w0 - 2, w0 - 1]) L.put(x, y, TT.FLOOR);   // the banks run on through the old tree line
+    // trails
+    X.trail([[53, 18], [66, 17], [76, 14]], 1, 0); X.trail([[58, 44], [68, 46], [76, 46]], 1, 0); X.trail([[84, 54], [85, 66], [84, 76]], 1, 0);
+    X.trail([[40, 57], [42, 66], [44, 76]], 1, 0); X.trail([[6, 80], [20, 80], [44, 78], [66, 80], [90, 80]], 1, 0); X.trail([[18, 80], [18, 86]], 1, 0);
+    X.trail([[70, 36], [74, 40]], 1, 0);
+    // Náströnd, the corpse-shore: the hall of woven serpents, broken open
+    X.clearing(81, 13, 8, 0.25);
+    const hall = []; for (let x = 76; x <= 86; x++) for (const y of [7, 19]) if (x < 80 || x > 82 || y === 7) hall.push([x, y]); for (let y = 8; y <= 18; y++) for (const x of [75, 87]) if (y % 5) hall.push([x, y]);
+    for (const [x, y] of hall) { L.put(x, y, TT.PROP); L.decor('dng_wall', 'dng_wall', x + 0.5, y + 0.5, ((x * 7 + y * 3) % 4) * Math.PI / 2, 1, { fp: [x, y, x, y] }); }
+    for (const x of [77, 85]) for (const y of [9.5, 13.5, 17.5]) L.decor('helheim_corpse_relief', 'dng_chain', x, y, 0, 1, { on: 'open' });
+    H.obelisk(81, 9, 0); H.brazier(78.5, 16.5); H.brazier(84.5, 16.5);
+    X.lore(81, 12, 'hel_nastrond', 'The Serpent-Weave', ['<i>The walls are woven of serpents’ spines, the heads all turned inward. Venom still drips from the roof, slow as sap.</i>', 'Náströnd, the Corpse-Shore: the hall for oath-breakers and murderers. Níðhöggr used to come here to feed. He has not come in a long while. The dead here are not grateful. They are bored.'], 'shrine');
+    X.chest(83, 10, 'hel_nastrond', 'nastrond', 'Oath-Breaker’s Coffer');
+    X.landmark('nastrond', 'Náströnd', 81, 13, 8);
+    // the Unburied Field: those Hel will not take into her hall
+    X.clearing(80, 47, 9, 0.4);
+    X.scatter(80, 47, 8.5, 18, 'bones', 0.8, 1.2); X.scatter(80, 47, 8, 8, 'weapons', 0.7, 1);
+    for (const [x, y, big] of [[74, 42, 0], [86, 44, 1], [78, 53, 0], [84, 51, 0], [72, 49, 1]]) H.cairn(x, y, big, rng() * 6.28);
+    X.lore(80, 46, 'hel_unburied', 'Stake of the Unburied', ['<i>A stake hung with cords, and on every cord a name-tag of bone.</i>', 'Hel takes the sick and the old into Eljudnir. The ones who died with no one to bury them wait here, on the field, with nothing to do but count each other.'], 'weapons');
+    X.landmark('unburied', 'The Unburied Field', 80, 47, 9);
+    // the Road of the Dead, its broken waystation, lanterns along it
+    X.tower(56, 84, 3, 'n'); X.chest(56, 85, 'hel_waystation', 'helroad', 'Waystation Strongbox');
+    for (let x = 10; x <= 88; x += 9) { const [lx, ly] = X.openNear(x + 0.5, 78.4); H.lantern(lx, ly); }
+    X.landmark('waystation', 'The Dead’s Waystation', 56, 84, 4);
+    X.sign(43, 70, 'Road-Stone', ['<i>A stone with a road carved on it, and a hand pointing down.</i> “The Road of the Dead. <b>East</b>: the Unburied. <b>West</b>: the Grey Roots. Walk. Do not look back.”']);
+    // the Grey Roots: a root of the World Tree breaks the ground; a way down beside it
+    X.clearing(18, 86, 4, 0.2);
+    L.disc(18, 91, 3.2, 0.3, (x, y) => { if (y >= 89) L.put(x, y, TT.ROCK); });
+    X.mouth(18, 88, 's', 'helheim_cave_roots', 24.5, 40.5, 'The Grey Roots');
+    L.decor('helheim_root', 'ruin_column_fallen', 22.5, 88.5, 0.4, 0.8, { fp: L.footprint(21, 88, 23, 89), y0: 0 });
+    H.lantern(15.5, 85.5); H.lantern(21.5, 85.5);
+    X.landmark('grey_roots', 'The Grey Roots', 18, 88, 3);
+    for (let i = 0; i < 24; i++) { const x = 4 + rng() * (w - 8), y = 4 + rng() * (h - 8); if (x < w0 && y < 64) continue; if (L.at(x | 0, y | 0) === TT.FLOOR && !(y > 26 && y < 36)) L.decor(rng() < 0.5 ? 'dng_bones' : 'helheim_ash_drift_a', null, x, y, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' }); }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if ((x >= w0 || y >= 64) && m.deco[y * w + x] === 6) m.deco[y * w + x] = 0;
+  } });
+caveDef('helheim_cave_roots', { parent: 'helheim', name: 'The Grey Roots', sub: 'Base Lv 80 – 90 · Helheim', lv: [80, 90], w: 50, h: 44, seed: 941, rock: 'roots', wet: 0.2, glow: 'mushroom',
+  look: { tint: [0.88, 0.95, 0.9] }, cave: { fill: 0.5, steps: 5, min: 12 },
+  intro: 'The Grey Roots. The World Tree’s roots run through the rock like veins, and something has been gnawing them.',
+  mouth: [24, 42], back: [18.5, 86.5], rooms: [[24, 32, 4], [38, 25, 4.5], [11, 22, 4, 'lore'], [26, 10, 6, 'boss']], links: [0, 1, 1, 2],
+  spawns: [['nidhogg_spawn', 6], ['hel_draugr', 4], ['corpse_bride', 3]], critters: [['bat', 3]],
+  elites: [{ key: 'root_gnawer', x: 26.5, y: 9.5, respawn: 3000 }],
+  chest: { id: 'roots_hoard', loot: 'roots', name: 'Root-Hollow', at: [29, 6] },
+  lore: { key: 'hel_roots', name: 'Gnawed Root', text: ['<i>A root thick as a longhouse beam, bitten half through. The bite-marks are old at the bottom, fresh at the top.</i>', 'Níðhöggr is not the only thing gnawing at the Tree. His brood learned from him. They are patient, and there are a great many of them.'] },
+  post(m, K, X) { for (const r of m.rooms) if (r.kind !== 'mouth') X.L.decor('helheim_root', 'ruin_column_fallen', r.x + 0.5, r.y - r.r + 1, K.rng() * 6.28, 0.6, { on: 'open' }); } });
+
+/* ---------- Towns. A grown town keeps its old wall as an inner palisade; its old gate warp stays where it was (the old
+   gate), and the gate road runs on through the new ward to an outer gate at the new edge with a second warp to the same
+   place. New house plots are m.houses entries with `door: [x, y]` (the street tile in front of the door) and `id` (the
+   interior id the interiors team may wire: js/data/interiors.js). ---------- */
+function townHouse(m, K, x0, y0, x1, y1, id, doorSide) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) K.set(x, y, T.RUIN);
+  const cx = (x0 + x1) >> 1, door = doorSide === 'n' ? [cx, y0 - 1] : doorSide === 'e' ? [x1 + 1, (y0 + y1) >> 1] : doorSide === 'w' ? [x0 - 1, (y0 + y1) >> 1] : [cx, y1 + 1];
+  K.set(door[0], door[1], 0);
+  const hs = { x0, y0, x1, y1, id, door, grown: true }; m.houses.push(hs); return hs;
+}
+/* Emberhold 36 x 36 -> 56 x 56: the Gate Road and the east gate; the Smiths' Row (north-east), the chapel and its
+   yard (south-east), the Farm Ward and the orchard (south). */
+growMap('emberhold', 56, 56, {
+  critters: [['crow', 4, [36, 36, 54, 54]], ['crow', 2, [2, 38, 30, 54]], ['rat', 3, [36, 2, 54, 14]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, cob = (x, y) => { if (L.inb(x, y) && L.at(x, y) === T.FLOOR) m.deco[y * w + x] = 5; };
+    // the Gate Road east to the new gate (a second warp to the Ashen Fields at the new edge)
+    K.clearR(36, 16, 54, 20); for (let y = 16; y <= 20; y++) for (let x = 36; x <= 55; x++) { K.set(x, y, 0); cob(x, y); }
+    m.warps.push({ x: 54, y: 18, to: 'ashen_fields', tx: 3.5, ty: 32.5, label: 'Ashen Fields (the East Gate)' });
+    m.braziers.push({ x: 53.5, y: 15.6 }, { x: 53.5, y: 21.4 }, { x: 36.6, y: 15.6 }, { x: 36.6, y: 21.4 });
+    // the Smiths' Row: two big houses and two small ones round a lane and a well
+    townHouse(m, K, 38, 3, 43, 7, 'emberhold_row_a'); townHouse(m, K, 47, 3, 52, 7, 'emberhold_row_b'); townHouse(m, K, 38, 10, 41, 13, 'emberhold_house_c', 'e'); townHouse(m, K, 50, 10, 53, 13, 'emberhold_house_d', 'w');
+    for (let x = 36; x <= 54; x++) for (const y of [8, 9]) cob(x, y); for (let y = 8; y <= 15; y++) for (const x of [45, 46]) cob(x, y);
+    L.decor('town_well', 'town_well', 46, 12, 0, 1, { fp: L.footprint(45, 11, 46, 12) });
+    L.decor('town_market_stall', 'town_market_stall', 44.5, 14.2, Math.PI, 1, { fp: L.footprint(43, 14, 44, 14) });
+    for (const [x, y, k] of [[37.2, 8.4, 'town_barrel'], [44.4, 3.2, 'town_crates'], [53.2, 8.6, 'town_barrel'], [48.6, 13.8, 'town_crates']]) L.decor(k, k, x, y, rng() * 6.28, 0.9, { on: 'open' });
+    X.landmark('smiths_row', 'The Smiths’ Row', 45, 8, 8);
+    // the Ember Chapel (south-east; its door is wired by js/data/interiors.js: emberhold_temple) and its yard of graves
+    const chapel = townHouse(m, K, 46, 24, 53, 29, 'emberhold_chapel'); chapel.kind = 'chapel';
+    townHouse(m, K, 38, 22, 42, 25, 'emberhold_house_e');
+    for (let y = 30; y <= 33; y++) for (let x = 38; x <= 44; x += 2) if (y % 2 === 0) K.set(x, y, T.GRAVE);
+    X.fence(37.4, 29.2, 45.2, 29.2); X.fence(37.4, 34.6, 45.2, 34.6);
+    X.lore(51, 32, 'eh_chapel', 'The Ember-Stone', ['<i>A plain stone beside the chapel door, a bowl of embers cut into its top. The embers are real, and warm.</i>', 'When Sigrun lit the first Waystone she carried a coal from it to this stone, so the town would have a fire the Ash could not reach. The chapel-keepers have fed it every day since. Nobody remembers who built the chapel. Everybody remembers the coal.']);
+    X.landmark('chapel', 'The Ember Chapel', 49, 27, 6);
+    // the Farm Ward: the south street through the old wall, houses, gardens, the orchard and the duck pond
+    for (let x = 16; x <= 20; x++) K.set(x, 35, 0);
+    for (let y = 35; y <= 54; y++) for (let x = 16; x <= 20; x++) { K.set(x, y, 0); cob(x, y); }
+    for (let x = 2; x <= 53; x++) for (const y of [44, 45]) { if (L.at(x, y) === T.FLOOR) cob(x, y); }
+    townHouse(m, K, 4, 38, 9, 42, 'emberhold_farm_a'); townHouse(m, K, 24, 38, 29, 42, 'emberhold_farm_b'); townHouse(m, K, 4, 48, 9, 52, 'emberhold_farm_c', 'n'); townHouse(m, K, 24, 48, 28, 51, 'emberhold_house_f', 'n'); townHouse(m, K, 11, 48, 14, 51, 'emberhold_house_g', 'n');
+    for (let y = 37; y <= 52; y += 3) for (let x = 36; x <= 52; x += 3) if (y !== 43 && y !== 46 && Math.hypot(x - 45, y - 49) > 3.2 && rng() < 0.9) K.set(x, y, T.TREE);
+    L.disc(45, 49, 2.4, 0.2, (x, y) => K.set(x, y, T.WATER));
+    X.fence(34.4, 36.6, 34.4, 53.4); X.scatter(12, 43, 2, 2, 'haystack', 0.8, 1); X.scatter(27, 46, 2, 2, 'haystack', 0.8, 1);
+    for (const [x, y] of [[3.5, 46.2], [31.5, 46.4], [21.6, 37.0], [14.6, 52.8]]) L.decor('town_barrel', 'town_barrel', x, y, rng() * 6.28, 0.9, { on: 'open' });
+    X.landmark('farm_ward', 'The Farm Ward', 18, 45, 12);
+    X.sign(21, 37, 'Signpost', ['<b>North</b>: the Waystone. <b>South</b>: the Farm Ward. <b>East</b>: the orchard and the chapel.', '<i>Chalked underneath: “Pies at Oddný’s. Ask nicely.”</i>']);
+    X.sign(38, 21, 'Signpost', ['<b>East</b>: the East Gate and the Ashen Fields. <b>North</b>: the Smiths’ Row. <b>South</b>: the chapel.']);
+    // lamps along the new streets
+    for (const [x, y] of [[40.4, 15.3], [48.4, 15.3], [40.4, 21.6], [48.4, 21.6], [15.3, 40.4], [21.6, 40.4], [15.3, 49.4], [21.6, 49.4], [44.4, 10.4], [37.4, 27.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
+    for (let y = 36; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if ((x < 3 || y > h - 4) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && rng() < 0.12) K.set(x, y, rng() < 0.7 ? T.TREE : T.ROCK);
+  } });
+/* Skaldhaven 48 x 40 -> 64 x 56: Netmakers' Row and the shipwright's yard south of the old wall, the south gate road
+   to a new outer gate, a fourth pier, and the Skerry with its beacon out in the bay. */
+growMap('skaldhaven', 64, 56, {
+  critters: [['gull', 6, [28, 2, 62, 54]], ['gull', 3, [2, 40, 30, 54]], ['rat', 2, [2, 40, 30, 54]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, w0 = K.w0, h0 = K.h0, SHORE = 31, isNew = (x, y) => x >= w0 || y >= h0, cob = (x, y) => { if (L.inb(x, y) && L.at(x, y) === T.FLOOR) m.deco[y * w + x] = 5; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (isNew(x, y) && x >= SHORE) K.set(x, y, T.WATER);
+    for (let y = h0; y < h - 1; y++) for (let x = SHORE - 3; x < SHORE; x++) L.surf(x, y, SURF.SAND);
+    // the south gate road through the old wall to the outer gate (a second warp to Rimeshore)
+    for (let y = h0 - 1; y < h; y++) for (let x = 13; x <= 15; x++) { K.set(x, y, 0); cob(x, y); }
+    m.warps.push({ x: 14, y: h - 2, to: 'rimeshore', tx: 20.5, ty: 3.5, label: 'Rimeshore (the South Gate)' });
+    m.braziers.push({ x: 12.4, y: 52.6 }, { x: 16.6, y: 52.6 });
+    // Netmakers' Row
+    townHouse(m, K, 3, 42, 8, 46, 'skaldhaven_net_a', 'e'); townHouse(m, K, 18, 42, 23, 46, 'skaldhaven_net_b', 'w'); townHouse(m, K, 3, 49, 8, 52, 'skaldhaven_smokehouse', 'e'); townHouse(m, K, 18, 49, 22, 52, 'skaldhaven_net_c', 'w');
+    for (let x = 2; x <= 28; x++) for (const y of [47, 48]) cob(x, y);
+    for (let x = 4; x <= 22; x += 3) L.decor('rimeshore_drying_rack', 'town_fence', x + 0.5, 40.6, 0, 1, { on: 'open' });
+    X.landmark('netmakers', 'Netmakers’ Row', 12, 46, 9);
+    // the shipwright's yard: a longship on the stocks, planks, the ropewalk
+    const stocks = L.footprint(25, 42, 27, 49);
+    L.decor('rimeshore_longship', 'ruin_column_fallen', 26.5, 45.9, 0, 0.95, { fp: stocks, onStocks: true });
+    X.fence(24.2, 51.4, 29.4, 51.4); for (const [x, y, k] of [[28.8, 43.2, 'rimeshore_crate'], [29.1, 45.4, 'rimeshore_barrel'], [23.8, 50.6, 'rimeshore_crate']]) L.decor(k, k === 'rimeshore_crate' ? 'town_crates' : 'town_barrel', x, y, rng() * 6.28, 0.9, { on: 'open' });
+    X.chest(29, 50, 'skald_yard', 'yard', 'Shipwright’s Chest');
+    X.landmark('shipyard', 'Bárðr’s Shipyard', 26, 46, 5);
+    // the fourth pier, a fishing boat tied up at it
+    for (let x = SHORE - 1; x <= 44; x++) for (const y of [47, 48]) { K.set(x, y, 0); L.surf(x, y, SURF.BRIDGE); L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, 1.571, 1, { dy: -0.32 }); }
+    L.decor('skaldhaven_longship_moored', 'rimeshore_longship', 38.5, 45.475, Math.PI / 2, 0.8, { y0: -0.12 });
+    // the long pier out to the Skerry and its beacon
+    for (let x = 42; x <= 52; x++) for (const y of [9, 10]) { K.set(x, y, 0); L.surf(x, y, SURF.BRIDGE); L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, 1.571, 1, { dy: -0.32 }); }
+    L.disc(56.5, 11, 4.2, 0.3, (x, y) => { if (x < w - 1) { K.set(x, y, 0); L.surf(x, y, 0); } });
+    L.decor('bifrost_rune_brazier', 'dng_brazier', 57.5, 10.5, 0, 1.3, { fp: L.footprint(57, 10, 57, 10), light: [0xffb050, 2, 9], beacon: true }); X.light(57.5, 10.5, 0xffb050, 9, 1.6, 'fire', { flame: true, fl: 0.4, h: 1.6 });
+    X.lore(55, 13, 'sk_beacon', 'The Beacon-Stone', ['<i>A stone at the foot of the beacon, cut with the names of every keeper. The last name is only half cut.</i>', 'The Skerry beacon has burned every night since the Ash, so the longships can find the one harbour on the coast that still answers. Captain Ormr pays for the oil. He will not say why.']);
+    X.chest(58, 12, 'skald_skerry', 'skerry', 'Keeper’s Chest');
+    for (let i = 0; i < 5; i++) { const a = rng() * 6.283, d = 2.2 + rng() * 1.3; L.decor('rimeshore_ice_rock_b', 'rock_field_d', 56.5 + Math.cos(a) * d, 11 + Math.sin(a) * d, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' }); }
+    X.landmark('skerry', 'The Skerry Beacon', 56, 11, 5);
+    for (let i = 0; i < 10; i++) { const x = w0 + rng() * (w - w0 - 2), y = 2 + rng() * (h - 4); if (L.at(x | 0, y | 0) === T.WATER) L.decor('rimeshore_ice_floe', 'rock_field_b', x, y, rng() * 6.28, 0.7 + rng() * 0.6, { dy: 0.7 }); }
+    for (const [x, y] of [[12.4, 44.4], [16.6, 44.4], [2.4, 47.6], [24.6, 47.6], [30.3, 46.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
+    X.sign(16, 41, 'Signpost', ['<b>North</b>: the plaza and the Salt Hall. <b>South</b>: the South Gate to Rimeshore.', '<b>East</b>: Bárðr’s yard and the net-pier.']);
+    for (let y = h0; y < h - 1; y++) for (let x = 1; x < SHORE - 1; x++) if ((x < 3 || y > h - 4) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && !m.surf[y * w + x] && !(x >= 12 && x <= 16) && rng() < 0.3) K.set(x, y, rng() < 0.75 ? T.TREE : T.ROCK);
+    for (let y = h0 + 1; y < h - 2; y++) for (let x = 2; x < SHORE - 1; x++) if (L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && !m.surf[y * w + x] && rng() < 0.04) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' });
+  } });
+
+/* ---------- Gloamheim 60 x 60 -> 84 x 76: the Barracks wing (east) and the Lower Cells (south). Old rooms are placed at
+   random each session, so the new wings are joined to the fixed rooms: the entry hall (both wings) and the corridor
+   east of the middle floor. ---------- */
+growMap('gloamheim', 84, 76, {
+  spawns: [['skeleton_soldier', 6, [60, 6, 81, 44]], ['rust_knight', 4, [60, 6, 81, 44]], ['grave_archer', 4, [60, 6, 81, 44]],
+    ['wraith', 5, [4, 60, 81, 73]], ['grave_archer', 3, [4, 60, 81, 73]], ['rust_knight', 3, [30, 60, 81, 73]], ['skeleton_soldier', 3, [4, 60, 81, 73]]],
+  critters: [['rat', 4, [60, 6, 81, 73]], ['bat', 3, [4, 60, 81, 73]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, { clearR, set } = K;
+    const room = (x0, y0, x1, y1) => { clearR(x0, y0, x1, y1); m.braziers.push({ x: x0 + 0.8, y: y0 + 0.8 }, { x: x1 + 0.2, y: y1 + 0.2 }); return { x0, y0, x1, y1, cx: (x0 + x1) >> 1, cy: (y0 + y1) >> 1 }; };
+    // the Barracks: the drill hall, the armoury, the mess, the captain's quarters, Tyr's chapel
+    const drill = room(62, 8, 75, 18), arm = room(78, 9, 82, 16), mess = room(63, 24, 76, 32), capt = room(79, 23, 82, 30), tyr = room(66, 37, 79, 43);
+    clearR(76, 12, 77, 13); clearR(68, 19, 70, 23); clearR(77, 26, 78, 27); clearR(71, 33, 73, 36);
+    for (let x = 64; x <= 74; x += 3) for (const y of [11, 15]) set(x, y, T.PILLAR);
+    for (let y = 38; y <= 42; y += 2) for (const x of [69, 76]) set(x, y, T.PILLAR);
+    L.decor('dng_banner', 'dng_banner', 68.5, 8.6, 0, 1, { on: 'open' }); L.decor('dng_banner', 'dng_banner', 72.5, 8.6, 0, 1, { on: 'open' });
+    for (let i = 0; i < 6; i++) L.decor('town_crates', 'town_crates', 79 + (i % 2) * 2.6, 10 + ((i / 2) | 0) * 2.6, rng() * 6.28, 0.8, { on: 'open' });
+    for (let x = 65; x <= 74; x += 3) L.decor('town_barrel', 'town_barrel', x + 0.5, 28.5, 0, 0.8, { on: 'open' });
+    X.chest(82, 29, 'gloam_captain', 'captain', 'Captain’s Strongbox');
+    X.lore(80, 23, 'gh_rollcall', 'The Roll of the Watch', ['<i>A board of names, a peg beside each. Every peg is in the “on watch” row. Nobody has come off watch in forty years.</i>', 'Sir Gaunt swore his garrison to hold the keep until the end of the world. They took the oath with him. They are still taking it.']);
+    X.lore(72, 38, 'gh_tyr', 'Tyr’s Altar', ['<i>An altar with a bronze hand on it, the right hand, cut off at the wrist.</i>', 'Tyr gave his hand to the wolf so the gods could bind him. The garrison swore on this altar. An oath sworn on Tyr’s hand cannot be broken, only kept too long.'], 'shrine');
+    X.landmark('barracks', 'The Barracks', 69, 13, 8); X.landmark('tyr_chapel', 'Tyr’s Chapel', 72, 40, 6);
+    // joined to the entry hall (east, along the lower corridor) and to the middle floor
+    clearR(35, 51, 64, 53); clearR(62, 44, 64, 53); clearR(64, 42, 66, 44); clearR(55, 23, 63, 25);
+    // the Lower Cells: a gallery of cells below the entry hall, and the pit
+    clearR(26, 58, 28, 62); clearR(8, 63, 60, 65);
+    for (let x = 9; x <= 57; x += 5) { const up = (x / 5) % 2 === 0; clearR(x, up ? 60 : 67, x + 3, up ? 62 : 70); clearR(x + 1, up ? 62 : 65, x + 2, up ? 63 : 67); }
+    const pit = room(62, 60, 78, 72); L.disc(70, 66, 2.6, 0.1, (x, y) => set(x, y, T.LAVA)); clearR(60, 63, 62, 65);
+    for (const [x, y] of [[64, 62], [76, 62], [64, 70], [76, 70]]) set(x, y, T.PILLAR);
+    for (let x = 10; x <= 58; x += 5) L.decor('dng_chain', 'dng_chain', x + 1.5, 59.62 + ((x / 5) % 2 === 0 ? 0 : 7.8), 0, 1, { on: 'open' });
+    X.chest(77, 71, 'gloam_cells', 'cells', 'Gaoler’s Chest'); X.lore(20, 68, 'gh_cells', 'Scratched Wall', ['<i>Hundreds of tally marks, and a name cut over and over: HELGA, HELGA, HELGA.</i>', 'The keep’s prisoners were not freed when the garrison died. They were not fed, either. Some of them are still counting.'], 'bones');
+    X.landmark('cells', 'The Lower Cells', 34, 64, 12); X.landmark('pit', 'The Burning Pit', 70, 66, 6);
+    for (let i = 0; i < m.w * m.h; i++) if ((i % m.w >= K.w0 || i / m.w >= K.h0) && m.t[i] === 0 && rng() < 0.06) m.deco[i] = rng() < 0.5 ? 2 : 3;
+  } });
+
+/* ---------- Nidavellir 64 x 64 -> 96 x 84: the Deep Mines (a natural cavern east, with the adit down into the old
+   workings) and the Hall of Ancestors (south). ---------- */
+growMap('nidavellir', 96, 84, {
+  spawns: [['crystal_spider', 6, [64, 4, 93, 62]], ['cave_bat', 6, [64, 4, 93, 62]], ['stone_golem', 3, [64, 20, 93, 62]],
+    ['dwarf_revenant', 6, [4, 64, 93, 81]], ['magma_slime', 4, [4, 64, 93, 81]], ['stone_golem', 2, [30, 64, 93, 81]]],
+  critters: [['bat', 6, [64, 4, 93, 62]], ['rat', 3, [4, 64, 60, 81]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, { clearR, set } = K, w = K.w;
+    // the Deep Mines: a cavern grown out of the rock, joined to the crystal galleries and the hall of statues
+    K.caveCA(65, 3, 93, 62, { fill: 0.47, steps: 5, min: 14 });
+    K.carve(58, 13, 72, 14, 1); K.carve(58, 33, 70, 34, 1); K.carve(72, 14, 80, 30, 1); K.carve(70, 34, 80, 30, 1); K.carve(80, 30, 86, 50, 1); K.carve(80, 30, 88, 12, 1);
+    // rails from the statues hall into the mines, carts, props, crystal veins
+    for (let x = 58; x <= 70; x++) { L.surf(x, 34, SURF.RAIL); L.decor('nidavellir_rail', null, x + 0.5, 34.5, 1.571, 1, { on: 'open' }); }
+    L.decor('nidavellir_mine_cart', 'town_crates', 66.5, 34.5, 1.571, 1, { on: 'open' });
+    for (let y = 4; y < 62; y++) for (let x = 65; x < 94; x++) { if (L.at(x, y) !== T.FLOOR) continue; const r = rng(); if (L.near(x, y, T.WALL) && r < 0.04) L.decor('nidavellir_crystal_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.4, { on: 'open', light: [0xb07aff, 0.9, 4] }); else if (L.near(x, y, T.WALL) && r < 0.07) L.decor('nidavellir_support_beams', null, x + 0.5, y + 0.5, L.at(x + 1, y) === T.WALL ? 0 : 1.571, 1, { on: 'open' }); else if (r < 0.085) L.decor('nidavellir_ore_pile', 'dng_rubble_b', x + 0.5, y + 0.5, rng() * 6.28, 0.5 + rng() * 0.3, { on: 'open' }); }
+    X.chest(89, 12, 'nida_mines', 'mines', 'Miner’s Lockbox'); X.lore(80, 29, 'nd_mines', 'The Shift-Bell', ['<i>A bronze bell on a post, its rope worn through. Someone rings it anyway: you hear it, once, when nobody is near it.</i>', 'Nýr the foreman rang the shift-bell every morning for three hundred years. He still does. The miners who answer it have been dead for most of them.']);
+    X.landmark('deep_mines', 'The Deep Mines', 80, 30, 14);
+    // the Hall of Ancestors: a long pillared hall, statues of the dwarf-kings, joined to the old mine shafts
+    clearR(10, 58, 13, 68); clearR(6, 68, 90, 78);
+    for (let x = 10; x <= 86; x += 6) for (const y of [70, 76]) set(x, y, T.PILLAR);
+    for (let x = 16; x <= 80; x += 12) { const fp = L.footprint(x, 72, x + 1, 73); L.decor('nidavellir_statue_broken', 'ruin_column_fallen', x + 1, 73, (x % 24 ? 0.3 : -0.4), 1, { fp }); }
+    for (let x = 8; x <= 88; x += 8) m.braziers.push({ x: x + 0.5, y: 68.7 }, { x: x + 0.5, y: 77.3 });
+    clearR(91, 56, 92, 68); K.carve(92, 57, 88, 46, 1);   // up into the mines
+    X.clearing(86, 51, 3.5, 0.2); X.mouth(86, 55, 's', 'nidavellir_cave_adit', 24.5, 40.5, 'The Old Adit');
+    X.chest(89, 73, 'nida_ancestors', 'ancestors', 'Grave-Hoard');
+    X.lore(48, 74, 'nd_ancestors', 'The King-List', ['<i>Nine names on nine statues, and a tenth plinth left empty.</i>', 'Durin, Dvalinn, Mótsognir… the dwarf-kings of Nidavellir, each one a smith. The tenth plinth was for whoever forged Gleipnir. Brokkr and Sindri have been arguing about whose statue it should be for a hundred years.'], 'shrine');
+    X.landmark('ancestors', 'The Hall of Ancestors', 48, 73, 14);
+    for (let y = 66; y < m.h - 2; y++) for (let x = 4; x < w - 4; x++) if (L.at(x, y) === T.FLOOR && L.near(x, y, T.WALL) && rng() < 0.03) L.decor('nidavellir_ore_pile', 'dng_rubble_b', x + 0.5, y + 0.5, rng() * 6.28, 0.5, { on: 'open' });
+  } });
+caveDef('nidavellir_cave_adit', { parent: 'nidavellir', name: 'The Old Adit', sub: 'Base Lv 44 – 51 · Nidavellir Deep', lv: [44, 51], w: 50, h: 44, seed: 951, rock: 'mine', wet: 0.2, glow: 'crystal',
+  intro: 'The Old Adit. Timber props, a rail running into the dark, and the sound of a pick that nobody is swinging.',
+  mouth: [24, 42], back: [86.5, 53.5], rooms: [[24, 32, 4], [10, 24, 4.2], [38, 22, 4.2, 'lore'], [24, 10, 6, 'boss']], links: [0, 1, 1, 2], tunnel: 1,
+  spawns: [['dwarf_revenant', 6], ['stone_golem', 3], ['crystal_spider', 3], ['cave_bat', 3]], critters: [['bat', 3]],
+  elites: [{ key: 'iron_foreman', x: 24.5, y: 9.5, respawn: 2400 }],
+  chest: { id: 'adit_hoard', loot: 'adit', name: 'The Foreman’s Pay-Chest', at: [27, 6] },
+  lore: { key: 'nd_adit', name: 'The Last Shift-Tally', text: ['<i>A slate tally for the last shift: twelve names, twelve marks for “down”. None for “up”.</i>', 'They dug too deep, the dwarves say, and struck the road the dead walk to Gjallarbrú. The twelve went down to look. They are still working. They do not know how to stop.'] },
+  post(m, K, X, rooms) { const r0 = rooms[0], rb = rooms.find(r => r.kind === 'boss'); for (let y = rb.y + 2; y <= r0.y; y++) if (X.at(24, y) === T.FLOOR) { m.surf[y * m.w + 24] = SURF.RAIL; X.kit('rail', 24.5, y + 0.5, 0, 1, { on: 'open' }); } X.kit('cart', 24.5, 27.5, 0, 1, { on: 'open' }); } });
+
+/* ---------- Bifrost 64 x 64 -> 96 x 88: new islands east (the Einherjar's Field, Frigg's Garden) and south (the Broken
+   Span, the Valkyrie Watch), with crystal bridges from the old platforms. ---------- */
+growMap('bifrost', 96, 88, {
+  spawns: [['sky_harpy', 5, [66, 20, 93, 70]], ['valkyrie_shade', 4, [66, 20, 93, 70]], ['rune_sentinel', 3, [66, 20, 93, 70]],
+    ['prism_poring', 6, [4, 66, 93, 85]], ['fenrir_whelp', 4, [4, 66, 93, 85]], ['sky_harpy', 3, [4, 66, 93, 85]]],
+  critters: [['gull', 5, [60, 20, 93, 85]]],
+  layout(m, K) {
+    const X = wxKit(m, K), { L, rng } = X, w = K.w, h = K.h, w0 = K.w0, h0 = K.h0;
+    const isle = (cx, cy, r, jag) => L.disc(cx, cy, r, jag === undefined ? 0.3 : jag, (x, y) => { if (x > 0 && y > 0 && x < w - 1 && y < h - 1) { L.put(x, y, T.FLOOR); m.deco[y * w + x] = 6; } });
+    const spans = [], bridge = (x0, y0, x1, y1, r) => { spans.push([x0, y0, x1, y1]); L.stroke(x0, y0, x1, y1, r || 1.1, (x, y) => { if (L.at(x, y) === T.VOID) { L.put(x, y, T.FLOOR); L.surf(x, y, SURF.BRIDGE); m.deco[y * w + x] = 6; } }); };
+    isle(78, 32, 8);      // the Einherjar's Field
+    isle(84, 60, 6.5);    // Frigg's Garden
+    isle(20, 76, 5.5);    // the Broken Span, west pier
+    isle(42, 79, 6);      // the Broken Span, east pier
+    isle(68, 78, 6);      // the Valkyrie Watch
+    bridge(58, 34, 70, 32); bridge(80, 40, 83, 54); bridge(12, 58, 18, 71); bridge(25, 77, 36, 79); bridge(48, 79, 62, 78); bridge(73, 75, 80, 65);
+    // the Einherjar's Field: sparring posts, spent spears, a weapon-rack chest
+    const posts = [[74, 28], [82, 28], [74, 36], [82, 36]]; for (const [px, py] of posts) { L.put(px, py, T.PROP); L.decor('bifrost_column_broken', 'dng_pillar', px + 0.5, py + 0.5, rng() * 6.28, 0.7, { fp: [px, py, px, py] }); }
+    X.scatter(78, 32, 6, 14, 'weapons', 0.7, 1); X.chest(84, 31, 'bif_einherjar', 'einherjar', 'Einherjar’s Rack');
+    X.lore(78, 26, 'bf_einherjar', 'The Sparring-Stone', ['<i>A stone worn hollow by feet, the marks of a thousand stances in it.</i>', 'The Einherjar fought here every day and died every day, and every evening they rose again for the feast. Now they only fight. There is no feast. They have not noticed.']);
+    X.landmark('einherjar', 'The Einherjar’s Field', 78, 32, 8);
+    // Frigg's Garden: golden apple trees gone to glass
+    for (const [tx, ty] of [[82, 58], [86, 58], [84, 62], [81, 62]]) { L.put(tx, ty, T.PROP); L.decor('bifrost_crystal', 'rimeshore_ice_crystal', tx + 0.5, ty + 0.5, rng() * 6.28, 1.2, { fp: [tx, ty, tx, ty], light: [0xffd070, 1.0, 5] }); }
+    X.lore(86, 62, 'bf_frigg', 'The Glass Orchard', ['<i>Apple trees of gold glass, every apple picked but one. It chimes when the wind moves it.</i>', 'Frigg’s garden fed the gods Iðunn’s apples, to keep them young. The last apple was left for whoever mends the bridge. It will not come off the branch for anyone else.'], 'shrine');
+    X.landmark('frigg', 'Frigg’s Garden', 84, 60, 6);
+    // the Broken Span and the Valkyrie Watch
+    L.decor('bifrost_arch', 'ruin_wall_c', 20.5, 72.2, 0.2, 1, { on: 'open' }); L.decor('bifrost_arch', 'ruin_wall_c', 42.5, 75, 0, 1, { on: 'open' });
+    X.chest(44, 82, 'bif_span', 'span', 'Bridge-Warden’s Chest'); X.landmark('span', 'The Broken Span', 32, 78, 8);
+    L.decor('bifrost_valkyrie_statue', 'dng_pillar', 68.5, 75.5, 0.4, 1, { fp: L.footprint(68, 75, 68, 75) });
+    X.lore(70, 80, 'bf_watch', 'The Watch-Horn', ['<i>A horn on a post, bigger than a man. A Valkyrie’s name is scratched on the mouthpiece: Göndul.</i>', 'The Valkyries kept watch here for the day the bridge would break. It broke. Göndul blew the horn. Nobody came. She is still waiting, somewhere on the islands, with the Shades.']);
+    X.landmark('watch', 'The Valkyrie Watch', 68, 78, 6);
+    for (const [bx, by] of [[78, 32], [84, 60], [68, 78], [32, 78]]) { const [ox, oy] = X.openNear(bx + 2.5, by + 2.5); L.decor('bifrost_rune_brazier', 'dng_brazier', ox, oy, 0, 1, { on: 'open', light: [0xffd070, 1.4, 6] }); }
+    for (const [x0, y0, x1, y1] of spans) { const len = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(len / 1.9)), rot = Math.atan2(x1 - x0, y1 - y0); for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n; if (L.at(x | 0, y | 0) === T.FLOOR && m.surf[(y | 0) * w + (x | 0)] === SURF.BRIDGE) L.decor('bifrost_bridge', null, x, y, rot, 1, { on: 'open', light: i % 3 === 0 ? [0xb89aff, 0.8, 4] : undefined }); } }
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      if (!(x >= w0 || y >= h0) || L.at(x, y) === T.VOID || m.surf[y * w + x] === SURF.BRIDGE || (x + y) % 2) continue;
+      for (const [dx, dy, rot] of [[0, 1, 0], [0, -1, 3.1416], [1, 0, 1.571], [-1, 0, -1.571]]) if (L.at(x + dx, y + dy) === T.VOID) { L.decor('bifrost_island_edge', null, x + 0.5 + dx * 0.5, y + 0.5 + dy * 0.5, rot, 1, {}); break; }
+    }
+    for (let i = 0; i < 24; i++) { const x = 2 + rng() * (w - 4), y = 2 + rng() * (h - 4); if (!(x >= w0 || y >= h0) || L.at(x | 0, y | 0) !== T.VOID) continue; const big = rng() < 0.3; L.decor(big ? 'bifrost_float_isle' : 'bifrost_float_rock', 'rock_field_a', x, y, rng() * 6.28, big ? 1.6 + rng() : 0.7 + rng() * 0.8, { dy: -1.5 - rng() * 3 }); }
+    for (let i = 0; i < 26; i++) { const x = rng() * w, y = rng() * h; if (!(x >= w0 || y >= h0) || L.at(x | 0, y | 0) !== T.VOID) continue; L.decor('bifrost_cloud', null, x, y, rng() * 6.28, 1.2 + rng() * 1.5, { dy: -3 - rng() * 1.5 }); }
+    for (let y = h0; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if (L.at(x, y) === T.FLOOR && !m.surf[y * w + x] && rng() < 0.025) L.decor('bifrost_gold_rubble', 'dng_rubble_b', x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.3, { on: 'open' });
+  } });

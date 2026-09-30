@@ -761,3 +761,135 @@ function epilogueAct3(pact) {
     return origHeart.apply(this, arguments);
   };
 }
+
+/* =========================================================
+   Cycle 9: the world expansion (design/world-expansion.md; maps in js/data/maps.js, "Cycle 9")
+   - Townsfolk with walking rounds: `route: [[x, y], ...]` (and `pace`, cells/s) — ambientTick in js/core.js walks
+     them; they stop while you talk to them.
+   - Quest givers of the new regions: Hallbera (Ashen Fields), Ásvör (Withered Wood), Kolfinna (Rimeshore), Unnr
+     (Mirewell), Ása (Emberhold), Bárðr (Skaldhaven).
+   - New map objects: 'sign' (readable), 'lore' (a lore find: unlocks LORE[o.lore]), 'chest' (CHEST_LOOT, once per save).
+   ========================================================= */
+const townTalk = (name, lines) => () => say(name, [pick(lines)]);
+Object.assign(NPCS, {
+  // Emberhold
+  asa: { map: 'emberhold', name: 'Ása', title: 'Chapel-Keeper', x: 52.5, y: 31.5, dir: -1,
+    look: { body: '#c8b89a', trim: '#e07a3a', legs: '#6a5a48', skin: '#e8c8a8', hair: '#d8d0c0', head: 'hood', weapon: 'staff', wcol: '#8a6a3a', scale: 0.95 },
+    dname: 'Ása the Chapel-Keeper', greet: 'The coal is warm. It is always warm. Sit, if you like.', talkLabel: 'Talk',
+    talk: townTalk('Ása', ['Sigrun carried a coal here from the first Waystone. I tend it at the stone by the door; Sister Ingunn keeps the splinter inside. Between us the fire never goes out.', 'The old gods did not answer when the Tree burned. I do not think they stopped listening. I think they are ashamed.', 'Bring bread to Freyr, if you pass his shrine. Not because he eats it. Because we do.']) },
+  haki: { map: 'emberhold', name: 'Haki', title: 'Gate Warden', x: 44.5, y: 17.5, dir: 1, route: [[39.5, 17.5], [52.5, 17.5], [52.5, 19.5], [39.5, 19.5]], pace: 1.3,
+    look: { body: '#6a6a70', trim: '#b8402a', legs: '#3a3a40', skin: '#d8b090', hair: '#6a4a2a', beard: true, head: 'helm', weapon: 'spear', wcol: '#8a8a8a', scale: 1.02 },
+    dname: 'Haki, the Gate Warden', talkLabel: 'Talk',
+    talk: townTalk('Haki', ['New gate, same wolves. The old gate is for folk who live here. This one is for folk who want to.', 'We built the outer wall the year the farms came in. Every family that walked in from the Ash carried one stone. That’s why it’s crooked.', 'If you see Hallbera out at the farm, tell her the town still has room. She won’t come. Tell her anyway.']) },
+  bersi: { map: 'emberhold', name: 'Bersi', title: 'Lamplighter', x: 21.5, y: 24.5, dir: 1, route: [[21.5, 24.5], [26.5, 19.5], [40.5, 21.5], [45.5, 13.5], [40.5, 21.5], [20.5, 37.5], [20.5, 46.5], [21.5, 24.5]], pace: 1.4,
+    look: { body: '#5a4a3a', trim: '#e0b050', legs: '#3a302a', skin: '#e0c0a0', hair: '#a07a4a', weapon: 'staff', wcol: '#4a3a2a', scale: 0.9 },
+    dname: 'Bersi the Lamplighter', talkLabel: 'Talk',
+    talk: townTalk('Bersi', ['Forty-one lamps, and I light every one before the Ash-fog comes down. Nobody has ever thanked me. Everybody has noticed the one night I was late.', 'The oil comes from Skaldhaven. Whale oil, seal oil. Captain Ormr sends it for nothing. I asked him why once. He said, “So there is a light somewhere.”', 'Sigrun says a light is a promise. I just think it is nice not to walk into the well.']) },
+  oddny: { map: 'emberhold', name: 'Oddný', title: 'Farmer', x: 22.5, y: 44.5, dir: -1, route: [[22.5, 44.5], [31.5, 44.5], [31.5, 40.5], [12.5, 43.5]], pace: 1.2,
+    look: { body: '#7a6a4a', trim: '#c8a060', legs: '#4a3a2a', skin: '#e0b894', hair: '#c05a2a', weapon: 'fork', wcol: '#6b4a2a', scale: 0.95 },
+    dname: 'Oddný of the Farm Ward', talkLabel: 'Talk',
+    talk: townTalk('Oddný', ['Turnips. Ash-turnips, we call them. They grow grey but they taste the same. Mostly.', 'My pies are for folk who say please. You said please with your face. Close enough.', 'Gunnar still farms out in the Fields. Stubborn old goat. I send him a pie every week so he has a reason to come back.']) },
+  toki: { map: 'emberhold', name: 'Tóki', title: 'Child', x: 14.5, y: 45.5, dir: 1, route: [[14.5, 45.5], [30.5, 45.5], [18.5, 52.5], [8.5, 46.5]], pace: 2.6,
+    look: { body: '#8a5a3a', trim: '#c8a060', legs: '#4a3a2a', skin: '#f0d0b0', hair: '#e0c070', weapon: 'none', scale: 0.66 },
+    dname: 'Tóki', talkLabel: 'Talk',
+    talk: townTalk('Tóki', ['You can’t catch me! …Why aren’t you trying?', 'Astrid says she’s seen a Poring as big as a house. I bet it’s bigger than a house.', 'When I grow up I’m going to guard the new gate. Haki says I have to learn to stand still first.']) },
+  // Skaldhaven
+  bardr: { map: 'skaldhaven', name: 'Bárðr', title: 'Shipwright', x: 28.6, y: 46.4, dir: -1,
+    look: { body: '#6a5040', trim: '#a08050', legs: '#3a2e26', skin: '#d8b090', hair: '#8a8a8a', beard: true, weapon: 'mace', wcol: '#8a8a8a', scale: 1.05, wide: true },
+    dname: 'Bárðr the Shipwright', greet: 'Mind the keel. She is the first I have laid since the Ash.', talkLabel: 'Talk',
+    talk: townTalk('Bárðr', ['A longship is forty oaks and one stubborn man. We have the man. The oaks are the trouble.', 'Ormr wants her fast. Hallgerð wants her dry. I want her finished before I die. Only one of us will get what we want.', 'The Serpent’s Wine was mine, you know. My first ship. Ormr’s father took her north. I heard she is still out there, in the ice.']) },
+  eyvind: { map: 'skaldhaven', name: 'Eyvind', title: 'Dockhand', x: 29.5, y: 19.5, dir: 1, route: [[29.5, 19.5], [40.5, 19.5], [29.5, 20.5], [29.5, 9.5], [38.5, 9.5], [29.5, 10.5]], pace: 1.5,
+    look: { body: '#4a5a6a', trim: '#8a7a5a', legs: '#2e3440', skin: '#d8b89a', hair: '#3a2a20', weapon: 'none', scale: 1.0 },
+    dname: 'Eyvind the Dockhand', talkLabel: 'Talk',
+    talk: townTalk('Eyvind', ['Barrels on, barrels off. Some days the barrels are the most honest folk on the pier.', 'See the beacon on the Skerry? I row the oil out every week. The keeper never comes down to meet me. There is no keeper. There is just the fire.', 'The ice came in to the second pier last winter. We cut the Sea-Snake out with axes. Ormr swore for a week.']) },
+  gyda: { map: 'skaldhaven', name: 'Gyða', title: 'Net-Maker', x: 11.5, y: 47.5, dir: 1, route: [[11.5, 47.5], [2.5, 47.5], [11.5, 44.5], [16.5, 43.5]], pace: 1.1,
+    look: { body: '#5a6a5a', trim: '#c8b890', legs: '#3a3a30', skin: '#e0c0a0', hair: '#b0b0a8', head: 'hood', weapon: 'none', scale: 0.92 },
+    dname: 'Gyða the Net-Maker', talkLabel: 'Talk',
+    talk: townTalk('Gyða', ['A net is mostly holes. So is a life. It’s the knots that matter.', 'Hrafn down in Rimeshore mends the nets I make. He says they tear because I knot them too tight. I say they tear because he fishes for draugr.', 'Mind the smokehouse. Mind it with your nose, I mean. The fish are for Bárðr’s crew.']) },
+  thorgeir: { map: 'skaldhaven', name: 'Þorgeirr', title: 'Town Guard', x: 14.5, y: 42.5, dir: 1, route: [[14.5, 40.5], [14.5, 52.5]], pace: 1.2,
+    look: { body: '#6a6a70', trim: '#3a6ab0', legs: '#3a3a40', skin: '#d8b090', hair: '#c8a870', beard: true, head: 'helm', weapon: 'spear', wcol: '#8a8a8a', scale: 1.02 },
+    dname: 'Þorgeirr of the South Gate', talkLabel: 'Talk',
+    talk: townTalk('Þorgeirr', ['South gate. Rimeshore that way. Draugr that way too, so keep your axe loose.', 'The new wall? Keeps the snow out of Netmakers’ Row. Mostly it keeps Gyða in a good mood, which is worth more.', 'Kolfinna comes up from the sealing camp twice a season. Buy her a drink and she will tell you about the ship in the ice. Buy her two and she will stop.']) },
+  // quest givers of the new regions
+  hallbera: { map: 'ashen_fields', name: 'Hallbera', title: 'Farmwife', x: 80.5, y: 18.5, dir: -1,
+    look: { body: '#7a5a3a', trim: '#c8a060', legs: '#4a3a2a', skin: '#e0b894', hair: '#a8a098', weapon: 'fork', wcol: '#6b4a2a', scale: 0.96 },
+    dname: 'Hallbera the Farmwife', greet: 'You have walked a long way for burnt barley. Sit. There is bread.', talkLabel: 'Talk',
+    talk: townTalk('Hallbera', ['Everyone else went to Emberhold. I stayed. The barley needs somebody to argue with.', 'The wolves come out of the den at dusk and sit at the field’s edge, watching me. The big grey one watches longest.', 'My husband went to the watchtower the first Ash-winter to see what the smoke was. The tower is still there.']) },
+  asvor: { map: 'withered_wood', name: 'Ásvör', title: 'Huntress', x: 77.5, y: 35.2, dir: 1,
+    look: { body: '#4a5a3a', trim: '#8a6a3a', legs: '#3a3a2a', skin: '#d8b090', hair: '#3a2a1a', head: 'hood', weapon: 'bow', wcol: '#6b4a2a', scale: 0.98 },
+    dname: 'Ásvör the Huntress', greet: 'Quiet feet, stranger. The Wood is listening.', talkLabel: 'Talk',
+    talk: townTalk('Ásvör', ['Sigrun carried my mother home, once. Now I carry the ones Sigrun cannot reach.', 'We go round the old barrow. Always round. The dead in it do not know the war is over.', 'Skaði gives a clean kill if you ask her properly. Properly means cold, patient and alone.']) },
+  kolfinna: { map: 'rimeshore', name: 'Kolfinna', title: 'Sealer', x: 30.5, y: 79.5, dir: -1,
+    look: { body: '#4a5460', trim: '#a8b8c8', legs: '#2e3440', skin: '#e0c8b0', hair: '#e8e0d0', head: 'hood', weapon: 'spear', wcol: '#8a8a8a', scale: 0.98 },
+    dname: 'Kolfinna the Sealer', greet: 'Stay off the grey ice. The white will hold you. The grey is lying.', talkLabel: 'Talk',
+    talk: townTalk('Kolfinna', ['Seals, mostly. Oil for Skaldhaven’s lamps. Skins for everyone else. The draugr take a share. We let them.', 'The berg out past the frozen ship sings at night. My brother went to see why. I stopped listening for him after the third winter.', 'Njörðr gets a copper ring a year. It is not much. We are not much, anymore.']) },
+  unnr: { map: 'mirewell', name: 'Unnr', title: 'Elder of Stilt-Home', x: 79.5, y: 30.5, dir: 1,
+    look: { body: '#4a5a3a', trim: '#8aa870', legs: '#2e3426', skin: '#c8a888', hair: '#e8e8e0', head: 'hood', weapon: 'staff', wcol: '#5a4a2a', scale: 0.9 },
+    dname: 'Old Unnr of Stilt-Home', greet: 'You walked the planks without falling in. The bog must like you.', talkLabel: 'Talk',
+    talk: townTalk('Unnr', ['We live over the water so the bog cannot reach us. It reaches anyway. It just takes longer.', 'Eira comes to trade herbs for eels. She is a good girl. Too clever. The Crone was clever too.', 'Our grandmothers drowned gifts in the grotto for Nerthus. Something has been taking them. Nerthus does not leave bones.']) },
+});
+// Readable signposts, lore finds and chests (map.objs kinds; useObj in js/core.js).
+OBJ_TALK.sign = o => say(o.name || 'Signpost', o.text || ['The letters have weathered away.']);
+OBJ_TALK.lore = async o => {
+  const first = !P.flags.lore[o.lore]; P.flags.lore[o.lore] = true;
+  await say(o.name, o.text);
+  if (first) { P.flags.loreFound = (P.flags.loreFound || 0) + 1; if (typeof questToast === 'function') questToast(`Chronicle · ${LORE[o.lore] ? LORE[o.lore][0] : o.name}`, 'new'); if (typeof questRefresh === 'function') questRefresh(); UI.dirty = true; }
+};
+OBJ_TALK.chest = o => { chestOpen(o); if (typeof questRefresh === 'function') questRefresh(); };
+// Chest loot tables: zeny [min, max], items [[id, n, chance?]], equip (a random piece at that level), pick (one of).
+const CHEST_LOOT = {
+  farm: { zeny: [150, 400], items: [['red_potion', 4], ['apple', 6], ['orange_potion', 1, 0.5]] },
+  tower: { zeny: [200, 500], items: [['orange_potion', 3], ['fly_wing', 3]], equip: 12 },
+  den: { zeny: [400, 900], items: [['orange_potion', 4], ['wolf_pelt', 3]], equip: 14 },
+  lodge: { zeny: [300, 700], items: [['orange_potion', 3], ['yellow_potion', 2], ['fly_wing', 4]] },
+  wtower: { zeny: [400, 800], items: [['yellow_potion', 3]], equip: 20 },
+  barrow: { zeny: [900, 1800], items: [['yellow_potion', 4], ['bone_shard', 4], ['ectoplasm', 2]], equip: 26 },
+  captain: { zeny: [1500, 3000], items: [['yellow_potion', 4], ['rusted_chain', 3]], equip: 30 },
+  cells: { zeny: [1200, 2600], items: [['yellow_potion', 3], ['bone_shard', 4], ['ectoplasm', 3]] },
+  yard: { zeny: [500, 1200], items: [['tree_root', 4], ['red_potion', 5], ['fly_wing', 3]] },
+  skerry: { zeny: [800, 1600], items: [['orange_potion', 4], ['frost_heart', 1, 0.15]] },
+  ship: { zeny: [1500, 3000], items: [['white_potion', 3], ['rime_essence', 2], ['draugr_net', 2]] },
+  rtower: { zeny: [1200, 2400], items: [['white_potion', 2]], equip: 34 },
+  icecave: { zeny: [3000, 5000], items: [['white_potion', 5], ['frost_heart', 1, 0.5]], equip: 40 },
+  stilts: { zeny: [1500, 2500], items: [['white_potion', 3], ['blue_potion', 2], ['toad_skin', 2]] },
+  grotto: { zeny: [4000, 7000], items: [['white_potion', 5], ['bog_pearl', 1, 0.6]], equip: 46 },
+  mines: { zeny: [3000, 6000], items: [['blue_potion', 3], ['amethyst', 3], ['magma_core', 2]] },
+  ancestors: { zeny: [4000, 8000], items: [['rune_stone', 3], ['gold_leaf', 1, 0.5]], equip: 50 },
+  adit: { zeny: [6000, 10000], items: [['white_potion', 6], ['deep_ember', 1, 0.5], ['star_iron', 1]], equip: 52 },
+  einherjar: { zeny: [8000, 14000], items: [['honey_mead', 4], ['aesir_core', 2]], equip: 54 },
+  span: { zeny: [6000, 12000], items: [['honey_mead', 3], ['prism_shard', 3], ['star_glass', 1, 0.3]] },
+  nastrond: { zeny: [20000, 40000], items: [['gjoll_draught', 4], ['soul_tonic', 3], ['hel_obol', 6], ['black_sun_shard', 1, 0.25]] },
+  helroad: { zeny: [15000, 30000], items: [['gjoll_draught', 3], ['hel_obol', 4], ['grave_rose', 2]] },
+  roots: { zeny: [30000, 50000], items: [['gjoll_draught', 6], ['hel_obol', 10], ['black_sun_shard', 1], ['golden_apple', 1, 0.3]], equip: 54 },
+};
+Object.assign(LORE, {
+  af_watch: ['The Watch Log', 'The last watchman of the Ashen Fields went down to the wolves in the barley with eight arrows. There is no Day 44.'],
+  af_barrow: ['The Barrow of the Nine', 'The Nine of Hallr kept the fields before the Tree was young. Wake them and the barley dies. The barley died anyway.'],
+  af_shrine: ['Freyr’s Shrine', 'The farmers still leave bread for the god of the harvest, in case he is only slow.'],
+  af_grimsfield: ['Grimsfield', 'Where Emberhold’s levy met the first dead that walked out of the Ash. Nobody came back to say who won.'],
+  af_wolfden: ['The Keeper’s Satchel', 'Sigrun lost a Waystone-keeper on the road to the farms in the first Ash-winter. His tally stick was in the Wolf Den.'],
+  af_farms: ['The Farms of the Fields', 'Hallbera stayed on her farm when everyone else went to Emberhold. She says the barley needs somebody to argue with.'],
+  ww_tower: ['The North Watch', 'Ulf watched the Wood for nine years and saw a wolf eat the moon. Nobody believed him. Now everyone does.'],
+  ww_skadi: ['Skaði’s Stone', 'The huntress of the mountains still gives the hunters of the Wood a clean kill, sometimes, if they ask her properly.'],
+  ww_barrow: ['Hrothgar Bear-Arm', 'The hero of the old barrow still holds the Wood against frost-giants a thousand years dead. His grave is empty.'],
+  rs_ship: ['The Ormsvín', 'Ormr’s father sailed the Serpent’s Wine to find the Drowned Jarl. It came back in the ice, empty.'],
+  rs_whale: ['Njörðr’s Altar', 'The sealers pay the sea-god a copper ring a year. The ice has not taken the camp yet, so they keep paying.'],
+  rs_icecave: ['The Singing Berg', 'The crew of the Ormsvín found the Jarl’s hall under the berg and went down, one by one, to listen to him sing.'],
+  mw_grove: ['The Drowned Grove', 'The bog-folk gave their best to Nerthus, the earth-mother, alive. The bog does not forget a gift. It gives back the wrong thing.'],
+  mw_grotto: ['The Offering-Stone', 'The bog-folk drowned their gifts in the grotto. Something took them and left the bones.'],
+  hel_nastrond: ['Náströnd', 'The Corpse-Shore, a hall woven of serpents, for oath-breakers and murderers. Níðhöggr no longer comes to feed. The dead are bored.'],
+  hel_unburied: ['The Unburied Field', 'Those who died with no one to bury them wait on the field, counting each other.'],
+  hel_roots: ['The Grey Roots', 'Níðhöggr’s brood learned to gnaw from him. They are patient, and there are a great many of them.'],
+  eh_chapel: ['The Ember-Stone', 'Sigrun carried a coal from the first Waystone to the chapel stone, so Emberhold would have a fire the Ash could not reach.'],
+  sk_beacon: ['The Skerry Beacon', 'The beacon has burned every night since the Ash so the longships can find the one harbour that still answers. Ormr pays for the oil.'],
+  gh_rollcall: ['The Roll of the Watch', 'Every peg on Gloamheim’s roll is in the “on watch” row. Nobody has come off watch in forty years.'],
+  gh_tyr: ['Tyr’s Altar', 'An oath sworn on Tyr’s hand cannot be broken, only kept too long.'],
+  gh_cells: ['The Lower Cells', 'The keep’s prisoners were not freed when the garrison died, and not fed either. Some are still counting.'],
+  nd_mines: ['The Shift-Bell', 'Nýr still rings the shift-bell every morning. The miners who answer have been dead for most of three hundred years.'],
+  nd_ancestors: ['The King-List', 'Nine dwarf-kings and an empty plinth, for whoever forged Gleipnir. Brokkr and Sindri still argue about it.'],
+  nd_adit: ['The Twelve', 'Twelve miners went down the old adit to look at the road of the dead. They are still working. They do not know how to stop.'],
+  bf_einherjar: ['The Einherjar’s Field', 'The Einherjar fought every day and feasted every night. Now they only fight, and have not noticed.'],
+  bf_frigg: ['Frigg’s Garden', 'One golden apple is left on Frigg’s glass trees, for whoever mends the bridge.'],
+  bf_watch: ['The Valkyrie Watch', 'Göndul blew the watch-horn when the bridge broke. Nobody came. She is still waiting.'],
+  asa_pilgrim: ['The Old Gods’ Due', 'Bread for Freyr, a strip of hide for Skaði, a copper ring for Njörðr. The gods did not answer. The people who left the gifts felt better anyway.'],
+});

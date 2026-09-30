@@ -111,23 +111,39 @@ function hlog(msg, cls) { if (!HCTX.quiet) log(msg, cls); }
 
 /* =========================================================
    Map generation
+   genMap(id) builds a map in steps (see the header of js/data/maps.js):
+     mapBase    1. base terrain for `gen`, 2. the map's layout, the Waystone tile
+     mapGrow    cycle 9, a grown map (`d.grow`): the original d.grow.w0 x d.grow.h0 region is generated exactly as
+                before (the map's own rng stream, pockets sealed as before) and copied into the grown d.w x d.h grid; the
+                new area east and south gets its own seeded stream (d.grow.seed) for its terrain and d.grow.layout
+     mapFinish  3. NPCs and boards, 4. connectivity, heights, minimap
+   Generator types (`gen`): town, field, dungeon, arena, sky, and from cycle 9
+     cave      natural caves (caveCA: cellular automata, every pocket joined), rock walls (T.WALL), an uneven floor,
+               underground pools where the def sets `water` (0..1, the share of low ground that floods)
+     interior  solid walls, rooms carved by the layout (like dungeon), tagged for the renderer (render.kind 'interior')
+   m.kind = render.kind ('cave' | 'interior' | null), passed through for the renderer.
    ========================================================= */
-function genMap(id) {
-  if (mapCache[id]) return mapCache[id];
-  if (!MAPDEFS[id]) deepEnsure(id);   // round 7: helheim_deep_<n> floors are generated on demand (js/data/maps.js deepDef)
-  const d = MAPDEFS[id], w = d.w, h = d.h, rng = mulberry32(d.seed);
-  const m = { id, d, w, h, t: new Uint8Array(w * h), deco: new Uint8Array(w * h), surf: new Uint8Array(w * h), var: new Uint8Array(w * h), warps: [], npcs: [], objs: [], lights: [], braziers: [], decor: [], entry: null, bossPos: null, gcol: [] };
+const SOLID_GEN = { dungeon: 1, interior: 1, cave: 1 };
+const mapFiller = gen => SOLID_GEN[gen] ? T.WALL : gen === 'arena' ? T.LAVA : gen === 'sky' ? T.VOID : T.TREE;
+// Terrain brushes bound to one map, one rng stream and the map's current size (the layout kit K).
+function mapKit(m, rng, gen) {
+  const w = m.w, h = m.h;
   const set = (x, y, v) => { if (x >= 0 && y >= 0 && x < w && y < h) m.t[y * w + x] = v; };
   const clearC = (cx, cy, r) => { for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r + 0.5 && x > 0 && y > 0 && x < w - 1 && y < h - 1) m.t[y * w + x] = 0; };
   const clearR = (x0, y0, x1, y1) => { for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) if (x > 0 && y > 0 && x < w - 1 && y < h - 1) m.t[y * w + x] = 0; };
-  const carve = (x0, y0, x1, y1, r) => { let x = x0, y = y0, g = 0; while ((x !== x1 || y !== y1) && g++ < 6000) { clearC(x, y, r); if (r >= 2 && d.gen === 'field') m.deco[y * w + x] = 6; if (rng() < 0.72) { if (Math.abs(x1 - x) > Math.abs(y1 - y)) x += Math.sign(x1 - x); else y += Math.sign(y1 - y); } else { if (rng() < 0.5) x += rng() < 0.5 ? 1 : -1; else y += rng() < 0.5 ? 1 : -1; x = clamp(x, 2, w - 3); y = clamp(y, 2, h - 3); } } clearC(x1, y1, r); };
-  for (let i = 0; i < w * h; i++) m.var[i] = (rng() * 256) | 0;
-
-  // 1. Base terrain for the generator type (see js/data/maps.js)
-  if (d.gen === 'town') {
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x === 0 || y === 0 || x === w - 1 || y === h - 1) set(x, y, T.WALL);
-  } else if (d.gen === 'field') {
+  const carve = (x0, y0, x1, y1, r) => { let x = x0, y = y0, g = 0; while ((x !== x1 || y !== y1) && g++ < 6000) { clearC(x, y, r); if (r >= 2 && gen === 'field') m.deco[y * w + x] = 6; if (rng() < 0.72) { if (Math.abs(x1 - x) > Math.abs(y1 - y)) x += Math.sign(x1 - x); else y += Math.sign(y1 - y); } else { if (rng() < 0.5) x += rng() < 0.5 ? 1 : -1; else y += rng() < 0.5 ? 1 : -1; x = clamp(x, 2, w - 3); y = clamp(y, 2, h - 3); } } clearC(x1, y1, r); };
+  const K = { set, clearC, clearR, carve, rng, T, w, h };
+  K.caveCA = (x0, y0, x1, y1, o) => caveCA(m, K, x0, y0, x1, y1, o);
+  return K;
+}
+// Base terrain for a generator type on the tiles where inR(x, y) holds (the whole map, or a grown map's new area).
+function mapTerrain(m, d, gen, rng, inR, K) {
+  const w = m.w, h = m.h, set = K.set;
+  if (gen === 'town') {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inR(x, y) && (x === 0 || y === 0 || x === w - 1 || y === h - 1)) set(x, y, T.WALL);
+  } else if (gen === 'field') {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (!inR(x, y)) continue;
       if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) { set(x, y, rng() < 0.7 ? T.TREE : T.ROCK); continue; }
       const n = vnoise(x / 7, y / 7, d.seed);
       const r = rng() * (0.6 + n * 0.8);
@@ -135,23 +151,123 @@ function genMap(id) {
       else if (d.ruins && rng() < d.ruins) set(x, y, T.RUIN);
       if (m.t[y * w + x] === 0 && rng() < 0.13) m.deco[y * w + x] = 1 + ((rng() * 4) | 0);
     }
-  } else if (d.gen === 'dungeon') m.t.fill(T.WALL);
-  else if (d.gen === 'arena') m.t.fill(T.LAVA);
-  else if (d.gen === 'sky') m.t.fill(T.VOID);
+  } else if (gen === 'dungeon' || gen === 'interior') { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inR(x, y)) m.t[y * w + x] = T.WALL; }
+  else if (gen === 'cave') {
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inR(x, y)) m.t[y * w + x] = T.WALL;
+    if (inR(0, 0)) { caveCA(m, K, 2, 2, w - 3, h - 3, d.cave); if (d.water) cavePools(m, d, rng, d.water); }
+  }
+  else if (gen === 'arena') { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inR(x, y)) m.t[y * w + x] = T.LAVA; }
+  else if (gen === 'sky') { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (inR(x, y)) m.t[y * w + x] = T.VOID; }
+}
+/* Cycle 9: natural caves. A cellular automaton (the 4-5 rule, `steps` rounds from `fill` random rock) inside the box
+   [x0, y0]..[x1, y1] (inclusive; the box's rim stays rock), then every open pocket of `min`+ tiles is joined to the
+   largest one by a winding tunnel (K.carve, radius 1) and smaller pockets are filled in. Only K.rng is used, so a cave
+   is the same on every visit. Returns the open tiles' count. Layouts may call it for part of a map (K.caveCA). */
+function caveCA(m, K, x0, y0, x1, y1, o) {
+  o = o || {};
+  const w = m.w, rng = K.rng, fill = o.fill !== undefined ? o.fill : 0.45, steps = o.steps !== undefined ? o.steps : 5, min = o.min || 10;
+  const gw = x1 - x0 + 1, gh = y1 - y0 + 1; if (gw < 5 || gh < 5) return 0;
+  let g = new Uint8Array(gw * gh), g2 = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) g[y * gw + x] = (x === 0 || y === 0 || x === gw - 1 || y === gh - 1 || rng() < fill) ? 1 : 0;
+  for (let s = 0; s < steps; s++) {
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      if (x === 0 || y === 0 || x === gw - 1 || y === gh - 1) { g2[y * gw + x] = 1; continue; }
+      let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += g[(y + dy) * gw + x + dx];
+      let n2 = n; if (s < 2) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue; const xx = x + dx, yy = y + dy; n2 += (xx < 0 || yy < 0 || xx >= gw || yy >= gh) ? 1 : g[yy * gw + xx]; }
+      g2[y * gw + x] = n >= 5 || (s < 2 && n2 <= 2) ? 1 : 0;
+    }
+    const t = g; g = g2; g2 = t;
+  }
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) m.t[(y0 + y) * w + x0 + x] = g[y * gw + x] ? T.WALL : 0;
+  // pockets (4-connected), largest first
+  const lab = new Int32Array(gw * gh).fill(-1), comps = [];
+  for (let i = 0; i < gw * gh; i++) {
+    if (g[i] || lab[i] >= 0) continue;
+    const c = [], q = [i]; lab[i] = comps.length;
+    while (q.length) { const k = q.pop(); c.push(k); const x = k % gw, y = (k / gw) | 0; for (let d = 0; d < 4; d++) { const nx = x + DX[d], ny = y + DY[d]; if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue; const j = ny * gw + nx; if (!g[j] && lab[j] < 0) { lab[j] = comps.length; q.push(j); } } }
+    comps.push(c);
+  }
+  if (!comps.length) return 0;
+  const order = comps.map((c, i) => i).sort((a, b) => comps[b].length - comps[a].length || a - b);
+  const main = comps[order[0]].slice();
+  for (let oi = 1; oi < order.length; oi++) {
+    const c = comps[order[oi]];
+    if (c.length < min) { for (const k of c) m.t[(y0 + ((k / gw) | 0)) * w + x0 + k % gw] = T.WALL; continue; }
+    // the closest pair (every 3rd tile of the pocket against every 2nd of the joined area: plenty for a tunnel)
+    let bd = 1e9, ba = c[0], bb = main[0];
+    for (let a = 0; a < c.length; a += 3) { const ax = c[a] % gw, ay = (c[a] / gw) | 0; for (let b = 0; b < main.length; b += 2) { const d = Math.abs(ax - main[b] % gw) + Math.abs(ay - ((main[b] / gw) | 0)); if (d < bd) { bd = d; ba = c[a]; bb = main[b]; } } }
+    K.carve(x0 + ba % gw, y0 + ((ba / gw) | 0), x0 + bb % gw, y0 + ((bb / gw) | 0), 1);
+    for (const k of c) main.push(k);
+  }
+  let open = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (m.t[y * w + x] === 0) open++;
+  return open;
+}
+// Underground pools: the lowest `amt` share of a cave's floor (by a smooth noise) floods with still water (T.WATER).
+// Layouts carve their chambers and tunnels afterwards, which leaves fords where a tunnel crosses a pool.
+function cavePools(m, d, rng, amt) {
+  const w = m.w, h = m.h, thr = 1 - clamp(amt, 0, 0.6);
+  for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) {
+    if (m.t[y * w + x] !== 0) continue;
+    const n = vnoise(x / 6, y / 6, d.seed + 21) * 0.8 + vnoise(x / 2.5, y / 2.5, d.seed + 22) * 0.2;
+    if (n > thr) m.t[y * w + x] = T.WATER;
+  }
+}
+function mapNew(id, d, w, h) {
+  return { id, d, w, h, t: new Uint8Array(w * h), deco: new Uint8Array(w * h), surf: new Uint8Array(w * h), var: new Uint8Array(w * h), warps: [], npcs: [], objs: [], lights: [], braziers: [], decor: [], entry: null, bossPos: null, gcol: [] };
+}
+// Steps 1 and 2 at the map's original size, from its own rng stream (identical to the pre-cycle-9 generator).
+function mapBase(id, d, w, h, rng) {
+  const m = mapNew(id, d, w, h), K = mapKit(m, rng, d.gen);
+  for (let i = 0; i < w * h; i++) m.var[i] = (rng() * 256) | 0;
+  // 1. Base terrain for the generator type (see js/data/maps.js)
+  mapTerrain(m, d, d.gen, rng, () => true, K);
   // 2. The map's own layout: entry, waystone, warps, rooms, props
-  if (d.layout) d.layout(m, { set, clearC, clearR, carve, rng, T, w, h, d });
-  if (m.way) set(Math.floor(m.way.x), Math.floor(m.way.y), T.WAY);
+  if (d.layout) d.layout(m, Object.assign(K, { d }));
+  if (m.way) K.set(Math.floor(m.way.x), Math.floor(m.way.y), T.WAY);
+  return m;
+}
+// Flood from the entry; open tiles it cannot reach become `filler`. Returns the reach mask.
+function mapSeal(m, filler) {
+  const w = m.w, h = m.h, seen = new Uint8Array(w * h), q = [m.entry.y * w + m.entry.x]; seen[q[0]] = 1;
+  while (q.length) { const c = q.pop(), cx = c % w, cy = (c / w) | 0; for (let k = 0; k < 4; k++) { const nx = cx + DX[k], ny = cy + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const ni = ny * w + nx; if (!seen[ni] && m.t[ni] === 0) { seen[ni] = 1; q.push(ni); } } }
+  for (let i = 0; i < w * h; i++) if (m.t[i] === 0 && !seen[i]) m.t[i] = filler;
+  return seen;
+}
+// Cycle 9: grow a map east and south. The original region keeps every tile, path, tree, warp and decor entry.
+function mapGrow(m0, d, g) {
+  for (const wp of m0.warps) if (wp.x >= 0 && wp.y >= 0 && wp.x < m0.w && wp.y < m0.h) m0.t[wp.y * m0.w + wp.x] = 0;
+  mapSeal(m0, mapFiller(d.gen));   // the original's pockets stay sealed exactly as before
+  const W = d.w, H = d.h, w0 = m0.w, h0 = m0.h, m = m0;
+  for (const k of ['t', 'deco', 'surf', 'var']) { const a = new Uint8Array(W * H), o = m0[k]; for (let y = 0; y < h0; y++) a.set(o.subarray(y * w0, (y + 1) * w0), y * W); m[k] = a; }
+  m.w = W; m.h = H;
+  const rng = mulberry32(g.seed || ((d.seed * 7919 + 104729) >>> 0) || 1), inR = (x, y) => x >= w0 || y >= h0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inR(x, y)) m.var[y * W + x] = (rng() * 256) | 0;
+  const K = Object.assign(mapKit(m, rng, d.gen), { d, w0, h0 });
+  mapTerrain(m, g.terrain ? Object.assign({}, d, g.terrain) : d, g.gen || d.gen, rng, inR, K);   // terrain: { trees, rocks, ruins } for the new area
+  if (g.layout) g.layout(m, K);
+  m.grown = { w0, h0 };
+  return m;
+}
+function genMap(id) {
+  if (mapCache[id]) return mapCache[id];
+  if (!MAPDEFS[id]) deepEnsure(id);   // round 7: helheim_deep_<n> floors are generated on demand (js/data/maps.js deepDef)
+  const d = MAPDEFS[id], rng = mulberry32(d.seed), g = d.grow;
+  if (SOLID_GEN[d.gen] && d.gen !== 'dungeon') {   // cycle 9: caves and interiors are time-locked and tagged for the renderer
+    d.render = d.render || {}; if (!d.render.kind) d.render.kind = d.gen; if (d.render.tod === undefined) d.render.tod = false;
+    if (!d.render.weather) d.render.weather = { amb: [] };
+  }
+  let m = mapBase(id, d, g ? g.w0 : d.w, g ? g.h0 : d.h, rng);
+  if (g) m = mapGrow(m, d, g);
+  const w = m.w, h = m.h, set = (x, y, v) => { if (x >= 0 && y >= 0 && x < w && y < h) m.t[y * w + x] = v; };
+  m.kind = (d.render && d.render.kind) || null;
   // 3. NPCs and bounty boards declared in data
-  for (const k in NPCS) { const n = NPCS[k]; if (n.map === id && !n.show && !n.at) m.npcs.push({ id: k, name: n.name, title: n.title, x: n.x, y: n.y, dir: n.dir || 1, look: n.look }); } // `show` / `at` NPCs: npcSync()
+  for (const k in NPCS) { const n = NPCS[k]; if (n.map === id && !n.show && !n.at) { const e = { id: k, name: n.name, title: n.title, x: n.x, y: n.y, dir: n.dir || 1, look: n.look }; if (n.route) { e.route = n.route; e.home = [n.x, n.y]; } m.npcs.push(e); } } // `show` / `at` NPCs: npcSync(); cycle 9: `route` walkers (ambientTick)
   if (m.way) m.objs.push({ kind: 'way', x: m.way.x, y: m.way.y, name: 'Waystone' });
   for (const k in BOARDS) { const b = BOARDS[k]; if (b.map === id) m.objs.push({ kind: 'board', board: k, name: b.name, title: b.title, x: b.x, y: b.y }); }
   for (const wp of m.warps) set(wp.x, wp.y, 0);
 
   // Connectivity: seal pockets the player can never reach.
-  const seen = new Uint8Array(w * h), q = [m.entry.y * w + m.entry.x]; seen[q[0]] = 1;
-  while (q.length) { const c = q.pop(), cx = c % w, cy = (c / w) | 0; for (let k = 0; k < 4; k++) { const nx = cx + DX[k], ny = cy + DY[k]; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue; const ni = ny * w + nx; if (!seen[ni] && m.t[ni] === 0) { seen[ni] = 1; q.push(ni); } } }
-  const filler = d.gen === 'dungeon' ? T.WALL : d.gen === 'arena' ? T.LAVA : d.gen === 'sky' ? T.VOID : T.TREE;
-  for (let i = 0; i < w * h; i++) if (m.t[i] === 0 && !seen[i]) m.t[i] = filler;
+  const seen = mapSeal(m, mapFiller(d.gen));
   m.reach = seen;
   // Scatter decor that must stand on open ground loses its place when its tile was sealed.
   m.decor = m.decor.filter(e => e.on !== 'open' || m.t[clamp(Math.floor(e.y), 0, h - 1) * w + clamp(Math.floor(e.x), 0, w - 1)] === 0);
@@ -177,6 +293,7 @@ function genMap(id) {
     if (d.gen === 'field') hv = (vnoise(vx / 9, vz / 9, d.seed + 11) - 0.5) * 1.8 + (vnoise(vx / 3.5, vz / 3.5, d.seed + 12) - 0.5) * 0.35;
     else if (d.gen === 'town') hv = (vnoise(vx / 6, vz / 6, d.seed) - 0.5) * 0.18;
     else if (d.gen === 'sky') hv = (vnoise(vx / 5, vz / 5, d.seed + 11) - 0.5) * 0.3;
+    else if (d.gen === 'cave') hv = (vnoise(vx / 5, vz / 5, d.seed + 11) - 0.5) * 0.9 + (vnoise(vx / 2, vz / 2, d.seed + 12) - 0.5) * 0.2;   // cycle 9: an uneven cave floor
     if (d.gen === 'arena') { const c = lavaAt(vx - 1, vz - 1) + lavaAt(vx, vz - 1) + lavaAt(vx - 1, vz) + lavaAt(vx, vz); hv = c === 4 ? -1.0 : c > 0 ? -0.15 : 0.15; }
     else {
       const q4 = [tAt(vx - 1, vz - 1), tAt(vx, vz - 1), tAt(vx - 1, vz), tAt(vx, vz)];
@@ -195,13 +312,13 @@ function genMap(id) {
   // Minimap bitmap
   const MINI_T = { [T.LAVA]: [210, 80, 30], [T.WAY]: [255, 150, 60], [T.TREE]: [40, 80, 40], [T.WATER]: [30, 54, 88], [T.ICE]: [168, 206, 232], [T.VOID]: [22, 20, 36], [T.CRYSTAL]: [170, 110, 222], [T.PROP]: [116, 94, 72], [T.GRAVE]: [96, 92, 104] };
   const MINI_S = { 5: [214, 200, 170], 6: [214, 200, 170], [SURF.ICE]: [204, 230, 248], [SURF.MUD]: [96, 84, 54], [SURF.BRIDGE]: [176, 140, 92], [SURF.RAIL]: [132, 120, 108], [SURF.SAND]: [88, 84, 92], [SURF.GOLD]: [232, 192, 84] };
-  const mc = document.createElement('canvas'); mc.width = w; mc.height = h; const g = mc.getContext('2d'); const img = g.createImageData(w, h);
+  const mc = document.createElement('canvas'); mc.width = w; mc.height = h; const gc = mc.getContext('2d'); const img = gc.createImageData(w, h);
   for (let i = 0; i < w * h; i++) {
     const t = m.t[i]; const L = d.look, base = L.g2; let c = t === 0 ? [base[0] + 40, base[1] + 40, base[2] + 40].map(v => Math.min(255, v)) : MINI_T[t] || [60, 58, 64];
     if (t === 0 && MINI_S[m.surf[i] || m.deco[i]]) c = MINI_S[m.surf[i] || m.deco[i]];
     img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = 255;
   }
-  g.putImageData(img, 0, 0); m.mini = mc;
+  gc.putImageData(img, 0, 0); m.mini = mc;
   mapCache[id] = m;
   return m;
 }
@@ -527,13 +644,19 @@ function randomSpot(minFromEntry = 8, rgn) {
   }
   return null;
 }
-function spawnMobRandom(type) { const s = randomSpot(8, map.d.spawnRgn && map.d.spawnRgn[type]); if (s) mobs.push(makeMob(type, s.x, s.y)); }   // round 7: spawnRgn
+// Round 7: spawnRgn[type]; cycle 9: a spawns entry may carry its own region ([type, n, [x0, y0, x1, y1]]), kept on the
+// monster (m.rgn) so it respawns there (grown maps: the old monsters stay in the old region, new ones in the new).
+function spawnMobRandom(type, rgn) { if (!rgn) rgn = map.d.spawnRgn && map.d.spawnRgn[type]; const s = randomSpot(8, rgn || undefined); if (s) { const m = makeMob(type, s.x, s.y); if (rgn) m.rgn = rgn; mobs.push(m); } }
 function spawnAll() {
   mobs = [];
-  for (const [type, n] of map.d.spawns) for (let i = 0; i < n; i++) spawnMobRandom(type);
+  for (const e of map.d.spawns) for (let i = 0; i < e[1]; i++) spawnMobRandom(e[0], e[2]);
   if (map.d.boss && map.bossPos && bossAlive(map.d.boss)) mobs.push(makeMob(map.d.boss, map.bossPos.x, map.bossPos.y));
+  if (map.d.elites) for (const e of map.d.elites) if (eliteAlive(e)) { const m = makeVariant(e.key, e.x, e.y); m.caveElite = e.key; mobs.push(m); }   // cycle 9: cave mini-bosses
   if (map.d.deep) deepPopulate();   // round 7: the Deep's floors are filled by their runtime
 }
+// Cycle 9: a map's elite (a cave's mini-boss, MAPDEFS[id].elites = [{ key, x, y, respawn }]) comes back `respawn` seconds
+// of play after it fell (P.flags.elites[key] = playTime of the kill); without `respawn` it stays dead.
+function eliteAlive(e) { const t = P.flags.elites && P.flags.elites[e.key]; return t === undefined || (!!e.respawn && P.playTime - t >= e.respawn); }
 // Round 7: a slain MVP stays dead, unless it has `respawn` (seconds of play since it fell: P.flags.bossAt).
 function bossAlive(k) { if (!P.flags.bosses[k]) return true; const r = MOBS[k] && MOBS[k].respawn, at = P.flags.bossAt && P.flags.bossAt[k]; return !!r && (at === undefined || P.playTime - at >= r); }
 /* Perf round 5: spatial grid for mob queries (mobsNear, mobsInCone, nearestMob, traps; softTarget / meleeArc in
@@ -810,9 +933,10 @@ function killMob(m) {
   for (const qi of questDropsFor(m)) dropItem(makeItem(qi), m);
   burst(m.x, m.y, d.h * 0.5, d.col || (d.look && d.look.body) || '#888', 14, 2.2);
   const K = P.flags.kills = P.flags.kills || {}; K[m.type] = (K[m.type] || 0) + 1; if (m.variant && m.variant !== m.type) K[m.variant] = (K[m.variant] || 0) + 1;
+  if (m.caveElite) (P.flags.elites = P.flags.elites || {})[m.caveElite] = P.playTime;   // cycle 9
   if (d.boss) bossDefeated(m);
   else if (d.elite) { if (bossShown === m) { $('bossbar').hidden = true; bossShown = null; } banner(d.name, 'has fallen', 'band'); Sfx.victory(); }
-  else if (!m.summoned && !m.variant && !m.deep && !m.rush) { const type = m.type, mid = map.id; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type); }); }
+  else if (!m.summoned && !m.variant && !m.deep && !m.rush) { const type = m.type, mid = map.id, rg = m.rgn; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type, rg); }); }
   if (m.deep) deepKilled(m);   // round 7: floor progress, the warden, the way down
   questEvent('kill', m);
   if (P.target === m) P.target = null;
@@ -1453,7 +1577,7 @@ function update(dt) {
   time += dt;
   if (PARTY && PARTY.members.indexOf(P) < 0) PARTY = null;   // cycle 8: a new game (or a test) replaced the hero
   for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { rmAt(timers, i); if (PARTY && t.h !== P) asOwner(t.h, t.fn); else t.fn(); } }
-  if (started) { updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
+  if (started) { ambientTick(dt); updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
   if (typeof CINE !== 'undefined' && CINE.active) { if (P) P.iframes = Math.max(P.iframes || 0, 0.3); } // scenes freeze the monsters and shield you
   else if (!AILOD.on || !P) for (const m of mobs) updateMob(m, dt);
   else {   // perf round 5: AI level of detail (AILOD)
@@ -1533,6 +1657,7 @@ function gotoMap(id, x, y, quiet) {
   const firstVisit = !P.flags.seen[id]; P.flags.seen[id] = true;
   if (first) squadEmit('map_enter', { map: id });
   npcSync(); compSync(true);   // round 6: the pet and Huginn arrive with you
+  ambientEnter();              // cycle 9: townsfolk walk their rounds, critters, chests' state
   enterWorld();
   if (first || !quiet) banner(map.d.name, map.d.sub);
   if (firstVisit && map.d.intro) log(map.d.intro, 'sys');
@@ -1549,6 +1674,130 @@ function useObj(o) {
   } else if (o.kind === 'board') questBoard(o);
   else if (OBJ_TALK[o.kind]) OBJ_TALK[o.kind](o);
   else if (o.kind === 'anvil') log(o.text || 'The anvil is still warm. Brokkr never lets it go cold.', 'sys');
+}
+/* =========================================================
+   Cycle 9: ambient life, chests
+   - Townsfolk: an NPCS entry with `route: [[x, y], ...]` walks its round (goNear + followPath at `pace`, default 1.5
+     cells/s), pausing 2-6 s at each point; it stops while you talk to it or a scene plays. map.npcs entries keep
+     `route` and `home`; n.moving / n.fx / n.fy / n.walk drive the walk frames like an escort's.
+   - Critters: MAPDEFS[id].critters = [[kind, n, [x0, y0, x1, y1]?], ...] (kinds in CRITTERS). Each is a
+     window.COMPANIONS entry { critter: kind, manual: true, owner: itself, kind: 'critter', bird?, sheet, scale, x, y,
+     z, fx, fy, state: 'idle' | 'walk' | 'fly', walk } driven here: they wander, and scatter (run, or take wing) when a
+     hero comes close. They cannot be targeted and never fight. Placement and wandering use their own seeded stream
+     (AMB.r), never Math.random, so monster rolls are untouched. The sheet is the first of CRITTERS[kind].sheets the
+     sprite index has (art hook: critter_* sheets); with none, the critter is not drawn.
+   - Chests: map.objs { kind: 'chest', id, x, y, loot, name, need?, needText? } (OBJ_TALK.chest -> chestOpen). Loot
+     tables are CHEST_LOOT (js/data/npcs.js). Opened once per save (P.flags.chests[id]); o.open mirrors it for the
+     renderer (a lid).
+   ========================================================= */
+const CRITTERS = {
+  crow: { sheets: ['critter_crow', 'pet_huginn'], kind: 'critter', bird: true, scale: 0.5, fly: true, shy: 4.5 },
+  raven: { sheets: ['critter_raven', 'pet_huginn'], kind: 'critter', bird: true, scale: 0.62, fly: true, shy: 5 },
+  hare: { sheets: ['critter_hare', 'mob_hollow_hare'], kind: 'critter', scale: 0.42, speed: 1.2, flee: 5.5, shy: 3.5, hop: true },
+  deer: { sheets: ['critter_deer'], kind: 'critter', scale: 0.9, speed: 1, flee: 6, shy: 6 },
+  rat: { sheets: ['critter_rat'], kind: 'critter', scale: 0.4, speed: 1.6, flee: 5, shy: 2.5 },
+  toad: { sheets: ['critter_toad', 'mob_bog_toad'], kind: 'critter', scale: 0.3, speed: 0.7, flee: 2.5, shy: 2, hop: true },
+  bat: { sheets: ['critter_bat', 'mob_cave_bat'], kind: 'critter', scale: 0.38, bat: true },
+  gull: { sheets: ['critter_gull', 'pet_huginn'], kind: 'critter', bird: true, scale: 0.5, fly: true, shy: 4, tint: [1.6, 1.6, 1.7] },
+};
+const AMB = { crit: [], r: mulberry32(1), map: null };
+function ambientEnter() {
+  const L = window.COMPANIONS;
+  for (let i = L.length - 1; i >= 0; i--) if (L[i].critter) L.splice(i, 1);
+  AMB.crit = []; AMB.map = map;
+  let hs = 0; for (const ch of map.id) hs = (Math.imul(hs, 31) + ch.charCodeAt(0)) | 0;
+  AMB.r = mulberry32((hs ^ Math.imul(((P && P.playTime) | 0) + 1, 0x9e3779b1)) | 0 || 1);
+  for (const o of map.objs) if (o.kind === 'chest') o.open = !!(P.flags.chests && P.flags.chests[o.id]);
+  for (const n of map.npcs) if (n.route) { n.ri = n.ri || 0; n.wT = 1 + AMB.r() * 3; n.path = null; n.moving = false; }
+  const list = map.d.critters; if (!list) return;
+  for (const [k, n, rg] of list) {
+    const C = CRITTERS[k]; if (!C) continue;
+    for (let i = 0; i < n; i++) {
+      const s = critterSpot(rg); if (!s) continue;
+      const c = { critter: k, kind: C.kind, sheet: C.sheets[C.sheets.length - 1], manual: true, scale: C.scale, x: s.x, y: s.y, z: C.bat ? 70 + AMB.r() * 40 : 0, fx: AMB.r() < 0.5 ? 1 : -1, fy: 0.3,
+        state: C.bat ? 'fly' : 'idle', walk: 0, t: AMB.r() * 4, hx: s.x, hy: s.y, rg, tint: C.tint };
+      c.owner = c; AMB.crit.push(c); L.push(c);
+    }
+  }
+}
+function critterSpot(rg, near) {
+  const r = AMB.r, w = map.w, h = map.h;
+  for (let k = 0; k < 60; k++) {
+    const x = near ? Math.floor(near.x + (r() - 0.5) * 2 * near.d) : rg ? rg[0] + Math.floor(r() * (rg[2] - rg[0] + 1)) : 2 + Math.floor(r() * (w - 4)), y = near ? Math.floor(near.y + (r() - 0.5) * 2 * near.d) : rg ? rg[1] + Math.floor(r() * (rg[3] - rg[1] + 1)) : 2 + Math.floor(r() * (h - 4));
+    if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1 || map.t[y * w + x] !== 0 || !map.reach[y * w + x]) continue;
+    if (map.d.safeZone && hyp(x - map.d.safeZone.x, y - map.d.safeZone.y) < 3) continue;
+    return { x: x + 0.3 + r() * 0.4, y: y + 0.3 + r() * 0.4 };
+  }
+  return null;
+}
+function ambientTick(dt) {
+  if (!map || !P) return;
+  if (AMB.map !== map) return;
+  const cine = typeof CINE !== 'undefined' && CINE.active, talking = typeof talkNPC !== 'undefined' ? talkNPC : null;
+  for (const n of map.npcs) {
+    if (!n.route) continue;
+    if (cine || talking === n || n.escort) { n.moving = false; n.path = null; if (talking === n) face(n, P); continue; }
+    if (n.path && n.path.length) { if (followPath(n, dt, NPCS[n.id] && NPCS[n.id].pace || 1.5)) { n.moving = false; n.wT = 2 + AMB.r() * 4; n.ri = (n.ri + 1) % n.route.length; } continue; }
+    n.moving = false; n.wT = (n.wT || 0) - dt;
+    if (n.wT <= 0) { const [tx, ty] = n.route[n.ri % n.route.length]; goNear(n, tx, ty); if (!n.path || !n.path.length) { n.wT = 3; n.ri = (n.ri + 1) % n.route.length; } }
+  }
+  if (!AMB.crit.length) return;
+  const H = heroes(), sheetsOk = typeof SHEETS !== 'undefined' && SHEETS.indexReady;
+  for (const c of AMB.crit) {
+    const C = CRITTERS[c.critter];
+    if (sheetsOk && !c.sheetOk) { c.sheetOk = true; const s = C.sheets.find(id => SHEETS.entries[id]); if (s) c.sheet = s; else c.hidden = true; }
+    let near = null, nd = 1e9; for (const h of H) { if (h.dead) continue; const d = hyp(h.x - c.x, h.y - c.y); if (d < nd) { nd = d; near = h; } }
+    if (nd > 40) continue;   // far away: frozen (cheap)
+    c.t -= dt;
+    if (C.bat) {   // bats: loop over their roost, higher and faster when disturbed
+      const a = (time * (0.8 + (c.hx % 1)) + c.hy) % 6.283, R = 1.6 + (c.hy % 1) * 1.4, tx = c.hx + Math.cos(a) * R, ty = c.hy + Math.sin(a) * R;
+      c.fx = tx - c.x; c.fy = ty - c.y; c.x = tx; c.y = ty; c.z = 70 + Math.sin(time * 2.3 + c.hx) * 18 + (nd < 3 ? 30 : 0); c.state = 'fly'; continue;
+    }
+    if (C.fly) {
+      if (c.state === 'fly') {   // flying off: climb, glide to the landing spot, drop down
+        const dx = c.tx - c.x, dy = c.ty - c.y, d = hyp(dx, dy), sp = 6 * dt;
+        if (d > sp) { c.x += dx / d * sp; c.y += dy / d * sp; c.fx = dx / d; c.fy = dy / d; c.z = Math.min(110, c.z + 90 * dt) * (d < 2 ? d / 2 : 1); }
+        else { c.x = c.tx; c.y = c.ty; c.z = 0; c.state = 'idle'; c.t = 2 + AMB.r() * 5; }
+        continue;
+      }
+      if (nd < C.shy || c.t < -30) {   // startled (or restless): take wing to a spot away from the hero
+        const ax = near ? c.x - near.x : AMB.r() - 0.5, ay = near ? c.y - near.y : AMB.r() - 0.5, al = hyp(ax, ay) || 1;
+        const s = critterSpot(null, { x: c.x + ax / al * 11, y: c.y + ay / al * 11, d: 4 }) || critterSpot(c.rg);
+        if (s) { c.tx = s.x; c.ty = s.y; c.state = 'fly'; c.z = 4; } else c.t = 2;
+        continue;
+      }
+      if (c.t < 0) { c.fx = -c.fx; c.t = 1.5 + AMB.r() * 4; }   // pecking about: turns now and then
+      c.state = 'idle'; continue;
+    }
+    // ground critters: wander about their spot, bolt from heroes
+    const flee = nd < C.shy && near;
+    if (flee && !c.fleeT) { const ax = c.x - near.x, ay = c.y - near.y, al = hyp(ax, ay) || 1; c.tx = c.x + ax / al * 5; c.ty = c.y + ay / al * 5; c.fleeT = 1.6; }
+    if (c.fleeT) c.fleeT = Math.max(0, c.fleeT - dt);
+    if (c.tx === undefined && c.t < 0) { const s = critterSpot(null, { x: c.hx, y: c.hy, d: 4 }); if (s) { c.tx = s.x; c.ty = s.y; } c.t = 2 + AMB.r() * 5; }
+    if (c.tx !== undefined) {
+      const dx = c.tx - c.x, dy = c.ty - c.y, d = hyp(dx, dy), sp = (c.fleeT ? C.flee : C.speed) * dt;
+      if (d < 0.1) { c.tx = undefined; c.state = 'idle'; c.moving = false; if (c.fleeT === 0) { c.hx = c.x; c.hy = c.y; } }
+      else { const nx = c.x + dx / d * Math.min(sp, d), ny = c.y + dy / d * Math.min(sp, d); if (blocked(nx, ny)) { c.tx = undefined; c.state = 'idle'; } else { c.x = nx; c.y = ny; c.fx = dx / d; c.fy = dy / d; c.walk += Math.min(sp, d) * 3.4; c.state = 'walk'; c.moving = true; } }
+    }
+    c.z = C.hop && c.state === 'walk' ? Math.abs(Math.sin(c.walk * 0.9)) * 7 : 0;
+  }
+}
+// A chest (OBJ_TALK.chest in js/data/npcs.js): loot once per save. Returns what it gave, or null.
+function chestOpen(o) {
+  const f = P.flags.chests = P.flags.chests || {};
+  if (f[o.id]) { log(`The ${o.name || 'chest'} is empty. You already took what was in it.`, 'sys'); return null; }
+  if (o.need && !o.need()) { log(o.needText || 'It will not open.', 'warn'); return null; }
+  const L = (typeof CHEST_LOOT !== 'undefined' && CHEST_LOOT[o.loot]) || { zeny: [50, 150] }, got = [];
+  f[o.id] = questDay(); o.open = true;
+  if (L.zeny) { const z = Math.round(L.zeny[0] + Math.random() * (L.zeny[1] - L.zeny[0])); P.zeny += z; got.push(fmt(z) + 'z'); }
+  for (const [id, n, ch] of L.items || []) if (ITEMS[id] && (ch === undefined || Math.random() < ch)) { const it = makeItem(id, stackable(id) ? { qty: n || 1 } : {}); giveItem(it, 'a chest'); got.push(itemLabel(it)); }
+  if (L.equip) { const it = rollEquip(L.equip); if (it) { giveItem(it, 'a chest'); got.push(itemName(it)); } }
+  if (L.pick) { const id = L.pick[Math.floor(Math.random() * L.pick.length)]; if (ITEMS[id]) { const it = makeItem(id); giveItem(it, 'a chest'); got.push(itemName(it)); } }
+  if (L.lore) P.flags.lore[L.lore] = true;
+  burst(o.x, o.y, 12, '#ffd070', 16, 2); Sfx.rare();
+  log(`You open the ${o.name || 'chest'}: ${got.join(', ') || 'dust and cobwebs'}.`, 'item');
+  UI.dirty = true; saveGame();
+  return got;
 }
 function rest() {
   P.hp = S.maxhp; P.sp = S.maxsp; P.lastWay = { map: map.id, x: map.way.x, y: map.way.y + 1.2 };
@@ -1922,7 +2171,7 @@ function tameUse(it, rng = RNG) {
   const ch = tameChance(m);
   if (rng() * 100 >= ch) { floatText(m, 'Refused!', 'miss'); log(`The ${MOBS[type].name} eats the ${t.name} and wants nothing to do with you (${ch}% chance).`, 'warn'); aggro(m); Sfx.miss(); return false; }
   const i = mobs.indexOf(m); if (i >= 0) mobs.splice(i, 1); if (P.target === m) P.target = null;
-  const mid = map.id; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type); });
+  const mid = map.id, rg = m.rgn; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type, rg); });   // cycle 9: back in its own region
   const egg = makeItem('egg_' + type); egg.pet = { type, name: MOBS[type].name, hunger: PET_START.hunger, intim: PET_START.intim };
   giveItem(egg, 'Ylva');
   P.flags.tamed = P.flags.tamed || {}; P.flags.tamed[type] = (P.flags.tamed[type] || 0) + 1;
@@ -1998,7 +2247,7 @@ function hugMake(temp) { return { kind: 'raven', sheet: 'pet_huginn', manual: tr
 // Make COMPANIONS match the hero: the pet that is out, Huginn for the raven classes. reset: place them beside you.
 function compSync(reset) {
   const L = window.COMPANIONS; if (!P) return;
-  const H = heroes(); for (let i = L.length - 1; i >= 0; i--) if (L[i].owner && H.indexOf(L[i].owner) < 0) L.splice(i, 1);   // cycle 8: a hero that left
+  const H = heroes(); for (let i = L.length - 1; i >= 0; i--) if (L[i].owner && !L[i].critter && H.indexOf(L[i].owner) < 0) L.splice(i, 1);   // cycle 9: critters belong to the map   // cycle 8: a hero that left
   for (const h of H) withHero(h, compSyncOne, reset);
 }
 function compSyncOne(reset) {

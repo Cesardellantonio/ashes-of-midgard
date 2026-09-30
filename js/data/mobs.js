@@ -243,3 +243,30 @@ variant('nameless_jarl', 'hel_draugr', { name: 'The Nameless Jarl', title: 'Who 
   abil: [{ id: 'slam', cd: 7, r: 2.6, mul: 1.5, delay: 1.1 }, { id: 'lunge', cd: 9, len: 6, w: 1.1, mul: 1.8, delay: 1.0, parry: 2, col: '#8affd0' }],
   drops: [['u_nameless_helm', 1], ['gjoll_ice', 1], ['black_sun_shard', 1]],
   intro: 'A draugr king in a crown of river-ice, standing waist-deep in the ash. He told Móðguðr his name ten thousand years ago, and she forgot it, and so did he. He has been angry about it ever since.' });
+
+// Cycle 9 (world expansion): the caves' mini-bosses. Elites placed by their cave (MAPDEFS[id].elites, spawnAll in
+// js/core.js); each comes back 30-50 minutes of play after it falls (P.flags.elites) and always drops its trinket.
+variant('den_mother', 'ash_wolf', { name: 'The Den-Mother', title: 'Mother of the Wolf Den', lvl: 15, hp: 4200, atk: [46, 60], def: 10, mdef: 6, elite: true, aggro: true, sight: 7, size: 1.8, col: '#8a8078', tint: '#b0a498', scaleMul: 1.8, expMul: 6,
+  abil: [{ id: 'leap', cd: 8, r: 2, mul: 1.4, delay: 1.1 }, { id: 'summon', cd: 18, mob: 'ash_wolf', n: 2, max: 3, shout: 'Awooo!' }], useAbil: true,
+  drops: [['u_den_fang', 1], ['wolf_pelt', 1], ['wolf_claw', 1], ['orange_potion', .5]],
+  intro: 'The wolf that led the pack out of the Wood the first Ash-winter. She is grey to the eyes, and bigger than a cart.' });
+variant('barrow_wight', 'skeleton_soldier', { name: 'Hrothgar Bear-Arm', title: 'The Barrow-Wight', lvl: 25, hp: 15000, atk: [88, 112], def: 24, mdef: 12, elite: true, aggro: true, sight: 7, tint: '#b8c8a0', scaleMul: 1.35, expMul: 6,
+  look: { scale: 1.35 }, abil: [{ id: 'slam', cd: 7, r: 2.4, mul: 1.5, delay: 1.2, shout: 'HOLD!' }], useAbil: true,
+  drops: [['u_barrow_ring', 1], ['bone_shard', 1], ['rusted_chain', 1]],
+  intro: 'The hero of the barrow, still holding the Wood against frost-giants who died a thousand years ago. You look enough like one.' });
+variant('frozen_helmsman', 'draugr_fisher', { name: 'The Frozen Helmsman', title: 'Of the Ormsvín', lvl: 40, hp: 36000, atk: [150, 188], def: 34, mdef: 22, elite: true, aggro: true, sight: 8, tint: '#a8d8ff', scaleMul: 1.35, expMul: 6,
+  look: { scale: 1.35 }, abil: [{ id: 'wave', cd: 10, n: 3, spread: 0.4, len: 7, r: 1, speed: 6, mul: 1.3, delay: 1.0, col: '#9ad8ff' }], useAbil: true,
+  drops: [['u_helmsman_torc', 1], ['draugr_net', 1], ['rime_essence', 1]],
+  intro: 'Ormr’s father’s helmsman, still at the steering oar of a ship that is no longer there. He went down to listen to the Jarl sing, and came back singing.' });
+variant('grotto_lurker', 'mire_troll', { name: 'The Grotto-Lurker', title: 'Taker of Offerings', lvl: 46, hp: 52000, atk: [170, 214], def: 42, mdef: 14, elite: true, aggro: true, sight: 7, tint: '#8aa870', scaleMul: 1.3, expMul: 6,
+  look: { scale: 1.3 }, abil: [{ id: 'slam', cd: 7, r: 2.8, mul: 1.5, delay: 1.2 }, { id: 'curse', cd: 14, r: 1.4, n: 2, mul: 0.8, delay: 1.2, dur: 5, tick: 0.25, slow: 30, col: '#7aff6a' }], useAbil: true,
+  drops: [['u_lurker_eye', 1], ['toad_skin', 1], ['bog_pearl', .25]],
+  intro: 'A troll that crawled into the grotto to eat what the bog-folk drowned there. It has been eating for three hundred years. It wears the brooches.' });
+variant('iron_foreman', 'dwarf_revenant', { name: 'The Iron Foreman', title: 'Who Never Rang the Last Bell', lvl: 51, hp: 64000, atk: [190, 236], def: 40, mdef: 34, elite: true, aggro: true, sight: 8, tint: '#ffc890', scaleMul: 1.35, expMul: 6,
+  abil: [{ id: 'rain', cd: 9, n: 4, r: 1.4, mul: 1.2, delay: 1.3, shout: 'Down tools!' }, { id: 'summon', cd: 18, mob: 'dwarf_revenant', n: 2, max: 3 }], useAbil: true,
+  drops: [['u_foreman_signet', 1], ['rune_stone', 1], ['deep_ember', .2]],
+  intro: 'The foreman of the twelve, still counting the shift. He will not let anyone leave until the tally is right. The tally has not been right for three hundred years.' });
+variant('root_gnawer', 'nidhogg_spawn', { name: 'The Root-Gnawer', title: 'Eldest of the Brood', lvl: 88, hp: 140000, atk: [760, 920], def: 44, mdef: 34, elite: true, aggro: true, sight: 8, tint: '#c8e890', scaleMul: 1.4, expMul: 8,
+  abil: [{ id: 'breath', cd: 10, len: 6, arc: 0.5, rays: 5, mul: 1.4, delay: 1.1, col: '#9aff6a', zone: { dur: 5, tick: 0.25, slow: 20, r: 1.1, n: 3 } }, { id: 'lunge', cd: 9, len: 6, w: 1.1, mul: 1.8, delay: 1.0, parry: 2, col: '#b8ff8a' }], useAbil: true,
+  drops: [['u_gnawer_tooth', 1], ['rot_scale', 1], ['black_sun_shard', .3]],
+  intro: 'Níðhöggr’s eldest, patient as a root. It has been gnawing the same root since before the Ash. It is nearly through.' });

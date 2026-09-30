@@ -11,7 +11,8 @@
   "marker": "optional [x, y, z] anchor for a floating quest marker (clear space above the prop)",
   "lod1": "id of a lower-detail version (<id>_lod1.glb, same materials/textures, ~1/2 the leaf-card fill = leafArea); LOD entries carry lodOf",
   "map": "world-2 kits: map id the prop belongs to; kind = tree|rock|decor|building|setpiece|light|wall|pillar|walkway|edge (trees with a map prefix are still kind 'tree': use it instead of the id prefix for Lambert/occluder choices)",
-  "kits": "optional texture-sharing packs: kit_<name>.glb holds every model of the family as a root node named by its id; each texture is stored once. The per-id .glb files stay complete and self-contained."
+  "kits": "optional texture-sharing packs: kit_<name>.glb holds every model of the family as a root node named by its id; each texture is stored once. The per-id .glb files stay complete and self-contained.",
+  "rooms": "interior_* / cave_* kits (world expansion): wall pieces fill their whole 1x1 tile up to y=2.5 and show their feature / rock face on +Z (the room side), so walls take the side's rotation (three.js rot.y): north wall 0, west wall +pi/2, east wall -pi/2, south wall pi. wallMount props keep their back at z=-0.46 and face +Z. Floor tiles are 1x1 with the top at y=0.01. `lights` anchors are lit automatically; a lone `light` (windows, lava trough, mushrooms, long table) is opt-in per decor entry."
  },
  "kits": {
   "trees": {
@@ -200,10 +201,97 @@
     "helheim_hall_facade",
     "helheim_root",
     "helheim_soul_lantern",
-    "helheim_timber_wall"
+    "helheim_timber_wall",
+    "helheim_tent"
    ],
-   "bytes": 2875424,
-   "bytesSeparate": 3848020
+   "bytes": 3113476,
+   "bytesSeparate": 4113084
+  },
+  "interior": {
+   "file": "kit_interior.glb",
+   "ids": [
+    "interior_altar",
+    "interior_bar",
+    "interior_beam",
+    "interior_bed",
+    "interior_bench",
+    "interior_bookshelf",
+    "interior_candle_stand",
+    "interior_chandelier",
+    "interior_chest",
+    "interior_dwarf_anvil",
+    "interior_floor_flag",
+    "interior_floor_plank",
+    "interior_floor_straw",
+    "interior_forge",
+    "interior_gear_wall",
+    "interior_hearth",
+    "interior_herbs",
+    "interior_high_seat",
+    "interior_lava_trough",
+    "interior_long_table",
+    "interior_loom",
+    "interior_pelts",
+    "interior_post",
+    "interior_rug",
+    "interior_shelf",
+    "interior_stool",
+    "interior_table",
+    "interior_wall_hall",
+    "interior_wall_stone",
+    "interior_wall_stone_door",
+    "interior_wall_stone_window",
+    "interior_wall_timber",
+    "interior_wall_timber_door",
+    "interior_wall_timber_window",
+    "interior_weapon_rack",
+    "interior_railing"
+   ],
+   "bytes": 1879120,
+   "bytesSeparate": 2758828
+  },
+  "cave": {
+   "file": "kit_cave.glb",
+   "ids": [
+    "cave_bones",
+    "cave_cart",
+    "cave_crystal_blue",
+    "cave_crystal_violet",
+    "cave_mine_support",
+    "cave_mouth",
+    "cave_mouth_ice",
+    "cave_mouth_ice_lod1",
+    "cave_mouth_lod1",
+    "cave_mouth_mud",
+    "cave_mouth_mud_lod1",
+    "cave_mushrooms",
+    "cave_pillar",
+    "cave_pool_rim",
+    "cave_pool_rim_corner",
+    "cave_pool_rim_inner",
+    "cave_rail",
+    "cave_rail_curve",
+    "cave_stalactite",
+    "cave_stalagmite_a",
+    "cave_stalagmite_b",
+    "cave_stalagmite_c",
+    "cave_stalagmite_ice",
+    "cave_stalagmite_mud",
+    "cave_wall",
+    "cave_wall_b",
+    "cave_wall_corner",
+    "cave_wall_ice",
+    "cave_wall_ice_b",
+    "cave_wall_ice_corner",
+    "cave_wall_ice_inner",
+    "cave_wall_inner",
+    "cave_wall_mud",
+    "cave_wall_mud_b",
+    "cave_wall_mud_corner",
+    "cave_wall_mud_inner"
+   ],
+   "bytes": 1392056,
+   "bytesSeparate": 2003220
   }
  },
  "models": [
@@ -3370,6 +3458,1847 @@
     0
    ],
    "kit": "town"
+  },
+  {
+   "id": "cave_bones",
+   "file": "cave_bones.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.24,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Remains of a lost adventurer: skull, spine and ribs, long bones, a rusted sword, a dented helmet, a torn pack and a burnt-out torch by a rock (good spot for a lore find or loot sparkle). Not blocking.",
+   "tris": 921,
+   "bytes": 72516,
+   "materials": [
+    "cave_rock",
+    "bone",
+    "shadow",
+    "iron",
+    "leather",
+    "timber"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_cart",
+   "file": "cave_cart.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.77,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Old mine cart loaded with rock and coal, rust-streaked bands, a small lamp on the front rim (emissive_lamp). Wheels on the 0.6 gauge of cave_rail / nidavellir_rail (runs along glTF Z).",
+   "tris": 815,
+   "bytes": 104700,
+   "materials": [
+    "planks",
+    "iron",
+    "cave_rock",
+    "ore",
+    "timber",
+    "emissive_lamp"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_crystal_blue",
+   "file": "cave_crystal_blue.glb",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.49,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Blue crystal cluster (1.35 high) bursting from a basalt boulder; emissive_crystal_ice (same material as the Rimeshore ice crystal), brightest at the tips. One light anchor.",
+   "tris": 468,
+   "bytes": 45564,
+   "materials": [
+    "cave_rock",
+    "emissive_crystal_ice"
+   ],
+   "light": [
+    0,
+    0.9,
+    0
+   ],
+   "lights": [
+    [
+     0,
+     0.9,
+     0
+    ]
+   ],
+   "lightColor": "#6ac8ff",
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_crystal_violet",
+   "file": "cave_crystal_violet.glb",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.49,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Violet crystal cluster (1.35 high) on basalt; emissive_amethyst (same material as the Nidavellir crystals). One light anchor.",
+   "tris": 430,
+   "bytes": 44024,
+   "materials": [
+    "cave_rock",
+    "emissive_amethyst"
+   ],
+   "light": [
+    0,
+    0.9,
+    0
+   ],
+   "lights": [
+    [
+     0,
+     0.9,
+     0
+    ]
+   ],
+   "lightColor": "#b070ff",
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mine_support",
+   "file": "cave_mine_support.glb",
+   "kind": "light",
+   "footprint": [
+    3,
+    1
+   ],
+   "height": 2.6,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Mine timber set for a 3-wide adit: two posts on stone pads (x=+-1.34), a cap beam with plank lagging at y~2.3-2.6, knee braces, a hanging lantern (emissive_lamp, light anchor) and a pick leaning on the left post. The passage between the posts is walkable. For a 2-wide passage use nidavellir_support_beams.",
+   "tris": 531,
+   "bytes": 80160,
+   "materials": [
+    "cave_rock",
+    "timber",
+    "iron",
+    "planks",
+    "emissive_lamp"
+   ],
+   "light": [
+    0.5,
+    1.82,
+    0.14
+   ],
+   "lights": [
+    [
+     0.5,
+     1.82,
+     0.14
+    ]
+   ],
+   "lightColor": "#ffc870",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth",
+   "file": "cave_mouth.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Overworld cave entrance set piece, 3x3, basalt (grassy fields, woods): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking).",
+   "tris": 2391,
+   "bytes": 141960,
+   "materials": [
+    "moss",
+    "cave_rock_matte",
+    "shadow",
+    "leaves_grass"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "leafArea": 1.09,
+   "lod1": "cave_mouth_lod1",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth_ice",
+   "file": "cave_mouth_ice.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Overworld cave entrance set piece, 3x3, ice (Rimeshore: snow drift, icicles on the lintel, ice shards): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking).",
+   "tris": 2559,
+   "bytes": 159248,
+   "materials": [
+    "snow",
+    "rock_ice_matte",
+    "shadow",
+    "ice"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "lod1": "cave_mouth_ice_lod1",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth_ice_lod1",
+   "file": "cave_mouth_ice_lod1.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Overworld cave entrance set piece, 3x3, ice (Rimeshore: snow drift, icicles on the lintel, ice shards): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking). LOD1: fewer facets, caps baked into vertex colour.",
+   "tris": 917,
+   "bytes": 60244,
+   "materials": [
+    "rock_ice_matte",
+    "shadow"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "lodOf": "cave_mouth_ice",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth_lod1",
+   "file": "cave_mouth_lod1.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Overworld cave entrance set piece, 3x3, basalt (grassy fields, woods): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking). LOD1: fewer facets, caps baked into vertex colour.",
+   "tris": 877,
+   "bytes": 57036,
+   "materials": [
+    "cave_rock_matte",
+    "shadow"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "lodOf": "cave_mouth",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth_mud",
+   "file": "cave_mouth_mud.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Overworld cave entrance set piece, 3x3, mud (Mirewell: roots hanging over the mouth, puddles): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking).",
+   "tris": 2603,
+   "bytes": 150524,
+   "materials": [
+    "moss",
+    "rock_mud_matte",
+    "shadow",
+    "timber",
+    "water"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "lod1": "cave_mouth_mud_lod1",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mouth_mud_lod1",
+   "file": "cave_mouth_mud_lod1.glb",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Overworld cave entrance set piece, 3x3, mud (Mirewell: roots hanging over the mouth, puddles): a rocky hill with a lintel-stone arch over a dark tunnel mouth (0.8 wide inside, 1.6 high; shadow material darkening with depth) that faces +Z (the camera). The walkable path runs through the front-centre tile (glTF x in [-0.5,0.5], z in [0.5,1.5]) into the centre tile (the mouth: put the door:'cave' warp there or on the front-centre tile); the other 7 tiles are rock (blocking). LOD1: fewer facets, caps baked into vertex colour.",
+   "tris": 909,
+   "bytes": 61808,
+   "materials": [
+    "rock_mud_matte",
+    "shadow"
+   ],
+   "marker": [
+    0,
+    3.0,
+    -0.4
+   ],
+   "blocking": true,
+   "lodOf": "cave_mouth_mud",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_mushrooms",
+   "file": "cave_mushrooms.glb",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.92,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Glowing cave mushrooms: nine teal caps (0.14-0.8 tall) and spore puffs on a moss mound; caps and gills emissive_shroom (same as Mirewell). `light` is an opt-in anchor (graphics' glow: 'mushroom' look can light a few).",
+   "tris": 1280,
+   "bytes": 70012,
+   "materials": [
+    "moss",
+    "painted",
+    "emissive_shroom"
+   ],
+   "light": [
+    0,
+    0.5,
+    0
+   ],
+   "lightColor": "#4af0d0",
+   "kit": "cave"
+  },
+  {
+   "id": "cave_pillar",
+   "file": "cave_pillar.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Rock column (a stalagmite and stalactite grown together): flared foot and head, narrow waist, 2.9 high, 1 tile. Blocking.",
+   "tris": 426,
+   "bytes": 34476,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_pool_rim",
+   "file": "cave_pool_rim.glb",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Underground pool rim, straight: a wet rock kerb along the tile's -Z edge (water on the -Z side at rot 0); tiles along X. Rim pieces go on the LAND tiles round m.water; their kerb lips 0.14 over the water and drops to y=-0.3 into it. Rotation (three.js rot.y): 0 turns the water side to -Z, 180 to +Z, +90 to -X, -90 to +X.",
+   "tris": 244,
+   "bytes": 25976,
+   "materials": [
+    "cave_rock"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_pool_rim_corner",
+   "file": "cave_pool_rim_corner.glb",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Pool rim, outer corner: for the land tile diagonal to a pool corner; a quarter kerb curls round the water corner at the tile's +X/-Z corner (rot 0), joining the straight rims of both neighbours. Rim pieces go on the LAND tiles round m.water; their kerb lips 0.14 over the water and drops to y=-0.3 into it. Rotation (three.js rot.y): 0 turns the water side to -Z, 180 to +Z, +90 to -X, -90 to +X.",
+   "tris": 236,
+   "bytes": 25472,
+   "materials": [
+    "cave_rock"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_pool_rim_inner",
+   "file": "cave_pool_rim_inner.glb",
+   "kind": "edge",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.12,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Pool rim, land spit: the kerb runs along the -Z edge, rounds the +X/-Z corner and runs down the +X edge (water on two sides at rot 0). Rim pieces go on the LAND tiles round m.water; their kerb lips 0.14 over the water and drops to y=-0.3 into it. Rotation (three.js rot.y): 0 turns the water side to -Z, 180 to +Z, +90 to -X, -90 to +X.",
+   "tris": 564,
+   "bytes": 43424,
+   "materials": [
+    "cave_rock"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_rail",
+   "file": "cave_rail.glb",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.14,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Straight mine rail, 1 tile along glTF Z (ends at z=+-0.5), gauge 0.6, rail top y=0.14, weathered sleepers; same gauge as nidavellir_rail so the two sets mix.",
+   "tris": 400,
+   "bytes": 48964,
+   "materials": [
+    "timber",
+    "iron",
+    "cave_rock"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_rail_curve",
+   "file": "cave_rail_curve.glb",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.14,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Mine rail quarter turn (radius 0.5): joins the +Z edge centre to the +X edge centre.",
+   "tris": 528,
+   "bytes": 52660,
+   "materials": [
+    "timber",
+    "iron",
+    "cave_rock"
+   ],
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalactite",
+   "file": "cave_stalactite.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.6,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Ceiling hint: a rock lip at the wall top (y~2.4) jutting 0.7 into the room with six stalactites hanging to y~1.3 and a drip. wallMount: back at glTF z=-0.46 (the wall face), faces +Z; stand it on the floor tile in front of a wall. Overhead, so not blocking; no shadow.",
+   "tris": 554,
+   "bytes": 39892,
+   "materials": [
+    "cave_rock",
+    "water"
+   ],
+   "wallMount": true,
+   "walkable": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalagmite_a",
+   "file": "cave_stalagmite_a.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.7,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tall basalt stalagmite (1.7) with a small sibling; ringed dripstone, wet base.",
+   "tris": 256,
+   "bytes": 21908,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalagmite_b",
+   "file": "cave_stalagmite_b.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.25,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Cluster of four basalt stalagmites (0.35-1.25).",
+   "tris": 432,
+   "bytes": 29792,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalagmite_c",
+   "file": "cave_stalagmite_c.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.56,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Broken stalagmite stump with its snapped-off tip lying beside it and a drip puddle (water).",
+   "tris": 382,
+   "bytes": 34188,
+   "materials": [
+    "cave_rock",
+    "water"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalagmite_ice",
+   "file": "cave_stalagmite_ice.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.55,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Ice-cave stalagmite: three frozen ice spires (ice.jpg, frosted tips) on a snow drift with small ice shards.",
+   "tris": 398,
+   "bytes": 67492,
+   "materials": [
+    "rock_ice",
+    "snow",
+    "ice"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_stalagmite_mud",
+   "file": "cave_stalagmite_mud.glb",
+   "kind": "rock",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Mud-cave stalagmite: squat clay dripstone with moss on its ledges and moss clumps at the base.",
+   "tris": 336,
+   "bytes": 40520,
+   "materials": [
+    "rock_mud",
+    "moss"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall",
+   "file": "cave_wall.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall: rock face toward +Z (the cave floor), foot talus bulging 0.2 into the floor tile, a few loose stones. Basalt: blue-grey rock (the default; also for crystal and mine caves). Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 425,
+   "bytes": 29992,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_b",
+   "file": "cave_wall_b.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall, second cut (different lumps, same seams): alternate it with the plain straight piece to break up long runs. Basalt: blue-grey rock (the default; also for crystal and mine caves). Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 437,
+   "bytes": 30792,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_corner",
+   "file": "cave_wall_corner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Outer (convex) cave-wall corner: faces toward +Z and +X round a rounded rock nose. Joins a straight wall on its -X side (rot 0) and a straight wall at rot -90 on its -Z side. Basalt: blue-grey rock (the default; also for crystal and mine caves). Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 638,
+   "bytes": 37452,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_ice",
+   "file": "cave_wall_ice.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall: rock face toward +Z (the cave floor), foot talus bulging 0.2 into the floor tile, a few loose stones. Ice cave: glacier-blue rock, frost on every ledge, icicles under the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 546,
+   "bytes": 55516,
+   "materials": [
+    "rock_ice",
+    "ice"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_ice_b",
+   "file": "cave_wall_ice_b.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall, second cut (different lumps, same seams): alternate it with the plain straight piece to break up long runs. Ice cave: glacier-blue rock, frost on every ledge, icicles under the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 530,
+   "bytes": 53960,
+   "materials": [
+    "rock_ice",
+    "ice"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_ice_corner",
+   "file": "cave_wall_ice_corner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Outer (convex) cave-wall corner: faces toward +Z and +X round a rounded rock nose. Joins a straight wall on its -X side (rot 0) and a straight wall at rot -90 on its -Z side. Ice cave: glacier-blue rock, frost on every ledge, icicles under the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 772,
+   "bytes": 62708,
+   "materials": [
+    "rock_ice",
+    "ice"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_ice_inner",
+   "file": "cave_wall_ice_inner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Inner cave-wall corner (concave): the tile where two walls meet at a room corner (floor only on the +X/+Z diagonal). Solid rock top plus a dripstone fillet at its +X/+Z corner that softens the joint (it reaches ~0.3 into the corner of the diagonal floor tile); the adjoining straight walls supply the faces. Ice cave: glacier-blue rock, frost on every ledge, icicles under the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 211,
+   "bytes": 22880,
+   "materials": [
+    "rock_ice"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_inner",
+   "file": "cave_wall_inner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Inner cave-wall corner (concave): the tile where two walls meet at a room corner (floor only on the +X/+Z diagonal). Solid rock top plus a dripstone fillet at its +X/+Z corner that softens the joint (it reaches ~0.3 into the corner of the diagonal floor tile); the adjoining straight walls supply the faces. Basalt: blue-grey rock (the default; also for crystal and mine caves). Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 211,
+   "bytes": 20884,
+   "materials": [
+    "cave_rock"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_mud",
+   "file": "cave_wall_mud.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall: rock face toward +Z (the cave floor), foot talus bulging 0.2 into the floor tile, a few loose stones. Mud cave: clay strata with pebbles, moss on ledges, roots hanging from the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 513,
+   "bytes": 48224,
+   "materials": [
+    "rock_mud",
+    "timber"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_mud_b",
+   "file": "cave_wall_mud_b.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Straight cave wall, second cut (different lumps, same seams): alternate it with the plain straight piece to break up long runs. Mud cave: clay strata with pebbles, moss on ledges, roots hanging from the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 517,
+   "bytes": 47568,
+   "materials": [
+    "rock_mud",
+    "timber"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_mud_corner",
+   "file": "cave_wall_mud_corner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Outer (convex) cave-wall corner: faces toward +Z and +X round a rounded rock nose. Joins a straight wall on its -X side (rot 0) and a straight wall at rot -90 on its -Z side. Mud cave: clay strata with pebbles, moss on ledges, roots hanging from the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 750,
+   "bytes": 55760,
+   "materials": [
+    "rock_mud",
+    "timber"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "cave_wall_mud_inner",
+   "file": "cave_wall_mud_inner.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Inner cave-wall corner (concave): the tile where two walls meet at a room corner (floor only on the +X/+Z diagonal). Solid rock top plus a dripstone fillet at its +X/+Z corner that softens the joint (it reaches ~0.3 into the corner of the diagonal floor tile); the adjoining straight walls supply the faces. Mud cave: clay strata with pebbles, moss on ledges, roots hanging from the lip. Fills its tile to a rock top at y=2.5; seams share one cross-section and an integer texture repeat, so any 90-degree rotation tiles.",
+   "tris": 211,
+   "bytes": 24924,
+   "materials": [
+    "rock_mud"
+   ],
+   "blocking": true,
+   "kit": "cave"
+  },
+  {
+   "id": "interior_altar",
+   "file": "interior_altar.glb",
+   "kind": "light",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 1.75,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Temple altar (horgr): a dressed stone table with a knotwork frieze and a carved hammer, a red runner, a bronze offering bowl of apples, two candles (emissive_lamp) and a carved wooden god figure at the back (-Z). Faces +Z (the worshippers). One light anchor between the candles.",
+   "tris": 1080,
+   "bytes": 114952,
+   "materials": [
+    "stone_hall",
+    "knotwork",
+    "weave",
+    "bronze",
+    "painted",
+    "wax",
+    "emissive_lamp",
+    "timber",
+    "iron",
+    "shadow"
+   ],
+   "light": [
+    0,
+    1.42,
+    -0.05
+   ],
+   "lights": [
+    [
+     0,
+     1.42,
+     -0.05
+    ]
+   ],
+   "lightColor": "#ffc070",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_bar",
+   "file": "interior_bar.glb",
+   "kind": "decor",
+   "footprint": [
+    3,
+    1
+   ],
+   "height": 1.25,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tavern bar counter, 2.8 long along glTF X, 1.03 high, boarded front with the knotwork band toward +Z (the guests' side), mugs and bread on top; behind it (-Z) a rack of three ale kegs lying with brass taps toward the counter. The keeper stands on the -Z side.",
+   "tris": 1442,
+   "bytes": 107836,
+   "materials": [
+    "planks",
+    "timber",
+    "knotwork",
+    "gold",
+    "iron",
+    "painted"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_beam",
+   "file": "interior_beam.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.48,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Overhead tie beam, exactly 1 tile long along glTF X, underside at y=2.24 (the wall-plate height), knotwork band on both long faces. Chain them between interior_post bolsters or from wall to wall across a hall (rot 90 deg to run along Z). Not blocking; no shadow.",
+   "tris": 16,
+   "bytes": 19904,
+   "materials": [
+    "timber",
+    "knotwork"
+   ],
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_bed",
+   "file": "interior_bed.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    2
+   ],
+   "height": 1.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Box bed, 1 x 1.9 along glTF Z, head at -Z (put the head against the north wall at rot 0), carved finials, cream wool tick and pillow, a brown bear fur and a grey wolf pelt draped over the sides. Mattress top y~0.6.",
+   "tris": 798,
+   "bytes": 97968,
+   "materials": [
+    "planks",
+    "timber",
+    "knotwork",
+    "weave",
+    "painted",
+    "fur"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_bench",
+   "file": "interior_bench.glb",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.47,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Plank bench, 1.8 long along glTF X, seat at y=0.47.",
+   "tris": 144,
+   "bytes": 34052,
+   "materials": [
+    "planks",
+    "timber"
+   ],
+   "kit": "interior"
+  },
+  {
+   "id": "interior_bookshelf",
+   "file": "interior_bookshelf.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.06,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Tall bookcase (1 wide, 2.06 high, 0.34 deep): four rows of coloured spines, a leaning book, a stack and a scroll. wallMount: back at glTF z=-0.46, faces +Z. For the Gloamheim library and a sage's house.",
+   "tris": 660,
+   "bytes": 93332,
+   "materials": [
+    "planks",
+    "timber",
+    "books",
+    "painted"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_candle_stand",
+   "file": "interior_candle_stand.glb",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.78,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Wrought-iron candle stand: tripod foot, three wax candles on a bar at y~1.35 (emissive_lamp flames). One light anchor above the middle candle.",
+   "tris": 466,
+   "bytes": 27632,
+   "materials": [
+    "iron",
+    "wax",
+    "emissive_lamp"
+   ],
+   "light": [
+    0,
+    1.66,
+    0
+   ],
+   "lights": [
+    [
+     0,
+     1.66,
+     0
+    ]
+   ],
+   "lightColor": "#ffc070",
+   "kit": "interior"
+  },
+  {
+   "id": "interior_chandelier",
+   "file": "interior_chandelier.glb",
+   "kind": "light",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 3.3,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Hanging wheel chandelier: an oak ring (radius 0.62) with eight candles at y~2.4, hung on four chains from a hook at y=3.3 (no ceiling needed: the chains fade out above the wall tops). Not blocking, no shadow. One light anchor at the wheel centre.",
+   "tris": 1288,
+   "bytes": 70428,
+   "materials": [
+    "timber",
+    "iron",
+    "wax",
+    "emissive_lamp"
+   ],
+   "light": [
+    0,
+    2.5,
+    0
+   ],
+   "lights": [
+    [
+     0,
+     2.5,
+     0
+    ]
+   ],
+   "lightColor": "#ffc070",
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_chest",
+   "file": "interior_chest.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.53,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Iron-banded oak chest with a curved lid and a brass lock plate facing +Z. Height 0.53.",
+   "tris": 174,
+   "bytes": 36720,
+   "materials": [
+    "planks",
+    "iron",
+    "gold"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_dwarf_anvil",
+   "file": "interior_dwarf_anvil.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.12,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dwarven anvil block: a carved stone pedestal with two glowing gold runes on the +Z face (emissive_rune_gold), a gold-edged iron anvil with a horn, a hammer and a glowing ingot (emissive_coals). For the Nidavellir forge hall.",
+   "tris": 428,
+   "bytes": 81864,
+   "materials": [
+    "stone_dwarf",
+    "emissive_rune_gold",
+    "iron",
+    "gold",
+    "emissive_coals",
+    "timber"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_floor_flag",
+   "file": "interior_floor_flag.glb",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.01,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Floor tile, 1x1, top at y=0.01: big grey flagstones with mortar joints, one texture repeat per tile (seamless; rotate by random multiples of 90 deg to hide repetition).",
+   "tris": 60,
+   "bytes": 16564,
+   "materials": [
+    "flagstone"
+   ],
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_floor_plank",
+   "file": "interior_floor_plank.glb",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.01,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Floor tile, 1x1, top at y=0.01: honey-oak boards along glTF Z, the texture repeats exactly once per tile (seamless in runs; keep rot 0 or 180 so the boards stay parallel).",
+   "tris": 60,
+   "bytes": 14840,
+   "materials": [
+    "planks_floor"
+   ],
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_floor_straw",
+   "file": "interior_floor_straw.glb",
+   "kind": "walkway",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.01,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Floor tile, 1x1, top at y=0.01: loose golden straw over trodden earth (stables, longhouse aisles, barns); seamless, rotate freely.",
+   "tris": 60,
+   "bytes": 39580,
+   "materials": [
+    "straw"
+   ],
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_forge",
+   "file": "interior_forge.glb",
+   "kind": "light",
+   "footprint": [
+    2,
+    2
+   ],
+   "height": 2.54,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Smithy forge for a room corner: raised stone hearth with a glowing coal bed (emissive_coals) and flames, hood and flue, leather bellows, anvil on a stump with a glowing bar, quench bucket, tool rack. Back (hood) at glTF z=-0.95: set it against the north wall, faces +Z. One light anchor at the coals.",
+   "tris": 1358,
+   "bytes": 133584,
+   "materials": [
+    "stone_hall",
+    "emissive_coals",
+    "emissive_ember",
+    "emissive_lamp",
+    "timber",
+    "leather",
+    "iron",
+    "planks",
+    "water"
+   ],
+   "light": [
+    -0.2,
+    1.05,
+    -0.4
+   ],
+   "lights": [
+    [
+     -0.2,
+     1.05,
+     -0.4
+    ]
+   ],
+   "lightColor": "#ff8a30",
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_gear_wall",
+   "file": "interior_gear_wall.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dwarven gear wall: a stone_dwarf wall block (1x1, 2.5 high, tiles with nidavellir_wall heights) with a bronze gear train on the +Z (room) face: a big and a small meshing gear, iron hubs, a glowing gold rune plate (emissive_rune_gold) and a pipe. Other faces plain. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 1462,
+   "bytes": 123780,
+   "materials": [
+    "stone_dwarf",
+    "bronze",
+    "gold",
+    "iron",
+    "shadow",
+    "emissive_rune_gold"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_hearth",
+   "file": "interior_hearth.glb",
+   "kind": "light",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 1.4,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Longhouse long-fire: a 2 x 1 pit of kerb stones along glTF X, glowing coal bed (emissive_coals), crossed logs and five flames (emissive_lamp), an iron tripod with a stew cauldron on the right. The room's main light: two anchors in `lights`. Walkable around, blocking itself. Stand it in the middle of a hall.",
+   "tris": 1761,
+   "bytes": 128944,
+   "materials": [
+    "stone_hall",
+    "ash_hearth",
+    "emissive_coals",
+    "painted",
+    "timber",
+    "emissive_ember",
+    "emissive_lamp",
+    "iron"
+   ],
+   "light": [
+    -0.3,
+    0.45,
+    0
+   ],
+   "lights": [
+    [
+     -0.3,
+     0.45,
+     0
+    ],
+    [
+     0.3,
+     0.45,
+     0
+    ]
+   ],
+   "lightColor": "#ff9a40",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_herbs",
+   "file": "interior_herbs.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.05,
+   "castShadow": false,
+   "sway": true,
+   "notes": "Drying herbs: a pole on two pegs at y~2.0 with five hanging bundles (lavender, yarrow, sage; leaves_herbs alpha cards, sway) and a garlic braid. wallMount: pegs at glTF z=-0.46, the bundles hang at z~-0.34, faces +Z. Not blocking (overhead).",
+   "tris": 184,
+   "bytes": 32468,
+   "materials": [
+    "timber",
+    "leaves_herbs",
+    "painted"
+   ],
+   "wallMount": true,
+   "walkable": true,
+   "leafArea": 1.69,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_high_seat",
+   "file": "interior_high_seat.glb",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 2.35,
+   "castShadow": true,
+   "sway": false,
+   "notes": "The jarl's high seat (ondvegi): a two-step plank dais, a tall carved chair between two dragon-headed posts with knotwork bands, a white wolf pelt over seat and back, a drinking horn on an iron stand. Faces +Z; back at glTF z=-0.46 (against the hall's end wall). Seat top y~0.75.",
+   "tris": 856,
+   "bytes": 114404,
+   "materials": [
+    "planks",
+    "timber",
+    "knotwork",
+    "gold",
+    "fur",
+    "iron",
+    "painted"
+   ],
+   "marker": [
+    0,
+    2.6,
+    -0.1
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_lava_trough",
+   "file": "interior_lava_trough.glb",
+   "kind": "light",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.46,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Dwarven lava channel: a raised stone trough (kerbs y=0.46 with gold edging) carrying a glowing lava flow (emissive_lava, surface y~0.26). Tileable along glTF X (open ends); rot 90 to run along Z. Blocking. `light` is an opt-in anchor (use one per 3-4 tiles).",
+   "tris": 276,
+   "bytes": 72224,
+   "materials": [
+    "stone_dwarf",
+    "gold",
+    "emissive_lava",
+    "painted"
+   ],
+   "light": [
+    0,
+    0.5,
+    0
+   ],
+   "lightColor": "#ff7a2a",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_long_table",
+   "file": "interior_long_table.glb",
+   "kind": "light",
+   "footprint": [
+    4,
+    1
+   ],
+   "height": 1.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Mead-hall long table, 3.8 x 0.9 along glTF X, top y=0.81: a red runner, eight places with plates, cups and drinking horns, a roast boar, bread, mead jugs and two candles (one `light` anchor, opt-in: a hall has several tables). Put two interior_bench on each long side.",
+   "tris": 2254,
+   "bytes": 149236,
+   "materials": [
+    "planks",
+    "timber",
+    "weave",
+    "painted",
+    "gold",
+    "bronze",
+    "wax",
+    "emissive_lamp"
+   ],
+   "light": [
+    0.0,
+    1.2,
+    0.02
+   ],
+   "lightColor": "#ffc070",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_loom",
+   "file": "interior_loom.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.1,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Warp-weighted loom leaning against the wall: two uprights, a cloth beam with half-woven striped wool, loose warps with clay loom weights, a basket of yarn. wallMount: back at glTF z=-0.46, faces +Z.",
+   "tris": 548,
+   "bytes": 52844,
+   "materials": [
+    "timber",
+    "weave",
+    "painted",
+    "planks"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_pelts",
+   "file": "interior_pelts.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.2,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Pelts: a grey wolf hide stretched on a lashed pole frame against the wall, and a folded pile of furs on the floor in front. wallMount: frame at glTF z=-0.4, faces +Z. For a hunter's lodge, a trader, the jarl's hall.",
+   "tris": 387,
+   "bytes": 43376,
+   "materials": [
+    "fur",
+    "timber",
+    "painted"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_post",
+   "file": "interior_post.glb",
+   "kind": "pillar",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Carved oak roof post (0.3 square) on a stone base, two knotwork bands, bracket arms and a bolster at 2.36-2.5 that carries interior_beam along X (glTF). Put posts every 2-4 tiles along the aisles of a hall or in room corners in front of the walls.",
+   "tris": 268,
+   "bytes": 52624,
+   "materials": [
+    "stone_hall",
+    "timber",
+    "knotwork"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_rug",
+   "file": "interior_rug.glb",
+   "kind": "decor",
+   "footprint": [
+    2,
+    3
+   ],
+   "height": 0.02,
+   "castShadow": false,
+   "sway": false,
+   "notes": "Woven rug 1.8 x 2.7 (long axis glTF Z): woad-blue field, red / ochre diamond medallion, zig-zag border, cream fringes. Flat (y 0.01-0.02), walkable, no shadow; lay it over floor tiles.",
+   "tris": 384,
+   "bytes": 53560,
+   "materials": [
+    "rug",
+    "painted"
+   ],
+   "walkable": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_shelf",
+   "file": "interior_shelf.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.7,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Open pantry shelf (1 wide, 1.7 high, 0.36 deep) with clay pots, crocks, stacked plates, a sack and cups. wallMount: back at glTF z=-0.46, faces +Z.",
+   "tris": 2178,
+   "bytes": 112784,
+   "materials": [
+    "planks",
+    "timber",
+    "painted"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_stool",
+   "file": "interior_stool.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 0.47,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Three-legged stool, seat at y=0.47.",
+   "tris": 105,
+   "bytes": 27184,
+   "materials": [
+    "planks",
+    "timber"
+   ],
+   "kit": "interior"
+  },
+  {
+   "id": "interior_table",
+   "file": "interior_table.glb",
+   "kind": "decor",
+   "footprint": [
+    2,
+    1
+   ],
+   "height": 0.9,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Oak trestle table, 1.8 x 0.9, top at y=0.8, with a plate, a cup and a loaf. Long axis along glTF X; pair with interior_bench on both long sides.",
+   "tris": 388,
+   "bytes": 43212,
+   "materials": [
+    "planks",
+    "timber",
+    "painted"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_hall",
+   "file": "interior_wall_hall.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Mead-hall timber wall: the timber wall with a painted round shield (red / cream, iron boss) over two crossed spears on +Z. Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 828,
+   "bytes": 105424,
+   "materials": [
+    "planks",
+    "stone_hall",
+    "timber",
+    "knotwork",
+    "painted",
+    "iron"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_stone",
+   "file": "interior_wall_stone.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Stone wall: warm grey ashlar courses on a proud plinth, the oak wall plate with the knotwork trim band, a stone coping cap. Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 552,
+   "bytes": 74224,
+   "materials": [
+    "stone_hall",
+    "timber",
+    "knotwork"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_stone_door",
+   "file": "interior_wall_stone_door.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Stone wall with a plank door between dressed stone jambs under a lintel stone, on +Z, and a threshold stone into the room. Exit warp on the floor tile in front (+Z). Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 1174,
+   "bytes": 129928,
+   "materials": [
+    "stone_hall",
+    "timber",
+    "knotwork",
+    "planks",
+    "iron"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_stone_window",
+   "file": "interior_wall_stone_window.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Stone wall with a deep barred window on +Z (daylight pane emissive_daylight, dressed surround, sill). Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 756,
+   "bytes": 97408,
+   "materials": [
+    "stone_hall",
+    "timber",
+    "knotwork",
+    "emissive_daylight",
+    "iron"
+   ],
+   "light": [
+    0,
+    1.16,
+    0.5
+   ],
+   "lightColor": "#bcd8ff",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_timber",
+   "file": "interior_wall_timber.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Norse timber wall: stone footing, vertical honey-oak boards, a bench-height rail, an oak wall plate with the painted knotwork trim band (red / ochre), plank cap. Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 576,
+   "bytes": 88752,
+   "materials": [
+    "planks",
+    "stone_hall",
+    "timber",
+    "knotwork"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_timber_door",
+   "file": "interior_wall_timber_door.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Timber wall with a closed plank door on +Z (iron straps, ring pull, carved knotwork lintel) and a threshold stone that juts 0.2 into the room tile. Put the exit warp on the floor tile in front of it (glTF +Z side). Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 1126,
+   "bytes": 125904,
+   "materials": [
+    "planks",
+    "stone_hall",
+    "timber",
+    "knotwork",
+    "iron"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_wall_timber_window",
+   "file": "interior_wall_timber_window.glb",
+   "kind": "wall",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.5,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Timber wall with a small wind-eye window on +Z: daylight pane (emissive_daylight, cool blue), mullion cross, red shutters folded open, a sill with a flower pot. Tileable wall block filling the whole 1x1 tile, 2.5 high. All four faces share the same plain treatment and trim heights, so runs and corners join in any rotation; the feature is on the +Z face = the room side (north wall rot 0, west wall rot +90, east wall rot -90, south wall rot 180).",
+   "tris": 1052,
+   "bytes": 128684,
+   "materials": [
+    "planks",
+    "stone_hall",
+    "timber",
+    "knotwork",
+    "emissive_daylight",
+    "iron",
+    "painted"
+   ],
+   "light": [
+    0,
+    1.36,
+    0.5
+   ],
+   "lightColor": "#bcd8ff",
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_weapon_rack",
+   "file": "interior_weapon_rack.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 2.3,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Weapon rack: two spears, a bearded axe and a sword standing on a slotted board. wallMount: back at glTF z=-0.42, faces +Z.",
+   "tris": 342,
+   "bytes": 59452,
+   "materials": [
+    "timber",
+    "planks",
+    "iron",
+    "gold",
+    "leather"
+   ],
+   "wallMount": true,
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "interior_railing",
+   "file": "interior_railing.glb",
+   "kind": "decor",
+   "footprint": [
+    1,
+    1
+   ],
+   "height": 1.28,
+   "castShadow": true,
+   "sway": false,
+   "notes": "Timber railing / banister segment, exactly 1 tile along glTF X on the tile's centre line (z=0), 0.2 deep: floor sill, three turned balusters, a knotwork apron (matching interior_post / interior_beam) and a round handrail at y~0.95, plus ONE carved post with a finial (to y=1.28) at the -X end (plinth x -0.5..-0.3). Straight runs tile: at rot 0 every piece's post lands on a joint and the rails run on without seams; turn the LAST piece of a run 180 deg to close its far end with a post (rot +/-90 runs along Z). Level only: along stairs, step each piece up with the treads. For a platform or ship-hold edge, place it on the edge tiles (or offset up to +/-0.4 toward the drop). Blocking (1 tile).",
+   "tris": 760,
+   "bytes": 53156,
+   "materials": [
+    "timber",
+    "knotwork"
+   ],
+   "blocking": true,
+   "kit": "interior"
+  },
+  {
+   "id": "helheim_tent",
+   "file": "helheim_tent.glb",
+   "map": "helheim",
+   "kind": "setpiece",
+   "footprint": [
+    3,
+    3
+   ],
+   "height": 3.13,
+   "castShadow": true,
+   "sway": true,
+   "notes": "Set piece: Hlin's camp tent, 3x3. A-frame of grey-green oiled canvas (canvas_hel) on crossed bone gable poles with horn tips and a driftwood ridge pole, guy ropes to bone pegs, pale ash drifted against the sides (no snow: Helheim is ash). The pointed door (flaps tied back, cloth_canvas_hel sways a little) and the stitched Algiz rune panel (canvas_rune) are on the front gable at glTF z=+0.5, facing +Z; a dim tent, a pelt and a soul candle show through it. A soul lantern (emissive_soul, `lights`) hangs from a bone arm right of the door (over the front-right tile, y 1.3-1.8). Tiles (glTF x, z centres): the porch = front-centre tile (0, +1) is the ONLY walkable tile (door warp / Hlin stand there); the other 8 block: the tent body covers the back row (z=-1) and middle row (z=0), a driftwood log seat is on front-left (-1, +1) and a driftwood stack on front-right (+1, +1).",
+   "tris": 4542,
+   "bytes": 265064,
+   "materials": [
+    "canvas_hel",
+    "canvas_inner",
+    "fur",
+    "bone_hel",
+    "emissive_soul",
+    "cloth_canvas_hel",
+    "rope",
+    "canvas_rune",
+    "planks_drift",
+    "iron",
+    "ash_pale"
+   ],
+   "light": [
+    0.8,
+    1.49,
+    0.96
+   ],
+   "lights": [
+    [
+     0.8,
+     1.49,
+     0.96
+    ]
+   ],
+   "lightColor": "#7affb4",
+   "marker": [
+    0.0,
+    3.45,
+    -0.45
+   ],
+   "blocking": true,
+   "kit": "helheim"
   }
  ]
 }

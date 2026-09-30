@@ -1010,3 +1010,120 @@ ACHIEVEMENTS.push(
 /* Round 5: js/data/recipes.js (crafting, vendors, services) loads right after this file. index.html does not list it
    yet (not ours to edit); while it does not, this parser-time document.write inserts it before js/core.js runs. */
 if (typeof RECIPES === 'undefined' && typeof document !== 'undefined' && document.readyState === 'loading' && !document.querySelector('script[src$="js/data/recipes.js"]')) document.write('<script src="js/data/recipes.js"><\/script>');
+
+/* ---------- Cycle 9: the world expansion (new regions, caves; js/data/maps.js "Cycle 9") ----------
+   Twelve side quests spread over the grown maps and the caves. Cave mini-bosses are elites (MAPDEFS[id].elites) that
+   come back after a while, so a kill objective can always be finished. */
+const WX_SIDE = ['hallbera_letters', 'hallbera_den', 'asvor_rounds', 'asvor_wight', 'keep_rollcall', 'kolfinna_ship', 'bardr_keel', 'unnr_grotto', 'nyr_adit', 'heimdall_islands', 'asa_pilgrim', 'eir_roots'];
+quest('hallbera_letters', { giver: 'hallbera', name: 'The Old Places', area: 'Ashen Fields · the south', req: { lvl: 6 },
+  summary: 'Hallbera asks you to look in on the old places south of the fields: the barrow, Freyr’s shrine and Grimsfield.',
+  offer: ['Nobody goes south any more. The barrow, the shrine, the old battlefield. My mother tended all three. I have not had the legs for it since the Ash.', 'Go and look for me. Tell me if the stones still stand, and if anyone still leaves bread for Freyr.'],
+  progress: 'The Barrow Downs, Freyr’s shrine and Grimsfield, south of the old fields.',
+  done: ['Bread at the shrine. Someone still goes. <i>She smiles, and it takes ten years off her.</i>', 'Take these. The apples are from the last tree that still fruits. Do not tell Oddný in Emberhold; she will want the tree.'],
+  obj: [{ type: 'inspect', map: 'ashen_fields', place: 'the old places', r: 2.2, spots: [
+    { x: 20.5, y: 79.5, name: 'The Barrow Downs', text: ['<i>The grave-stones lean in toward the mound, as if they were listening to it.</i>', '<i>Somebody has pulled the weeds from around them. Recently.</i>'] },
+    { x: 46.5, y: 71.5, name: 'Freyr’s Shrine', text: ['<i>A heel of bread in front of the stone boar. Fresh.</i>'] },
+    { x: 66.5, y: 84.5, name: 'Grimsfield', text: ['<i>Rust, bones, a scrap of red cloth with a black boar on it.</i>', '<i>The ground is warm under your feet, as if something below is still burning.</i>'] }] }],
+  reward: { exp: 2200, jexp: 1600, zeny: 600, items: [['apple', 6], ['red_potion', 5]], lore: 'af_farms' } });
+quest('hallbera_den', { giver: 'hallbera', name: 'The Den-Mother', area: 'Ashen Fields · the Wolf Den', req: { lvl: 10 },
+  summary: 'The grey she-wolf that leads the pack in the Wolf Den watches Hallbera’s field every night. Hallbera wants her gone.',
+  offer: ['Every dusk she comes to the edge of the barley and sits. The big grey one. She does not hunt. She waits.', 'The den is in the rocks past Grimsfield, in the south-east. I cannot sleep with her watching. Please.'],
+  progress: 'The Den-Mother, deep in the Wolf Den (south-east of the Ashen Fields).',
+  done: ['Gone. <i>She lets out a long breath.</i> I will sleep tonight. I had forgotten what that is like.', 'My husband’s bow. He took it to the watchtower. The wolves brought it back, in a way. Sell it or keep it.'],
+  obj: [{ type: 'kill', mob: 'den_mother', n: 1, text: 'Kill the Den-Mother in the Wolf Den' }],
+  reward: { exp: 3800, jexp: 2800, zeny: 2000, items: [['orange_potion', 5]], rep: { emberhold: 1 } } });
+quest('asvor_rounds', { giver: 'asvor', name: 'The Hunters’ Rounds', area: 'Withered Wood · the east and south', req: { lvl: 14 },
+  summary: 'Ásvör’s hunters walk three rounds a season: the North Watch, Skaði’s stone and the woodcutters’ clearing. She is short a hunter.',
+  offer: ['Three places we check every season. The old watchtower on the north ridge, Skaði’s stone in the east, the woodcutters’ clearing past the brook.', 'I lost a hunter to the barrow last month. Walk the rounds for me and tell me what you see.'],
+  progress: 'The North Watch, Skaði’s stone and the woodcutters’ clearing.',
+  done: ['All three quiet. Good. Quiet is what we hunt for, these days.', 'Here. Hunters’ pay: wings, potions, and a place by the fire any night you want it.'],
+  obj: [{ type: 'inspect', map: 'withered_wood', place: 'the hunters’ rounds', r: 2.2, spots: [
+    { x: 86.5, y: 15.5, name: 'The North Watch', text: ['<i>The ring of stones is as Ásvör said. Wolf tracks in the ash, days old. Nothing new.</i>'] },
+    { x: 87.5, y: 59.5, name: 'Skaði’s Stone', text: ['<i>A fresh strip of hide tied round the stone. Someone asked for a clean kill this morning.</i>'] },
+    { x: 18.5, y: 74.5, name: 'The Woodcutters’ Clearing', text: ['<i>Stumps and stacked logs. An axe left in a stump, the handle grey with ash. Nobody has come back for it.</i>'] }] }],
+  reward: { exp: 6500, jexp: 4800, zeny: 1500, items: [['fly_wing', 6], ['yellow_potion', 4]] } });
+quest('asvor_wight', { giver: 'asvor', name: 'What the Barrow Keeps', area: 'Withered Wood · the Old Barrow', req: { lvl: 20, quests: ['asvor_rounds'] },
+  summary: 'The dead hero of the Old Barrow killed one of Ásvör’s hunters. Put him back in his grave, and bring bone-shards for the hunters’ cairn.',
+  offer: ['His name was Hrothgar Bear-Arm. He held the Wood against the frost-giants. He is still holding it, and he thinks we are giants.', 'Put him down. And bring me bone-shards from his dead, five of them, so we can raise a cairn for Leif.'],
+  progress: 'Hrothgar Bear-Arm in the Old Barrow; five Bone Shards from its dead.',
+  done: ['He is down. For a while. The barrow always gives its dead back, sooner or later.', 'Leif gets his cairn. You get the hunters’ thanks, and a share of what we took off the draugr last winter.'],
+  obj: [{ type: 'kill', mob: 'barrow_wight', n: 1, text: 'Put down Hrothgar Bear-Arm in the Old Barrow' }, { type: 'collect', item: 'bone_shard', n: 5 }],
+  reward: { exp: 16000, jexp: 12000, zeny: 4000, items: [['yellow_potion', 6]], rep: { emberhold: 1 } } });
+quest('keep_rollcall', { giver: 'keep_board', name: 'Roll-Call', area: 'Gloamheim Keep · the Barracks and the Lower Cells', req: { lvl: 24 },
+  summary: 'A notice on the keep’s board, in a steady hand: count what is left of the garrison, and of its prisoners.',
+  offer: ['<i>A notice nailed to the board. The ink is fresh; the hand is old.</i> “To whoever still walks: count the garrison. The Barracks, east. Tyr’s chapel. The cells below the hall. I cannot go myself. — E.”'],
+  progress: 'The Barracks, Tyr’s chapel and the Lower Cells.',
+  done: ['<i>You add your count below the notice. By morning someone has written underneath: “Thank you. Now I know how many to wait for.”</i>'],
+  obj: [{ type: 'inspect', map: 'gloamheim', place: 'the Barracks and the Cells', r: 2.5, spots: [
+    { x: 69.5, y: 13.5, name: 'The Drill Hall', text: ['<i>Straw targets, a rack of practice swords, boot-marks worn into the flagstones in rows. The rows are still being walked.</i>'] },
+    { x: 72.5, y: 40.5, name: 'Tyr’s Chapel', text: ['<i>The bronze hand on the altar is warm, like a hand that has just been held.</i>'] },
+    { x: 34.5, y: 64.5, name: 'The Lower Cells', text: ['<i>Eleven cells. Ten doors hanging open. The last one is locked from the inside.</i>'] }] }],
+  reward: { exp: 22000, jexp: 16000, zeny: 5000, items: [['yellow_potion', 5]], rep: { dead: 1 } } });
+quest('kolfinna_ship', { giver: 'kolfinna', name: 'The Ship in the Ice', area: 'Rimeshore · the Frozen Reach · the Ice Cave', req: { lvl: 34 }, seq: true,
+  summary: 'Kolfinna’s brother went to the singing berg past the frozen ship and did not come back. Find out what sings.',
+  offer: ['Across the white ice east of the lagoon there is a ship frozen in, the Ormsvín. Past it, a berg with a cave in it. It sings at night.', 'My brother went to see what sings. Go to the ship first; see if he left a sign. Then the berg. And if you find the singer, stop it.', 'And tell Ormr in Skaldhaven. The ship was his father’s. He has a right to know, even if he does not want to.'],
+  progress: 'The frozen ship, then the singer in the Ice Cave, then Captain Ormr in Skaldhaven.',
+  done: ['<i>She listens to the end without a word.</i> Then my brother is in the ice with the rest of the crew. Good. He always wanted to sail.', 'Take the ring. It was his. Njörðr can have next year’s from me.'],
+  obj: [{ type: 'inspect', map: 'rimeshore', place: 'the frozen ship', r: 2.5, spots: [{ x: 77.5, y: 46.5, name: 'The Ormsvín', text: ['<i>Frost on every oar. Scratched into the rail by the steering oar, fresh: a seal-hunter’s mark, and an arrow pointing to the berg.</i>'] }] },
+    { type: 'kill', mob: 'frozen_helmsman', n: 1, text: 'Silence the singer in the Ice Cave' },
+    { type: 'talk', npc: 'orm', text: 'Tell Captain Ormr in Skaldhaven about his father’s ship' }],
+  reward: { exp: 70000, jexp: 52000, zeny: 12000, items: [['white_potion', 6], ['frost_heart', 1]], rep: { rimeshore: 2 } } });
+quest('bardr_keel', { giver: 'bardr', name: 'A Keel for Skaldhaven', area: 'Skaldhaven · the Withered Wood · Rimeshore', req: { lvl: 30 },
+  summary: 'Bárðr needs root-wood for the keel of Skaldhaven’s first new longship, and draugr nets to caulk her.',
+  offer: ['Forty oaks, I said. There are no oaks left. But the willow-roots of the Withered Wood are tougher than oak and twice as stubborn. Ten of them.', 'And draugr nets. The tar in them never dries; best caulking on the coast. Four. The draugr will not miss them. Much.'],
+  progress: 'Ten Tree Roots (the Withered Wood’s willows) and four Draugr’s Nets (Rimeshore).',
+  done: ['<i>He runs a thumb along a root and grins.</i> Tough as Ormr’s temper. She will be a good ship.', 'Here. And when she is launched, you ride free. First voyage. Wherever she goes.'],
+  obj: [{ type: 'collect', item: 'tree_root', n: 10 }, { type: 'collect', item: 'draugr_net', n: 4 }],
+  reward: { exp: 32000, jexp: 24000, zeny: 9000, items: [['white_potion', 3], ['fly_wing', 5]], rep: { rimeshore: 1 } } });
+quest('unnr_grotto', { giver: 'unnr', name: 'Offerings in the Dark', area: 'Mirewell · the Flooded Grotto', req: { lvl: 40 },
+  summary: 'Something in the Flooded Grotto has been eating the bog-folk’s offerings. Unnr wants it gone, and six leech teeth for the charm-maker.',
+  offer: ['Our grandmothers drowned their gifts in the grotto for Nerthus. Brooches, swords, sometimes more. Now there are bones in the water, and the gifts are gone.', 'Nerthus does not leave bones. Go down, south-east of the peat-cut, and find what does. And bring six leech teeth: the charm-maker needs them for the children’s necklaces.'],
+  progress: 'The Grotto-Lurker in the Flooded Grotto; six Leech Teeth.',
+  done: ['A troll. <i>She spits into the water.</i> Three hundred years we fed a troll. Well. The bog has a sense of humour.', 'The charm-maker thanks you. So do I. Take these; we have no use for coin out here.'],
+  obj: [{ type: 'kill', mob: 'grotto_lurker', n: 1, text: 'Find and kill what eats the offerings' }, { type: 'collect', item: 'leech_teeth', n: 6 }],
+  reward: { exp: 110000, jexp: 82000, zeny: 16000, items: [['white_potion', 8], ['blue_potion', 4]], rep: { mirewell: 2 } } });
+quest('nyr_adit', { giver: 'nyr', name: 'The Twelve', area: 'Nidavellir Deep · the Old Adit', req: { lvl: 46 },
+  summary: 'Nýr’s last shift went down the old adit and never came up. Read their tally, and stop their foreman working them.',
+  offer: ['Twelve. My last shift. They went down the old adit east of the mines to look at a road that should not be there.', 'They are still working. I hear the picks. Their foreman will not ring them up. Read the tally, so someone knows their names. Then ring the bell for them. However you have to.'],
+  progress: 'The Old Adit (the Deep Mines, east): read the shift-tally, stop the Iron Foreman.',
+  done: ['<i>The ghost is quiet for a long time.</i> The picks have stopped. First time in three hundred years.', 'Take the foreman’s pay. He never paid them. Somebody should have it.'],
+  obj: [{ type: 'cond', text: 'Read the last shift-tally in the Old Adit', check: () => !!P.flags.lore.nd_adit }, { type: 'kill', mob: 'iron_foreman', n: 1, text: 'Stop the Iron Foreman' }],
+  reward: { exp: 190000, jexp: 140000, zeny: 22000, items: [['star_iron', 2]], rep: { dvergar: 2 } } });
+quest('heimdall_islands', { giver: 'heimdall', name: 'Islands of the Broken Bridge', area: 'Bifrost Ruins · the outer islands', req: { lvl: 50 },
+  summary: 'Heimdall cannot leave his post. He asks you to look at the outer islands: the Einherjar’s Field, Frigg’s Garden, the Valkyrie Watch.',
+  offer: ['I hear everything on the bridge. Grass growing. Wool on a sheep. But out on the far islands there is a silence I do not understand.', 'The Einherjar’s Field. Frigg’s Garden. The Valkyrie Watch. Go and be my eyes.'],
+  progress: 'The Einherjar’s Field (east), Frigg’s Garden (south-east) and the Valkyrie Watch (south).',
+  done: ['Fighting with no feast. An apple nobody can pick. A horn nobody answered. <i>Heimdall closes his eyes.</i> That is the silence. Waiting.', 'Take these. And when you hear a horn, answer it. Somebody should.'],
+  obj: [{ type: 'inspect', map: 'bifrost', place: 'the outer islands', r: 2.5, spots: [
+    { x: 78.5, y: 32.5, name: 'The Einherjar’s Field', text: ['<i>Spear-marks everywhere, fresh. Nobody in sight. You hear a shout of laughter, very far off.</i>'] },
+    { x: 84.5, y: 60.5, name: 'Frigg’s Garden', text: ['<i>One golden apple, chiming. When you reach for it, it turns away from your hand.</i>'] },
+    { x: 68.5, y: 78.5, name: 'The Valkyrie Watch', text: ['<i>The great horn is cracked along its length. It was blown hard, once.</i>'] }] }],
+  reward: { exp: 260000, jexp: 190000, zeny: 30000, items: [['honey_mead', 5], ['valkyrie_plume', 3]] } });
+quest('asa_pilgrim', { giver: 'asa', name: 'Bread for the Old Gods', area: 'Ashen Fields · Withered Wood · Rimeshore', req: { lvl: 30 },
+  summary: 'Ása asks you to leave the old gods their due: bread at Freyr’s shrine, a strip of hide at Skaði’s stone, a ring at Njörðr’s altar.',
+  offer: ['The old gods did not answer when the Tree burned. I do not think they stopped listening.', 'Take bread to Freyr’s shrine in the Fields, a strip of hide to Skaði’s stone in the Wood, a copper ring to Njörðr’s altar on the Rimeshore coast. You do not have to believe. You only have to go.'],
+  progress: 'Freyr’s shrine (Ashen Fields, south), Skaði’s stone (Withered Wood, east), Njörðr’s altar (Rimeshore, south shore).',
+  done: ['Did anything answer? <i>She does not wait for your reply.</i> No. But you went, and that is the part we can do.', 'Here. And the chapel’s thanks, which is worth more than it sounds.'],
+  obj: [{ type: 'inspect', map: 'ashen_fields', place: 'Freyr’s shrine', r: 2.4, spots: [{ x: 46.5, y: 71.5, name: 'Freyr’s Shrine', text: ['<i>You set Ása’s bread beside the other loaf. A wind moves the barley all at once, though there is no barley here.</i>'] }] },
+    { type: 'inspect', map: 'withered_wood', place: 'Skaði’s stone', r: 2.4, spots: [{ x: 87.5, y: 59.5, name: 'Skaði’s Stone', text: ['<i>You tie the strip of hide beside the others. Somewhere a bowstring hums.</i>'] }] },
+    { type: 'inspect', map: 'rimeshore', place: 'Njörðr’s altar', r: 2.6, spots: [{ x: 12.5, y: 83.5, name: 'Njörðr’s Altar', text: ['<i>You lay the copper ring on the salt-white stone. The tide comes in a little further than it should, and goes out again.</i>'] }] }],
+  reward: { exp: 42000, jexp: 32000, zeny: 6000, items: [['yellow_potion', 6]], rep: { emberhold: 2 }, lore: 'asa_pilgrim', title: 'pilgrim' } });
+quest('eir_roots', { giver: 'eir', name: 'The Grey Roots', area: 'Helheim · the Grey Roots', req: { lvl: 80, quests: ['act3_2'] },
+  summary: 'Níðhöggr’s eldest spawn is gnawing a root of the World Tree under the Road of the Dead. Eir wants it stopped, and its brood thinned.',
+  offer: ['There is a root under the Road of the Dead, south of the camp. The Grey Roots, the dead call it. Something is chewing through it.', 'Níðhöggr’s eldest. If it bites through, Helheim loses a root, and Midgard feels it. Kill it. And eight of its brood, so it does not simply grow another.'],
+  progress: 'The Root-Gnawer and eight Níðhöggr Spawn in the Grey Roots.',
+  done: ['The root will heal. Roots do, if they are left alone long enough. <i>Eir smiles, which is rare down here.</i>', 'Obols, for your trouble. The dead insist.'],
+  obj: [{ type: 'kill', mob: 'root_gnawer', n: 1, text: 'Kill the Root-Gnawer in the Grey Roots' }, { type: 'kill', mob: 'nidhogg_spawn', n: 8 }],
+  reward: { exp: 1400000, jexp: 900000, zeny: 60000, items: [['hel_obol', 20], ['gjoll_draught', 8]], rep: { dead: 1 } } });
+TITLES.pilgrim = 'Pilgrim of the Old Gods';
+TITLES.delver = 'Cave-Delver';
+TITLES.loremaster = 'Keeper of Tales';
+const WX_CAVES = () => Object.keys(MAPDEFS).filter(k => MAPDEFS[k].gen === 'cave' && MAPDEFS[k].parent);
+const WX_ELITES = ['den_mother', 'barrow_wight', 'frozen_helmsman', 'grotto_lurker', 'iron_foreman', 'root_gnawer'];
+ACHIEVEMENTS.push(
+  ach('Exploration', 'caves_1', 'Into the Dark', 'Enter a cave.', () => WX_CAVES().some(k => P.flags.seen[k]), () => [WX_CAVES().some(k => P.flags.seen[k]) ? 1 : 0, 1]),
+  ach('Exploration', 'caves_all', 'Cave-Delver', 'Enter every cave and mine of Midgard and Hel.', () => WX_CAVES().every(k => P.flags.seen[k]), () => [WX_CAVES().filter(k => P.flags.seen[k]).length, WX_CAVES().length], 'delver'),
+  ach('Exploration', 'lore_15', 'Keeper of Tales', 'Read fifteen lore finds: runestones, altars, logs and tallies in the wild.', () => (P.flags.loreFound || 0) >= 15, () => [Math.min(15, P.flags.loreFound || 0), 15], 'loremaster'),
+  ach('Exploration', 'chests_10', 'Treasure-Seeker', 'Open ten treasure chests.', () => Object.keys(P.flags.chests || {}).length >= 10, () => [Math.min(10, Object.keys(P.flags.chests || {}).length), 10]),
+  ach('Bosses', 'cave_elites', 'Down in the Deep Places', 'Defeat the master of every cave.', () => WX_ELITES.every(k => ((P.flags.kills || {})[k] || 0) > 0), () => [WX_ELITES.filter(k => ((P.flags.kills || {})[k] || 0) > 0).length, WX_ELITES.length]),
+);
