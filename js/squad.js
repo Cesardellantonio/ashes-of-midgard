@@ -311,20 +311,27 @@ function squadReviveHint(h) {
 }
 
 /* ---------- Map changes ---------- */
-// gotoMap: the companions arrive with you, in formation behind you.
+// gotoMap: the companions arrive with you, in formation behind you (mapfix F3: on open ground, never on a warp tile).
 function squadArrive() {
   const lead = P; let k = 0;
   for (const h of PARTY.members) {
     if (h === lead) continue;
-    const s = squadSlot(k, lead); k++;
+    const s = squadSlot(k, lead, true); k++;
     Object.assign(h, { x: s.x, y: s.y, fx: lead.fx, fy: lead.fy, path: null, target: null, pending: null, goal: null, casting: null, dash: null, blocking: false, moving: false });
     if (h.ai) { h.ai.moveUntil = 0; h.ai.t = 0.05 * k; h.ai.holdAt = h.ai.hold ? { x: h.x, y: h.y } : null; h.ai.focus = null; }
   }
 }
-// Formation slot k behind `lead` (on open, reachable ground).
-function squadSlot(k, lead) {
+// Formation slot k behind `lead` (on open, reachable ground, never on a warp tile: mapfix F3). arrive: also off the
+// lead's tile, then the nearest open tile around the lead.
+function squadSlot(k, lead, arrive) {
   const f = SQUAD_FORM[k % SQUAD_FORM.length], fx = lead.fx === undefined ? 0 : lead.fx, fy = lead.fy === undefined ? 1 : lead.fy, l = hyp(fx, fy) || 1, ux = fx / l, uy = fy / l;
-  const open = (x, y) => map && !blocked(x, y) && map.reach[Math.floor(y) * map.w + Math.floor(x)];
+  const free = (tx, ty) => { if (arrive && tx === Math.floor(lead.x) && ty === Math.floor(lead.y)) return false; for (const w of map.warps) if (w.x === tx && w.y === ty) return false; return true; };
+  const open = (x, y) => map && !blocked(x, y) && map.reach[Math.floor(y) * map.w + Math.floor(x)] && free(Math.floor(x), Math.floor(y));
+  if (arrive && map) {   // the formation slots first, then the open tiles around the lead, nearest first
+    for (const [b, s] of [[f[0], f[1]], [f[0] * 0.6, f[1] * 0.6], [f[0], -f[1]], [1.1, 0], [0.6, f[1] * 0.8]]) { const x = lead.x - ux * b - uy * s, y = lead.y - uy * b + ux * s; if (open(x, y)) return { x, y }; }
+    const cx = Math.floor(lead.x), cy = Math.floor(lead.y);
+    for (let r = 1; r <= 3; r++) { let best = null, bd = 1e9; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const nx = cx + dx, ny = cy + dy; if (!open(nx + 0.5, ny + 0.5)) continue; const dd = dx * dx + dy * dy + (dx * ux + dy * uy > 0 ? 0.5 : 0); if (dd < bd) { bd = dd; best = { x: nx + 0.5, y: ny + 0.5 }; } } if (best) return best; }
+  }
   // the slot, then closer in, then the other side, then straight behind; last, any open tile next to the lead
   for (const [b, s] of [[f[0], f[1]], [f[0] * 0.6, f[1] * 0.6], [f[0], -f[1]], [1.1, 0], [0.6, f[1] * 0.8]]) {
     const x = lead.x - ux * b - uy * s, y = lead.y - uy * b + ux * s; if (open(x, y)) return { x, y };

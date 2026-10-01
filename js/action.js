@@ -40,6 +40,7 @@ addEventListener('keydown', e => {
   e.preventDefault(); e.stopImmediatePropagation();
   if (e.repeat) return;
   CTRL.keys.add(e.code); Sfx.unlock();
+  if (typeof TRAVEL !== 'undefined' && TRAVEL.lock) return;   // mapfix F3: behind the travel fade, held moves count, actions wait
   const win = WINKEYS.action[e.code]; if (win) { toggleWin(win); return; }
   switch (e.code) {
     case 'KeyJ': actLight(); break;

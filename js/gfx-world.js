@@ -272,7 +272,7 @@ sun.shadow.camera.near = 1; sun.shadow.camera.far = 160; sun.shadow.bias = -0.00
     }
   }
   const smRender = function (lights, sc, c) {
-    if (!SHADOW.split || sc !== scene || !curWorld || lights.length !== 1 || lights[0] !== sun) return base.call(this, lights, sc, c);
+    if ((typeof WPRE !== 'undefined' && WPRE.drawing) || !SHADOW.split || sc !== scene || !curWorld || lights.length !== 1 || lights[0] !== sun) return base.call(this, lights, sc, c);
     const prev = renderer.getRenderTarget(), clr = renderer.clear, v = curWorld.visible;
     if (!SHADOW.need && SHADOW.rt && sun.shadow.map) {
       if (SHADOW.pending && !BLD.on) { const q = SHADOW.pending; SHADOW.pending = null; Object.assign(BLD, { on: true, i: 0, cx: q[0], th: q[1], cz: q[2], R: q[3], list: casters(curWorld) }); aimShadow(BLD.light, BLD.R, BLD.cx, BLD.th, BLD.cz); BLD.light.updateMatrixWorld(); }
@@ -401,7 +401,7 @@ const rlookBase = id => { for (const k in RLOOK_BASE) if (id === k || id.startsW
    time-locked (tod false) with no sky, sun (a faint fill only) or weather; caves have their own ambient particles.
    render.interior = { floor: 'plank'|'stone'|'flag'|'straw', wall: 'timber'|'stone'|'dwarf'|'hall', trim: '#hex' | 0xhex,
      ceilingFade: true, windows: [[x, y], ...] (wall tiles with a window: pane + light shaft), beams: false (ceiling beams across the room) }
-   render.cave = { rock: 'basalt'|'ice'|'mud'|'crystal'|'mine', wet: 0..1, glow: 'mushroom'|'crystal'|null,
+   render.cave = { rock: 'basalt'|'ice'|'mud'|'crystal'|'mine'|'roots', wet: 0..1, glow: 'mushroom'|'crystal'|null,
      torch: 1 (hero torch radius / intensity scale), drips: 0..1, dust: 0..1, walls: procedural rock by default (also
      when props.wall lists kit blocks); 'kit' = the props.wall kit blocks (cave_wall*) when listed; false = content draws
      T.WALL itself with props.wall models (see wallsDrawn) } */
@@ -435,6 +435,9 @@ const CAVE_ROCK = {
   mud: { g1: [56, 44, 30], g2: [94, 76, 52], a: 0x3a2c1e, b: 0x6e5a40, detail: 'mud', floor: 'mud', haze: 0x0a0806, mist: 0x7a7060, glow: 0xa8f070, h: 2.1 },
   crystal: { g1: [50, 42, 66], g2: [86, 74, 110], a: 0x2e2840, b: 0x5e5280, detail: 'rock', floor: 'rock', haze: 0x0a0612, mist: 0x8a78b8, glow: 0xc08aff, h: 2.7, veins: 1 },
   mine: { g1: [72, 60, 46], g2: [108, 92, 72], a: 0x463a2e, b: 0x7a6a56, detail: 'rock', floor: 'dirt', haze: 0x0a0806, mist: 0x8a7a66, glow: 0xffb060, h: 2.4 },
+  // R6 (docs/MAPS.md §18): Helheim's root caves (helheim_cave_roots). Grey-green ash rock (the Helheim kit palette) with
+  // dark World-Tree roots winding through it in strata (roots = the wood colour), a faint soul-green glow in their seams.
+  roots: { g1: [60, 64, 60], g2: [96, 100, 94], a: 0x2c302e, b: 0x646a64, detail: 'rock', floor: 'ash', haze: 0x060908, mist: 0x7e9088, glow: 0x5affb0, h: 3.0, roots: 0x3a2c22 },
 };
 function caveCfg(m) {
   const C = (m.d && m.d.render && m.d.render.cave) || {}, n = (v, d, a, b) => clamp(isFinite(v) && v !== null && v !== '' ? +v : d, a, b);
@@ -482,6 +485,10 @@ function kindLook(m, kind) {
     R.paint = { g1: K.g1, g2: K.g2 }; R.floorD = K.floor; R.floorN = 0.8; R.haze = K.haze; R.sky = [K.haze, K.haze];
     R.mist = Object.assign({}, R.mist, { col: K.mist }); R.torch = [R.torch[0], R.torch[1] * C.torch, R.torch[2] * Math.sqrt(C.torch)];
     if (C.rock === 'ice') Object.assign(R, { hemi: [0x8ab0d8, 0x141c24, 0.4], lt: { amb: [0.38, 0.44, 0.56], sun: [0.02, 0.03, 0.04] }, spec: [0x445460, 60] });
+    // the root caves under Helheim: its grey-green grade and soul-green fires (RLOOK_BASE.helheim)
+    else if (C.rock === 'roots') Object.assign(R, { hemi: [0x8a9c94, 0x121614, 0.6], lt: { amb: [0.38, 0.44, 0.42], sun: [0.02, 0.025, 0.022] },
+      lights: Object.assign({}, R.lights, { brazier: [0x7affb8, 2.0, 8], lamp: [0x8affc0, 1.4, 6.5] }), flame: [1.1, 3.0, 1.7], flameHalo: 0x5aff9a,
+      grade: Object.assign({}, R.grade, { sat: 0.82, shadowTint: [-0.006, 0.012, 0.01], highTint: [0.01, 0.014, 0.004] }) });
   }
   return R;
 }
@@ -849,7 +856,8 @@ function groundDetail(mat, o) {
 
 /* ---------- Ground layer mask: 4 texels per tile. R path/dirt, G cobble, B ash ----------
    Smooth fields; the shader cuts them with detail height + noise into crisp organic edges. */
-function groundMask(m) {
+function groundMask(m) { return wbRun(groundMaskSteps(m)); }
+function* groundMaskSteps(m) {
   const L = m.d.look, w = m.w, h = m.h, R = 4, MW = w * R, MH = h * R, D = new Uint8Array(MW * MH * 4);
   const pf = new Float32Array(w * h), cf = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) { const d = m.deco[i]; if (d === 5 && L.cobble) cf[i] = 1; else if (d === 6 || d === 5) pf[i] = 1; }
@@ -863,6 +871,7 @@ function groundMask(m) {
     if (ashK) { const an = vnoise(tx / 3.3, ty / 3.3, sd + 31) * 0.58 + vnoise(tx / 1.3, ty / 1.3, sd + 32) * 0.42; a = smoothstep(0.6, 0.76, an) * ashK * (1 - Math.min(1, p * 1.6)); }
     D[o] = p * 255; D[o + 1] = c * 255; D[o + 2] = a * 255; D[o + 3] = 255;
     hasP = hasP || p > 0.01; hasC = hasC || c > 0.01; hasA = hasA || a > 0.01;
+    if (x === MW - 1 && (y & 63) === 63) yield;
   }
   const t = new THREE.DataTexture(D, MW, MH, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
   return { tex: t, D, MW, MH, R, hasP, hasC, hasA, at(x, z) { const i = (clamp(Math.floor(z * R), 0, MH - 1) * MW + clamp(Math.floor(x * R), 0, MW - 1)) * 4; return [D[i] / 255, D[i + 1] / 255, D[i + 2] / 255]; } };
@@ -873,7 +882,8 @@ function groundMask(m) {
    shade: 8 px/tile multiplier x2 (AO under solids and props, dungeon falloff, light pools),
    applied after the shader layers so paths and cobbles get it too;
    base: 4 samples/tile of the linear base colour (grass tuft tint). */
-function paintGround(m, plan) {
+function paintGround(m, plan) { return wbRun(paintGroundSteps(m, plan)); }
+function* paintGroundSteps(m, plan) {
   // cycle 9: maps above 64 x 64 keep the macro canvas at <= 2048 px (fewer px per tile; ps scales the painted details),
   // so a 96 x 96 field costs the GPU memory and paint time of a 64 x 64 one; 64 x 64 and smaller are unchanged
   const big = isBig(m), TP = big ? Math.max(16, Math.floor(2048 / Math.max(m.w, m.h))) : 32, ps = TP / 32, Wp = m.w * TP, Hp = m.h * TP, w = m.w, h = m.h;
@@ -888,6 +898,7 @@ function paintGround(m, plan) {
       const t = n0 * 0.35 + n1 * 0.45 + n3 * 0.2, gr = (n2 - 0.5) * grain;
       const o = (py * Wp + px) * 4; D[o] = g1[0] + (g2[0] - g1[0]) * t + gr; D[o + 1] = g1[1] + (g2[1] - g1[1]) * t + gr; D[o + 2] = g1[2] + (g2[2] - g1[2]) * t + gr * 0.6; D[o + 3] = 255;
     }
+    if ((py & 127) === 127) yield;
   } else {   // same noise in world units (32 px per tile space), sampled at TP px per tile
     const qx = new Int32Array(Wp); for (let px = 0; px < Wp; px++) qx[px] = (px / ps) | 0;
     for (let py = 0; py < Hp; py++) {
@@ -896,9 +907,10 @@ function paintGround(m, plan) {
         const q = qx[px], t = NZ.a[r0 + ((q >> 5) & 255)] * 0.35 + NZ.a[r1 + ((q >> 3) & 255)] * 0.45 + NZ.a[r3 + ((q >> 1) & 255)] * 0.2, gr = (NZ.b[r2 + (px & 255)] - 0.5) * grain;
         const o = (py * Wp + px) * 4; D[o] = g1[0] + (g2[0] - g1[0]) * t + gr; D[o + 1] = g1[1] + (g2[1] - g1[1]) * t + gr; D[o + 2] = g1[2] + (g2[2] - g1[2]) * t + gr * 0.6; D[o + 3] = 255;
       }
+      if ((py & 127) === 127) yield;
     }
   }
-  g.putImageData(img, 0, 0);
+  g.putImageData(img, 0, 0); yield;
   // base colour samples for the grass tufts (linear)
   const BR = 4, base = new Float32Array(w * BR * h * BR * 3), st = TP / BR;
   for (let y = 0; y < h * BR; y++) for (let x = 0; x < w * BR; x++) { const o = (Math.floor((y + 0.5) * st) * Wp + Math.floor((x + 0.5) * st)) * 4, k = (y * w * BR + x) * 3; base[k] = (D[o] / 255) ** 2.2; base[k + 1] = (D[o + 1] / 255) ** 2.2; base[k + 2] = (D[o + 2] / 255) ** 2.2; }
@@ -925,6 +937,7 @@ function paintGround(m, plan) {
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (T_[y * w + x] === T.LAVA && (tileOpen(x + 1, y) || tileOpen(x - 1, y) || tileOpen(x, y + 1) || tileOpen(x, y - 1))) { const gr = eg.createRadialGradient((x + 0.5) * 16, (y + 0.5) * 16, 0, (x + 0.5) * 16, (y + 0.5) * 16, 18); gr.addColorStop(0, 'rgba(255,90,20,.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); eg.fillStyle = gr; eg.fillRect(x * 16 - 18, y * 16 - 18, 52, 52); }
     m.emisCanvas = ec;
   }
+  yield;
   // Grass blades & flowers (the 3D tufts carry most of this on medium+)
   if (L.floor === 'grass') {
     for (let i = 0; i < w * h * 5; i++) { const x = rng() * w, y = rng() * h; if (!tileOpen(x | 0, y | 0) || m.deco[(y | 0) * w + (x | 0)] >= 5) continue; const X = x * TP, Y = y * TP; g.strokeStyle = rng() < 0.5 ? `rgba(40,70,20,.3)` : `rgba(200,230,140,.2)`; g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y); g.lineTo(X + (rng() - 0.5) * 3 * ps, Y - 3 * ps - rng() * 3 * ps); g.stroke(); }
@@ -946,6 +959,7 @@ function paintGround(m, plan) {
       if (k === 7) for (let i = 0; i < w * h; i++) if (m.surf[i] === 7 && rng() < 0.5) { const X = (i % w) * TP, Y = ((i / w) | 0) * TP; g.strokeStyle = 'rgba(255,255,255,.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(X + rng() * TP, Y + rng() * TP); g.lineTo(X + rng() * TP, Y + rng() * TP); g.stroke(); }
     }
   }
+  yield;
   // Scattered decorations (bones are 3D props now)
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const dc = m.deco[y * w + x]; if (!dc || !tileOpen(x, y)) continue; const X = x * TP + 8 * ps + rng() * 16 * ps, Y = y * TP + 8 * ps + rng() * 16 * ps;
@@ -954,6 +968,7 @@ function paintGround(m, plan) {
     else if (dc === 4) { g.fillStyle = L.floor === 'rock' ? 'rgba(255,120,40,.3)' : 'rgba(110,106,100,.45)'; g.beginPath(); g.ellipse(X, Y, 9 * ps, 5 * ps, 0, 0, 7); g.fill(); }
     else if (dc === 1 && L.floor === 'grass') { g.fillStyle = 'rgba(40,80,24,.4)'; g.beginPath(); g.ellipse(X, Y, 7 * ps, 4 * ps, 0, 0, 7); g.fill(); }
   }
+  yield;
   // ---- shade layer ----
   const SR = 8, sc = mkCanvas(w * SR, h * SR), sg = sc.getContext('2d');
   sg.fillStyle = 'rgb(128,128,128)'; sg.fillRect(0, 0, sc.width, sc.height);
@@ -965,6 +980,7 @@ function paintGround(m, plan) {
     spot(x + 0.55, y + 0.6, rad, a);
   }
   if (plan) for (const [x, y, r, a] of plan.ao) spot(x, y, r, a);
+  yield;
   // Dungeon: the solid mass between rooms falls off into darkness away from the lit floor (cycle 9: caves, interiors too)
   if (m.d.gen === 'dungeon' || kind) {
     const df = new Float32Array(w * h).fill(99), q = [];
@@ -1796,6 +1812,27 @@ function planProps(m) {
       else { const id = pickW(trees, r()), it = add(id, cx, cz, r() * 6.283, (TREE_S[id] || 0.74) * (0.95 + r() * 0.35), { y: gy - 0.05, far: !near }); if (!PROP_ALL.includes(id)) it.opt = true; }
     }
   }
+  // -- mapfix F2: nothing stands in a portal. Trees whose canopy reaches over a generic warp's tile (or a gate post) and small
+  // pieces on the tile itself are left out; a door keeps its building but loses a tree in front of it. Lights, walls, set
+  // pieces and buildings stay (reported only). Every clip is listed in GFX.warpClips for the map data to be fixed.
+  {
+    const clip = []; GFX.warpClips = (GFX.warpClips || []).filter(c => c.map !== m.id);
+    for (const wp of m.warps) {
+      const dk = doorKind(wp, m); if (dk === 'mouth') continue;
+      const cx = wp.x + 0.5, cz = wp.y + 0.5, o = !dk ? warpOut(m, wp) : null, tx = o ? -o.nz : 0, tz = o ? o.nx : 0;
+      const spots = [[cx, cz, dk ? 1.2 : 1.6, dk ? 0 : 0.95]]; if (o && o.edge) spots.push([cx + tx * 1.3, cz + tz * 1.3, 1.0, 0.5], [cx - tx * 1.3, cz - tz * 1.3, 1.0, 0.5]);
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i]; if (it.far || it.board) continue;
+        const k = PROPS.kind(it.id) || (/^tree_|_tree/.test(it.id) ? 'tree' : ''), tree = k === 'tree';
+        const hit = spots.some(([x, z, rt, rs]) => (it.x - x) ** 2 + (it.z - z) ** 2 < (tree ? rt * rt : rs * rs));
+        if (!hit) continue;
+        const keep = !tree && (k === 'light' || k === 'wall' || k === 'setpiece' || k === 'building' || k === 'edge' || k === 'walkway' || it.fp || dk);
+        clip.push({ map: m.id, warp: [wp.x, wp.y], to: wp.to, id: it.id, at: [+it.x.toFixed(2), +it.z.toFixed(2)], kept: !!keep });
+        if (!keep) items.splice(i, 1);
+      }
+    }
+    if (clip.length) GFX.warpClips.push(...clip);
+  }
   return { items, ao, lights, dlights, avoid, ok: true, mouths, houseDoors };
 }
 
@@ -1880,7 +1917,7 @@ function disposeGrass(grp) { for (const o of grp.children) { o.geometry.deleteAt
 // Apply the quality preset to a world: grass density, small-prop shadow casting.
 function worldQuality(grp) {
   const Q = GFX.preset, m = grp.userData.map; if (!m) return;
-  const A = m.anim || {}, R = rlookFor(m); SHADOW.need = true;
+  const A = m.anim || {}, R = rlookFor(m); if (grp === curWorld) SHADOW.need = true;   // (a prewarmed world: next to nothing to re-shadow)
   if (A.pools) A.pools.visible = !!Q.pools;
   if (A.motes) A.motes.visible = !!Q.post;
   if (A.shaftGrp) A.shaftGrp.visible = !(Q.vol && Q.post && R.vol && POST_VOL());
@@ -2603,21 +2640,26 @@ function wxTarget(T, o) {
   X.hemiL = [_hexOr(X.hemi[0], T.hemi[0]), _hexOr(X.hemi[1], T.hemi[1])]; X.mistL = _hexOr(X.mist, T.mist); X.volL = _hexOr(X.vol, T.vol);
   return X;
 }
-function wxEnter(m) {
-  const R = RL, Rd = (m.d && m.d.render) || {};
+// the weather of map m with look R: its config and the particle layer kinds it draws (wxEnter; GFX.prewarm makes the layers)
+function wxPlan(m, R) {
+  const Rd = (m.d && m.d.render) || {};
   const famKey = Object.keys(RLOOK_BASE).find(k => m.id === k || m.id.startsWith(k + '_'));
   let W = (Rd.weather && typeof Rd.weather === 'object' ? Rd.weather : null) || (R.weather && typeof R.weather === 'object' ? R.weather : null) || WX_MAPS[m.id] || (famKey && WX_MAPS[famKey]) || WX_FROM_PART[Rd.particles] || {};
   // cycle 9: caves get drips and torch-lit dust unless render.weather lists its own (render.cave.drips / dust scale them)
   const kd = mapKind(m);
   if (kd === 'cave' && !(Array.isArray(W.amb) && W.amb.length) && !(Array.isArray(W.precip) && W.precip.length)) { const C = caveCfg(m); W = Object.assign({}, W, { amb: [['drip', C.drips], ['cavedust', C.dust]].filter(e => e[1] > 0) }); }
-  WXS.caveWet = kd === 'cave' ? caveCfg(m).wet * 0.75 : 0;
   const tod = Rd.tod !== undefined ? Rd.tod : R.tod !== undefined ? R.tod : W.tod !== undefined ? W.tod : (m.d.gen === 'field' || m.d.gen === 'town');
   const amb = (Array.isArray(W.amb) ? W.amb : []).filter(e => Array.isArray(e) && WX_KINDS[e[0]]);
   const precip = (Array.isArray(W.precip) ? W.precip : []).filter(e => Array.isArray(e) && (e[0] === null || e[0] === 'rain' || e[0] === 'snow'));
-  WXS.cfg = { tod: tod === true ? true : typeof tod === 'number' && isFinite(tod) ? ((tod % 1) + 1) % 1 : false, amb, precip, wind: Array.isArray(W.wind) && W.wind.length === 2 ? W.wind.map(Number) : [0.5, 0.2] };
   const kinds = new Set(amb.map(e => e[0])); for (const e of precip) if (e[0]) { kinds.add(e[0]); if (e[0] === 'rain') kinds.add('splash'); }
   if (kinds.has('drip')) kinds.add('dripring');
   if (WXS.forceW && WXS.forceW.kind) { kinds.add(WXS.forceW.kind); if (WXS.forceW.kind === 'rain') kinds.add('splash'); }
+  return { W, tod, amb, precip, kinds, kd, Rd };
+}
+function wxEnter(m) {
+  const R = RL, { W, tod, amb, precip, kinds, kd, Rd } = wxPlan(m, R);
+  WXS.caveWet = kd === 'cave' ? caveCfg(m).wet * 0.75 : 0;
+  WXS.cfg = { tod: tod === true ? true : typeof tod === 'number' && isFinite(tod) ? ((tod % 1) + 1) % 1 : false, amb, precip, wind: Array.isArray(W.wind) && W.wind.length === 2 ? W.wind.map(Number) : [0.5, 0.2] };
   WXS.used = kinds; for (const k of kinds) wxLayer(k);
   let st = WXS.maps[m.id];
   if (!st) {   // first visit: the first precip state (the map's usual weather), later ones picked at random
@@ -3108,14 +3150,14 @@ function buildInteriorWalls(m, R, grp, A, plan) {
    from the hero's torch, faint glowing veins in crystal rock. Dithers between the camera and the hero like trees. */
 function caveRockMaterial(K, C) {
   const U = { uRD: { value: detailTex(K.detail).tex }, uRA: { value: linCol(K.a) }, uRB: { value: linCol(K.b) }, uRG: { value: linCol(K.glow).multiplyScalar(1.8) },
-    uRK: { value: new THREE.Vector4(C.wet, K.veins ? 1 : 0, K.spec || 0, 0.21) },
+    uRK: { value: new THREE.Vector4(C.wet, K.veins ? 1 : 0, K.spec || 0, 0.21) }, uRR: { value: K.roots !== undefined ? new THREE.Vector4().fromArray(linCol(K.roots).toArray()).setW(1) : new THREE.Vector4() },
     uRKnee: { value: new THREE.Vector2(C.knee || 0, 0.25) } };   // round 10: caves roll off the torch's hot spot on rock faces (knee, range; 0 = off)
   const mat = new THREE.MeshPhongMaterial({ color: 0xffffff, specular: new THREE.Color(0.5, 0.53, 0.58), shininess: K.spec ? 70 : 42 });
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U, OCC);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aRH; varying vec3 vRW, vRN; varying float vRH;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvRW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRN = normalize(mat3(modelMatrix) * objectNormal); vRH = aRH;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uRD; uniform vec3 uRA, uRB, uRG; uniform vec4 uRK; uniform vec2 uRKnee; varying vec3 vRW, vRN; varying float vRH; float rkWet; vec3 rkSl;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uRD; uniform vec3 uRA, uRB, uRG; uniform vec4 uRK, uRR; uniform vec2 uRKnee; varying vec3 vRW, vRN; varying float vRH; float rkWet; vec3 rkSl;')
       .replace('#include <envmap_fragment>', '#include <envmap_fragment>\nif (uRKnee.x > 0.0) { float l = max(max(outgoingLight.r, outgoingLight.g), outgoingLight.b); if (l > uRKnee.x) { float e = l - uRKnee.x; outgoingLight *= (uRKnee.x + e / (1.0 + e / uRKnee.y)) / l; } }')
       .replace('#include <map_fragment>', `{
         vec3 an = abs(normalize(vRN)); an = an * an * an; an /= (an.x + an.y + an.z);
@@ -3131,6 +3173,17 @@ function caveRockMaterial(K, C) {
         diffuseColor.rgb *= col;
         rkSl = vec3((ty.r - 0.5) * an.y + (tz.r - 0.5) * an.z, (tz.g - 0.5) * an.z + (tx.g - 0.5) * an.x, (ty.g - 0.5) * an.y + (tx.r - 0.5) * an.x) * 4.0;
         if (uRK.y > 0.0) totalEmissiveRadiance += uRG * smoothstep(0.8, 0.94, d.a) * smoothstep(0.35, 0.7, lowN) * uRK.y;
+        if (uRR.w > 0.0) {   // root strata: strands winding along the rock face, fibre grain, a soul glow in the seams
+          float s = vRW.y * 1.25 + lowN * 3.4 + sin(vRW.x * 0.43 + vRW.z * 0.31 + lowN * 5.0) * 0.6;
+          float e = abs(fract(s) - 0.5) + (d.a - 0.5) * 0.1;
+          float rt = (1.0 - smoothstep(0.15, 0.24, e)) * smoothstep(0.3, 0.5, lowN + d.b * 0.35);
+          float gr = texture2D(uRD, vec2((vRW.x - vRW.z) * 0.55, s * 2.4)).b;
+          vec3 wood = uRR.rgb * (0.6 + 0.8 * gr) * (0.7 + 0.6 * smoothstep(0.0, 0.15, 0.15 - e));
+          diffuseColor.rgb = mix(diffuseColor.rgb, wood, rt * uRR.w);
+          rkWet *= 1.0 - rt * 0.6;
+          float seam = smoothstep(0.13, 0.2, e) * (1.0 - smoothstep(0.2, 0.27, e)) * smoothstep(0.3, 0.5, lowN);
+          totalEmissiveRadiance += uRG * seam * (0.04 + 0.1 * smoothstep(0.55, 0.85, d.a)) * uRR.w;
+        }
       }`)
       .replace('#include <specularmap_fragment>', 'float specularStrength = 0.06 + rkWet * 1.5 + uRK.z * 0.5;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(normal - 0.6 * (viewMatrix * vec4(rkSl, 0.0)).xyz);');
@@ -3308,20 +3361,69 @@ function sectorShadow(all) {
   return true;
 }
 
-/* ---------- World building ---------- */
+/* ---------- Warp gates (mapfix F2) ----------
+   warpOut(m, wp): the unit direction (nx, nz) a generic warp leads out of the map, and whether it is an edge warp:
+   wp.face (N/E/S/W: the facing on arrival at the other end = the way through this one) when content gives it, else the
+   nearest map edge within 3 tiles. warpGate: on an edge warp, a rough rune-stone trilithon (two standing stones and a
+   capstone on north gates; the two stones only on the others) across the road end, centred on the warp tile (the stones 1.3 tiles either side of the path, square to the
+   way out), small kerb stones where the road meets it, and three rune glows (batched glow sprites): the exit reads as a
+   gate. Tinted with the map's rock colour. */
+const WARP_FACE = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
+function warpOut(m, wp) {
+  const f = wp && typeof wp.face === 'string' && WARP_FACE[wp.face.toUpperCase()];
+  if (f) return { nx: f[0], nz: f[1], edge: true, face: true };
+  const d = [[wp.x, -1, 0], [m.w - 1 - wp.x, 1, 0], [wp.y, 0, -1], [m.h - 1 - wp.y, 0, 1]].sort((a, b) => a[0] - b[0])[0];
+  return { nx: d[1], nz: d[2], edge: d[0] <= 3, face: false };
+}
+function gateStone(m) { const L = (m.d && m.d.look) || {}; return linCol(L.rock !== undefined ? L.rock : 0x8a867e).multiplyScalar(0.9); }
+function warpGate(m, wp) {
+  if (doorKind(wp, m)) return null;
+  const o = warpOut(m, wp); if (!o.edge) return null;
+  const cx = wp.x + 0.5, cz = wp.y + 0.5, tx = -o.nz, tz = o.nx, rot = Math.atan2(o.nx, o.nz), sd = (m.d.seed | 0) + wp.x * 31 + wp.y * 17;
+  const h = (k) => hash2(wp.x, wp.y, sd + k), geos = [], runes = [], M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
+  const place = (g, x, y, z, ry) => { M.compose(new THREE.Vector3(x, y, z), Q.setFromAxisAngle(Y, ry), new THREE.Vector3(1, 1, 1)); g.applyMatrix4(M); geos.push(ni(g)); };
+  // posts: rough standing stones, thin along the way out, their feet sunk either side of the road; a capstone across them
+  // (only north gates have the capstone: the default camera looks north, so on an east / west gate it would run up the
+  // screen as a slab, and on a south gate it would hang between the camera and the player walking out)
+  const capd = o.nz < -0.5, ht = capd ? 2.3 + h(1) * 0.2 : 1.7 + h(1) * 0.2;
+  for (const sgn of [-1, 1]) {
+    const px = cx + tx * 1.3 * sgn, pz = cz + tz * 1.3 * sgn, gy = groundHm(m, px, pz) - 0.15;
+    const g = rockBlob(0.34, sd + 3 + sgn, 1.0, ht / 0.68, 0.72); g.translate(0, ht * 0.5, 0);
+    place(g, px, gy, pz, rot + (h(2 + sgn) - 0.5) * 0.3);
+    runes.push([px - o.nx * 0.3, gy + ht * 0.6, pz - o.nz * 0.3]);   // (on the face toward the map)
+    // kerb stones where the road meets the post (on the inner side)
+    for (let k = 0; k < 2; k++) { const kx = px - tx * sgn * (0.34 + k * 0.32) - o.nx * (0.55 + h(5 + k + sgn) * 0.5), kz = pz - tz * sgn * (0.34 + k * 0.32) - o.nz * (0.55 + h(7 + k + sgn) * 0.5), r = 0.15 + h(9 + k) * 0.08; place(rockBlob(r, sd + k * 3 + sgn, 1.2, 0.7, 1), kx, groundHm(m, kx, kz) + r * 0.25, kz, h(11 + k) * 6.28); }
+  }
+  if (capd) {
+    const gy = (groundHm(m, cx + tx * 1.3, cz + tz * 1.3) + groundHm(m, cx - tx * 1.3, cz - tz * 1.3)) / 2 - 0.15 + ht;
+    const cap = rockBlob(0.3, sd + 9, 5.6, 1.15, 1.25); cap.translate(0, 0.16, 0);
+    place(cap, cx, gy, cz, rot);   // (local x = along the road end)
+    runes.push([cx - o.nx * 0.42, gy + 0.12, cz - o.nz * 0.42]);
+  }
+  return { geos, runes, x: cx, z: cz, nx: o.nx, nz: o.nz, posts: [[cx + tx * 1.3, cz + tz * 1.3], [cx - tx * 1.3, cz - tz * 1.3]] };
+}
+
+/* ---------- World building ----------
+   buildWorldSteps is the build as a generator: each `yield` is a point where an idle-time build (GFX.prewarm, see WPRE)
+   may pause until the next slice. buildWorld runs it to the end at once (finishing a prewarm that is part-way). */
+function wbRun(it) { let r; do r = it.next(); while (!r.done); return r.value; }
 function buildWorld(m) {
   if (m.world) return m.world;
+  const it = m._bw || buildWorldSteps(m); m._bw = null;
+  return wbRun(it);
+}
+function* buildWorldSteps(m) {
   const L = m.d.look, R = rlookFor(m), grp = new THREE.Group(), w = m.w, h = m.h, W1 = w + 1, kind = mapKind(m), big = isBig(m);
   const A = { flames: [], warps: [], lava: null, heart: null, way: null };
   const spec = R.spec;
   const lam = (o) => new THREE.MeshPhongMaterial(Object.assign({ specular: spec ? spec[0] : 0x000000, shininess: spec ? spec[1] : 1 }, o));
   const solid = (geo, mat) => { const me = new THREE.Mesh(geo, mat); me.castShadow = true; me.receiveShadow = true; grp.add(me); return me; };
   const plan = (PROPS.man && m.plan) || planProps(m); if (PROPS.man) m.plan = plan; m.propLights = plan.lights; m.propDLights = plan.dlights; m.propAvoid = plan.avoid; m.propItems = plan.items;
-  m.hgtInfo = heightTex(m); A.halos = [];
+  m.hgtInfo = heightTex(m); A.halos = []; yield;
   // Ground: painted macro + detail layers (see groundDetail)
   const HG = renderHgt(m); let gg = null;
   if (!big) { gg = new THREE.PlaneGeometry(w, h, w, h); gg.rotateX(-Math.PI / 2); gg.translate(w / 2, 0, h / 2); const pos = gg.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, HG[Math.round(pos.getZ(i)) * W1 + Math.round(pos.getX(i))]); gg.computeVertexNormals(); }
-  const pg = paintGround(m, plan), mk = groundMask(m); m.gbase = pg; m.gmask = mk;
+  yield; const pg = yield* paintGroundSteps(m, plan); yield; const mk = yield* groundMaskSteps(m); m.gbase = pg; m.gmask = mk; yield;
   const shadeT = new THREE.CanvasTexture(pg.shade); shadeT.flipY = false; shadeT.generateMipmaps = false; shadeT.minFilter = THREE.LinearFilter; pg.shade = null;
   // low: the painted macro layer at half resolution (1024 instead of 2048 px on a 64-tile map: 5 MB instead of 21 MB
   // with mips); medium and up keep the full 32 px per tile
@@ -3334,10 +3436,13 @@ function buildWorld(m) {
     cob: mk.hasC ? detailTex('cobble') : null, cobC: rgbLin(L.path || [176, 164, 140]).multiplyScalar(1.12),
     ash: mk.hasA ? detailTex('ash') : null, ashC: rgbLin(L.ash || [130, 128, 120]),
   });
+  yield;
   if (m.emisCanvas) { gmat.emissiveMap = canvasTex(m.emisCanvas); gmat.emissive = new THREE.Color(1.5, 0.62, 0.25); A.groundEmis = gmat; m.emisCanvas = null; }
   if (!big) { const ground = new THREE.Mesh(gg, gmat); ground.receiveShadow = true; grp.add(ground); grp.userData.ground = ground; grp.userData.grounds = [ground]; }
   else { const gs = groundSectors(m, HG, gmat); for (const g of gs) grp.add(g); grp.userData.ground = gs[0]; grp.userData.grounds = gs; }   // cycle 9: sector meshes
+  yield;
   if (!L.lava && !kind) { const sk = buildSkirt(m, skirtTex(m), spec); groundDetail(sk.material, { base: detailTex(baseK) }); grp.add(sk); }   // (interiors / caves: darkness beyond the walls)
+  yield;
   const GB = glowBatch(TEX.glow), FB = glowBatch(TEX.flame); A.glowB = GB; A.flameB = FB;
   const glowSprite = (col, op, sx, sy) => GB.add(col, op, sx, sy);
   const flameSprite = (r, g, b) => FB.add(new THREE.Color(r, g, b), 1, 1, 1);
@@ -3349,7 +3454,9 @@ function buildWorld(m) {
     const halo = glowSprite(linCol(0xff8a30), 0.35, 3, 3); halo.position.set(m.way.x, gh + ay + 0.3, m.way.y); A.halos.push({ s: halo, op: 0.35, ph: 0.7, fl: 1 });
     A.way = { fl, halo, rune: null }; A.flames.push({ s: fl, sx: 0.9, sy: 1.35 });
   }
-  // Warp portals (cycle 9: doors and cave mouths instead for warps with `door`, see buildDoors)
+  // Warp portals (cycle 9: doors and cave mouths instead for warps with `door`, see buildDoors); edge warps also get a
+  // rune-stone gate across the road end (warpGate)
+  const GP = [];
   for (const wp of m.warps) {
     if (doorKind(wp, m)) continue;
     const gh = groundHm(m, wp.x + 0.5, wp.y + 0.5);
@@ -3359,7 +3466,9 @@ function buildWorld(m) {
     const beamM = new THREE.MeshBasicMaterial({ map: bt, color: 0x9fd0ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.8, 3.4, 20, 1, true), beamM); beam.position.set(wp.x + 0.5, gh + 1.7, wp.y + 0.5); grp.add(beam);
     A.warps.push({ ring, ringM, beam, beamM, bt, wp });
+    const gate = warpGate(m, wp); if (gate) { GP.push(gate); for (const r of gate.runes) { const s = glowSprite(linCol(0x7ab8ff), 0.5, 0.55, 0.55); s.position.set(r[0], r[1], r[2]); A.halos.push({ s, op: 0.5, ph: r[0] * 1.3 + r[2], fl: 0.2 }); } }
   }
+  if (GP.length) { const gm = new THREE.Mesh(merge(GP.flatMap(g => g.geos)), lam({ color: gateStone(m), specular: 0x0c0c0c, shininess: 8 })); gm.castShadow = gm.receiveShadow = true; gm.name = 'warp_gates'; grp.add(gm); }
   // Brazier flames at the model's light anchor
   // (R.flame / R.flameHalo recolour the fires: Helheim's soul fires burn pale green)
   const fc = Array.isArray(R.flame) && R.flame.length === 3 ? R.flame : [3.2, 1.5, 0.5], fh = R.flameHalo !== undefined ? _hexOr(R.flameHalo, 0xff7a20) : linCol(0xff7a20);
@@ -3391,6 +3500,7 @@ function buildWorld(m) {
       const warm = l.c.r >= l.c.b, fl = flameSprite(warm ? fc[0] : 1.2 + l.lin.r, warm ? fc[1] : 1.2 + l.lin.g * 1.6, warm ? fc[2] : 0.8 + l.lin.b * 2); fl.position.set(l.x, y + fs[1] * 0.38, l.y); fl.scale.set(fs[0], fs[1], 1); A.flames.push({ s: fl, sx: fs[0], sy: fs[1] });
     }
   }
+  yield;
   // Doors and cave mouths (warps with `door`)
   buildDoors(m, R, grp, A, GB, lam, plan);
   // Bounty boards (quest objects): a 3D notice board replaces the 2D overlay placeholder (model via props,
@@ -3400,6 +3510,7 @@ function buildWorld(m) {
   // Flickering ground light pools and drifting dust motes
   A.pools = buildPools(m, plan, R); if (A.pools) grp.add(A.pools);
   if (R.motes) { A.motes = buildMotes(R.motes); grp.add(A.motes); }
+  yield;
   // Anvil
   const metal = lam({ color: linCol(0x3a3430), specular: 0x333333, shininess: 30 });
   for (const o of m.objs) if (o.kind === 'anvil') { const g = new THREE.Group(); const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), metal); b1.position.y = 0.2; const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.36), lam({ color: linCol(0x5a5654), specular: 0x444444, shininess: 40 })); b2.position.y = 0.5; b1.castShadow = b2.castShadow = true; g.add(b1, b2); g.position.set(o.x, groundHm(m, o.x, o.y), o.y); grp.add(g); }
@@ -3413,6 +3524,7 @@ function buildWorld(m) {
     if (hasT(T.WATER)) { A.water = buildWater(m, R.water || {}, R, m.hgtInfo); grp.add(A.water); }
     if (hasT(T.VOID)) { A.void = buildVoid(m, R.void || {}, R); grp.add(A.void); }
   } catch (e) { console.warn('[gfx] water / void', e); }
+  yield;
   // Heart of Yggdrasil
   if (m.heart) {
     const hx = m.heart.x, hz = m.heart.y, gh = groundHm(m, hx, hz), rootM = lam({ color: linCol(0x3a2618) });
@@ -3427,9 +3539,11 @@ function buildWorld(m) {
     if (own === 'interior') buildInteriorWalls(m, R, grp, A, plan);
     else if (own === 'rock' && m.t.some(t => t === T.WALL)) { const C = kind === 'cave' ? Object.assign({ knee: 0.2 }, caveCfg(m)) : { wet: 0.12 }, rk = buildCaveRock(m, kind === 'cave' ? CAVE_ROCK[C.rock] : annexRock(m), C); if (rk) { grp.add(rk); A.rock = rk; } }
   } catch (e) { console.warn('[gfx] walls / rock', e); }
+  yield;
   // Volumetric-looking light shafts (additive crossed planes along the sun direction; big maps: more of them)
   if (R.shafts) { const sg = new THREE.Group(); grp.add(sg); A.shafts = buildShafts(m, big ? Object.assign({}, R, { shafts: Object.assign({}, R.shafts, { n: Math.round(R.shafts.n * w * h / 4096) }) }) : R, sg); A.shaftGrp = sg; }
   GB.build(grp); FB.build(grp);
+  yield;
   // 3D props: instanced from the glTF templates once loaded (cached => immediate on revisits)
   const props = new THREE.Group(); grp.add(props); grp.userData.props = props; grp.userData.map = m;
   const sec = grp.userData.sec = big ? (() => { const G = sectorGrid(m), box = []; for (let i = 0; i < G.nx * G.nz; i++) box.push(new THREE.Box3()); return { G, box, meshes: [], view: -1, changes: 0 }; })() : null;
@@ -3438,7 +3552,7 @@ function buildWorld(m) {
   // (the instanced geometries share the templates' attribute buffers: only their own VAO / instance buffers are freed)
   const clearProps = () => { const keep = tplAttrs(); props.userData.chests = null; for (const o of [...props.children]) { props.remove(o); if (o.isInstancedMesh) { disposeGeo(o.geometry, keep); o.dispose(); } } if (sec) { sec.meshes.length = 0; for (const b of sec.box) b.makeEmpty(); sec.view = -1; } };
   let have = null;
-  const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq, sec); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); SHADOW.need = true; };
+  const dress = (lq, final) => { if (grp.userData.dead) return; clearProps(); buildProps(props, plan.items, lq, sec); grp.userData.propLod = lq; have = new Set(Object.keys(PROPS.tpl)); if (final) boardFallback(); worldQuality(grp); PROPS.prefetch(); if (grp === curWorld) SHADOW.need = true; };
   const optional = lq => PROPS.manifest().then(() => { const { opt } = propIds(plan.items, lq); return Promise.all(opt.map(id => PROPS.load(id).catch(() => null))).then(() => opt); });
   const finish = lq => optional(lq).then(opt => { if (grp.userData.propLod !== lq || grp.userData.dead) return; if (opt.some(id => PROPS.tpl[id] && !have.has(id))) dress(lq, true); else boardFallback(); });
   const lq0 = lodLow(), ids0 = propIds(plan.items, lq0);
@@ -3551,12 +3665,17 @@ function mapEntryLoad(fresh) {
   GLOAD.pending = false; GLOAD.defer = false;
   const t0 = performance.now(), known = new Set(renderer.info.programs || []), chk = renderer.debug.checkShaderErrors;
   if (GLOAD.ext) renderer.debug.checkShaderErrors = false;
+  const rt0 = renderer.getRenderTarget();
   try {
     camera.updateMatrixWorld(); scene.updateMatrixWorld();
+    // (mapfix F2: against the target the frames draw the scene into: with post that is POST.scene (linear), so these
+    // are the programs the first frame uses; compiling for the canvas (sRGB output) built variants no frame drew)
+    renderer.setRenderTarget(typeof POST !== 'undefined' && POST.on && POST.scene ? POST.scene : null);
     renderer.compile(scene, camera);
+    renderer.setRenderTarget(rt0);
     if (GFX.composer && GFX.composer.precompile) GFX.composer.precompile();
   } catch (e) { console.warn('[gfx] precompile', e); }
-  finally { renderer.debug.checkShaderErrors = chk; }
+  finally { renderer.debug.checkShaderErrors = chk; renderer.setRenderTarget(rt0); }
   const progs = (renderer.info.programs || []).filter(p => !known.has(p));
   GLOAD.progs = GLOAD.ext ? progs : null; GLOAD.check = !!GLOAD.ext && progs.length > 0;
   GLOAD.stats.last = { map: map.id, fresh, programs: progs.length, compileMs: +(performance.now() - t0).toFixed(1), parallel: !!GLOAD.ext, gated: false, waitMs: 0, frames: 0 };
@@ -3608,6 +3727,186 @@ GFX.memory = () => {
   return { quality: GFX.quality, level: GFX.level, scale: GFX.scale, worlds: WORLD_LRU.map(m => m.id), postMB: MB(post), shadowMB: MB(shadow), canvasMB: MB(canvas), texturesMB: MB(tex), textures: R.tex.size, geometryMB: MB(geo), totalMB: MB(post + shadow + canvas + tex + geo) };
 };
 
+/* ---------- Smooth travel (mapfix F2): GFX.prewarm(id) / GFX.worldReady(id) ----------
+   prewarm(id): the player is near a warp to `id` (the engine calls it within ~4 tiles; WPRE.auto also watches the
+   player's distance to the warps itself, every 0.3 s). In idle-time slices of <= WPRE.slice ms:
+     build  — buildWorldSteps (the ground paint, masks and meshes step by step), then the grass (worldQuality);
+     tex    — every texture of the world uploaded (renderer.initTexture), one or two per slice;
+     draw   — each batch of its objects drawn once into a 1 x 1 target with the scene's lights (programs linked,
+              geometry and instance buffers uploaded, drivers' lazy shader work done), and its sprite sheets queued;
+   so entering it builds, uploads and compiles nothing. One prewarm at a time; a newer one replaces it.
+   Budget: the world joins the LRU just behind the current map. Worlds are freed (oldest first; an unentered prewarm
+   before any visited map) until the residents fit WORLD_KEEP, or at most the current map plus the destination when
+   those two alone are over it: the peak a plain entry reaches anyway (it builds the new world before the LRU frees the
+   old one), held for the walk to the warp. On 'low' it must fit WORLD_KEEP outright, else only the models and sheets
+   are fetched (PROPS.prefetch does that) and entry builds as before.
+   worldReady(id) -> Promise<{ id, how, ms }>: resolves when `id`'s world is built and uploaded: prewarmed ('prewarm'),
+   or entered, past the loading gate and presented once ('entered'); after `timeout` ms (default 4000) with how 'timeout'.
+   Never rejects. Both are safe to call any time, with any id (unknown ids resolve with how 'none'). */
+const WPRE = { m: null, it: null, phase: '', list: null, k: 0, t0: 0, slice: 6, auto: true, dist: 4, rt: null, cam: null, sched: false, unentered: new Set(), log: [], entered: null, entryFrame: 0, presented: 0, lastAuto: 0 };
+GFX.prewarmInfo = () => ({ id: WPRE.m ? WPRE.m.id : null, phase: WPRE.phase, unentered: [...WPRE.unentered].map(m => m.id), log: WPRE.log.slice(-12) });
+function wpreMapOf(id) {
+  if (!id || typeof MAPDEFS === 'undefined' || !MAPDEFS[id] || typeof genMap !== 'function') return null;
+  try { return genMap(id); } catch (e) { console.warn('[gfx] prewarm genMap', id, e); return null; }
+}
+// a world is ready to show without work: built, and either prewarmed to the end or the current shown world
+function wpreDone(m) { return !!(m && m.world && !m._bw && m.world.userData.pw === 'done'); }
+// make room for `m` (not yet resident) behind the current map; false = over budget (keep the models-only prefetch)
+function wpreRoom(m) {
+  const keep = WORLD_KEEP(), cur = typeof map !== 'undefined' ? map : null, wm = worldWeight(m), wc = cur && cur.world ? worldWeight(cur) : 0;
+  const cap = Math.max(keep, wc + wm);
+  if (GFX.quality === 'low' && wc + wm > keep + 1e-6) return false;
+  let sum = wm; for (const o of WORLD_LRU) sum += worldWeight(o);
+  const order = [...WORLD_LRU.filter(o => WPRE.unentered.has(o)), ...WORLD_LRU.filter(o => !WPRE.unentered.has(o))];
+  for (const o of order) {
+    if (sum <= cap + 1e-6) break;
+    if (o === cur || o === m || (o.world && o.world === curWorld)) continue;
+    const i = WORLD_LRU.indexOf(o); if (i >= 0) WORLD_LRU.splice(i, 1); sum -= worldWeight(o); WPRE.unentered.delete(o); freeWorld(o);
+  }
+  return sum <= cap + 1e-6;
+}
+GFX.prewarmOn = true;   // false: prewarm() does nothing but return worldReady(id) (perf.py: scenarios that measure without it)
+GFX.prewarm = id => {
+  if (GFX.prewarmOn === false || typeof POST === 'undefined') return GFX.worldReady(id, 1);
+  const m = wpreMapOf(id); if (!m) return Promise.resolve({ id, how: 'none', ms: 0 });
+  const cur = typeof map !== 'undefined' ? map : null;
+  if (WPRE.m === m && !WPRE.autoCall) WPRE.explicit = true;
+  if (m === cur || wpreDone(m) || WPRE.m === m) return GFX.worldReady(id);
+  if (WPRE.m && WPRE.m !== m) wpreStop('replaced');
+  if (!m.world && !wpreRoom(m)) { WPRE.log.push({ id, how: 'budget' }); return GFX.worldReady(id); }
+  Object.assign(WPRE, { m, it: m.world ? null : (m._bw || buildWorldSteps(m)), phase: m.world ? 'tex' : 'build', list: null, k: 0, t0: performance.now(), work: 0, slices: 0, maxSlice: 0, steps: 0, maxStep: { ms: 0 }, explicit: !WPRE.autoCall });
+  m._bw = WPRE.it;   // (an entry before the prewarm ends finishes this same build at once: buildWorld)
+  wpreKick();
+  return GFX.worldReady(id);
+};
+function wpreStop(why) {
+  const m = WPRE.m; if (!m) return;
+  WPRE.log.push({ id: m.id, how: why, phase: WPRE.phase, ms: Math.round(performance.now() - WPRE.t0), workMs: Math.round(WPRE.work), slices: WPRE.slices, maxSliceMs: +WPRE.maxSlice.toFixed(1), maxStep: WPRE.maxStep });
+  WPRE.m = null; WPRE.it = null; WPRE.phase = ''; WPRE.list = null;
+}
+function wpreKick() {
+  if (WPRE.sched || !WPRE.m) return; WPRE.sched = true;
+  const f = dl => { WPRE.sched = false; wpreSlice(dl); };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(f, { timeout: 120 }); else setTimeout(f, 16);
+}
+function wpreSlice(dl) {
+  const m = WPRE.m; if (!m) return;
+  const t0 = performance.now(), left = dl && !dl.didTimeout && dl.timeRemaining ? dl.timeRemaining() : 0, budget = clamp(left, 3, WPRE.slice);
+  try {
+    let a = t0;
+    do { const ph = WPRE.phase, n = WPRE.steps++, more = wpreStep(m), b = performance.now(); if (b - a > WPRE.maxStep.ms) WPRE.maxStep = { ms: +(b - a).toFixed(1), phase: ph, step: n }; a = b; if (!more) break; } while (a - t0 < budget);
+  } catch (e) { console.warn('[gfx] prewarm', m.id, e); m._bw = null; wpreStop('error'); return; }
+  const d = performance.now() - t0; WPRE.work += d; WPRE.slices++; if (d > WPRE.maxSlice) WPRE.maxSlice = d;
+  if (WPRE.m === m) wpreKick();
+}
+// one unit of prewarm work; false = finished (or stopped)
+function wpreStep(m) {
+  if (m === map) { wpreStop('entered'); return false; }   // entered first: the entry finished the build, real frames draw it
+  if (WPRE.phase === 'build') {
+    if (m.world && !m._bw) { WPRE.phase = 'grass'; return true; }   // finished elsewhere (an early entry)
+    const r = WPRE.it.next(); if (!r.done) return true;
+    m._bw = null; WPRE.it = null; WPRE.phase = 'grass';
+    const i = WORLD_LRU.indexOf(m); if (i < 0) { const c = WORLD_LRU.indexOf(map); WORLD_LRU.splice(c >= 0 ? c : WORLD_LRU.length, 0, m); WPRE.unentered.add(m); }
+    return true;
+  }
+  const grp = m.world; if (!grp || grp.userData.dead) { wpreStop('freed'); return false; }
+  if (WPRE.phase === 'grass') { worldQuality(grp); grp.updateMatrixWorld(true); WPRE.phase = 'tex'; WPRE.list = null; return true; }
+  if (WPRE.phase === 'tex') {
+    if (!WPRE.list) { WPRE.list = [...worldRefs(grp).tex].filter(t => t.image || t.isDataTexture); if (m.hgtInfo && m.hgtInfo.tex) WPRE.list.push(m.hgtInfo.tex); WPRE.k = 0; }
+    if (WPRE.k < WPRE.list.length) { try { renderer.initTexture(WPRE.list[WPRE.k]); } catch (e) { /* an image still loading: uploads on first draw */ } WPRE.k++; return true; }
+    WPRE.phase = 'draw'; WPRE.list = null; return true;
+  }
+  if (WPRE.phase === 'draw') {
+    if (!WPRE.list) { WPRE.list = wpreBatches(grp); WPRE.k = 0; }
+    if (WPRE.k < WPRE.list.length) { wpreDraw(grp, WPRE.list[WPRE.k++]); return true; }
+    WPRE.phase = 'post'; return true;
+  }
+  if (WPRE.phase === 'post') {   // this look's post variants (POST.precompile reads RL / GFX.world: the destination's for a moment)
+    const rl = RL, gw = GFX.world;
+    try { RL = rlookFor(m); GFX.world = { hgt: m.hgtInfo || null, shadow: SHADOW }; if (POST.precompile) POST.precompile(); } finally { RL = rl; GFX.world = gw; }
+    WPRE.phase = 'wx'; return true;
+  }
+  if (WPRE.phase === 'wx') {   // its weather particle layers (made once per kind, kept): made and drawn once now
+    const L = [...wxPlan(m, rlookFor(m)).kinds].map(k => wxLayer(k)).filter(l => l && !l.pw); for (const l of L) l.pw = true;
+    if (L.length) wpreDraw(grp, L.map(l => l.mesh), true);
+    WPRE.phase = 'light'; return true;
+  }
+  if (WPRE.phase === 'light') {   // the sprite light grid for the destination's own sun (buildLightGrid adopts it on entry)
+    const R = rlookFor(m), d = R.sunDir || [0, 1, 0], sd = new THREE.Vector3(d[0], d[1], d[2]).normalize();
+    m._lt = lightGridFor(m, R, sd);
+    if (typeof SHEETS !== 'undefined' && SHEETS.prewarm) try { SHEETS.prewarm(m.id); } catch (e) { /* best effort */ }
+    grp.userData.pw = 'done';
+    WPRE.log.push({ id: m.id, how: 'done', ms: Math.round(performance.now() - WPRE.t0), workMs: Math.round(WPRE.work), slices: WPRE.slices, maxSliceMs: +WPRE.maxSlice.toFixed(1), maxStep: WPRE.maxStep });
+    WPRE.m = null; WPRE.it = null; WPRE.phase = ''; WPRE.list = null;
+    return false;
+  }
+  return false;
+}
+// the world's drawable objects in batches of ~30k vertices (instances counted) or 12 objects
+function wpreBatches(grp) {
+  const out = []; let cur = [], n = 0;
+  grp.traverse(o => {
+    if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material) return;
+    for (let p = o.parent; p && p !== grp; p = p.parent) if (!p.visible) return;
+    if (!o.visible) return;
+    const g = o.geometry, v = g ? (g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0)) * (o.isInstancedMesh ? Math.max(1, o.count) : 1) : 0;
+    cur.push(o); n += v; if (n > 30000 || cur.length >= 12) { out.push(cur); cur = []; n = 0; }
+  });
+  if (cur.length) out.push(cur);
+  return out;
+}
+// draw `objs` once into a 1 x 1 target: the scene's lights and fog (the programs the real frame will use), shadow
+// maps untouched, the renderer's frame counters restored
+function wpreDraw(grp, objs, force) {
+  if (!WPRE.rt) { WPRE.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); WPRE.cam = new THREE.PerspectiveCamera(30, 1, 0.1, 400); WPRE.cam.layers.set(31); }
+  const rt = WPRE.rt, enc = POST.on && POST.scene ? POST.scene.texture.encoding : renderer.outputEncoding;
+  if (rt.texture.encoding !== enc) { rt.texture.encoding = enc; rt.dispose(); }
+  const lights = []; for (const o of scene.children) if (o.isLight && !o.layers.test(WPRE.cam.layers)) { o.layers.enable(31); lights.push(o); }
+  const fc = [], vis = []; for (const o of objs) { o.layers.enable(31); fc.push(o.frustumCulled); o.frustumCulled = false; vis.push(o.visible); if (force) o.visible = true; }
+  const inScene = grp.parent === scene; if (!inScene) scene.add(grp);
+  let shp = false, smap = null; const snu = sun.shadow.needsUpdate, sm = renderer.shadowMap, au = sm.autoUpdate, nu = sm.needsUpdate, I = renderer.info.render, ic = [I.calls, I.triangles, I.points, I.lines], ar = renderer.info.autoReset, prevRT = renderer.getRenderTarget();
+  WPRE.cam.position.set(grp.userData.map.w / 2, 30, grp.userData.map.h / 2 + 30); WPRE.cam.lookAt(grp.userData.map.w / 2, 0, grp.userData.map.h / 2); WPRE.cam.updateMatrixWorld();
+  try {
+    sm.autoUpdate = false; sm.needsUpdate = false; renderer.info.autoReset = false;
+    // with the batch's casters, the shadow pass runs too (its depth programs: wind / alpha-tested casters), into a 1-px
+    // stand-in for the sun's map (the shadow camera, the real map and the static cache are untouched)
+    shp = !force && sm.enabled && sun.castShadow && !!sun.shadow.map && objs.some(o => o.castShadow);
+    if (shp) { if (!WPRE.srt) WPRE.srt = new THREE.WebGLRenderTarget(1, 1, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat }); smap = sun.shadow.map; sun.shadow.map = WPRE.srt; sun.shadow.needsUpdate = true; sm.needsUpdate = true; WPRE.drawing = true; }
+    renderer.setRenderTarget(rt); POST.raw(scene, WPRE.cam);
+  } finally {
+    WPRE.drawing = false; if (smap) sun.shadow.map = smap; if (shp) sun.shadow.needsUpdate = snu;
+    renderer.setRenderTarget(prevRT); sm.autoUpdate = au; sm.needsUpdate = nu; renderer.info.autoReset = ar; [I.calls, I.triangles, I.points, I.lines] = ic;
+    if (!inScene) scene.remove(grp);
+    objs.forEach((o, i) => { o.layers.disable(31); o.frustumCulled = fc[i]; o.visible = vis[i]; });
+    for (const o of lights) o.layers.disable(31);
+  }
+}
+GFX.worldReady = (id, timeout) => {
+  const t0 = performance.now(), lim = timeout > 0 ? timeout : 4000;
+  if (!id || typeof MAPDEFS === 'undefined' || !MAPDEFS[id]) return Promise.resolve({ id, how: 'none', ms: 0 });
+  return new Promise(res => {
+    const check = () => {
+      const cur = typeof map !== 'undefined' ? map : null, ms = Math.round(performance.now() - t0);
+      if (cur && cur.id === id && curWorld && cur.world === curWorld && !GLOAD.pending && WPRE.entered === cur && WPRE.presented > WPRE.entryFrame) return res({ id, how: 'entered', ms });
+      if (!(cur && cur.id === id)) { const m = typeof mapCache !== 'undefined' ? mapCache[id] : null; if (wpreDone(m)) return res({ id, how: 'prewarm', ms }); }
+      if (ms >= lim) return res({ id, how: 'timeout', ms });
+      setTimeout(check, 16);
+    };
+    check();
+  });
+};
+// gfxPresent (gfx-post.js) counts presented frames; enterWorldNow marks the entry
+function wpreEntered(m) { WPRE.entered = m; WPRE.entryFrame = WPRE.presented; WPRE.unentered.delete(m); if (m && m.world) m.world.userData.pw = 'done'; if (WPRE.m === m && WPRE.phase !== 'draw') wpreStop('entered'); }
+// auto: within WPRE.dist tiles of an open warp -> prewarm its map (the engine may call GFX.prewarm too; calls are idempotent)
+function wpreAuto() {
+  if (!WPRE.auto || GFX.prewarmOn === false || typeof map === 'undefined' || !map || !P || !map.warps || GLOAD.pending) return;
+  let best = null, bd = WPRE.dist * WPRE.dist;
+  for (const wp of map.warps) { if (!wp.to || wp.to === map.id) continue; const dx = wp.x + 0.5 - P.x, dy = wp.y + 0.5 - P.y, d = dx * dx + dy * dy; if (d <= bd && !warpIsLocked(wp)) { bd = d; best = wp; } }
+  if (!best || (WPRE.m && WPRE.explicit)) return;   // (an explicit prewarm in progress wins over the auto one)
+  WPRE.autoCall = true; try { GFX.prewarm(best.to); } finally { WPRE.autoCall = false; }
+}
+setInterval(() => { try { wpreAuto(); } catch (e) { /* never break the game loop for a prefetch */ } }, 300);
+
 /* ---------- Per-map look: lights, sky, fog, exposure ---------- */
 const LSRC = [];                      // static light sources of the current map (for the point-light pool)
 function applyLook() {
@@ -3641,7 +3940,7 @@ function enterWorldNow(deferred) {
   RL = rlookFor(map);
   if (curWorld) scene.remove(curWorld);
   const fresh = !map.world;
-  curWorld = buildWorld(map); scene.add(curWorld);
+  curWorld = buildWorld(map); scene.add(curWorld); wpreEntered(map);
   if (curWorld.userData.epoch !== GFX_EPOCH) refreshMaterials(curWorld);
   worldQuality(curWorld);
   applyLook();
@@ -3701,9 +4000,17 @@ function casterSpan(t, m, x, y) {
     default: return null;
   }
 }
+// (mapfix F2: GFX.prewarm bakes a destination's grid ahead (m._lt, for its look's sun); used when nothing changed since)
 function buildLightGrid() {
-  const m = map, R = RL, gw = m.w * LT_RES, gh = m.h * LT_RES, G = new Float32Array(gw * gh * 3), LI = new Float32Array(gw * gh);
-  const sd = SKY.sunDir, hl = Math.hypot(sd.x, sd.z) || 1, dx = sd.x / hl, dz = sd.z / hl, tanE = sd.y / hl;
+  const m = map, sd = SKY.sunDir, key = ltKey(m), pre = m._lt; m._lt = null;
+  const o = pre && pre.key === key && pre.sx === sd.x && pre.sy === sd.y && pre.sz === sd.z ? pre : lightGridFor(m, RL, sd);
+  LT.g = o.g; LT.lit = o.lit; LT.gw = o.gw; LT.gh = o.gh; LT.key = key;
+  if (!WXS.on) { LT.amb = RL.lt.amb; LT.sun = RL.lt.sun; LT.lamp = 1; }
+}
+function ltKey(m) { return m.id + '|' + !!(P && P.kindled && P.kindled[m.id]) + '|' + !!(P && P.flags && P.flags.kingSlain); }
+function lightGridFor(m, R, sd) {
+  const gw = m.w * LT_RES, gh = m.h * LT_RES, G = new Float32Array(gw * gh * 3), LI = new Float32Array(gw * gh);
+  const hl = Math.hypot(sd.x, sd.z) || 1, dx = sd.x / hl, dz = sd.z / hl, tanE = sd.y / hl;
   const spans = []; for (let i = 0; i < m.w * m.h; i++) spans.push(casterSpan(m.t[i], m, i % m.w, (i / m.w) | 0));
   for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
     const px = (i + 0.5) / LT_RES, pz = (j + 0.5) / LT_RES, own = ((pz | 0) * m.w + (px | 0));
@@ -3732,8 +4039,7 @@ function buildLightGrid() {
   if (m.heart && kingSlain) splat(m.heart.x, m.heart.y + 1, 7, gold, 0.7);
   if (m.d.look.lava) for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { if (m.t[y * m.w + x] !== T.LAVA) continue; let open = false; for (let k = 0; k < 4 && !open; k++) { const nx = x + DX[k], ny = y + DY[k]; open = nx >= 0 && ny >= 0 && nx < m.w && ny < m.h && m.t[ny * m.w + nx] === 0; } if (open) splat(x + 0.5, y + 0.5, 2.2, lava, 0.18); }
   for (let i = 0; i < G.length; i++) G[i] = Math.min(G[i], 2.2);
-  LT.g = G; LT.lit = LI; LT.gw = gw; LT.gh = gh; LT.key = m.id + '|' + wayLit + '|' + kingSlain;
-  if (!WXS.on) { LT.amb = R.lt.amb; LT.sun = R.lt.sun; LT.lamp = 1; }
+  return { g: G, lit: LI, gw, gh, key: ltKey(m), sx: sd.x, sy: sd.y, sz: sd.z };
 }
 function lightTint(x, y, out) {
   out = out || { r: 1, g: 1, b: 1 };
@@ -3788,10 +4094,14 @@ function updateLights() {
   }
   for (let k = 0; k < nd; k++) { const o = DYN[k]; if (o.noPL) continue; o.s = (o.x - tx) ** 2 + (o.y - ty) ** 2 - 400; _cand.push(o); }
   _cand.sort((a, b) => a.s - b.s);
+  // mapfix F2: more static sources than pool lights (a lantern-lit camp): the pool's farthest lights fade out as they
+  // near the first one left out (within 1.5 tiles of its distance), so lights hand over as the camera moves instead of popping
+  const cut = _cand[PL.length], dCut = cut ? Math.sqrt(Math.max(0, cut.s + (cut.dyn ? 400 : 0))) : 1e9;
   for (let k = 0; k < PL.length; k++) {
     const l = PL[k], s = _cand[k];
     if (!s) { l.intensity = 0; continue; }
     let I = s.i;
+    if (!s.dyn && dCut < 1e8) I *= clamp((dCut - Math.sqrt(s.s)) / 1.5, 0, 1);
     let jx = 0, jz = 0;
     if (s.fl && !s.dyn) { I *= flick(s.fl, s.ph); if (s.fl >= 1) { jx = Math.sin(time * 7.1 + s.ph) * 0.05; jz = Math.cos(time * 8.3 + s.ph) * 0.05; } }
     if (s.lamp) I *= WXS.lamp;

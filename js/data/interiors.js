@@ -59,6 +59,13 @@ const INT_KIT_IDS = ['interior_hearth', 'interior_forge', 'interior_dwarf_anvil'
   'interior_bed', 'interior_chest', 'interior_shelf', 'interior_bookshelf', 'interior_bar', 'interior_candle_stand', 'interior_chandelier', 'interior_rug', 'interior_weapon_rack',
   'interior_loom', 'interior_altar', 'interior_high_seat', 'interior_herbs', 'interior_pelts', 'interior_post', 'interior_railing', 'interior_wall_timber_window',
   'interior_wall_stone_window', 'interior_wall_hall', 'interior_gear_wall', 'helheim_tent'];
+// The interior kit has landed (assets/models/index.json kits.interior): list it in MODEL_IDS so mdl() picks the kit model
+// and not its fallback (R9; mapcheck M7.7 warns when the manifest has a model MODEL_IDS lacks)
+for (const id of ['interior_altar', 'interior_bar', 'interior_beam', 'interior_bed', 'interior_bench', 'interior_bookshelf', 'interior_candle_stand', 'interior_chandelier',
+  'interior_dwarf_anvil', 'interior_floor_flag', 'interior_floor_plank', 'interior_floor_straw', 'interior_forge', 'interior_gear_wall', 'interior_hearth', 'interior_herbs',
+  'interior_high_seat', 'interior_lava_trough', 'interior_long_table', 'interior_loom', 'interior_pelts', 'interior_post', 'interior_railing', 'interior_rug', 'interior_shelf',
+  'interior_stool', 'interior_table', 'interior_wall_hall', 'interior_wall_stone', 'interior_wall_stone_door', 'interior_wall_stone_window', 'interior_wall_timber',
+  'interior_wall_timber_door', 'interior_wall_timber_window', 'interior_weapon_rack', 'helheim_tent']) MODEL_IDS.add(id);
 
 /* ---------- Registry: doors and rooms ---------- */
 // door: the warp tile on the parent map; step: where you land outside (the tile in front of the door). The inside
@@ -69,9 +76,9 @@ const INT_DOORS = {
   emberhold_temple: { parent: 'emberhold', door: [49, 29], step: [49, 30], plot: 'emberhold_chapel' },   // the Ember Chapel (world team's grown ward)
   emberhold_house_a: { parent: 'emberhold', door: [7, 27], step: [7, 26] },
   emberhold_house_b: { parent: 'emberhold', door: [29, 14], step: [29, 15] },
-  skaldhaven_salthall: { parent: 'skaldhaven', door: [6, 7], step: [6, 9] },
-  skaldhaven_longhouse: { parent: 'skaldhaven', door: [22, 7], step: [22, 8] },
-  skaldhaven_hold: { parent: 'skaldhaven', door: [38, 20], step: [38, 19] },
+  skaldhaven_salthall: { parent: 'skaldhaven', door: [6, 7], step: [6, 9], land: [5, 9] },     // land: where you come out, when the default (2 tiles out) is taken (here Hallgerð)
+  skaldhaven_longhouse: { parent: 'skaldhaven', door: [22, 7], step: [22, 8], land: [23, 9] },   // (Fulla stands at 21.5, 9)
+  skaldhaven_hold: { parent: 'skaldhaven', door: [38, 20], step: [38, 19], land: [36, 19] },   // (water beyond the pier: along it, toward the shore)
   nidavellir_forgehall: { parent: 'nidavellir', door: [23, 20], step: [23, 21] },
   helheim_tent: { parent: 'helheim', door: [26, 50], step: [27, 50] },
   gloamheim_crypt: { parent: 'gloamheim', door: [24, 56], step: [25, 56] },
@@ -115,12 +122,14 @@ function intBuild(m, K, B) {
       else L.put(x, y, T.WALL);
     }
   }
-  // the way out: the door tile, and the floor beside it is where you arrive
-  const [dx, dy] = door, inner = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([ax, ay]) => [dx + ax, dy + ay]).find(([ax, ay]) => L.at(ax, ay) === T.FLOOR && B.rows[ay][ax] !== 'D');
-  m.entry = { x: inner[0], y: inner[1] };
+  // the way out: the door tile; you arrive two tiles in from it (intEntry), and leave to two tiles out in front of the
+  // building's door (D.land, set when the parent map places the door), facing away from it
+  const [dx, dy] = door, inner = intEntry(B.id);
+  m.entry = { x: inner.x, y: inner.y };
   const D = INT_DOORS[B.id], P0 = MAPDEFS[D.parent];
-  if (D.plot && !D.resolved && typeof genMap === 'function') genMap(D.parent);
-  m.warps.push({ x: dx, y: dy, to: D.parent, tx: D.step[0] + 0.5, ty: D.step[1] + 0.5, label: B.outLabel || P0.name, door: true });
+  if (!D.land && typeof genMap === 'function') genMap(D.parent);
+  const land = D.land || D.step, face = (fx, fy) => Math.abs(fx) >= Math.abs(fy) ? (fx >= 0 ? 'E' : 'W') : (fy >= 0 ? 'S' : 'N');   // arrival facing (warp `face`)
+  m.warps.push({ x: dx, y: dy, to: D.parent, tx: land[0] + 0.5, ty: land[1] + 0.5, label: B.outLabel || P0.name, door: true, face: face(land[0] - D.door[0], land[1] - D.door[1]) });
   // railings along the loft edge (fence pieces, at the loft's height)
   for (const [x, y] of rails) {
     // interior_railing: one tile along x with its post at -x; the last piece of a run turns round to close it
@@ -353,8 +362,9 @@ intRoom('emberhold_temple', { name: 'The Ember Chapel', sub: 'Emberhold · Chape
     ['interior_chest', 'rimeshore_crate', 20, 1, 20, 1, 0, 1], ['interior_shelf', 'town_crates', 17, 1, 17, 1, WN, 1], ['interior_shelf', 'town_crates', 18, 1, 18, 1, WN, 1],
   ],
   S: [
-    ['interior_candle_stand', 'town_lamp_post', 8.6, 2.4, 0, 1, { light: LC() }], ['interior_candle_stand', 'town_lamp_post', 13.4, 2.6, 1, 1, { light: LC() }],
-    ['interior_candle_stand', 'town_lamp_post', 2.3, 7.4, 0.5, 1, { light: LC(0.8, 4) }], ['interior_candle_stand', 'town_lamp_post', 2.3, 11.4, 1.5, 1, { light: LC(0.8, 4) }],
+    ['interior_candle_stand', 'town_lamp_post', 8.6, 2.4, 0, 1], ['interior_candle_stand', 'town_lamp_post', 13.4, 2.6, 1, 1, { light: LC() }],   // (8.6: unlit, the altar lights that side: M8.3)
+    ['interior_candle_stand', 'town_lamp_post', 2.3, 7.4, 0.5, 1, { light: LC(0.8, 4) }], ['interior_candle_stand', 'town_lamp_post', 2.3, 11.4, 1.5, 1],   // (unlit: M8.3)
+   
     ['interior_candle_stand', 'town_lamp_post', 2.3, 14.6, 2.5, 1, { light: LC(0.8, 4) }], ['interior_candle_stand', 'town_lamp_post', 19.6, 2.6, 0, 1, { light: LC(0.8, 4) }],
     ['interior_candle_stand', 'town_lamp_post', 9.3, 9.6, 0, 1, { light: LC() }], ['interior_candle_stand', 'town_lamp_post', 12.7, 9.6, 1, 1, { light: LC() }], ['interior_herbs', null, 19.5, 1.5, WN, 1],
     ['dng_banner', 'dng_banner', 6.5, 1.08, 0, 0.9], ['dng_banner', 'dng_banner', 15.5, 1.08, 0, 0.9],
@@ -555,7 +565,7 @@ intRoom('skaldhaven_hold', { name: 'The Sea-Snake’s Hold', sub: 'Skaldhaven ·
     ['interior_chest', 'rimeshore_crate', 2, 5, 2, 5, 0, 1],
   ],
   S: [
-    ['interior_pelts', null, 9.5, 3.5, WN, 1], ['interior_pelts', null, 19.5, 7.6, WS, 1], ['interior_stool', null, 16.4, 4.4, 0, 1], ['interior_stool', null, 19.3, 4.5, 1, 1],
+    ['interior_pelts', null, 6.5, 3.1, WN, 1], ['interior_pelts', null, 21.5, 8.9, WS, 1],   // (hung on the hull, M7.4) ['interior_stool', null, 16.4, 4.4, 0, 1], ['interior_stool', null, 19.3, 4.5, 1, 1],
     ['interior_candle_stand', 'mirewell_lantern_post', 11.5, 2.4, 0, 1, { light: LC(1.0, 5) }], ['interior_candle_stand', 'mirewell_lantern_post', 15.5, 8.6, 1, 1, { light: LC(1.0, 5) }],
     ['interior_candle_stand', 'mirewell_lantern_post', 3.5, 6.5, 2, 1, { light: LC(0.8, 4) }],
     ['town_crates', 'town_crates', 12.3, 8.6, 0.5, 0.6],
@@ -746,7 +756,8 @@ intRoom('gloamheim_library', { name: 'Sir Gaunt’s Library', sub: 'Gloamheim Ke
     '#......................#',
     '########################'],
   F: [
-    ...[3, 6, 11, 14].flatMap(y => [2, 3, 4, 5, 6, 7].map(x => ['interior_bookshelf', 'dng_wall', x, y, x, y, WN, 1, { sy: 0.7 }])),
+    // two double-sided stacks: shelves back to back (the bookshelf is wall-mounted: its back is unfinished, M7.4)
+    ...[[4, WS], [5, WN], [11, WS], [12, WN]].flatMap(([y, r]) => [2, 3, 4, 5, 6, 7].map(x => ['interior_bookshelf', 'dng_wall', x, y, x, y, r, 1, { sy: 0.7 }])),
     ...[12, 13, 14, 15].map(x => ['interior_bookshelf', 'dng_wall', x, 1, x, 1, WN, 1, { sy: 0.7 }]), ...[5, 6, 12, 13].map(y => ['interior_bookshelf', 'dng_wall', 22, y, 22, y, WE, 1, { sy: 0.7 }]),
     ...TAB(11, 7), ...TAB(15, 11), ...TAB(17, 4), ...TAB(19, 14),
     ['interior_chest', 'rimeshore_crate', 1, 16, 1, 16, 0, 1],
@@ -1238,19 +1249,32 @@ intRoom('skaldhaven_net_c', { name: 'The Sealer’s House', sub: 'Skaldhaven · 
 /* ---------- Doors on the parent maps ---------- */
 function intPlaceDoor(m, K, id) {
   const D = INT_DOORS[id], [x, y] = D.door, [sx, sy] = D.step, w = K.w;
+  const face = (fx, fy) => Math.abs(fx) >= Math.abs(fy) ? (fx >= 0 ? 'E' : 'W') : (fy >= 0 ? 'S' : 'N');   // arrival facing (warp `face`, docs/MAPS.md 16.5)
   K.set(x, y, T.FLOOR);
-  // the step outside: open it, and clear scatter (trees, rocks) off it and its side neighbours
-  for (const [ax, ay] of [[sx, sy], [sx - 1, sy], [sx + 1, sy], [sx, sy + (sy - y)]]) { const t = m.t[ay * w + ax]; if (ax > 0 && ay > 0 && ax < w - 1 && ay < K.h - 1 && (t === T.TREE || t === T.ROCK || (ax === sx && ay === sy))) K.set(ax, ay, T.FLOOR); }
-  const e = intEntry(id);
-  m.warps.push({ x, y, to: id, tx: e.x + 0.5, ty: e.y + 0.5, label: MAPDEFS[id].name, door: true });
+  // the step outside is opened; you come out two tiles in front of the door (D.land: the step, or the tile beyond it
+  // when the step is next to the door), so you never land beside the door you just used (docs/MAPS.md M6.10)
+  K.set(sx, sy, T.FLOOR);
+  const ux = Math.sign(sx - x), uy = Math.sign(sy - y), [lx, ly] = D.land0 || (D.land0 = D.land || [x + 2 * ux, y + 2 * uy]), lt = m.t[ly * w + lx];
+  if (lt === T.TREE || lt === T.ROCK) K.set(lx, ly, T.FLOOR);
+  D.land = m.t[ly * w + lx] === T.FLOOR ? [lx, ly] : [sx, sy];
+  // nothing scattered stands on the landing (snowdrifts, barrels: `on: 'open'` pieces without a light)
+  for (let i = m.decor.length - 1; i >= 0; i--) { const e = m.decor[i]; if (e && e.on === 'open' && !e.light && Math.hypot(e.x - D.land[0] - 0.5, e.y - D.land[1] - 0.5) < 0.75) m.decor.splice(i, 1); }
+  const e = intEntry(id), rows = INT_ROOMS[id].rows, dr = rows.findIndex(r => r.includes('D')), dc = rows[dr].indexOf('D');
+  m.warps.push({ x, y, to: id, tx: e.x + 0.5, ty: e.y + 0.5, label: MAPDEFS[id].name, door: true, face: face(e.x - dc, e.y - dr) });
   const q = (m.houses || []).find(q => x >= q.x0 && x <= q.x1 && y >= q.y0 && y <= q.y1);
   if (q) (q.doors = q.doors || []).push({ x, y, to: id });
 }
-// Where you land inside a room: the floor tile beside its 'D' (from the blueprint, without generating the room).
+// Where you land inside a room (from the blueprint, without generating the room): two tiles in from its 'D' when that
+// tile is open floor with no furniture on it (F footprints, S pieces), else the floor tile beside the 'D'.
 function intEntry(id) {
-  const rows = INT_ROOMS[id].rows; let dx = -1, dy = -1;
+  const B = INT_ROOMS[id], rows = B.rows; let dx = -1, dy = -1;
   rows.forEach((r, y) => { const x = r.indexOf('D'); if (x >= 0) { dx = x; dy = y; } });
-  for (const [ax, ay] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) { const c = (rows[dy + ay] || '')[dx + ax]; if (c === '.' || c === ',') return { x: dx + ax, y: dy + ay }; }
+  const flo = (x, y) => '.,/='.includes((rows[y] || '')[x] || '#');
+  const clear = (x, y) => flo(x, y) && !(B.F || []).some(f => x >= f[2] && x <= f[4] && y >= f[3] && y <= f[5]) && !(B.S || []).some(s => !/_rug$/.test(s[0]) && Math.hypot(s[2] - x - 0.5, s[3] - y - 0.5) < 0.75);   // (a rug is fine)
+  for (const [ax, ay] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+    if (!'.,'.includes((rows[dy + ay] || '')[dx + ax] || '#')) continue;
+    return clear(dx + 2 * ax, dy + 2 * ay) ? { x: dx + 2 * ax, y: dy + 2 * ay } : { x: dx + ax, y: dy + ay };
+  }
   return { x: dx, y: dy };
 }
 // Hlín's tent: a set piece west of the camp's Waystone (3 x 3, door east toward the fire)
@@ -1865,7 +1889,7 @@ intNpc('burner_svart', { map: 'emberhold_house_d', name: 'Svart', title: 'Charco
     'At night something comes out of the old barrow in the Wood and sits by my kiln. It does not come close. It just warms its hands. I let it. It is cold down there, I expect.',
     'Hrefna says my charcoal is the best she has ever used. Then she says it is the only charcoal she has ever used. Both are true.'],
   rumor: 'Round my kiln the Wood whispers of a way down' });
-intNpc('burner_kata', { map: 'emberhold_house_d', name: 'Kata', title: 'Burner’s daughter', dname: 'Kata', x: 3.5, y: 6.5, dir: 1,
+intNpc('burner_kata', { map: 'emberhold_house_d', name: 'Kata', title: 'Burner’s daughter', dname: 'Kata', x: 4.5, y: 6.5, dir: 1,
   look: { body: '#4a3a3a', trim: '#8a3a2a', legs: '#2a2020', skin: '#e0c0a0', hair: '#3a2a20', weapon: 'none', scale: 0.8 },
   greet: 'Papa says I am not allowed to go to the kiln any more. So now I go when he is not looking.',
   lines: ['There is a stone in the Wood, east, with a strip of hide tied round it. Ásvör the huntress ties a new one every time she wants something to die cleanly. I tied one for Papa’s cough.',
@@ -1942,7 +1966,7 @@ intNpc('farm_vebjorn', { map: 'emberhold_farm_c', name: 'Vébjörn', title: 'Far
   rumor: 'From up here I have seen the smoke from it: a way down' });
 
 // the midwife's house
-intNpc('midwife_yrsa', { map: 'emberhold_house_f', name: 'Yrsa', title: 'Midwife', dname: 'Yrsa the Midwife', x: 8.5, y: 3.2, dir: 1,
+intNpc('midwife_yrsa', { map: 'emberhold_house_f', name: 'Yrsa', title: 'Midwife', dname: 'Yrsa the Midwife', x: 9.5, y: 3.2, dir: 1,
   look: { body: '#6a4a5a', trim: '#e0c8a0', legs: '#3a2a34', skin: '#f0d8c8', hair: '#8a5a3a', robe: true, head: 'hood', weapon: 'none' },
   greet: 'Quiet, please. There is someone asleep in the back who has only just learned how.',
   intro: ['Yrsa. I bring them in. Hrói sees them out. We try not to meet too often.', 'Forty-one children born in Emberhold since the Ash. I have written every one of them down. The Waystone keeps the dead; somebody has to keep the new.'],
@@ -1960,7 +1984,7 @@ intNpc('midwife_ljot', { map: 'emberhold_house_f', name: 'Ljót', title: 'New mo
   rumor: 'Hush. The guards say there is a way down' });
 
 // the thatcher's house
-intNpc('thatch_alfr', { map: 'emberhold_house_g', name: 'Álfr', title: 'Thatcher', dname: 'Álfr the Thatcher', x: 6.5, y: 2.5, dir: 1,
+intNpc('thatch_alfr', { map: 'emberhold_house_g', name: 'Álfr', title: 'Thatcher', dname: 'Álfr the Thatcher', x: 8.5, y: 2.6, dir: 1,
   look: { body: '#7a6a3a', trim: '#c8a868', legs: '#3a3424', skin: '#d8b090', hair: '#e0c070', beard: true, weapon: 'none', scale: 1.0 },
   greet: 'If you have seen a small boy running very fast, he is mine. If you have not, he is still mine, he is just faster than you.',
   lines: ['Reed from the Mirewell edge, straw from the Ward. A roof that keeps out the Ash is a roof that keeps out the sun too. We gave up on the sun.',

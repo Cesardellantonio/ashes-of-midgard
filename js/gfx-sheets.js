@@ -441,6 +441,9 @@ function sheetUpPump() {
    runs. Returns the number of uploads. A still-pending idle callback later finds the queue empty and just re-pumps. */
 function sheetUpFlush() { let n = 0; while (sheetUpOne()) n++; return n; }
 SHEETS.flushUploads = sheetUpFlush;
+// GFX.prewarm (gfx-world.js): queue the page-0 uploads of the sheets a neighbour map's prefetch loaded (tag = its id), so
+// its monsters and NPCs are on the GPU before the warp. Idle-time, one per callback, like any other upload.
+SHEETS.prewarm = id => { let n = 0; for (const k in SHEETS.byId) { const r = SHEETS.byId[k]; if (r.ok && !r.up && r.maps && r.maps.has && r.maps.has(id)) { sheetUpQueue(r, 0); n++; } } return n; };
 // True while the index or any requested sheet is still loading (harnesses wait on this before a capture).
 SHEETS.busy = () => { if (!SHEETS.indexReady) return true; for (const id in SHEETS.byId) if (!SHEETS.byId[id].done) return true; return false; };
 const recShow = r => !!(r && r.ok) && (r.up || (sheetUpQueue(r, 0), false));

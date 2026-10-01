@@ -1221,6 +1221,7 @@ function floatText(e, txt, kind, small) {
   floats.push({ x: e.x, y: e.y, hw: groundH(e.x, e.y) + headH(e) + 0.15, txt: String(txt), kind, t: 0, side: Math.random() < 0.5 ? -1 : 1, small });
 }
 function banner(a, b, cls = '') {
+  if (TRAVEL.hold) { TRAVEL.banners.push([a, b, cls]); return; }   // mapfix F3: shown once the travel fade has cleared
   const el = $('banner'); el.innerHTML = `<div class="bnr ${cls}"><div class="a">${esc(a)}</div>${b ? `<div class="b">${esc(b)}</div>` : ''}</div>`;
 }
 function log(msg, cls = 'sys') {
@@ -1274,9 +1275,11 @@ const Sfx = {
    Update
    ========================================================= */
 function stopAll() { P.path = null; P.target = null; P.goal = null; P.pending = null; }
+// Mapfix F3: a click on blocked ground right next to a warp (past the map edge, on the portal's arch) walks into the warp.
+function warpNear(wx, wy) { if (!map) return null; for (const w of map.warps) if (hyp(wx - w.x - 0.5, wy - w.y - 0.5) < 1.6) return { x: w.x, y: w.y }; return null; }
 function cancelCast() { if (P.casting) { P.casting = null; P.castT = 0; hlog('Cast interrupted.', 'sys'); } }
 function moveTo(wx, wy) {
-  const t = blocked(wx, wy) ? nearestOpen(wx, wy, 4) : { x: Math.floor(wx), y: Math.floor(wy) };
+  const t = blocked(wx, wy) ? warpNear(wx, wy) || nearestOpen(wx, wy, 4) : { x: Math.floor(wx), y: Math.floor(wy) };
   if (!t) return false;
   const p = findPath(P.x, P.y, t.x, t.y);
   if (!p) return false;
@@ -1444,6 +1447,7 @@ function updatePlayer(dt) {
   P.playTime += dt;
   heroTimers(dt);
   petTick(dt); rebornAura();   // round 6
+  if (TRAVEL.lock) { heroRegen(dt); P.path = null; P.dash = null; P.moving = false; P.walk = 0; P.dodgeT = 0; P.swingT = 0; P.charge = -1; return; }   // mapfix F3: behind the travel fade
 
   if (P.dash) { updateDash(dt); postMove(); return; }
   heroRegen(dt);
@@ -1475,9 +1479,15 @@ function updatePlayer(dt) {
 function postMove() {
   // Auto-pick zeny & lost zeny when walking over it
   for (const d of drops) if ((d.zeny) && dist(P, d) < 0.7) { pickup(d); break; }
-  // Warps
+  // Warps. Mapfix F3: the arrival guard (no bounce-back), prewarm of a nearby destination, and the fade sequence.
+  if (TRAVEL.phase === 'out' || TRAVEL.phase === 'load') return;   // a transition is under way: nothing fires twice
+  const ptx = Math.floor(P.x), pty = Math.floor(P.y), G = TRAVEL.guard;
+  if (G && !TRAVEL.lock && (Math.abs(ptx - G.x) + Math.abs(pty - G.y) > 1 || time - G.t > TRAVEL.guardT)) TRAVEL.guard = null;
   for (const wp of map.warps) {
-    if (Math.floor(P.x) === wp.x && Math.floor(P.y) === wp.y) {
+    if (TRAVEL.warm[wp.to] === undefined) travelWarm(wp);
+    if (ptx === wp.x && pty === wp.y) {
+      // just arrived: a warp fires only once you have stepped off the landing (or after 1.5 s), unless you walk to it on purpose
+      if (TRAVEL.guard) { const e = P.path && P.path.length ? P.path[P.path.length - 1] : null; if (!e || Math.floor(e.x) !== wp.x || Math.floor(e.y) !== wp.y) break; TRAVEL.guard = null; }
       const why = warpLocked(wp);
       if (why) {
         if (!P.warpMsgT || time - P.warpMsgT > 3) { P.warpMsgT = time; log(why, 'warn'); }
@@ -1486,11 +1496,19 @@ function postMove() {
         let bx = wp.x + 0.5 + dx / d * 1.1, by = wp.y + 0.5 + dy / d * 1.1;
         if (blocked(bx, by)) { const o = nearestOpen(wp.x + 0.5, wp.y + 1.5, 2); if (o && !(o.x === wp.x && o.y === wp.y)) { bx = o.x + 0.5; by = o.y + 0.5; } }
         if (!blocked(bx, by)) { P.x = bx; P.y = by; } P.path = null; P.dash = null;
-      } else if (wp.tx === null || wp.tx === undefined) { Sfx.warp(); const dm = genMap(wp.to); gotoMap(wp.to, dm.entry.x + 0.5, dm.entry.y + 0.5); }   // round 7: the Deep's next floor
-      else { Sfx.warp(); gotoMap(wp.to, wp.tx, wp.ty); }
+      } else if (wp.tx === null || wp.tx === undefined) { Sfx.warp(); travelRun(() => { const dm = genMap(wp.to); gotoMapNow(wp.to, dm.entry.x + 0.5, dm.entry.y + 0.5, false, { face: wp.face || 'edge' }); }); }   // round 7: the Deep's next floor
+      else { Sfx.warp(); travelRun(() => gotoMapNow(wp.to, wp.tx, wp.ty, false, { face: wp.face || 'edge' })); }
       break;
     }
   }
+}
+// Prewarm: the first time the hero comes within TRAVEL.warmR tiles of an open warp on this visit, ask gfx to build (or
+// fetch) its destination ahead of time, so walking through it does not stall. A sealed warp is skipped and asked again.
+function travelWarm(wp) {
+  const dx = P.x - wp.x - 0.5, dy = P.y - wp.y - 0.5;
+  if (dx * dx + dy * dy > TRAVEL.warmR * TRAVEL.warmR || warpLocked(wp)) return;
+  TRAVEL.warm[wp.to] = true;
+  if (typeof GFX !== 'undefined' && GFX && typeof GFX.prewarm === 'function') try { GFX.prewarm(wp.to); } catch (e) { console.warn('[travel] prewarm', wp.to, e); }
 }
 /* Warp locks: wp.lock names an entry here. The renderer may call warpLocked(wp) to colour a sealed portal. */
 const WARP_LOCKS = {
@@ -1502,7 +1520,15 @@ const WARP_LOCKS = {
   root: { open: () => !!(P.quests.done.act3_4 || P.flags.bosses.nidhogg), msg: 'The Root Road is choked with the dead. Ganglati says the way to Hvergelmir must be found from below first (the Deep Roots, floor 5).' },
   deep: { open: () => deepCleared(), get msg() { return deepLockMsg(); } },
 };
-function warpLocked(wp) { const L = wp && wp.lock && WARP_LOCKS[wp.lock]; return L && !L.open() ? L.msg : null; }
+// R4 (docs/MAPS.md §18): an unknown lock fails closed (sealed, with a console warning once per key), so a typo in the
+// map data cannot open a story gate.
+const WARP_LOCK_BAD = {};
+function warpLocked(wp) {
+  if (!wp || !wp.lock) return null;
+  const L = WARP_LOCKS[wp.lock];
+  if (!L) { if (!WARP_LOCK_BAD[wp.lock]) { WARP_LOCK_BAD[wp.lock] = true; console.warn(`[travel] unknown warp lock "${wp.lock}" (${map ? map.id : '?'} -> ${wp.to}): sealed`); } return 'The way is sealed.'; }
+  return L.open() ? null : L.msg;
+}
 function updateMob(m, dt) {
   if (m.dead) { m.deathT += dt; return; }
   m.anim += dt; if (m.hitFlash > 0) m.hitFlash -= dt;
@@ -1575,6 +1601,7 @@ const AILOD = { on: !(typeof window !== 'undefined' && window.AOM_AI_LOD === fal
 function rmAt(a, i) { const n = a.length - 1; for (let k = i; k < n; k++) a[k] = a[k + 1]; a.length = n; }
 function update(dt) {
   time += dt;
+  if (TRAVEL.phase) travelTick(dt);   // mapfix F3
   if (PARTY && PARTY.members.indexOf(P) < 0) PARTY = null;   // cycle 8: a new game (or a test) replaced the hero
   for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { rmAt(timers, i); if (PARTY && t.h !== P) asOwner(t.h, t.fn); else t.fn(); } }
   if (started) { ambientTick(dt); updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
@@ -1637,17 +1664,151 @@ function die() {
   UI.dirty = true;
 }
 function respawn() {
-  $('death').hidden = true; P.dead = false; calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; P.buffs = {}; calcStats(); renderBuffs();
-  if (PARTY && PARTY.members.length > 1 && typeof squadReviveAll === 'function') squadReviveAll(1, true);   // cycle 8: the Waystone wakes the whole party
-  gotoMap(P.lastWay.map, P.lastWay.x, P.lastWay.y, true);
-  log('The Waystone pulls you back from the dark.', 'sys');
+  $('death').hidden = true;
+  const back = () => {   // mapfix F3: the hero rises at the Waystone behind the fade (in place at once without it)
+    P.dead = false; calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; P.buffs = {}; calcStats(); renderBuffs();
+    if (PARTY && PARTY.members.length > 1 && typeof squadReviveAll === 'function') squadReviveAll(1, true);   // cycle 8: the Waystone wakes the whole party
+    gotoMapNow(P.lastWay.map, P.lastWay.x, P.lastWay.y, true, { face: 'auto' });
+    log('The Waystone pulls you back from the dark.', 'sys');
+  };
+  if (!travelRun(back)) $('death').hidden = false;
 }
-function gotoMap(id, x, y, quiet) {
-  const first = !map || map.id !== id;
+/* ---------- Mapfix F3: travel feel ----------
+   Every map change made in play (warps, doors, cave mouths, Waystone travel, sailing, the Deep, a Butterfly Wing,
+   respawning) runs one sequence: fade out (TRAVEL.out s), swap the map (gotoMapNow), wait for the world to be drawn
+   (GFX.worldReady(id), at most TRAVEL.maxWait s), fade in (TRAVEL.inn s). The hero's controls are locked (TRAVEL.lock)
+   only while the fade runs, the hero cannot be hurt behind it, and map banners queue until it has cleared.
+   Arrival (gotoMapNow with opts, and every in-play change while the fade is on):
+   - a landing that is blocked, or (opts) on a warp tile, moves to the nearest open tile with a console warning (R7);
+   - facing (travelFace): a warp's `face` ('N' | 'E' | 'S' | 'W'), else away from the nearest map edge (mapcheck M6.13);
+     other arrivals face away from a warp beside them, else from the nearest wall or edge;
+   - the guard: no warp fires until the hero has left the landing tile and its 4 neighbours, or TRAVEL.guardT s after
+     the fade, unless the hero walks to that warp on purpose (a click or F on it: the path ends on its tile);
+   - the camera is snapped to the hero (no swoop); the companions, the pet and Huginn are placed around the hero.
+   TRAVEL.on: window.AOM_TRAVEL when set, else on except in headless browsers (the test and perf harnesses), where
+   gotoMap and a warp swap at once, as before (arrival placement and facing still apply to warps). */
+const TRAVEL = {
+  on: typeof window !== 'undefined' && window.AOM_TRAVEL !== undefined ? !!window.AOM_TRAVEL : !(typeof navigator !== 'undefined' && (/HeadlessChrome/.test(navigator.userAgent || '') || navigator.webdriver === true)),
+  out: 0.25, inn: 0.3, maxWait: 1.5, guardT: 1.5, warmR: 4,
+  phase: null, t: 0, a: 0, rt: 0, fn: null, seq: 0, ready: false, frames: 0, lock: false, hold: false, inSwap: false, banners: [],
+  guard: null, warm: {}, warned: {}, warnings: [], stats: { n: 0, last: null },
+};
+// Run fn (the map swap) behind the fade. True when it ran or was queued; false when a transition is already under way.
+function travelRun(fn) {
+  if (!TRAVEL.on || TRAVEL.inSwap || !started || !map || !P) { fn(); return true; }
+  if (TRAVEL.phase === 'out') { console.warn('[travel] already travelling: request ignored'); return false; }
+  if (TRAVEL.phase === 'load') { travelSwap(fn); return true; }   // the screen is black already: swap again, wait again
+  TRAVEL.phase = 'out'; TRAVEL.t = TRAVEL.a * TRAVEL.out; TRAVEL.rt = performance.now(); TRAVEL.fn = fn; TRAVEL.lock = true;
+  TRAVEL.stats.last = { from: map.id, to: null, t0: TRAVEL.rt, swapMs: 0, waitMs: 0, totalMs: 0, ready: null };
+  P.iframes = Math.max(P.iframes || 0, TRAVEL.out + 0.2); P.path = null; P.moving = false;
+  travelPaint();
+  return true;
+}
+function travelTick(dt) {
+  const T = TRAVEL, now = performance.now(), real = Math.min(0.1, (now - T.rt) / 1000); T.rt = now;
+  const step = Math.max(dt, real), St = T.stats.last;
+  if (P) P.iframes = Math.max(P.iframes || 0, 0.2);   // nothing hurts you behind the fade
+  if (T.phase === 'out') {
+    T.t += step; T.a = Math.min(1, T.t / T.out);
+    if (T.a >= 1) {
+      const fn = T.fn; T.fn = null; travelSwap(fn);
+    }
+  } else if (T.phase === 'load') {
+    T.t += step; T.frames++;
+    // no GFX.worldReady: wait for two drawn frames and the gfx loading gate (GFX.load.pending), if there is one
+    const gate = typeof GFX !== 'undefined' && GFX && GFX.load && GFX.load.pending;
+    if (T.ready === true || (T.ready === null && T.frames >= 2 && !gate) || T.t >= T.maxWait) {
+      St.ready = T.ready === true ? 'worldReady' : T.ready === null ? 'frames' : 'timeout'; St.waitMs = Math.round(T.t * 1000);
+      if (St.ready === 'timeout') console.warn(`[travel] ${map.id}: world not ready after ${T.maxWait} s, fading in anyway`);
+      T.phase = 'in'; T.t = 0; travelCam();
+    }
+  } else if (T.phase === 'in') {
+    T.t += step; T.a = Math.max(0, 1 - T.t / T.inn);
+    if (T.a <= 0) {
+      T.phase = null; T.lock = false; T.hold = false; T.stats.n++; St.totalMs = Math.round(performance.now() - St.t0);
+      if (T.guard) T.guard.t = time;   // the guard's clock starts when you can move
+      const B = T.banners.splice(0); for (const b of B) banner(b[0], b[1], b[2]);
+      // ui.js styles an interior / cave entry banner as a plaque when it rebuilds the minimap, which ran at the swap
+      if (B.length && typeof MM !== 'undefined' && MM && MM.kind) { const el = $('banner').firstElementChild; if (el && el.classList.contains('bnr')) el.classList.add('loc', MM.kind); }
+    }
+  }
+  travelPaint();
+}
+// The swap itself (screen black): run fn, then ask gfx when the new world is drawn.
+function travelSwap(fn) {
+  const T = TRAVEL, St = T.stats.last, seq = ++T.seq, t0 = performance.now();
+  T.hold = true; T.phase = 'load'; T.t = 0; T.frames = 0; T.ready = null; T.inSwap = true;
+  try { fn(); } catch (e) { console.error(e); } finally { T.inSwap = false; }
+  St.to = map.id; St.swapMs = +(performance.now() - t0).toFixed(1);
+  if (typeof GFX !== 'undefined' && GFX && typeof GFX.worldReady === 'function') {
+    T.ready = false;
+    try { const pr = GFX.worldReady(map.id, T.maxWait * 1000); if (pr && typeof pr.then === 'function') pr.then(() => { if (T.seq === seq) T.ready = true; }, () => { if (T.seq === seq) T.ready = true; }); else T.ready = true; }
+    catch (e) { console.warn('[travel] worldReady', e); T.ready = true; }
+  }
+}
+// The camera on the hero, settled: snapped (gfx snapCam), and a hero-swap glide (gfx CAMSW) still running from the old
+// map cancelled, or it would pull the view back toward where the swap began.
+function travelCam() {
+  if (!P) return;
+  if (typeof snapCam === 'function') snapCam();
+  if (typeof CAMSW !== 'undefined' && CAMSW) { CAMSW.t = -1; CAMSW.p = typeof ctrlHero === 'function' ? ctrlHero() : P; CAMSW.map = map; }
+}
+function travelPaint() { if (typeof travelFadeUI === 'function') try { travelFadeUI(TRAVEL.a, TRAVEL.phase === 'load' && TRAVEL.t > 0.35 && map ? map.d.name : ''); } catch (e) { /* UI not ready */ } }
+// R7: a blocked landing (or one on a warp tile) of an arrival moves to the nearest open tile, with a console warning;
+// other placements (strict false: tests, tools) move off a blocked tile silently, as before.
+function travelLanding(id, x, y, strict) {
+  const onWarp = (tx, ty) => { for (const w of map.warps) if (w.x === tx && w.y === ty) return true; return false; };
+  const bl = blocked(x, y), ow = !bl && strict && onWarp(Math.floor(x), Math.floor(y));
+  if (!bl && !ow) return null;
+  let o = null;
+  if (ow) {   // nearest open, reachable tile that is not a warp
+    const cx = Math.floor(x), cy = Math.floor(y);
+    for (let r = 1; r <= 5 && !o; r++) { let bd = 1e9; for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const nx = cx + dx, ny = cy + dy; if (blocked(nx, ny) || !map.reach[ny * map.w + nx] || onWarp(nx, ny)) continue; const dd = dx * dx + dy * dy - Math.min(nx, ny, map.w - 1 - nx, map.h - 1 - ny, 3) * 0.01; if (dd < bd) { bd = dd; o = { x: nx, y: ny }; } } }
+  } else o = nearestOpen(x, y, 5);
+  o = o || map.entry;
+  const key = id + ':' + x + ',' + y;
+  if (strict && !TRAVEL.warned[key]) {   // (a landing; a harness or tool placing the hero by hand is moved silently, as before)
+    TRAVEL.warned[key] = true; const msg = `[travel] ${id}: landing (${x}, ${y}) is ${bl ? 'blocked' : 'a warp tile'}; moved to (${o.x + 0.5}, ${o.y + 0.5})`;
+    console.warn(msg); if (TRAVEL.warnings.length < 50) TRAVEL.warnings.push(msg);
+  }
+  return { x: o.x + 0.5, y: o.y + 0.5 };
+}
+// Facing on arrival. face: 'N' | 'E' | 'S' | 'W' (a warp's `face`); 'edge' (a warp without one): away from the nearest
+// map edge, the rule mapcheck M6.13 checks (first minimum of W, E, N, S); 'auto' (Waystone, respawn, sailing, the
+// Deep): away from a warp within 2 tiles, else away from the nearest wall or edge (or along the longest open run when
+// that side is cramped too).
+const TRAVEL_DIRS = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] };
+function travelFace(x, y, face) {
+  let v = face && TRAVEL_DIRS[String(face).toUpperCase()];
+  const tx = Math.floor(x), ty = Math.floor(y);
+  if (!v && face === 'edge') { const dd = [tx, map.w - 1 - tx, ty, map.h - 1 - ty]; v = TRAVEL_DIRS['EWSN'[dd.indexOf(Math.min(...dd))]]; }
+  if (!v) {
+    let bw = null, bd = 3;
+    for (const w of map.warps) { const d = Math.max(Math.abs(tx - w.x), Math.abs(ty - w.y)); if (d > 0 && d < bd) { bd = d; bw = w; } }
+    if (bw) { const dx = tx - bw.x, dy = ty - bw.y; v = Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : Math.abs(dy) > Math.abs(dx) ? [0, Math.sign(dy)] : [Math.SQRT1_2 * Math.sign(dx), Math.SQRT1_2 * Math.sign(dy)]; }
+  }
+  if (!v) {
+    const run = {}; let near = 'S', far = 'S';
+    for (const k in TRAVEL_DIRS) { const [dx, dy] = TRAVEL_DIRS[k]; let n = 0; while (n < 8 && !blocked(tx + dx * (n + 1) + 0.5, ty + dy * (n + 1) + 0.5)) n++; run[k] = n; }
+    for (const k in run) { if (run[k] < run[near]) near = k; if (run[k] > run[far]) far = k; }
+    const opp = { N: 'S', S: 'N', E: 'W', W: 'E' }[near];
+    v = TRAVEL_DIRS[run[opp] >= 3 || run[opp] >= run[far] ? opp : far];
+  }
+  P.fx = v[0]; P.fy = v[1];
+}
+// Every map change goes through here: behind the fade in play (travelRun), at once otherwise. opts: { face } (arrival).
+function gotoMap(id, x, y, quiet, opts) {
+  if (!TRAVEL.on || TRAVEL.inSwap || !started || !map || !P) { gotoMapNow(id, x, y, quiet, opts); return; }
+  travelRun(() => gotoMapNow(id, x, y, quiet, opts || { face: 'auto' }));
+}
+function gotoMapNow(id, x, y, quiet, opts) {
+  const first = !map || map.id !== id, arrive = !!opts || TRAVEL.inSwap;
   if (map && map.id !== id) { if (typeof RUSH !== 'undefined' && RUSH && RUSH.on && map.id === 'helheim_arena') rushAbort('You left Eljudnir. The Gauntlet is over.'); deepLeave(); }   // round 7
   map = genMap(id);
-  if (blocked(x, y)) { const o = nearestOpen(x, y, 5) || map.entry; x = o.x + 0.5; y = o.y + 0.5; }
+  const L = travelLanding(id, x, y, arrive); if (L) { x = L.x; y = L.y; }
   P.map = id; P.x = x; P.y = y;
+  TRAVEL.warm = {};
+  if (arrive) { travelFace(x, y, opts && opts.face); if (TRAVEL.inSwap) TRAVEL.guard = { x: Math.floor(x), y: Math.floor(y), t: time }; }
   stopAll(); P.casting = null; P.dash = null; timers = []; projs = []; teles = []; parts = []; fxs = []; floats = []; drops = []; zones = [];
   if (PARTY && PARTY.members.length > 1 && typeof squadArrive === 'function') squadArrive();   // cycle 8: the companions warp with you
   spawnAll();
@@ -1665,6 +1826,7 @@ function gotoMap(id, x, y, quiet) {
   setScreenParts();
   if (map.d.deep) deepArrive(first);   // round 7: best depth, floor affixes, the floor's banner
   if (id === 'throne' && !P.flags.kingIntro && !P.flags.kingSlain) { P.flags.kingIntro = true; after(1.2, () => say('The Ashen King', [MOBS.ashen_king.intro, '“You came for the Heart. It is behind me. So am I, in a sense. Come and take it.”'])); }
+  if (arrive) travelCam();   // mapfix F3: the camera starts settled on the hero
   UI.dirty = true; saveGame();
 }
 function useObj(o) {

@@ -1411,6 +1411,24 @@ function frame(now) {
 // UI round 10: the minimap lives in ui.js now (see "UI round 10" below). drawMinimapExtras / drawMinimap stay callable
 // (tests, tools/perf.js) and redraw the marker layer.
 function drawMinimapExtras() { if (typeof miniMarkers === 'function' && map) { if (MM.map !== map) miniRebuild(); miniMarkers(); } }
+/* Mapfix F3: the travel fade (core.js TRAVEL drives it: travelFadeUI(alpha, loading label)). A black veil over the world,
+   under the HUD, that swallows clicks on the world while it is up; past a short wait it names the place being loaded. */
+const TFADE = { el: null, lab: null, a: -1, txt: '' };
+function travelFadeUI(a, label) {
+  if (!TFADE.el) {
+    if (a <= 0) return;
+    const el = TFADE.el = document.createElement('div'); el.id = 'travelfade';
+    el.style.cssText = 'position:absolute;inset:0;background:#07080c;opacity:0;pointer-events:none;display:flex;align-items:flex-end;justify-content:center';
+    const lab = TFADE.lab = document.createElement('div');
+    lab.style.cssText = 'margin-bottom:14vh;font:700 13px var(--ui,sans-serif);letter-spacing:.18em;color:#a9b4c8;text-shadow:0 1px 2px #000;opacity:0;transition:opacity .25s';
+    el.appendChild(lab);
+    const cv = $('cv'); if (cv && cv.parentNode) cv.parentNode.insertBefore(el, cv.nextSibling); else document.body.appendChild(el);
+  }
+  a = Math.max(0, Math.min(1, a));
+  if (a !== TFADE.a) { TFADE.a = a; TFADE.el.style.opacity = a.toFixed(3); TFADE.el.style.pointerEvents = a > 0 ? 'auto' : 'none'; TFADE.el.style.visibility = a > 0 ? 'visible' : 'hidden'; }
+  const t = label ? `Travelling to ${label}…` : '';
+  if (t !== TFADE.txt) { TFADE.txt = t; if (t) TFADE.lab.textContent = t; TFADE.lab.style.opacity = t ? '1' : '0'; }
+}
 // Title line under the name in the HUD (index.html is not ours; add it at load).
 (function titleLine() {
   const nm = $('pname'); if (!nm || $('ptitle')) return;

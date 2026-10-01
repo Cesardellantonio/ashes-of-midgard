@@ -403,6 +403,7 @@ function gfxPresent() {
   if (!gloadReady()) return;
   if (POST.on) POST.render();
   else { renderer.setRenderTarget(null); POST.raw(scene, camera); }
+  if (typeof WPRE !== 'undefined') WPRE.presented++;   // GFX.worldReady: a frame of the entered world was shown
 }
 // Route the existing renderer.render(scene, camera) call in gfx-render.js through gfxPresent.
 renderer.render = function (s, c) { if (s === scene && c === camera) return gfxPresent(); return POST.raw(s, c); };

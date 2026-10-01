@@ -42,8 +42,19 @@ const SHADOWMAT = new THREE.MeshBasicMaterial({ map: TEX.shadow, transparent: tr
 const CASTMAT = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, transparent: true, side: THREE.DoubleSide });
 const VIS = new Map(), DV = new Map();
 let frameNo = 0;
-function clearVis() { for (const v of VIS.values()) disposeVis(v); VIS.clear(); for (const v of DV.values()) for (const m of v.meshes) { scene.remove(m); m.material.dispose(); } DV.clear(); if (typeof PFX !== 'undefined') PFX.clear(); if (typeof VFX !== 'undefined') VFX.clear(); }
-function disposeMesh(m) { scene.remove(m); if (m.material !== SHADOWMAT && m.material !== CASTMAT) m.material.dispose(); if (m.customDepthMaterial) m.customDepthMaterial.dispose(); }
+// mapfix F2: a map change (clearVis) disposed every sprite material at once, and three frees a shader program as soon as
+// no material uses it, so the next map's first frames recompiled the very same sprite programs (6-8 links per warp, a
+// 50-200 ms hitch on slow drivers). Their disposal now waits MAT_LATER.ms: the new map's sprites take the programs over.
+const MAT_LATER = { q: [], ms: 4000, on: false };
+function matDispose(mat) { if (!mat) return; if (MAT_LATER.on) MAT_LATER.q.push(mat, performance.now()); else mat.dispose(); }
+function matLaterTick() { const q = MAT_LATER.q; if (!q.length) return; const t = performance.now(); while (q.length && t - q[1] > MAT_LATER.ms) { q.shift().dispose(); q.shift(); } }
+function clearVis() {
+  MAT_LATER.on = true;
+  try { for (const v of VIS.values()) disposeVis(v); VIS.clear(); for (const v of DV.values()) for (const m of v.meshes) { scene.remove(m); matDispose(m.material); } DV.clear(); }
+  finally { MAT_LATER.on = false; }
+  if (typeof PFX !== 'undefined') PFX.clear(); if (typeof VFX !== 'undefined') VFX.clear();
+}
+function disposeMesh(m) { scene.remove(m); if (m.material !== SHADOWMAT && m.material !== CASTMAT) matDispose(m.material); if (m.customDepthMaterial) matDispose(m.customDepthMaterial); }
 function disposeVis(v) { if (v.dispose) return v.dispose(); for (const m of v.meshes) disposeMesh(m); }
 
 /* ---------- Pipeline probes (the render lead's GFX may or may not exist yet) ---------- */
@@ -2727,6 +2738,7 @@ function drawMinimap() {
   g.save(); g.translate(px, py); g.rotate(a); g.fillStyle = '#ffffff'; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(8, 0); g.lineTo(-5, -5); g.lineTo(-2, 0); g.lineTo(-5, 5); g.closePath(); g.fill(); g.stroke(); g.restore();
 }
 function render(dt) {
+  matLaterTick();
   updateCamera(dt || 0.016);
   animateWorld(dt || 0.016);
   syncEntities();

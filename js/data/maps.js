@@ -117,17 +117,18 @@ const MAPDEFS = {
       const { set, clearC, clearR, rng, w, h } = K;
       m.houses = []; const house = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, T.RUIN); m.houses.push({ x0, y0, x1, y1 }); };
       house(4, 4, 9, 8); house(26, 4, 31, 8); house(4, 27, 9, 31); house(26, 27, 31, 31); house(27, 12, 30, 14);
-      for (let i = 0; i < 14; i++) { const x = randi(3, w - 4), y = randi(3, h - 4); if (Math.hypot(x - 18, y - 18) > 7 && m.t[y * w + x] === 0) set(x, y, rng() < 0.7 ? T.TREE : T.ROCK); }
+      const ri = (a, b) => a + Math.floor(rng() * (b - a + 1));   // seeded (M4.2): the town is the same every load
+      for (let i = 0; i < 14; i++) { const x = ri(3, w - 4), y = ri(3, h - 4); if (Math.hypot(x - 18, y - 18) > 7 && m.t[y * w + x] === 0) set(x, y, rng() < 0.7 ? T.TREE : T.ROCK); }
       clearC(12, 13, 2); clearC(24, 12, 2); clearC(12, 23, 2); clearC(20, 17, 1);
       for (let y = 16; y <= 20; y++) for (let x = w - 2; x < w; x++) set(x, y, 0);
       for (let x = 16; x <= 20; x++) for (let y = 0; y < 2; y++) set(x, y, 0);
       clearR(16, 1, 20, 34); clearR(1, 16, 34, 20);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if ((Math.abs(x - 18) <= 2 || Math.abs(y - 18) <= 2) || Math.hypot(x - 18, y - 18) < 6) m.deco[y * w + x] = 5; }
       set(18, 18, T.WAY); m.way = { x: 18.5, y: 18.5 };
-      m.warps.push({ x: 34, y: 18, to: 'ashen_fields', tx: 3.5, ty: 32.5, label: 'Ashen Fields' });
+      // (the east gate at 34,18 moved to the grown town's East Gate, 54,18, in its grow layout)
       m.warps.push({ x: 18, y: 1, to: 'throne', tx: 15.5, ty: 26.5, label: 'Cinder Gate', lock: 'gate' });
       m.objs.push({ kind: 'anvil', x: 11.5, y: 12.5 });
-      m.braziers.push({ x: 15.5, y: 15.5 }, { x: 21.5, y: 21.5 }, { x: 15.5, y: 21.5 }, { x: 33.5, y: 16 }, { x: 33.5, y: 21 }, { x: 16, y: 2.5 }, { x: 21, y: 2.5 });
+      m.braziers.push({ x: 15.5, y: 15.5 }, { x: 21.5, y: 21.5 }, { x: 15.5, y: 21.5 }, { x: 16, y: 2.5 }, { x: 21, y: 2.5 });   // (the old east gate's pair went with the gate: map fixes)
       m.entry = { x: 18, y: 22 };
     } },
   ashen_fields: { name: 'Ashen Fields', sub: 'Base Lv 1 – 12', lv: [1, 12], world: [228, 250], w: 64, h: 64, seed: 23, gen: 'field', trees: 0.045, rocks: 0.035, ruins: 0.004, ground: ['#4a4436', '#4f4838', '#443f32', '#554c3a'], void: '#0d0c09', dark: 0.48, part: 'ash', treeKind: 'dead',
@@ -138,11 +139,9 @@ const MAPDEFS = {
       m.entry = { x: 3, y: 32 }; m.way = { x: 7.5, y: 29.5 }; m.bossPos = { x: 50.5, y: 11.5 };
       carve(2, 32, 61, 32, 2); carve(8, 30, 50, 12, 1); clearC(50, 11, 7); clearC(7, 29, 3);
       carve(30, 32, 20, 52, 1); carve(40, 32, 52, 50, 1);
-      m.warps.push({ x: 1, y: 32, to: 'emberhold', tx: 32.5, ty: 18.5, label: 'Emberhold' });
-      m.warps.push({ x: 62, y: 32, to: 'withered_wood', tx: 3.5, ty: 32.5, label: 'Withered Wood' });
+      m.warps.push({ x: 1, y: 32, to: 'emberhold', tx: 52.5, ty: 18.5, label: 'Emberhold' });
       // Round 3: the bog trail south to Mirewell
       carve(20, 52, 32, 61, 1);
-      m.warps.push({ x: 32, y: 62, to: 'mirewell', tx: 32.5, ty: 3.5, label: 'Mirewell' });
     } },
   withered_wood: { name: 'Withered Wood', sub: 'Base Lv 10 – 22', lv: [10, 22], world: [376, 250], w: 64, h: 64, seed: 37, gen: 'field', trees: 0.16, rocks: 0.02, ground: ['#2f3528', '#343a2b', '#2a3024', '#383d2c'], void: '#080a07', dark: 0.66, part: 'leaf', treeKind: 'wood',
     look: { floor: 'grass', g1: [50, 88, 36], g2: [86, 126, 50], path: [120, 94, 62], ash: [90, 90, 80], ashAmt: 0.12, grain: 22, flowers: 0.06, trees: ['forest', 'forest', 'forest2'], rock: 0x7e7a70, tint: [0.9, 0.95, 0.9], fog: 0x5e7654, fogN: 45, fogF: 110, hemi: [0xd4e8cc, 0x2a3a20, 0.58], sun: [0xfff4d0, 0.42], torch: 0 },
@@ -151,23 +150,22 @@ const MAPDEFS = {
       const { carve, clearC } = K;
       m.entry = { x: 3, y: 32 }; m.way = { x: 7.5, y: 34.5 }; m.bossPos = { x: 48.5, y: 48.5 };
       carve(2, 32, 32, 3, 2); carve(8, 34, 48, 48, 1); clearC(48, 48, 7); clearC(7, 34, 3); carve(20, 20, 55, 12, 1); carve(15, 50, 32, 40, 1);
-      m.warps.push({ x: 1, y: 32, to: 'ashen_fields', tx: 60.5, ty: 32.5, label: 'Ashen Fields' });
+      m.warps.push({ x: 1, y: 32, to: 'ashen_fields', tx: 92.5, ty: 32.5, label: 'Ashen Fields' });
       m.warps.push({ x: 32, y: 1, to: 'gloamheim', tx: 30.5, ty: 55.5, label: 'Gloamheim Keep' });
       // Round 3: the east road down to the frozen coast
       carve(55, 12, 61, 20, 1);
-      m.warps.push({ x: 62, y: 20, to: 'rimeshore', tx: 3.5, ty: 32.5, label: 'Rimeshore' });
     } },
   gloamheim: { name: 'Gloamheim Keep', sub: 'Base Lv 20 – 34', lv: [20, 34], world: [376, 120], w: 60, h: 60, seed: 51, gen: 'dungeon', ground: ['#34323a', '#393640', '#2f2d34', '#3c3842'], wall: ['#57525e', '#403b47', '#2e2a34'], void: '#060507', dark: 0.84, part: 'dust',
     look: { floor: 'flag', g1: [80, 78, 94], g2: [114, 110, 128], grain: 18, rock: 0x6a6674, tint: [0.84, 0.84, 0.97], fog: 0x15151e, fogN: 35, fogF: 85, hemi: [0x98a0c8, 0x181820, 0.5], sun: [0xb8c0ff, 0.22], torch: 1.6 },
     spawns: [['skeleton_soldier', 14], ['grave_archer', 9], ['wraith', 9], ['rust_knight', 7]], boss: 'sir_gaunt',
     layout(m, K) {
       const { set, clearR, rng, w } = K;
-      const rooms = [];
+      const rooms = [], ri = (a, b) => a + Math.floor(rng() * (b - a + 1)), pk = a => a[(rng() * a.length) | 0];   // seeded (M4.2)
       const room = (x0, y0, x1, y1) => { clearR(x0, y0, x1, y1); const r = { x0, y0, x1, y1, cx: (x0 + x1) >> 1, cy: (y0 + y1) >> 1 }; rooms.push(r); return r; };
       const start = room(25, 49, 35, 57);
       const boss = room(21, 3, 39, 15);
       for (let i = 0, tries = 0; i < 10 && tries < 200; tries++) {
-        const rw = randi(6, 11), rh = randi(6, 9), x0 = randi(3, w - rw - 4), y0 = randi(18, 44 - rh);
+        const rw = ri(6, 11), rh = ri(6, 9), x0 = ri(3, w - rw - 4), y0 = ri(18, 44 - rh);
         if (rooms.some(r => x0 < r.x1 + 3 && x0 + rw > r.x0 - 3 && y0 < r.y1 + 3 && y0 + rh > r.y0 - 3)) continue;
         room(x0, y0, x0 + rw, y0 + rh); i++;
       }
@@ -175,12 +173,12 @@ const MAPDEFS = {
       const chain = [start, ...mids, boss];
       const corr = (a, b) => { const wdt = 1; if (rng() < 0.5) { clearR(a.cx, a.cy - wdt, b.cx, a.cy + wdt); clearR(b.cx - wdt, a.cy, b.cx + wdt, b.cy); } else { clearR(a.cx - wdt, a.cy, a.cx + wdt, b.cy); clearR(a.cx, b.cy - wdt, b.cx, b.cy + wdt); } };
       for (let i = 0; i < chain.length - 1; i++) corr(chain[i], chain[i + 1]);
-      for (let i = 0; i < 3; i++) corr(pick(mids), pick(mids));
+      for (let i = 0; i < 3; i++) corr(pk(mids), pk(mids));
       clearR(29, 57, 31, 58);
       for (let y = 5; y <= 13; y += 4) { set(24, y, T.PILLAR); set(36, y, T.PILLAR); }
       for (const r of rooms) {
         if (r === boss || r === start) continue;
-        for (let i = 0; i < 2; i++) { const gx = randi(r.x0 + 1, r.x1 - 1), gy = randi(r.y0 + 1, r.y1 - 1); if (rng() < 0.6) set(gx, gy, T.GRAVE); }
+        for (let i = 0; i < 2; i++) { const gx = ri(r.x0 + 1, r.x1 - 1), gy = ri(r.y0 + 1, r.y1 - 1); if (rng() < 0.6) set(gx, gy, T.GRAVE); }
         m.braziers.push({ x: r.x0 + 0.8, y: r.y0 + 0.8 }, { x: r.x1 + 0.2, y: r.y1 + 0.2 });
       }
       m.braziers.push({ x: 22, y: 4 }, { x: 38.9, y: 4 }, { x: 22, y: 14.9 }, { x: 38.9, y: 14.9 }, { x: 26, y: 50 }, { x: 34.9, y: 50 });
@@ -260,8 +258,7 @@ Object.assign(MAPDEFS, {
       const wrecks = [];
       for (const wy of [22, 38]) { const wx = coast(wy + 4) - 4; wrecks.push([wx, wy, L.footprint(wx, wy, wx + 2, wy + 7)]); }
       const jarlShip = L.footprint(47, 4, 54, 6), prow = L.footprint(25, 28, 25, 29), hut = L.footprint(3, 36, 5, 38);
-      m.warps.push({ x: 1, y: 32, to: 'withered_wood', tx: 60.5, ty: 20.5, label: 'Withered Wood' });
-      m.warps.push({ x: 14, y: 62, to: 'mirewell', tx: 57.5, ty: 3.5, label: 'Mirewell' });
+      m.warps.push({ x: 1, y: 32, to: 'withered_wood', tx: 92.5, ty: 20.5, label: 'Withered Wood' });
       m.braziers.push({ x: 11.2, y: 31.6 }, { x: 5.2, y: 37.4 }, { x: 44.6, y: 18.6 });
       // ---- decor ----
       for (const [wx, wy, fp] of wrecks) L.decor('rimeshore_longship', 'ruin_column_fallen', wx + 1.5, wy + 4, 0.06 - rng() * 0.12, 1, { fp });
@@ -281,7 +278,7 @@ Object.assign(MAPDEFS, {
         else if (t === T.FLOOR && s === 0 && m.deco[y * w + x] !== 6 && rng() < 0.014) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' });
       }
       // Round 5: the north road to Skaldhaven (carved last, so nothing above changes)
-      carve(20, 30, 20, 2, 1); m.warps.push({ x: 20, y: 1, to: 'skaldhaven', tx: 14.5, ty: 36.5, label: 'Skaldhaven' });
+      carve(20, 30, 20, 2, 1); m.warps.push({ x: 20, y: 1, to: 'skaldhaven', tx: 14.5, ty: 52.5, label: 'Skaldhaven' });
     } },
 
   /* ---------- Mirewell: black bog south of the Ashen Fields ---------- */
@@ -325,9 +322,8 @@ Object.assign(MAPDEFS, {
       // fallback paint: black water takes the (dark) path colour; trails stay mud
       for (let i = 0; i < w * h; i++) if (m.t[i] === T.WATER) m.deco[i] = 6;
       const hut = L.footprint(11, 33, 14, 36), cauldron = L.footprint(32, 47, 33, 48);
-      m.warps.push({ x: 32, y: 1, to: 'ashen_fields', tx: 32.5, ty: 60.5, label: 'Ashen Fields' });
-      m.warps.push({ x: 58, y: 1, to: 'rimeshore', tx: 14.5, ty: 60.5, label: 'Rimeshore' });
-      m.warps.push({ x: 62, y: 44, to: 'nidavellir', tx: 3.5, ty: 32.5, label: 'Nidavellir Deep' });
+      m.warps.push({ x: 32, y: 1, to: 'ashen_fields', tx: 32.5, ty: 92.5, label: 'Ashen Fields' });
+      m.warps.push({ x: 58, y: 1, to: 'rimeshore', tx: 14.5, ty: 92.5, label: 'Rimeshore' });
       m.braziers.push({ x: 38.8, y: 5.2 }, { x: 28.6, y: 22.2 });
       // ---- decor ----
       L.decor('mirewell_hag_hut', 'town_house_small', 13, 35, 0, 1, { fp: hut, light: [0x9aff7a, 0.9, 5] });
@@ -355,7 +351,7 @@ Object.assign(MAPDEFS, {
     render: { mist: { col: 0x8a6a5a, k: 1, amb: 0.04, lit: 1.5, amt: 0.45, h: 0.5, max: 0.3, scale: 0.06, wind: [0.015, 0.01], scatter: 0.5 }, hfog: { col: 0xff6a2a, k: 0.3, amt: 0.15, h: 0.3, max: 0.25 }, /* round 5: post-FX data (gfx-post.js) */ sky: [0x080605, 0x1e140e], fog: [0x140e0a, 30, 86], exposure: 1.08, sun: [0xffc890, 0.3, [-0.45, 1.2, 0.35]], hemi: [0x9a8a7a, 0x201812, 0.44],
       bloom: [1.1, 0.8], grade: { lift: [0.02, 0.012, 0.006], gamma: [0.98, 1, 1.02], gain: [1.05, 0.99, 0.92], sat: 1.04, contrast: 1.1, shadowTint: [0.004, 0.0, 0.012], highTint: [0.026, 0.012, -0.012] },
       vignette: 0.5, particles: 'embers', lt: { amb: [0.5, 0.44, 0.4], sun: [0.08, 0.06, 0.05] }, torch: [0xffa860, 1.4, 9],
-      lava: true, lights: { brazier: [0xff8a38, 2.6, 7.5], way: [0xffa048, 3.0, 10], warp: [0x7ab8ff, 2.2, 7], crystal: [0xb07aff, 1.6, 5.5], lava: [0xff6a1a, 1.8, 6] } },
+      lights: { brazier: [0xff8a38, 2.6, 7.5], way: [0xffa048, 3.0, 10], warp: [0x7ab8ff, 2.2, 7], crystal: [0xb07aff, 1.6, 5.5], lava: [0xff6a1a, 1.8, 6] } },
     props: {
       wall: propList([['nidavellir_wall', 1, 'dng_wall']]),
       pillar: propList([['nidavellir_pillar', 1, 'dng_pillar']]),
@@ -391,8 +387,8 @@ Object.assign(MAPDEFS, {
       for (let y = 40; y <= 52; y++) L.surf(24, y, SURF.RAIL); for (let x = 12; x <= 24; x++) L.surf(x, 52, SURF.RAIL);
       for (let y = 55; y < h - 2; y++) for (let x = 44; x < 60; x++) if (L.at(x, y) === T.FLOOR && Math.hypot(x + 0.5 - 51.5, y + 0.5 - 58.5) < 4.2) L.surf(x, y, SURF.GOLD);
       m.entry = { x: 3, y: 32 }; m.way = { x: 6.5, y: 29.5 }; m.bossPos = { x: 51.5, y: 52.5 };
-      m.warps.push({ x: 1, y: 32, to: 'mirewell', tx: 60.5, ty: 44.5, label: 'Mirewell' });
-      m.warps.push({ x: 32, y: 1, to: 'gloamheim', tx: 41.5, ty: 9.5, label: 'Gloamheim Keep' });
+      m.warps.push({ x: 1, y: 32, to: 'mirewell', tx: 92.5, ty: 44.5, label: 'Mirewell' });
+      m.warps.push({ x: 32, y: 1, to: 'gloamheim', tx: 40.5, ty: 9.5, label: 'Gloamheim Keep', face: 'W' });
       m.objs.push({ kind: 'anvil', x: 28.5, y: 25.5, text: 'Sindri’s anvil rings faintly when you touch it, as if it remembers every blow.' });
       m.braziers.push({ x: 2.8, y: 27.8 }, { x: 11.2, y: 36.2 }, { x: 25.8, y: 2.8 }, { x: 38.2, y: 2.8 }, { x: 21.2, y: 21.8 }, { x: 41.2, y: 21.8 }, { x: 21.2, y: 38.6 }, { x: 41.2, y: 38.6 },
         { x: 46.8, y: 32.4 }, { x: 57.2, y: 32.4 }, { x: 47.2, y: 47.8 }, { x: 55.8, y: 47.8 });
@@ -409,7 +405,7 @@ Object.assign(MAPDEFS, {
       L.decor('nidavellir_mine_cart', 'town_crates', 16.5, 52.5, 1.571, 1, { on: 'open' }); L.decor('nidavellir_mine_cart', 'town_crates', 24.5, 45.5, 0, 1, { on: 'open' });
       for (let y = 41; y <= 50; y += 3) L.decor('nidavellir_support_beams', null, 24.5, y + 0.5, 0, 1, { on: 'open' });
       for (let x = 14; x <= 22; x += 4) L.decor('nidavellir_support_beams', null, x + 0.5, 52.5, 1.571, 1, { on: 'open' });
-      L.decor('nidavellir_stair_up', 'ruin_wall_c', 32.5, 2.6, 0, 1.1);
+      L.decor('nidavellir_stair_up', null, 32.5, 2.6, 0, 1.1);   // (art pending: no ruined-wall stand-in on the way up; the warp's arch marks it)
       L.standIns(T.CRYSTAL, [['nidavellir_crystal_a', 'throne_obsidian_pillar', 0.7, 1.0]], rng, 1);
       // lava: the channel and the hoard seeps are nidavellir_lava_edge tiles, kerb toward the floor they border
       for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
@@ -464,7 +460,7 @@ Object.assign(MAPDEFS, {
       // fallback paint: the ground colour is the cloud sea (it also colours the skirt around the map); the platforms
       // and bridges take the golden path colour
       for (let i = 0; i < w * h; i++) if (m.t[i] !== T.VOID) m.deco[i] = 6;
-      m.warps.push({ x: 6, y: 57, to: 'throne', tx: 23.5, ty: 7.5, label: 'Throne of Cinders' });
+      m.warps.push({ x: 6, y: 57, to: 'throne', tx: 23.5, ty: 8.5, label: 'Throne of Cinders', face: 'S' });
 
       // ---- decor ----
       cols.forEach(([px, py], i) => L.decor(i % 5 === 3 ? 'bifrost_column_broken' : 'bifrost_column', 'dng_pillar', px + 0.5, py + 0.5, i % 5 === 3 ? i : 0, i % 5 === 3 ? 0.6 : 1, { fp: [px, py, px, py] }));
@@ -523,16 +519,16 @@ MAPDEFS.skaldhaven = { name: 'Skaldhaven', sub: 'Harbour of the Frozen Coast', l
     // cobbles: the plaza, the south gate street, the harbour street, the north lane
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < SHORE; x++) { const inPlaza = Math.hypot(x + 0.5 - 15.5, y + 0.5 - 19.5) < 6.2; if (inPlaza || (Math.abs(x - 14.5) <= 1.2 && y > 19) || (Math.abs(y - 19.5) <= 1.2 && x > 15) || (Math.abs(x - 14.5) <= 1.2 && y > 8 && y < 19) || (Math.abs(y - 9.5) <= 1 && x > 4 && x < 27)) m.deco[y * w + x] = 5; }
     // 3. the south gate to Rimeshore
-    clearR(13, h - 3, 15, h - 1); m.warps.push({ x: 14, y: h - 2, to: 'rimeshore', tx: 20.5, ty: 3.5, label: 'Rimeshore' });
+    clearR(13, h - 3, 15, h - 1);   // (the gate itself moved to the grown town's outer South Gate, 14,54)
     // 4. pines and rocks along the town wall (kept off the streets)
     for (let i = 0; i < 26; i++) { const x = 1 + ((rng() * (SHORE - 5)) | 0), y = 1 + ((rng() * (h - 3)) | 0); if ((x < 3 || y < 3 || y > h - 4 || x > SHORE - 6) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && m.surf[y * w + x] === 0 && !(x >= 12 && x <= 16 && y >= h - 5)) set(x, y, rng() < 0.75 ? T.TREE : T.ROCK); }
-    m.braziers.push({ x: 12.0, y: 16.2 }, { x: 19.0, y: 16.2 }, { x: 12.0, y: 22.8 }, { x: 29.6, y: 17.8 }, { x: 29.6, y: 21.4 }, { x: 12.4, y: 35.6 }, { x: 16.6, y: 35.6 });
+    m.braziers.push({ x: 12.0, y: 16.2 }, { x: 19.0, y: 16.2 }, { x: 12.0, y: 22.8 }, { x: 29.6, y: 17.8 }, { x: 29.6, y: 21.4 });   // (the old south gate's pair went with the gate: map fixes)
     // ---- decor ----
     L.decor('town_well', 'town_well', 10.5, 21.0, 0, 1, { fp: L.footprint(10, 20, 11, 21) });
     for (const [sx, sy] of [[18.5, 24.0], [21.5, 24.0]]) L.decor('town_market_stall', 'town_market_stall', sx, sy, Math.PI, 1, { fp: L.footprint(Math.floor(sx) - 1, Math.floor(sy), Math.floor(sx), Math.floor(sy)) });
     L.decor('rimeshore_fishing_hut', 'town_house_small', 27.5, 32.5, -1.571, 1, { fp: L.footprint(26, 31, 28, 33), light: [0xffb060, 0.9, 5] });
     L.decor('rimeshore_drying_rack', 'town_fence', 25.2, 35.4, 0.1, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 28.2, 28.6, 1.4, 1, { on: 'open' });
-    L.decor('signpost', 'signpost', 16.6, 34.4, 0.3, 1, { on: 'open' });
+    // (the signpost by the old south gate is a readable sign in the grow layout now, pointing on to the outer gate)
     for (const [lx, ly] of [[13.1, 12.6], [16.1, 12.6], [22.6, 18.1], [26.6, 21.1], [13.1, 27.6], [16.1, 31.6], [8.2, 9.9], [20.4, 10.9], [30.3, 11.2], [30.3, 31.2]]) L.decor('town_lamp_post', 'town_lamp_post', lx, ly, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
     for (const [bx, by, k] of [[10.6, 7.9, 'town_barrel'], [11.3, 8.2, 'town_barrel'], [3.4, 9.0, 'town_crates'], [29.2, 8.2, 'town_barrel'], [28.6, 11.6, 'town_crates'], [29.3, 23.2, 'town_crates'], [28.4, 26.6, 'town_barrel'], [25.4, 8.4, 'town_crates'], [7.2, 29.8, 'town_barrel'], [26.2, 25.6, 'town_barrel']])
       L.decor(k === 'town_barrel' ? 'rimeshore_barrel' : 'rimeshore_crate', k, bx, by, rng() * 6.28, k === 'town_barrel' ? 0.95 : 0.85, { on: 'open' });
@@ -649,7 +645,7 @@ MAPDEFS.helheim = { name: 'Helheim', sub: 'Base Lv 70 – 88 · The Grey Plains'
     for (let x = 18; x <= 46; x++) if (x < 26 || x > 38) timber.push([x, 12], [x, 13]);
     for (let y = 2; y <= 11; y++) timber.push([18, y], [46, y]);
     const pillA = L.footprint(26, 12, 27, 13), pillB = L.footprint(37, 12, 38, 13);
-    m.warps.push({ x: 32, y: 9, to: 'helheim_arena', tx: 22.5, ty: 33.5, label: 'Eljudnir, the Hall of Hel', lock: 'hall' });
+    m.warps.push({ x: 32, y: 9, to: 'helheim_arena', tx: 22.5, ty: 35.5, label: 'Eljudnir, the Hall of Hel', lock: 'hall' });
     // 5. the Root Road west: under a root of the World Tree to Hvergelmir
     const rootA = L.footprint(5, 6, 8, 8), rootB = L.footprint(5, 16, 8, 17);
     m.warps.push({ x: 1, y: 12, to: 'helheim_hvergelmir', tx: 20.5, ty: 31.5, label: 'Hvergelmir (the Root Road)', lock: 'root' });
@@ -673,6 +669,7 @@ MAPDEFS.helheim = { name: 'Helheim', sub: 'Base Lv 70 – 88 · The Grey Plains'
     }
     L.decor('helheim_gjallarbru', 'bifrost_bridge', GJALL.x0 + GJALL.w / 2, GJALL.y0 + GJALL.len / 2, 0, 1, { y0: 0, fp: [GJALL.x0 - 1, GJALL.y0, GJALL.x0 + GJALL.w, GJALL.y0 + GJALL.len - 1] });
     L.decor('helheim_hall_facade', 'ruin_wall_c', 32.0, 7.0, 0, 1, { fp: hall, y0: 0 });
+    for (const fp of [[28, 9, 31, 9], [33, 9, 35, 9]]) m.decor.push({ model: null, kit: null, x: (fp[0] + fp[2] + 1) / 2, y: 9.5, rot: 0, scale: 1, fp, note: 'the hall’s front row (drawn by the facade above)' });
     L.decor('helheim_gate_pillar', 'dng_pillar', 27.0, 13.0, 0, 1, { fp: pillA, y0: 0 }); L.decor('helheim_gate_pillar', 'dng_pillar', 38.0, 13.0, Math.PI, 1, { fp: pillB, y0: 0 });
     L.decor('helheim_root', 'ruin_column_fallen', 7.0, 12.0, Math.PI / 2, 1, { fp: rootA, y0: 0 }); m.decor.push({ model: null, kit: null, x: 7, y: 16.5, rot: 0, scale: 1, fp: rootB, note: 'root footprint (drawn by the root above)' });
     H.obelisk(24, 7, 0.2); H.obelisk(41, 7, -0.2); H.obelisk(41, 44, 0.5);
@@ -702,7 +699,7 @@ MAPDEFS.helheim = { name: 'Helheim', sub: 'Base Lv 70 – 88 · The Grey Plains'
     for (let vz = gy; vz <= gy + GJALL.len; vz++) for (let vx = gx; vx <= gx + GJALL.w; vx++) m.hgt[vz * W1 + vx] = gjallDeck(vz - (gy + GJALL.len / 2));
   } };
 
-MAPDEFS.helheim_hvergelmir = { name: 'Hvergelmir', sub: 'Where the Root Drinks · Níðhöggr', lv: [90, 99], world: [228, 120], w: 40, h: 36, seed: 669, gen: 'field', trees: 0, rocks: 0, ruins: 0,
+MAPDEFS.helheim_hvergelmir = { name: 'Hvergelmir', sub: 'Where the Root Drinks · Níðhöggr', lv: [90, 99], world: [228, 120], parent: 'helheim', w: 40, h: 36, seed: 669, gen: 'field', trees: 0, rocks: 0, ruins: 0,
   ground: HEL_GROUND, void: '#07080a', dark: 0.7, part: 'ash', look: Object.assign({}, HEL_LOOK, { fogN: 40, fogF: 95 }), boss: 'nidhogg', spawns: [],
   intro: 'Hvergelmir, the roaring kettle, where every river of the dead begins. It does not roar now. Something is chewing.',
   render: { weather: { amb: [['ash', 0.4], ['souls', 1]], wind: [0.1, 0.05] }, tod: false, particles: 'ash', water: { color: 0x14201e, deep: 0x040808, foam: 0x9affc8, level: -0.45, frozen: 0.25, blackSun: true } },
@@ -730,10 +727,11 @@ MAPDEFS.helheim_hvergelmir = { name: 'Hvergelmir', sub: 'Where the Root Drinks �
     for (let i = 0; i < 22; i++) { const x = 4 + rng() * 32, y = 4 + rng() * 28; if (L.at(x | 0, y | 0) === TT.FLOOR) L.decor(rng() < 0.6 ? 'dng_bones' : 'helheim_ash_drift_a', null, x, y, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' }); }
     for (const [x, y] of [[11.5, 5.5], [28.5, 5.5]]) H.banner(x, y, 0);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (L.at(x, y) === TT.WATER) L.paint(x, y);
+    for (let y = 29; y <= 34; y++) for (let x = 19; x <= 21; x++) if (L.at(x, y) === TT.FLOOR) L.paint(x, y);   // map fixes (M6.11): the Root Road out ends a painted path (3 wide, so it shows)
   },
   heights(m) { helFlatten(m, (vx, vz) => Math.hypot((vx - 20) / 1.1, vz - 18) - 13, 4, 0.4); } };
 
-MAPDEFS.helheim_arena = { name: 'Eljudnir', sub: 'The Hall of Hel · The Gauntlet', lv: [85, 99], world: [228, 120], w: 44, h: 40, seed: 671, gen: 'dungeon',
+MAPDEFS.helheim_arena = { name: 'Eljudnir', sub: 'The Hall of Hel · The Gauntlet', lv: [85, 99], world: [228, 120], parent: 'helheim', w: 44, h: 40, seed: 671, gen: 'dungeon',
   ground: ['#3a3834', '#403c38', '#35332f', '#46423c'], wall: ['#5a5650', '#44403a', '#2e2c28'], void: '#060606', dark: 0.8, part: 'dust', safe: false, spawns: [],
   look: Object.assign({}, HEL_LOOK, { floor: 'flag', g1: [74, 72, 70], g2: [104, 100, 96], fog: 0x1a1c1c, fogN: 36, fogF: 90, torch: 1.2 }),
   intro: 'Eljudnir, Hel’s hall. The benches are full of the dead, and every one of them turns to watch you come in. They are hungry for a show.',
@@ -837,7 +835,7 @@ function deepLayout(m, K, plan) {
   m.rooms = rooms; m.deepStart = start; m.deepEnd = end; m.deepEdges = edges;
   m.entry = { x: start.cx, y: start.cy };
   // 4. portals: the way back to Helheim (start room), the way down (far room; locked until the floor is cleared)
-  m.warps.push({ x: start.x0 + 1, y: start.y1, to: 'helheim', tx: 46.5, ty: 52.5, label: 'Helheim (Ganglati’s Stair)' });
+  m.warps.push({ x: start.x0 + 1, y: start.y1, to: 'helheim', tx: 46.5, ty: 53.5, label: 'Helheim (Ganglati’s Stair)' });
   const px = end.cx, py = plan.boss ? end.y0 + 2 : end.cy;
   m.warps.push({ x: px, y: py, to: 'helheim_deep_' + (plan.n + 1), tx: null, ty: null, label: `Floor ${plan.n + 1}`, lock: 'deep', deep: plan.n + 1 });
   m.deepPortal = { x: px + 0.5, y: py + 0.5 };
@@ -863,7 +861,7 @@ function deepLayout(m, K, plan) {
 
 // Round 7: the Helgrind road into Helheim. Gloamheim's warp sits in the crack of Helgrind behind Gaunt's throne
 // (the helgate object); it opens for a hero who finished Act II and has been born again (WARP_LOCKS.hel).
-{ const base = MAPDEFS.gloamheim.layout; MAPDEFS.gloamheim.layout = function (m, K) { base.call(this, m, K); m.warps.push({ x: 30, y: 3, to: 'helheim', tx: 32.5, ty: 59.5, label: 'Helheim (through Helgrind)', lock: 'hel' }); }; }
+{ const base = MAPDEFS.gloamheim.layout; MAPDEFS.gloamheim.layout = function (m, K) { base.call(this, m, K); m.warps.push({ x: 30, y: 3, to: 'helheim', tx: 32.5, ty: 59.5, label: 'Helheim (through Helgrind)', lock: 'hel', face: 'N' }); }; }
 MAP_ORDER.push('helheim');
 
 /* ---------- Round 7: render data hooks for the older maps (graphics round 5: weather / tod / night) ----------
@@ -961,7 +959,53 @@ function wxKit(m, K) {
   // Scatter decor on open tiles in a disc.
   const scatter = (cx, cy, r, n, k, s0, s1, o) => { for (let i = 0; i < n; i++) { const a = rng() * 6.283, d = Math.sqrt(rng()) * r, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d; if (!isOpen(x | 0, y | 0)) continue; if (typeof k === 'string' && WXKIT[k]) kit(k, x, y, rng() * 6.28, s0 + rng() * (s1 - s0), Object.assign({ on: 'open' }, o || {}), i); else L.decor(k[0], k[1], x, y, rng() * 6.28, s0 + rng() * (s1 - s0), Object.assign({ on: 'open' }, o || {})); } };
   const light = (x, y, col, r, i, kind, o) => m.lights.push(Object.assign({ x, y, col, r: r || 5, i: i || 1 }, kind ? { kind } : {}, o || {}));   // kind: 'fire' | 'torch' | 'lantern' | 'crystal' | 'mushroom' (renderer look)
-  return { L, rng, w, h, at, isOpen, kit, trail, clearing, landmark, openNear, sign, lore, chest, mouth, hut, fence, tower, scatter, light };
+  // A road to a gate (map fixes, docs/MAPS.md M6.11): the cheapest 4-neighbour route through `pts`, over open ground
+  // first (painted paths cheapest), then trees and rocks, never water, walls, buildings or set pieces; a turn costs a
+  // little, so it runs straight. It draws nothing from rng (it can go anywhere in a layout without moving later rolls).
+  // The route is opened (with its trees and rocks beside it, for a 3-wide way) and painted 3 wide as path (6; cobble
+  // stays).
+  const road = pts => {
+    const cost = (x, y) => { const t = at(x, y), dc = m.deco[y * w + x]; return t === T.FLOOR ? (dc === 5 || dc === 6 ? 0.7 : 1) : t === T.TREE || t === T.ROCK ? 4 : 0; };
+    const tiles = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1], N = w * h, dist = new Float64Array(N * 4).fill(Infinity), prev = new Int32Array(N * 4).fill(-1), heap = [];
+      const push = (dd, s) => { heap.push([dd, s]); let k = heap.length - 1; while (k) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+      const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let mn = k; if (l < heap.length && heap[l][0] < heap[mn][0]) mn = l; if (r < heap.length && heap[r][0] < heap[mn][0]) mn = r; if (mn === k) break; [heap[mn], heap[k]] = [heap[k], heap[mn]]; k = mn; } } return top; };
+      for (let dr = 0; dr < 4; dr++) { dist[(ay * w + ax) * 4 + dr] = 0; push(0, (ay * w + ax) * 4 + dr); }
+      let end = -1;
+      while (heap.length) {
+        const [dd, s] = pop(); if (dd > dist[s]) continue;
+        const k = s >> 2, dr = s & 3, x = k % w, y = (k / w) | 0;
+        if (x === bx && y === by) { end = s; break; }
+        for (let nd = 0; nd < 4; nd++) {
+          const nx = x + DX[nd], ny = y + DY[nd];
+          if (nx < 1 || ny < 1 || nx > w - 2 || ny > h - 2) continue;
+          const c = nx === bx && ny === by ? 1 : cost(nx, ny); if (!c) continue;
+          const ns = (ny * w + nx) * 4 + nd, nv = dd + c + (nd === dr ? 0 : 0.6);
+          if (nv < dist[ns]) { dist[ns] = nv; prev[ns] = s; push(nv, ns); }
+        }
+      }
+      if (end < 0) { if (typeof console !== 'undefined') console.warn(`[maps] road ${ax},${ay} -> ${bx},${by} on ${m.id}: no route`); continue; }
+      const seg = []; for (let s = end; s >= 0; s = prev[s]) seg.push(s >> 2);
+      for (const k of seg.reverse()) if (!tiles.length || tiles[tiles.length - 1] !== k) tiles.push(k);
+    }
+    const opn = (x, y) => { if (x >= 1 && y >= 1 && x <= w - 2 && y <= h - 2 && (at(x, y) === T.TREE || at(x, y) === T.ROCK)) L.put(x, y, T.FLOOR); };
+    // painted 3 wide: the ground painter blurs the path mask over 3 x 3 tiles, so a 1-tile line would not show
+    const pnt = (x, y) => { if (L.inb(x, y) && at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5) m.deco[y * w + x] = 6; };
+    for (const k of tiles) {
+      const x = k % w, y = (k / w) | 0; L.put(x, y, T.FLOOR);
+      for (let nd = 0; nd < 4; nd++) opn(x + DX[nd], y + DY[nd]);
+    }
+    for (const k of tiles) { const x = k % w, y = (k / w) | 0; pnt(x, y); for (let nd = 0; nd < 4; nd++) pnt(x + DX[nd], y + DY[nd]); }
+    return tiles;
+  };
+  // A clean gate (map fixes, M6.14): no tree or rock on the 3 x 3 round a road's warp, and no scattered piece standing
+  // there (the warp's arch and road-end marker are drawn by gfx)
+  const gate = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = at(x + dx, y + dy); if (t === T.TREE || t === T.ROCK) L.put(x + dx, y + dy, T.FLOOR); }
+    for (let i = m.decor.length - 1; i >= 0; i--) { const e = m.decor[i]; if (e && (e.on === 'open' || e.tile) && !e.light && Math.abs(e.x - x - 0.5) < 1.5 && Math.abs(e.y - y - 0.5) < 1.5) m.decor.splice(i, 1); }
+  };
+  return { L, rng, w, h, at, isOpen, kit, trail, clearing, landmark, openNear, sign, lore, chest, mouth, hut, fence, tower, scatter, light, road, gate };
 }
 // Declare a map's growth: new size, the new area's layout, and the new area's spawns. The map's existing spawn entries
 // (without a region or a spawnRgn) are pinned to the original area, so it keeps its density.
@@ -1009,7 +1053,7 @@ function caveLayout(m, K, o) {
   X.clearing(ex, ey - 3, 3.2, 0.2);
   for (let y = ey - 1; y <= ey; y++) L.put(ex, y, TT.FLOOR);
   m.entry = { x: ex, y: ey - 1 };
-  m.warps.push({ x: ex, y: ey, to: o.parent, tx: o.back[0], ty: o.back[1], label: MAPDEFS[o.parent].name, door: 'cave' });
+  m.warps.push(Object.assign({ x: ex, y: ey, to: o.parent, tx: o.back[0], ty: o.back[1], label: MAPDEFS[o.parent].name, door: 'cave' }, o.face ? { face: o.face } : {}));   // face: the way out of the mouth in the parent
   const rooms = [{ x: ex, y: ey - 3, r: 3.2, kind: 'mouth' }];
   for (const c of o.rooms) { X.clearing(c[0], c[1], c[2], 0.35); rooms.push({ x: c[0], y: c[1], r: c[2], kind: c[3] || 'room' }); }
   for (let i = 1; i < rooms.length; i++) { const a = rooms[o.links ? o.links[i - 1] : i - 1], b = rooms[i]; K.carve(Math.round(a.x), Math.round(a.y), Math.round(b.x), Math.round(b.y), o.tunnel || 1); }
@@ -1030,7 +1074,7 @@ function caveLayout(m, K, o) {
     if (mine && y - lastSup > 3 && F_(x - 1, y) && F_(x + 1, y) && W_(x - 2, y) && W_(x + 2, y) && r < 0.5) { X.kit('support', x + 0.5, y + 0.5, 0, 1, { on: 'open' }); lastSup = y; continue; }
     if (mine && F_(x, y - 1) && F_(x, y + 1) && W_(x, y - 2) && W_(x, y + 2) && r < 0.12) { X.kit('support', x + 0.5, y + 0.5, Math.PI / 2, 1, { on: 'open' }); continue; }
     if (byWall && r < 0.07) X.kit(stal, x + 0.2 + rng() * 0.6, y + 0.2 + rng() * 0.6, rng() * 6.28, 0.5 + rng() * 0.5, { on: 'open' }, (rng() * 3) | 0);
-    else if (byWall && glow && r < 0.095) { const cx = x + 0.3 + rng() * 0.4, cy = y + 0.3 + rng() * 0.4, col = glow === 'crystal' ? (o.rock === 'ice' ? 0x8ac8ff : 0xb07aff) : 0x6affe0, lit = glow === 'crystal' || rng() < 0.3; X.kit(glow === 'crystal' ? (o.rock === 'ice' ? 'crystalBlue' : 'crystal') : 'mushroom', cx, cy, rng() * 6.28, 0.6 + rng() * 0.4, lit && glow !== 'crystal' ? { on: 'open', light: [col, 0.8, 3.5] } : { on: 'open' }); if (lit && rng() < 0.4) X.light(cx, cy, col, 4, 0.8, glow === 'crystal' ? 'crystal' : 'mushroom'); }
+    else if (byWall && glow && r < 0.095) { const cx = x + 0.3 + rng() * 0.4, cy = y + 0.3 + rng() * 0.4, col = glow === 'crystal' ? (o.rock === 'ice' ? 0x8ac8ff : 0xb07aff) : 0x6affe0, lit = glow === 'crystal' || rng() < 0.3; const pc = X.kit(glow === 'crystal' ? (o.rock === 'ice' ? 'crystalBlue' : 'crystal') : 'mushroom', cx, cy, rng() * 6.28, 0.6 + rng() * 0.4, lit && glow !== 'crystal' ? { on: 'open', light: [col, 0.8, 3.5] } : { on: 'open' }); if (lit && rng() < 0.4) { X.light(cx, cy, col, 4, 0.8, glow === 'crystal' ? 'crystal' : 'mushroom'); pc.light = false; } }   // (R5: a piece with an m.lights entry is not lit twice)
     else if (r < 0.11) X.kit('bones', x + 0.5, y + 0.5, rng() * 6.28, 0.7 + rng() * 0.4, { on: 'open' });
     if (L.near(x, y, TT.WATER)) { const wr = L.at(x, y - 1) === TT.WATER ? 0 : L.at(x, y + 1) === TT.WATER ? Math.PI : L.at(x - 1, y) === TT.WATER ? Math.PI / 2 : L.at(x + 1, y) === TT.WATER ? -Math.PI / 2 : null; if (wr !== null) X.kit('poolRim', x + 0.5, y + 0.5, wr, 1, { on: 'open' }); }
   }
@@ -1091,10 +1135,15 @@ growMap('ashen_fields', 96, 96, {
     X.scatter(86, 86, 2.5, 5, 'bones', 0.6, 0.9);
     X.sign(80, 84, 'Signpost', ['The Wolf Den. <i>The wolves came out of the Wood the first Ash-winter and never went back.</i>', '<i>Scratched below: “The mother is bigger than a cart. Do not.”</i>']);
     X.landmark('wolfden', 'The Wolf Den', 89, 86, 3);
+    // map fixes: the gates out of the old tree line move to the new map edges, at the end of a painted road
+    X.road([[1, 32], [4, 32]]);
+    X.road([[62, 32], [88, 32], [94, 32]]); m.warps.push({ x: 94, y: 32, to: 'withered_wood', tx: 3.5, ty: 32.5, label: 'Withered Wood' });
+    X.road([[32, 62], [32, 88], [32, 94]]); m.warps.push({ x: 32, y: 94, to: 'mirewell', tx: 32.5, ty: 3.5, label: 'Mirewell' });
+    X.gate(1, 32); X.gate(94, 32); X.gate(32, 94);   // map fixes (M6.14): the gates stand clear
   } });
 caveDef('ashen_fields_cave_wolfden', { parent: 'ashen_fields', name: 'The Wolf Den', sub: 'Base Lv 10 – 15 · Ashen Fields', lv: [10, 15], w: 48, h: 44, seed: 901, rock: 'basalt', wet: 0.15,
   intro: 'The Wolf Den. It smells of wet fur and old bones, and it is warmer than it should be.',
-  mouth: [24, 42], back: [88.5, 86.5], rooms: [[24, 31, 4], [11, 24, 4.2], [35, 21, 4, 'lore'], [22, 9, 5.8, 'boss']],
+  mouth: [24, 42], back: [87.5, 86.5], face: 'W', rooms: [[24, 31, 4], [11, 24, 4.2], [35, 21, 4, 'lore'], [22, 9, 5.8, 'boss']],
   spawns: [['ash_wolf', 9], ['hollow_hare', 3]], critters: [['bat', 4]],
   elites: [{ key: 'den_mother', x: 22.5, y: 8.5, respawn: 1800 }],
   chest: { id: 'wolfden_hoard', loot: 'den', name: 'The Den’s Hoard', at: [25, 6] },
@@ -1118,7 +1167,7 @@ growMap('withered_wood', 96, 96, {
     // the Hunters' Lodge: tents, drying racks, a fire
     X.clearing(78, 36, 6.5, 0.2);
     X.hut(74, 32, 76, 33, wxKitId('tent')[0], wxKitId('tent')[1], 0.2); X.hut(80, 32, 82, 33, wxKitId('tent')[0], wxKitId('tent')[1], -0.2);
-    X.kit('campfire', 78.5, 37.5, 0, 1, { fp: L.footprint(78, 37, 78, 37), light: [0xff9a48, 1.3, 7] }); X.light(78.5, 37.5, 0xff9a48, 7, 1.2, 'fire', { flame: true, fl: 0.6, h: 0.4 });
+    X.kit('campfire', 78.5, 37.5, 0, 1, { fp: L.footprint(78, 37, 78, 37), light: false });   // (R5: lit once, by the m.lights fire below) X.light(78.5, 37.5, 0xff9a48, 7, 1.2, 'fire', { flame: true, fl: 0.6, h: 0.4 });
     L.decor('rimeshore_drying_rack', 'town_fence', 74.5, 39.2, 0.1, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 82.5, 39.6, -0.2, 1, { on: 'open' });
     L.decor('town_crates', 'town_crates', 83.4, 35.2, 0.5, 0.8, { on: 'open' }); X.chest(84, 34, 'wood_lodge', 'lodge', 'Hunters’ Chest');
     X.landmark('lodge', 'The Hunters’ Lodge', 78, 36, 7);
@@ -1141,11 +1190,15 @@ growMap('withered_wood', 96, 96, {
     for (const [gx, gy] of [[36, 84], [44, 84], [37, 88], [43, 88]]) if (X.isOpen(gx, gy)) L.put(gx, gy, T.GRAVE);
     X.sign(38, 82, 'Signpost', ['The Old Barrow. <i>Whoever pushed the stone aside did it from the inside.</i>']);
     X.landmark('barrow', 'The Old Barrow', 40, 86, 5);
+    // map fixes: the east gate moves from the old tree line to the new map edge; the old gates end painted roads
+    X.road([[1, 32], [4, 32]]); X.road([[32, 1], [32, 4]]);
+    X.road([[62, 20], [88, 20], [94, 20]]); m.warps.push({ x: 94, y: 20, to: 'rimeshore', tx: 3.5, ty: 32.5, label: 'Rimeshore' });
+    X.gate(1, 32); X.gate(32, 1); X.gate(94, 20);   // map fixes (M6.14): the gates stand clear
   } });
 caveDef('withered_wood_cave_barrow', { parent: 'withered_wood', name: 'The Old Barrow', sub: 'Base Lv 18 – 25 · Withered Wood', lv: [18, 25], w: 44, h: 42, seed: 913, rock: 'basalt', wet: 0.4, glow: 'mushroom',
   cave: { fill: 0.5, steps: 5, min: 12 },
   intro: 'The Old Barrow. Roots hang through the roof. The dead down here were buried with their swords, and they have not let go of them.',
-  mouth: [22, 40], back: [40.5, 85.5], rooms: [[22, 30, 4], [9, 21, 4, 'lore'], [33, 19, 4], [21, 8, 5.6, 'boss']],
+  mouth: [22, 40], back: [40.5, 85.5], face: 'N', rooms: [[22, 30, 4], [9, 21, 4, 'lore'], [33, 19, 4], [21, 8, 5.6, 'boss']],
   spawns: [['skeleton_soldier', 7], ['grave_archer', 4], ['wraith', 3]], critters: [['bat', 3]],
   elites: [{ key: 'barrow_wight', x: 21.5, y: 7.5, respawn: 1800 }],
   chest: { id: 'barrow_hoard', loot: 'barrow', name: 'Grave-Goods', at: [24, 5] },
@@ -1190,7 +1243,7 @@ growMap('rimeshore', 96, 96, {
     // Kolfinna's sealing camp on the south shore
     X.clearing(30, 77, 5, 0.2);
     X.hut(25, 74, 27, 76, 'rimeshore_fishing_hut', 'town_house_small', 0.2, { light: [0xffb060, 0.9, 5] });
-    X.kit('campfire', 31.5, 76.5, 0, 1, { fp: L.footprint(31, 76, 31, 76), light: [0xff9a48, 1.2, 6] }); X.light(31.5, 76.5, 0xff9a48, 6, 1.1, 'fire', { flame: true, fl: 0.6, h: 0.4 });
+    X.kit('campfire', 31.5, 76.5, 0, 1, { fp: L.footprint(31, 76, 31, 76), light: false });   // (R5: lit once, by the m.lights fire below) X.light(31.5, 76.5, 0xff9a48, 6, 1.1, 'fire', { flame: true, fl: 0.6, h: 0.4 });
     L.decor('rimeshore_drying_rack', 'town_fence', 34.4, 79.2, 0.3, 1, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_fence', 28.2, 80.4, -0.1, 1, { on: 'open' });
     L.decor('rimeshore_barrel', 'town_barrel', 33.6, 74.6, 0, 0.9, { on: 'open' }); L.decor('rimeshore_crate', 'town_crates', 27.6, 78.8, 0.4, 0.85, { on: 'open' });
     X.landmark('seal_camp', 'Kolfinna’s Camp', 30, 77, 6);
@@ -1203,11 +1256,15 @@ growMap('rimeshore', 96, 96, {
     // the headland watch
     X.tower(38, 89, 2.6, 'n'); X.chest(38, 89, 'rime_headland', 'rtower', 'Watch-Chest');
     X.landmark('headland', 'The Headland Watch', 38, 89, 4);
+    // map fixes: the south gate moves from the old tree line to the new map edge; the old gates end painted roads
+    X.road([[1, 32], [4, 32]]); X.road([[20, 1], [20, 4]]);
+    X.road([[14, 62], [14, 88], [14, 94]]); m.warps.push({ x: 14, y: 94, to: 'mirewell', tx: 57.5, ty: 3.5, label: 'Mirewell' });
+    X.gate(1, 32); X.gate(20, 1); X.gate(14, 94);   // map fixes (M6.14): the gates stand clear
   } });
 caveDef('rimeshore_cave_ice', { parent: 'rimeshore', name: 'The Ice Cave', sub: 'Base Lv 33 – 40 · Rimeshore', lv: [33, 40], w: 46, h: 42, seed: 921, rock: 'ice', wet: 0.7, glow: 'crystal', water: 0.18,
   look: { floor: 'snow' },
   intro: 'The Ice Cave. The walls are blue all the way down, and something far inside is singing without breath.',
-  mouth: [22, 40], back: [88.5, 30.5], rooms: [[22, 31, 4], [35, 24, 4.5], [10, 20, 4, 'lore'], [24, 9, 6, 'boss']], links: [0, 1, 1, 2],
+  mouth: [22, 40], back: [88.5, 31.5], face: 'S', rooms: [[22, 31, 4], [35, 24, 4.5], [10, 20, 4, 'lore'], [24, 9, 6, 'boss']], links: [0, 1, 1, 2],
   spawns: [['ice_wraith', 6], ['snow_wolf', 4], ['rime_poring', 4], ['shell_knight', 2]], critters: [['bat', 2]],
   elites: [{ key: 'frozen_helmsman', x: 24.5, y: 8.5, respawn: 2400 }],
   chest: { id: 'icecave_hoard', loot: 'icecave', name: 'The Helmsman’s Chest', at: [27, 6] },
@@ -1262,10 +1319,14 @@ growMap('mirewell', 96, 96, {
     L.disc(62, 91, 3.5, 0.25, (x, y) => { if (y >= 89) L.put(x, y, T.ROCK); });
     X.mouth(62, 88, 's', 'mirewell_cave_grotto', 22.5, 38.5, 'The Flooded Grotto', 'mouthMud');
     X.landmark('grotto', 'The Flooded Grotto', 62, 88, 3);
+    // map fixes: the east gate moves from the old tree line to the new map edge; the old gates end painted roads
+    X.road([[32, 1], [32, 4]]); X.road([[58, 1], [58, 4]]);
+    X.road([[62, 44], [88, 44], [94, 44]]); m.warps.push({ x: 94, y: 44, to: 'nidavellir', tx: 3.5, ty: 32.5, label: 'Nidavellir Deep' });
+    X.gate(32, 1); X.gate(58, 1); X.gate(94, 44);   // map fixes (M6.14): the gates stand clear
   } });
 caveDef('mirewell_cave_grotto', { parent: 'mirewell', name: 'The Flooded Grotto', sub: 'Base Lv 40 – 46 · Mirewell', lv: [40, 46], w: 46, h: 42, seed: 931, rock: 'mud', wet: 0.9, glow: 'mushroom', water: 0.3,
   intro: 'The Flooded Grotto. Black water to the knee, then the waist. Glowing caps on every wall, and in the water, something that glows back.',
-  mouth: [22, 40], back: [62.5, 86.5], rooms: [[22, 31, 4], [9, 24, 4], [34, 23, 4.2, 'lore'], [22, 10, 6, 'boss']], links: [0, 1, 1, 3],
+  mouth: [22, 40], back: [62.5, 86.5], face: 'N', rooms: [[22, 31, 4], [9, 24, 4], [34, 23, 4.2, 'lore'], [22, 10, 6, 'boss']], links: [0, 1, 1, 3],
   spawns: [['mire_leech', 7], ['bog_toad', 4], ['wisp', 4], ['mire_troll', 2]], critters: [['bat', 3]],
   elites: [{ key: 'grotto_lurker', x: 22.5, y: 9.5, respawn: 2400 }],
   chest: { id: 'grotto_hoard', loot: 'grotto', name: 'Bog-Offering', at: [25, 7] },
@@ -1297,7 +1358,7 @@ growMap('helheim', 96, 96, {
     X.clearing(81, 13, 8, 0.25);
     const hall = []; for (let x = 76; x <= 86; x++) for (const y of [7, 19]) if (x < 80 || x > 82 || y === 7) hall.push([x, y]); for (let y = 8; y <= 18; y++) for (const x of [75, 87]) if (y % 5) hall.push([x, y]);
     for (const [x, y] of hall) { L.put(x, y, TT.PROP); L.decor('dng_wall', 'dng_wall', x + 0.5, y + 0.5, ((x * 7 + y * 3) % 4) * Math.PI / 2, 1, { fp: [x, y, x, y] }); }
-    for (const x of [77, 85]) for (const y of [9.5, 13.5, 17.5]) L.decor('helheim_corpse_relief', 'dng_chain', x, y, 0, 1, { on: 'open' });
+    for (const [x, r] of [[76.05, Math.PI / 2], [86.95, -Math.PI / 2]]) for (const y of [9.5, 13.5, 17.5]) L.decor('helheim_corpse_relief', 'dng_chain', x, y, r, 1, { on: 'open' });   // on the side walls, facing in (M7.4)
     H.obelisk(81, 9, 0); H.brazier(78.5, 16.5); H.brazier(84.5, 16.5);
     X.lore(81, 12, 'hel_nastrond', 'The Serpent-Weave', ['<i>The walls are woven of serpents’ spines, the heads all turned inward. Venom still drips from the roof, slow as sap.</i>', 'Náströnd, the Corpse-Shore: the hall for oath-breakers and murderers. Níðhöggr used to come here to feed. He has not come in a long while. The dead here are not grateful. They are bored.'], 'shrine');
     X.chest(83, 10, 'hel_nastrond', 'nastrond', 'Oath-Breaker’s Coffer');
@@ -1322,11 +1383,14 @@ growMap('helheim', 96, 96, {
     X.landmark('grey_roots', 'The Grey Roots', 18, 88, 3);
     for (let i = 0; i < 24; i++) { const x = 4 + rng() * (w - 8), y = 4 + rng() * (h - 8); if (x < w0 && y < 64) continue; if (L.at(x | 0, y | 0) === TT.FLOOR && !(y > 26 && y < 36)) L.decor(rng() < 0.5 ? 'dng_bones' : 'helheim_ash_drift_a', null, x, y, rng() * 6.28, 0.8 + rng() * 0.4, { on: 'open' }); }
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if ((x >= w0 || y >= 64) && m.deco[y * w + x] === 6) m.deco[y * w + x] = 0;
+    // map fixes (M6.11): the Root Road ends a painted ash road under the root, at the west edge
+    for (let x = 1; x <= 9; x++) for (let y = 11; y <= 13; y++) if (X.isOpen(x, y)) m.deco[y * K.w + x] = 6;   // (3 wide, so it shows)
+    X.gate(1, 12); X.gate(32, 62);   // map fixes (M6.14): the gates stand clear
   } });
 caveDef('helheim_cave_roots', { parent: 'helheim', name: 'The Grey Roots', sub: 'Base Lv 80 – 90 · Helheim', lv: [80, 90], w: 50, h: 44, seed: 941, rock: 'roots', wet: 0.2, glow: 'mushroom',
   look: { tint: [0.88, 0.95, 0.9] }, cave: { fill: 0.5, steps: 5, min: 12 },
   intro: 'The Grey Roots. The World Tree’s roots run through the rock like veins, and something has been gnawing them.',
-  mouth: [24, 42], back: [18.5, 86.5], rooms: [[24, 32, 4], [38, 25, 4.5], [11, 22, 4, 'lore'], [26, 10, 6, 'boss']], links: [0, 1, 1, 2],
+  mouth: [24, 42], back: [18.5, 86.5], face: 'N', rooms: [[24, 32, 4], [38, 25, 4.5], [11, 22, 4, 'lore'], [26, 10, 6, 'boss']], links: [0, 1, 1, 2],
   spawns: [['nidhogg_spawn', 6], ['hel_draugr', 4], ['corpse_bride', 3]], critters: [['bat', 3]],
   elites: [{ key: 'root_gnawer', x: 26.5, y: 9.5, respawn: 3000 }],
   chest: { id: 'roots_hoard', loot: 'roots', name: 'Root-Hollow', at: [29, 6] },
@@ -1352,7 +1416,7 @@ growMap('emberhold', 56, 56, {
     // the Gate Road east to the new gate (a second warp to the Ashen Fields at the new edge)
     K.clearR(36, 16, 54, 20); for (let y = 16; y <= 20; y++) for (let x = 36; x <= 55; x++) { K.set(x, y, 0); cob(x, y); }
     m.warps.push({ x: 54, y: 18, to: 'ashen_fields', tx: 3.5, ty: 32.5, label: 'Ashen Fields (the East Gate)' });
-    m.braziers.push({ x: 53.5, y: 15.6 }, { x: 53.5, y: 21.4 }, { x: 36.6, y: 15.6 }, { x: 36.6, y: 21.4 });
+    m.braziers.push({ x: 53.5, y: 15.6 }, { x: 53.5, y: 21.4 });   // the East Gate's pair (the old gate square's were dropped: map fixes)
     // the Smiths' Row: two big houses and two small ones round a lane and a well
     townHouse(m, K, 38, 3, 43, 7, 'emberhold_row_a'); townHouse(m, K, 47, 3, 52, 7, 'emberhold_row_b'); townHouse(m, K, 38, 10, 41, 13, 'emberhold_house_c', 'e'); townHouse(m, K, 50, 10, 53, 13, 'emberhold_house_d', 'w');
     for (let x = 36; x <= 54; x++) for (const y of [8, 9]) cob(x, y); for (let y = 8; y <= 15; y++) for (const x of [45, 46]) cob(x, y);
@@ -1382,6 +1446,7 @@ growMap('emberhold', 56, 56, {
     // lamps along the new streets
     for (const [x, y] of [[40.4, 15.3], [48.4, 15.3], [40.4, 21.6], [48.4, 21.6], [15.3, 40.4], [21.6, 40.4], [15.3, 49.4], [21.6, 49.4], [44.4, 10.4], [37.4, 27.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
     for (let y = 36; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if ((x < 3 || y > h - 4) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && rng() < 0.12) K.set(x, y, rng() < 0.7 ? T.TREE : T.ROCK);
+    X.gate(54, 18); X.gate(18, 1);   // map fixes (M6.14): the gates stand clear
   } });
 /* Skaldhaven 48 x 40 -> 64 x 56: Netmakers' Row and the shipwright's yard south of the old wall, the south gate road
    to a new outer gate, a fourth pier, and the Skerry with its beacon out in the bay. */
@@ -1412,16 +1477,18 @@ growMap('skaldhaven', 64, 56, {
     // the long pier out to the Skerry and its beacon
     for (let x = 42; x <= 52; x++) for (const y of [9, 10]) { K.set(x, y, 0); L.surf(x, y, SURF.BRIDGE); L.decor('mirewell_boardwalk', null, x + 0.5, y + 0.5, 1.571, 1, { dy: -0.32 }); }
     L.disc(56.5, 11, 4.2, 0.3, (x, y) => { if (x < w - 1) { K.set(x, y, 0); L.surf(x, y, 0); } });
-    L.decor('bifrost_rune_brazier', 'dng_brazier', 57.5, 10.5, 0, 1.3, { fp: L.footprint(57, 10, 57, 10), light: [0xffb050, 2, 9], beacon: true }); X.light(57.5, 10.5, 0xffb050, 9, 1.6, 'fire', { flame: true, fl: 0.4, h: 1.6 });
+    L.decor('bifrost_rune_brazier', 'dng_brazier', 57.5, 10.5, 0, 1.3, { fp: L.footprint(57, 10, 57, 10), light: false, beacon: true });   // (R5: lit once, by the m.lights fire) X.light(57.5, 10.5, 0xffb050, 9, 1.6, 'fire', { flame: true, fl: 0.4, h: 1.6 });
     X.lore(55, 13, 'sk_beacon', 'The Beacon-Stone', ['<i>A stone at the foot of the beacon, cut with the names of every keeper. The last name is only half cut.</i>', 'The Skerry beacon has burned every night since the Ash, so the longships can find the one harbour on the coast that still answers. Captain Ormr pays for the oil. He will not say why.']);
     X.chest(58, 12, 'skald_skerry', 'skerry', 'Keeper’s Chest');
     for (let i = 0; i < 5; i++) { const a = rng() * 6.283, d = 2.2 + rng() * 1.3; L.decor('rimeshore_ice_rock_b', 'rock_field_d', 56.5 + Math.cos(a) * d, 11 + Math.sin(a) * d, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' }); }
     X.landmark('skerry', 'The Skerry Beacon', 56, 11, 5);
     for (let i = 0; i < 10; i++) { const x = w0 + rng() * (w - w0 - 2), y = 2 + rng() * (h - 4); if (L.at(x | 0, y | 0) === T.WATER) L.decor('rimeshore_ice_floe', 'rock_field_b', x, y, rng() * 6.28, 0.7 + rng() * 0.6, { dy: 0.7 }); }
-    for (const [x, y] of [[12.4, 44.4], [16.6, 44.4], [2.4, 47.6], [24.6, 47.6], [30.3, 46.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
+    for (const [x, y] of [[12.4, 44.4], [16.6, 45.6], [2.4, 47.6], [24.6, 47.6], [30.3, 46.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
     X.sign(16, 41, 'Signpost', ['<b>North</b>: the plaza and the Salt Hall. <b>South</b>: the South Gate to Rimeshore.', '<b>East</b>: Bárðr’s yard and the net-pier.']);
     for (let y = h0; y < h - 1; y++) for (let x = 1; x < SHORE - 1; x++) if ((x < 3 || y > h - 4) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && !m.surf[y * w + x] && !(x >= 12 && x <= 16) && rng() < 0.3) K.set(x, y, rng() < 0.75 ? T.TREE : T.ROCK);
     for (let y = h0 + 1; y < h - 2; y++) for (let x = 2; x < SHORE - 1; x++) if (L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && !m.surf[y * w + x] && rng() < 0.04) L.decor(rng() < 0.5 ? 'rimeshore_snowdrift_a' : 'rimeshore_snowdrift_b', null, x + 0.5, y + 0.5, rng() * 6.28, 0.6 + rng() * 0.3, { on: 'open' });
+    X.gate(14, 54);   // map fixes (M6.14): the gates stand clear
+    X.sign(16, 34, 'Signpost', ['<b>South</b>: Netmakers’ Row, then the South Gate and the road to Rimeshore.', '<b>North</b>: the plaza and the Salt Hall. <b>East</b>: the harbour.'], 0.3);   // map fixes: where the old south gate was
   } });
 
 /* ---------- Gloamheim 60 x 60 -> 84 x 76: the Barracks wing (east) and the Lower Cells (south). Old rooms are placed at
@@ -1448,6 +1515,7 @@ growMap('gloamheim', 84, 76, {
     X.landmark('barracks', 'The Barracks', 69, 13, 8); X.landmark('tyr_chapel', 'Tyr’s Chapel', 72, 40, 6);
     // joined to the entry hall (east, along the lower corridor) and to the middle floor
     clearR(35, 51, 64, 53); clearR(62, 44, 64, 53); clearR(64, 42, 66, 44); clearR(55, 23, 63, 25);
+    clearR(46, 24, 55, 24);   // (map fixes) the middle floor's passage reaches the seeded keep's east hall
     // the Lower Cells: a gallery of cells below the entry hall, and the pit
     clearR(26, 58, 28, 62); clearR(8, 63, 60, 65);
     for (let x = 9; x <= 57; x += 5) { const up = (x / 5) % 2 === 0; clearR(x, up ? 60 : 67, x + 3, up ? 62 : 70); clearR(x + 1, up ? 62 : 65, x + 2, up ? 63 : 67); }
@@ -1490,7 +1558,7 @@ growMap('nidavellir', 96, 84, {
   } });
 caveDef('nidavellir_cave_adit', { parent: 'nidavellir', name: 'The Old Adit', sub: 'Base Lv 44 – 51 · Nidavellir Deep', lv: [44, 51], w: 50, h: 44, seed: 951, rock: 'mine', wet: 0.2, glow: 'crystal',
   intro: 'The Old Adit. Timber props, a rail running into the dark, and the sound of a pick that nobody is swinging.',
-  mouth: [24, 42], back: [86.5, 53.5], rooms: [[24, 32, 4], [10, 24, 4.2], [38, 22, 4.2, 'lore'], [24, 10, 6, 'boss']], links: [0, 1, 1, 2], tunnel: 1,
+  mouth: [24, 42], back: [86.5, 53.5], face: 'N', rooms: [[24, 32, 4], [10, 24, 4.2], [38, 22, 4.2, 'lore'], [24, 10, 6, 'boss']], links: [0, 1, 1, 2], tunnel: 1,
   spawns: [['dwarf_revenant', 6], ['stone_golem', 3], ['crystal_spider', 3], ['cave_bat', 3]], critters: [['bat', 3]],
   elites: [{ key: 'iron_foreman', x: 24.5, y: 9.5, respawn: 2400 }],
   chest: { id: 'adit_hoard', loot: 'adit', name: 'The Foreman’s Pay-Chest', at: [27, 6] },
