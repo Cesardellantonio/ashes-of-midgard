@@ -1,0 +1,46 @@
+{
+ "sheets": [
+  {
+   "id": "mob_ash_wolf",
+   "layer": "mob",
+   "body": "ash_wolf",
+   "variant": null
+  },
+  {
+   "id": "knight_m.body",
+   "layer": "body",
+   "body": "knight_m",
+   "variant": null
+  },
+  {
+   "id": "knight_m.hair_long",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "long"
+  },
+  {
+   "id": "knight_m.hair_spiky",
+   "layer": "hair",
+   "body": "knight_m",
+   "variant": "spiky"
+  },
+  {
+   "id": "knight_m.weapon_spear",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "spear"
+  },
+  {
+   "id": "knight_m.weapon_sword",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "sword"
+  },
+  {
+   "id": "knight_m.weapon_twohand",
+   "layer": "weapon",
+   "body": "knight_m",
+   "variant": "twohand"
+  }
+ ]
+}

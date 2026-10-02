@@ -331,7 +331,7 @@ function sprFrame(v, e, o) {
   if (!e.dead && hf > (v.lastHF || 0) + 0.04) v.sqT = time;
   v.lastHF = e.dead ? 0 : hf;
   if (hero) { if (e.hurtT > 0.15) { fl = 0.55 * (e.hurtT - 0.15) / 0.15; fc = FLASH_HURT; } }
-  else if (!e.dead && hf > 0) fl = hf > 0.17 ? 0.72 : 0.6 * hf / 0.17;
+  else if (!e.dead && hf > 0) fl = hf > 0.17 ? (ANIME.on() ? 0.24 : 0.72) : (ANIME.on() ? 0.2 : 0.6) * hf / 0.17;   // (linear-space mix: 0.24 already reads as a strong white wash)
   if (e.dead && e.deathT !== undefined && e.deathT < 0.12) fl = 0.9 * (1 - e.deathT / 0.12);
   st.flash[0] = toLin(fc[0]); st.flash[1] = toLin(fc[1]); st.flash[2] = toLin(fc[2]); st.flash[3] = fl;
   const tq = time - (v.sqT === undefined ? -9 : v.sqT);
@@ -921,11 +921,12 @@ function syncEntities() {
   // after the heroes (a perched pet follows the owner's facing / squash of this frame), before the batches flush
   if (typeof syncRavenShots === 'function') { syncRavenShots(); syncCompanions(); }
   VIS.forEach(visSweep);
+  ANIME.flush();   // after-image instances (before the batches upload)
   ibFlush();
   if (frameNo % 120 === 0 && typeof sheetPagesSweep === 'function') sheetPagesSweep();
   let king = null; for (const m of mobs) if (m.type === 'ashen_king' && !m.dead) { king = m; break; }
   if (king && Math.random() < 0.6) parts.push({ x: king.x + rand(-0.6, 0.6), y: king.y + rand(-0.6, 0.6), z: rand(10, 120), vx: 0, vy: 0, vz: rand(40, 90), life: rand(0.4, 0.9), max: 0.9, col: pick(['#ff7a2a', '#ffb04a', '#ff4a1a']), size: 2.5, float: true });
-  syncSwing(); syncHeroSwings();
+  syncSwing(); syncHeroSwings(); ANIME.sync();
   PFX.update(SPRF.dt);
 }
 
@@ -2302,8 +2303,9 @@ const VFX = (() => {
     if (k === 'spark') {
       const rot = (Math.random() - 0.5) * 0.9, fl = Math.random() < 0.5;
       if (f.hurt) { if (fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.5, lc('#ff6a50'), 1, rot, fl))) f._fb = 1; return; }
-      if (f.crit) { const e = fbSpawn('crit_star', f.x, f.y, f.h, fbo(0.72, null, 1, rot * 0.5)); fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62, null, 1, rot, fl)); if (e) f._fb = 1; return; }
-      if (fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62, null, 1, rot, fl))) f._fb = 1;
+      const hk = ANIME.on() ? 0.78 : 1;   // anime effects on: smaller puffs, the slash cut carries the hit and the target stays readable
+      if (f.crit) { const e = fbSpawn('crit_star', f.x, f.y, f.h, fbo(0.72 * hk, null, 1, rot * 0.5)); fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62 * hk, null, 1, rot, fl)); if (e) f._fb = 1; return; }
+      if (fbSpawn('hit_spark', f.x, f.y, f.h, fbo(0.62 * hk, null, 1, rot, fl))) f._fb = 1;
     } else if (k === 'meteor') {
       const cls = hueClass(f.col || '#ff7a2a'), gh = groundH(f.x, f.y);
       if (fbSpawn(FB_BY_CLASS[cls], f.x, f.y, gh, fbo(cls === 'holy' ? 0.8 : cls === 'rot' ? 0.75 : 1))) f._fb = 1;
@@ -2609,6 +2611,7 @@ function drawOverlay() {
     }
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.lineCap = 'butt';
+  ANIME.overlay();   // speed lines, dash streaks, flash fallback (under plates and damage numbers)
   // Cinematics (CINE.active): no nameplates, labels or bars; damage numbers stay.
   if (!(typeof CINE !== 'undefined' && CINE.active)) drawPlates(sc, a, b);
   drawFloats(sc, a);
@@ -2740,10 +2743,359 @@ function drawMinimap() {
 function render(dt) {
   matLaterTick();
   updateCamera(dt || 0.016);
+  ANIME.camera();   // camera punch + impact-frame uniforms
   animateWorld(dt || 0.016);
+  ANIME.frame();    // new hits -> cuts, lines, flash, punch
   syncEntities();
   syncDecals();
   VFX.sync(dt);
   renderer.render(scene, camera);   // gfx-post.js routes this through its composer
   drawOverlay();
 }
+
+/* =========================================================
+   Anime combat effects (design/anime-anim-contract.md, A2): the "Solo Leveling" layer on top of the pixel sprites.
+   Everyone gets them, on by default; GFX.animeFx = false (stored as aom-animefx = '0') turns them all off.
+   - After-images: pooled snapshots of a sprite's layers (frame UVs + transform), drawn as instances of one ghost batch
+     per sheet page (the IB machinery above: one draw per sheet whatever the number of ghosts), tinted and fading.
+     Spawned on dodges, skill dashes, monster leaps, the sheets' `smear` frames, heavy releases and combo finishers.
+   - Slash cuts: a thin tapered crescent flashed across the target on every landed hit (one instanced draw), along the
+     attack direction; crossed on crits, wide on heavies.
+   - Speed lines (2D overlay): radial bursts around the target on heavy / critical / finisher hits and around the
+     hero when a skill fires; dash streaks behind a dodging / dashing hero.
+   - Impact frame: a short white (or, with post-processing, partly inverted) flash on crits, heavies and boss blows,
+     at most one per 0.5 s (under the 3-per-second photosensitivity limit), capped in strength, none with
+     prefers-reduced-motion.
+   - Camera punch along the hit direction (none with reduced motion), and a sharper hit-stop curve (hitstopScale in
+     action.js, used by ui.js frame()).
+   Colours: the cold blue / violet "system" glow for skills and dashes, the weapon element (else the weapon's trail
+   colour) for blows. Low quality: fewer and shorter ghosts, fewer lines, no inversion, a softer punch.
+   Timers of what the hit-stop must not freeze (cuts, lines, flash, punch) run on a real clock (AOM_ANIME_CLOCK can
+   replace it for deterministic captures); after-images use game time, so they hold during the hit-stop. Nothing here
+   allocates per frame: fixed pools, reused vectors, constant colour strings.
+   ========================================================= */
+if (typeof GFX !== 'undefined' && GFX.animeFx === undefined) GFX.animeFx = (typeof store === 'function' ? store('aom-animefx') : null) !== '0';
+const ANIME = (() => {
+  const A = { imp: new THREE.Vector4(), stats: { ghosts: 0, cuts: 0, lines: 0, flashes: 0, punches: 0 }, reduced: false };
+  try { const mq = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)'); if (mq) { A.reduced = !!mq.matches; if (mq.addEventListener) mq.addEventListener('change', e => { A.reduced = !!e.matches; }); } } catch (e) { /* no matchMedia */ }
+  const on = () => typeof GFX === 'undefined' || GFX.animeFx !== false;
+  // headless captures (tools/shoot.py, perf.py) step frames by hand: count rendered frames there so shots stay deterministic
+  const HEADLESS = typeof navigator !== 'undefined' && /HeadlessChrome/.test(navigator.userAgent || '');
+  const clk = () => (typeof window !== 'undefined' && typeof window.AOM_ANIME_CLOCK === 'function') ? window.AOM_ANIME_CLOCK() : HEADLESS ? frameNo / 60 : performance.now() / 1000;
+  const qk = () => { const q = gfxQ(); return q === 'low' ? 0.45 : q === 'medium' ? 0.75 : 1; };
+  const SYS = '#6f9bff', SYS2 = '#b98aff';   // the system glow: cold blue, violet
+  const ELC = { fire: '#ff8a3a', water: '#7cc8ff', wind: '#b8ffa8', earth: '#e0b878', holy: '#fff0b0', shadow: '#b48aff', ghost: '#c8b4ff', poison: '#a8e868', undead: '#b0b0d0' };
+  const COLS = new Map();   // hex -> [r, g, b] in the working space (filled once per colour)
+  function lc(hex) { let c = COLS.get(hex); if (!c) { const k = wcol(hex, new THREE.Color()); c = [k.r, k.g, k.b]; COLS.set(hex, c); } return c; }
+
+  /* ---------- after-images: ONE instanced draw for every ghost of every sheet ----------
+     The ghost shader reads up to GHK sheet page textures (R8 index pages of the indexed sheets, texture slots as in the
+     hero batches) and a palette atlas (one 256-texel row per slot); each instance carries its slot, frame UVs, tint and
+     a matrix that folds in the sheet's frame size and anchor (a unit quad). Slots are sticky: a palette row is copied
+     only when a slot changes sheet. RGBA-fallback sheets and WebGL1 get no after-images. Hidden (0 draws) when idle. */
+  const GHK = 8, GN = 96;
+  const GH = (() => {
+    if (!(renderer.capabilities && renderer.capabilities.isWebGL2)) return null;
+    let dS = '', fe = '', sz = '';
+    for (let i = 0; i < GHK; i++) { dS += `uniform sampler2D uG${i}; `; fe += `  if (s == ${i}) return texelFetch(uG${i}, t, 0).r;\n`; sz += `  if (s == ${i}) return textureSize(uG${i}, 0);\n`; }
+    const dummy = new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat); dummy.needsUpdate = true;
+    const palD = new Uint8Array(256 * GHK * 4), pal = new THREE.DataTexture(palD, 256, GHK, THREE.RGBAFormat, THREE.UnsignedByteType);
+    pal.magFilter = pal.minFilter = THREE.NearestFilter; pal.generateMipmaps = false; pal.needsUpdate = true;
+    const uniforms = { uPalA: { value: pal } }; for (let i = 0; i < GHK; i++) uniforms['uG' + i] = { value: dummy };
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `attribute vec4 iUV; attribute vec4 iCol; attribute float iSlot; varying vec2 vUv; varying vec4 vC; varying float vS;
+        void main() { vUv = mix(iUV.xy, iUV.zw, uv); vC = iCol; vS = iSlot; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform sampler2D uPalA; ${dS}
+        varying vec2 vUv; varying vec4 vC; varying float vS;
+        ivec2 gSz(int s) {\n${sz}  return ivec2(1); }
+        float gI(int s, ivec2 t) {\n${fe}  return 0.0; }
+        void main() {
+          int s = int(vS + 0.5); ivec2 ts = gSz(s), t = clamp(ivec2(floor(vUv * vec2(ts))), ivec2(0), ts - 1);
+          vec4 p = texelFetch(uPalA, ivec2(int(gI(s, t) * 255.0 + 0.5), s), 0);
+          if (p.a < 0.5) discard;
+          gl_FragColor = vec4(vC.rgb * (0.45 + 1.1 * dot(p.rgb, vec3(0.3, 0.59, 0.11))), vC.a);
+          #include <tonemapping_fragment>
+          #include <encodings_fragment>
+        }`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const g = new THREE.PlaneGeometry(1, 1).translate(0.5, 0.5, 0), aUV = new Float32Array(GN * 4), aC = new Float32Array(GN * 4), aS = new Float32Array(GN);
+    g.setAttribute('iUV', new THREE.InstancedBufferAttribute(aUV, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('iCol', new THREE.InstancedBufferAttribute(aC, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('iSlot', new THREE.InstancedBufferAttribute(aS, 1).setUsage(THREE.DynamicDrawUsage));
+    const mesh = new THREE.InstancedMesh(g, mat, GN); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false; mesh.renderOrder = 0.5; mesh.count = 0; mesh.visible = false; scene.add(mesh);
+    return { mesh, mat, uniforms, pal, palD, dummy, aUV, aC, aS, tex: new Array(GHK).fill(null), rec: new Array(GHK).fill(null), mark: new Int32Array(GHK).fill(-1) };
+  })();
+  // Slot of page texture tex (sheet rec) for this frame, or -1 when every slot is taken by another texture this frame.
+  function ghostSlot(rec, tex) {
+    const H = GH; let free = -1;
+    for (let i = 0; i < GHK; i++) { if (H.tex[i] === tex) { H.mark[i] = frameNo; return i; } if (free < 0 && H.mark[i] !== frameNo) free = i; }
+    if (free < 0) return -1;
+    H.tex[free] = tex; H.mark[free] = frameNo; H.uniforms['uG' + free].value = tex;
+    if (H.rec[free] !== rec) { H.rec[free] = rec; H.palD.set(rec.pal.tex.image.data.subarray(0, 1024), free * 1024); H.pal.needsUpdate = true; }
+    return free;
+  }
+  const G = [];
+  for (let i = 0; i < GN; i++) G.push({ on: false, rec: null, pg: 0, u0: 0, v0: 0, u1: 0, v1: 0, x: 0, y: 0, z: 0, sx: 1, sy: 1, fw: 1, fh: 1, ax: 0, ay: 0, t0: 0, life: 0, r: 1, g: 1, b: 1, a: 0 });
+  let gHead = 0;
+  // Snapshot every drawn layer of sheet vis v (hats excepted: their quad is an affine of the head anchor).
+  function ghostSnap(v, e, y, flip, st, hex, a, life, back) {
+    if (!GH) return;
+    const c = lc(hex), k = st.scl || 1, sx = (flip ? -1 : 1) * st.sx * k, sy = st.sy * k / COSP;
+    const bx = -(e.fx === undefined ? 1 : e.fx) * back, by = -(e.fy || 0) * back;
+    for (let i = 0; i < v.layers.length; i++) {
+      const L = v.layers[i], r = L.rec; if (!L.on || L.layer === 'headgear' || !r || !r.ok || !r.pal) continue;
+      const g = G[gHead], j = r.json; gHead = (gHead + 1) % GN;
+      g.on = true; g.rec = r; g.pg = L.pg | 0; g.u0 = L.uv[0]; g.v0 = L.uv[1]; g.u1 = L.uv[2]; g.v1 = L.uv[3];
+      g.fw = j.frameW / PXU; g.fh = j.frameH / PXU; g.ax = j.anchor[0] / PXU; g.ay = j.anchor[1] / PXU;
+      g.x = e.x + bx; g.y = y; g.z = e.y + by; g.sx = sx; g.sy = sy; g.t0 = time; g.life = life; g.r = c[0]; g.g = c[1]; g.b = c[2]; g.a = a;
+    }
+  }
+  function ghostsFlush() {
+    if (!GH) return;
+    const H = GH, M = H.mesh.instanceMatrix.array, cy = SPRF.cy, sy_ = SPRF.sy; let n = 0;
+    for (let i = 0; i < GN; i++) {
+      const g = G[i]; if (!g.on) continue;
+      const age = time - g.t0;
+      if (age >= g.life || age < -0.05 || !g.rec.ok || SHEETS.byId[g.rec.id] !== g.rec) { g.on = false; g.rec = null; continue; }
+      const s = ghostSlot(g.rec, sheetPageTex(g.rec, g.pg)); if (s < 0) continue;
+      const f = 1 - age / g.life, o = n * 16, q = n * 4;
+      // T(x, y, z) * RotY(yaw) * S(sx, sy) * [unit quad -> frame plane: (u * fw - ax, v * fh + ay - fh)]
+      const X = g.sx * g.fw, Y = g.sy * g.fh, tx = -g.sx * g.ax, ty = g.sy * (g.ay - g.fh);
+      M[o] = cy * X; M[o + 1] = 0; M[o + 2] = -sy_ * X; M[o + 3] = 0;
+      M[o + 4] = 0; M[o + 5] = Y; M[o + 6] = 0; M[o + 7] = 0;
+      M[o + 8] = sy_; M[o + 9] = 0; M[o + 10] = cy; M[o + 11] = 0;
+      M[o + 12] = g.x + cy * tx; M[o + 13] = g.y + ty; M[o + 14] = g.z - sy_ * tx; M[o + 15] = 1;
+      H.aUV[q] = g.u0; H.aUV[q + 1] = g.v0; H.aUV[q + 2] = g.u1; H.aUV[q + 3] = g.v1;
+      H.aC[q] = g.r; H.aC[q + 1] = g.g; H.aC[q + 2] = g.b; H.aC[q + 3] = g.a * f * f; H.aS[n] = s;
+      n++;
+    }
+    const m = H.mesh; m.count = n; m.visible = n > 0; A.stats.ghosts = n;
+    if (n) { ibFlag(m.instanceMatrix, n); const at = m.geometry.attributes; ibFlag(at.iUV, n); ibFlag(at.iCol, n); ibFlag(at.iSlot, n); }
+  }
+
+  /* ---------- slash cuts (one instanced draw) ---------- */
+  const CUT = (() => {
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: `attribute vec4 aA; attribute vec4 aC; varying vec2 vUv; varying vec4 vA; varying vec4 vC;
+        void main() { vUv = uv; vA = aA; vC = aC; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        varying vec2 vUv; varying vec4 vA; varying vec4 vC;
+        void main() {
+          float head = vA.x, tail = vA.y, alpha = vA.z, wd = vA.w, bend = vC.w;
+          vec2 p = vUv * 2.0 - 1.0;
+          float s = (p.x - tail) / max(1e-3, head - tail);
+          if (s < 0.0 || s > 1.0) discard;
+          float yc = bend * (1.0 - p.x * p.x) * 0.35, w = wd * pow(sin(3.14159 * s), 0.8) * (0.35 + 0.65 * s);
+          float d = abs(p.y - yc); if (w < 1e-3 || d > w) discard;
+          float core = 1.0 - smoothstep(0.0, w * 0.3, d), edge = 1.0 - smoothstep(w * 0.4, w, d);
+          vec3 c = min(mix(vC.rgb * 1.2, vec3(1.25), core), vec3(1.25));
+          gl_FragColor = vec4(c, clamp(alpha * max(core, edge * 0.8), 0.0, 1.0));
+          #include <tonemapping_fragment>
+          #include <encodings_fragment>
+        }`,
+      transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const N = 16, g = new THREE.PlaneGeometry(1, 1), aA = new Float32Array(N * 4), aC = new Float32Array(N * 4);
+    g.setAttribute('aA', new THREE.InstancedBufferAttribute(aA, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('aC', new THREE.InstancedBufferAttribute(aC, 4).setUsage(THREE.DynamicDrawUsage));
+    const mesh = new THREE.InstancedMesh(g, mat, N); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false; mesh.renderOrder = 6; mesh.count = 0; mesh.visible = false; scene.add(mesh);
+    const L = []; for (let i = 0; i < N; i++) L.push({ on: false, t0: 0, x: 0, y: 0, z: 0, ang: 0, size: 1, w: 0.1, bend: 0.4, r: 1, g: 1, b: 1, life: 0.17 });
+    return { mesh, aA, aC, L, N, head: 0, M: new THREE.Matrix4(), q: new THREE.Quaternion(), qz: new THREE.Quaternion(), s: new THREE.Vector3(), z: new THREE.Vector3(0, 0, 1), v: new THREE.Vector3(), v2: new THREE.Vector3() };
+  })();
+  function cut(x, y, z, ang, size, w, bend, hex, life) {
+    const c = CUT.L[CUT.head]; CUT.head = (CUT.head + 1) % CUT.N; const k = lc(hex);
+    c.on = true; c.t0 = clk(); c.x = x; c.y = y; c.z = z; c.ang = ang; c.size = size; c.w = w; c.bend = bend; c.r = k[0]; c.g = k[1]; c.b = k[2]; c.life = life;
+    A.stats.cuts++;
+  }
+  function cutsSync() {
+    const C = CUT, now = clk(); let n = 0;
+    for (let i = 0; i < C.N; i++) {
+      const c = C.L[i]; if (!c.on) continue;
+      const t = now - c.t0; if (t > c.life || t < -0.05) { c.on = false; continue; }
+      const k = t / c.life, o = n * 4;
+      C.aA[o] = -1 + 2 * smoothstep(0, 0.28, k); C.aA[o + 1] = -1 + 2 * smoothstep(0.22, 0.85, k); C.aA[o + 2] = 1 - smoothstep(0.6, 1, k); C.aA[o + 3] = c.w;
+      C.aC[o] = c.r; C.aC[o + 1] = c.g; C.aC[o + 2] = c.b; C.aC[o + 3] = c.bend;
+      C.v.set(c.x, c.y, c.z); C.v2.copy(camera.position).sub(C.v).normalize(); C.v.addScaledVector(C.v2, 1.2);
+      C.q.copy(camera.quaternion).multiply(C.qz.setFromAxisAngle(C.z, c.ang)); C.s.set(c.size, c.size, 1);
+      C.M.compose(C.v, C.q, C.s).toArray(C.mesh.instanceMatrix.array, n * 16); n++;
+    }
+    const m = C.mesh; m.count = n; m.visible = n > 0;
+    if (n) { ibFlag(m.instanceMatrix, n); ibFlag(m.geometry.attributes.aA, n); ibFlag(m.geometry.attributes.aC, n); }
+  }
+
+  /* ---------- speed lines, dash streaks, impact flash, camera punch ---------- */
+  const SPD = { t0: -9, dur: 0, wx: 0, wy: 0, wz: 0, inner: 0.24, n: 0, seed: 1, col: '#ffffff', a: 0 };
+  const FL = { t0: -9, dur: 0, a: 0, inv: 0, col: '#ffffff', last: -9 };
+  const CP = { t0: -9, dx: 0, dz: 0, amp: 0 };
+  const rnd = (s, i) => { const x = Math.sin(s * 12.9898 + i * 78.233) * 43758.5453; return x - Math.floor(x); };
+  function speed(wx, wy, wz, hex, dur, n, a) {
+    if (A.reduced) return;
+    const now = clk(); if (now - SPD.t0 < SPD.dur * 0.6 && a <= SPD.a) return;
+    SPD.t0 = now; SPD.dur = dur; SPD.wx = wx; SPD.wy = wy; SPD.wz = wz; SPD.n = Math.round(n * (qk() < 0.5 ? 0.5 : 1)); SPD.seed = (SPD.seed * 1.618 + 0.37) % 97; SPD.col = hex; SPD.a = a;
+    A.stats.lines++;
+  }
+  function flash(a, inv, hex, dur) {
+    if (A.reduced) return;
+    const now = clk();
+    if (now - FL.last < 0.5) {   // <= 2 flashes per second; a stronger cue in the same beat upgrades the current flash
+      if (now - FL.t0 < 0.05 && (inv > FL.inv || a > FL.a)) { FL.a = Math.max(FL.a, Math.min(0.3, a)); FL.inv = Math.max(FL.inv, qk() < 0.5 ? 0 : Math.min(0.85, inv)); FL.dur = Math.max(FL.dur, Math.min(0.09, dur)); }
+      return;
+    }
+    FL.last = FL.t0 = now; FL.a = Math.min(0.3, a); FL.inv = qk() < 0.5 ? 0 : Math.min(0.85, inv); FL.col = hex; FL.dur = Math.min(0.09, dur);
+    A.stats.flashes++;
+  }
+  function punch(dx, dz, amp) {
+    if (A.reduced || amp <= 0) return;
+    const now = clk(), n = Math.hypot(dx, dz) || 1, cur = CP.amp * Math.max(0, 1 - (now - CP.t0) / 0.2);
+    if (amp * qk() < cur) return;
+    CP.t0 = now; CP.dx = dx / n; CP.dz = dz / n; CP.amp = amp * (qk() < 0.5 ? 0.6 : 1); A.stats.punches++;
+  }
+  // After updateCamera (gfx-world.js): it rebuilds camera.position every frame, so the offset never accumulates.
+  A.camera = function () {
+    A.imp.set(0, 0, 0, 0);
+    if (!on()) return;
+    const now = clk();
+    const t = now - CP.t0;
+    if (t >= 0 && t < 0.3 && CP.amp > 0) {
+      const k = t < 0.03 ? t / 0.03 : Math.exp(-(t - 0.03) * 20) * Math.cos((t - 0.03) * 40);
+      camera.position.x += CP.dx * CP.amp * k; camera.position.z += CP.dz * CP.amp * k; camera.position.y -= CP.amp * 0.35 * Math.abs(k);
+    }
+    const f = now - FL.t0;
+    if (f >= 0 && f < FL.dur && typeof POST !== 'undefined' && POST.on) {
+      // an inverted impact frame (about two frames) first when asked for, then the white flash decays
+      const inv = FL.inv > 0 && f < FL.dur * 0.45, k = inv ? 0 : 1 - f / FL.dur, c = lc(FL.col);
+      A.imp.set(inv ? FL.inv : 0, c[0] * FL.a * k, c[1] * FL.a * k, c[2] * FL.a * k);
+    }
+  };
+  const _q = [0, 0, 0], _r = [0, 0, 0];
+  // Drawn into the 2D overlay (gfx-render drawOverlay), under plates and damage numbers.
+  A.overlay = function () {
+    if (!on() || !started) return;
+    const now = clk(), c2 = ctx;
+    // flash fallback without post-processing (white only)
+    const f = now - FL.t0;
+    if (f >= 0 && f < FL.dur && !(typeof POST !== 'undefined' && POST.on)) { c2.globalCompositeOperation = 'lighter'; c2.globalAlpha = FL.a * 0.8 * (1 - f / FL.dur); c2.fillStyle = FL.col; c2.fillRect(0, 0, W, H); }
+    // speed lines: thin wedges converging on the impact
+    const t = now - SPD.t0;
+    if (t >= 0 && t < SPD.dur && SPD.n > 0) {
+      projTo(_q, SPD.wx, SPD.wz, SPD.wy);
+      if (_q[2] < 1) {
+        const k = t / SPD.dur, diag = Math.hypot(W, H), r0 = Math.max(70, H * SPD.inner);
+        c2.globalCompositeOperation = 'source-over'; c2.fillStyle = SPD.col; c2.globalAlpha = SPD.a * (k < 0.35 ? 1 : 1 - (k - 0.35) / 0.65);
+        c2.beginPath();
+        for (let i = 0; i < SPD.n; i++) {
+          const an = rnd(SPD.seed, i) * 6.2832, ri = r0 * (1 + 1.1 * rnd(SPD.seed, i + 50)) * (1 + 0.3 * k), wd = (1.5 + 6 * rnd(SPD.seed, i + 99) * rnd(SPD.seed, i + 7)) * (1 - 0.5 * k) * Math.max(1, H / 720);
+          const ca = Math.cos(an), sa = Math.sin(an), px = -sa, py = ca;
+          c2.moveTo(_q[0] + ca * ri, _q[1] + sa * ri);
+          c2.lineTo(_q[0] + ca * diag + px * wd * 3, _q[1] + sa * diag + py * wd * 3);
+          c2.lineTo(_q[0] + ca * diag - px * wd * 3, _q[1] + sa * diag - py * wd * 3);
+          c2.closePath();
+        }
+        c2.fill();
+      }
+    }
+    // dash streaks behind dodging / dashing heroes
+    const Hs = typeof gfxHeroes === 'function' ? gfxHeroes() : null;
+    if (Hs) for (let i = 0; i < Hs.length; i++) {
+      const h = Hs[i]; if (!h || h.dead || !(h.dodgeT > 0 || h.dash)) continue;
+      const gh = groundH(h.x, h.y), hu = headH(h), fx = h.dash ? h.dash.ux : (h.fx === undefined ? 1 : h.fx), fy = h.dash ? h.dash.uy : (h.fy || 0);
+      projTo(_q, h.x, h.y, gh + hu * 0.45); projTo(_r, h.x - fx, h.y - fy, gh + hu * 0.45); if (_q[2] > 1) continue;
+      let dx = _q[0] - _r[0], dy = _q[1] - _r[1]; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+      const p = h.dash ? 1 : clamp(h.dodgeT / 0.34, 0, 1), sc = PPU / 34, n = qk() < 0.5 ? 3 : 6;
+      c2.globalCompositeOperation = 'lighter'; c2.strokeStyle = SYS; c2.lineCap = 'round';
+      for (let j = 0; j < n; j++) {
+        const o = (rnd(7.1, j) - 0.5) * 44 * sc, len = (40 + 90 * rnd(3.3, j + (frameNo >> 2))) * sc * (0.4 + p), s0 = (8 + 14 * rnd(5.7, j)) * sc;
+        const ax = _q[0] - dx * s0 - dy * o, ay = _q[1] - dy * s0 + dx * o - hu * 0.0;
+        c2.globalAlpha = 0.55 * p * (0.5 + 0.5 * rnd(9.9, j)); c2.lineWidth = (1 + 2 * rnd(2.2, j)) * sc;
+        c2.beginPath(); c2.moveTo(ax, ay); c2.lineTo(ax - dx * len, ay - dy * len); c2.stroke();
+      }
+      c2.lineCap = 'butt';
+    }
+    c2.globalAlpha = 1; c2.globalCompositeOperation = 'source-over';
+  };
+
+  /* ---------- game events ---------- */
+  const SEEN = new WeakSet();
+  function heroCol(h) {
+    const st = typeof heroStatsOf === 'function' ? heroStatsOf(h) : (h === P ? S : null), el = st && st.welem;
+    if (el && ELC[el]) return ELC[el];
+    const wt = (typeof heroWtype === 'function' ? heroWtype(h) : st && st.wtype) || 'fist', sw = SWINGCOL[wt] || SWINGCOL.sword;
+    return sw[0];
+  }
+  const nearHero = (x, y, r) => { const Hs = typeof gfxHeroes === 'function' ? gfxHeroes() : null; let b = null, bd = r; if (Hs) for (let i = 0; i < Hs.length; i++) { const h = Hs[i]; if (!h || h.dead) continue; const d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; b = h; } } return b; };
+  const nearMob = (x, y, r) => { let b = null, bd = r; for (let i = 0; i < mobs.length; i++) { const m = mobs[i]; const d = Math.hypot(m.x - x, m.y - y); if (d < bd) { bd = d; b = m; } } return b; };
+  const lead = () => typeof ctrlHero === 'function' ? ctrlHero() : P;
+  let cutsThisFrame = 0;
+  function onSpark(f) {
+    const q = qk();
+    if (f.hurt) {   // a monster's blow on a hero
+      const h = nearHero(f.x, f.y, 0.6) || P, m = nearMob(h.x, h.y, 4.5); if (!m) return;
+      const dx = h.x - m.x, dy = h.y - m.y, boss = !!(m.d && m.d.boss);
+      if (cutsThisFrame++ < 3) cut(h.x, f.h, h.y, Math.atan2(-(dx * -SPRF.sy + dy * -SPRF.cy), dx * SPRF.rx + dy * SPRF.ry) + 1.2, boss ? 2.3 : 1.5, boss ? 0.16 : 0.1, 0.5, boss ? '#ff5a3a' : '#ff8a6a', 0.15);
+      if (h === lead()) { punch(dx, dy, (boss ? 0.2 : 0.06) * q); if (boss) flash(0.18, 0, '#ffd0c0', 0.07); }
+      return;
+    }
+    const m = nearMob(f.x, f.y, 0.5), h = nearHero(f.x, f.y, 9) || P; if (!h) return;
+    let dx = f.x - h.x, dy = f.y - h.y; if (Math.hypot(dx, dy) < 0.05) { dx = h.fx === undefined ? 1 : h.fx; dy = h.fy || 0; }
+    const v = VIS.get(h), heavy = !!(v && v.heavySwing && h.atkAnim >= 0) || HITSTOP >= 0.085, fin = h.combo === 3 && h.atkAnim >= 0;
+    const skill = !!(v && v.skillT !== undefined && time - v.skillT < 0.8), boss = !!(m && m.d && m.d.boss), crit = !!f.crit;
+    const hex = skill ? (A.stats.cuts & 1 ? SYS : SYS2) : heroCol(h);
+    const sr = dx * SPRF.rx + dy * SPRF.ry, sf = dx * -SPRF.sy + dy * -SPRF.cy, ang = Math.atan2(sf, sr), j = rnd(f.x + f.y, frameNo) - 0.5;
+    const mh = m ? headH(m) : 1, size = clamp(mh * 0.95, 0.9, 2.4) * (heavy ? 1.2 : fin ? 1.1 : 1);
+    if (cutsThisFrame++ < 4) {
+      cut(f.x, f.h, f.y, ang + 1.25 + j * 0.5, size, heavy ? 0.15 : 0.1, 0.45 + j * 0.3, hex, heavy ? 0.2 : 0.16);
+      if (crit || heavy) cut(f.x, f.h, f.y, ang - 0.95 + j * 0.4, size * 0.85, heavy ? 0.12 : 0.08, -0.4, crit ? '#fff4d8' : hex, 0.18);
+    }
+    if (h === lead()) punch(dx, dy, (heavy ? 0.18 : crit ? 0.12 : fin ? 0.1 : 0.045) * (boss ? 1.25 : 1) * q);
+    if (heavy || crit || fin) speed(f.x, f.h, f.y, crit ? '#fff8ec' : '#f4f6ff', heavy ? 0.12 : 0.09, heavy ? 44 : 32, heavy ? 0.8 : 0.62);
+    if (crit && heavy) flash(0.22, 0.85, '#ffffff', 0.08);
+    else if (heavy || (crit && boss)) flash(0.22, boss ? 0.85 : 0, '#ffffff', boss ? 0.08 : 0.06);
+    else if (crit) flash(0.16, 0, '#fff4e0', 0.05);
+    else if (boss && fin) flash(0.14, 0, '#ffffff', 0.05);
+  }
+  A.frame = function () {
+    cutsThisFrame = 0;
+    if (!on() || !started) { for (let i = 0; i < fxs.length; i++) SEEN.add(fxs[i]); return; }
+    for (let i = 0; i < fxs.length; i++) { const f = fxs[i]; if (f.k !== 'spark' || SEEN.has(f)) continue; SEEN.add(f); if (f.t < 0.1) onSpark(f); }
+  };
+  A.flush = function () { if (on()) ghostsFlush(); else { for (let i = 0; i < GN; i++) G[i].on = false; A.stats.ghosts = 0; if (GH) { GH.mesh.visible = false; GH.mesh.count = 0; } } };
+  A.sync = function () { if (on()) cutsSync(); else { CUT.mesh.visible = false; CUT.mesh.count = 0; } };
+  // Per sheet vis, after it is placed (gfx-sheets.js syncSheetHero / syncSheetMob). J: body sheet json; y: feet height.
+  A.sprite = function (v, e, J, act, f, st, flip, y, hero) {
+    if (!on() || e.dead) { v.aAct = null; return; }
+    const a = J.actions && J.actions[act], q = qk(), nf = v.aAct !== act || v.aF !== f;
+    if (nf) {
+      v.aAct = act; v.aF = f;
+      if (a && a.fx && a.fx[f] && (hero ? e === lead() : !!P && Math.hypot(e.x - P.x, e.y - P.y) < 8)) {
+        const cue = a.fx[f], gh = groundH(e.x, e.y), hc = hero ? heroCol(e) : '#ff8a5a';
+        if (cue === 'speed') speed(e.x, gh + headH(e) * 0.5, e.y, '#f4f6ff', 0.1, 34, 0.6);
+        else if (cue === 'flash') flash(0.18, 0, '#ffffff', 0.06);
+        else if (cue === 'impact') { punch(e.fx === undefined ? 1 : e.fx, e.fy || 0, 0.08 * q); speed(e.x + (e.fx || 0) * 0.8, gh + headH(e) * 0.5, e.y + (e.fy || 0) * 0.8, '#fff4ec', 0.08, 26, 0.55); }
+      }
+      if (a && Array.isArray(a.smear) && a.smear.indexOf(f) >= 0) ghostSnap(v, e, y, flip, st, hero ? heroCol(e) : '#ff9a6a', 0.6, 0.22 * (0.6 + 0.4 * q), 0.22);
+    }
+    // dodge / dash / leap trails (game time, so they hold during a hit-stop)
+    const dash = hero ? (e.dodgeT > 0 || !!e.dash) : !!e.leap;
+    const big = hero && e.atkAnim >= 0 && e.atkAnim < 0.45 && (v.heavySwing || e.combo === 3);
+    if (dash || big) {
+      const gap = (dash ? 0.04 : 0.05) / (q < 0.5 ? 0.5 : 1);
+      if (!(time - (v.aGT || -9) < gap)) {
+        v.aGT = time;
+        ghostSnap(v, e, y, flip, st, dash ? ((frameNo >> 1) & 1 ? SYS : SYS2) : heroCol(e), dash ? 0.5 : 0.42, (dash ? 0.24 : 0.16) * (0.6 + 0.4 * q), dash ? 0 : 0.1);
+      }
+    }
+  };
+  // A skill fired (gfx-sheets.js animSkillFired): system glow around the caster.
+  A.skill = function (h) {
+    if (!on() || !h) return;
+    const v = VIS.get(h), gh = groundH(h.x, h.y);
+    if (h === lead()) speed(h.x, gh + headH(h) * 0.5, h.y, '#9fb8ff', 0.14, 30, 0.5);
+    if (v && v.sheet && v.layers && v.st) ghostSnap(v, h, gh + (h.z || 0) / PXU, v.diag ? !!v.diag.flip : false, v.st, SYS2, 0.5, 0.26, 0.15);
+  };
+  A.on = on;
+  return A;
+})();
+function animeSprite(v, e, J, act, f, st, flip, y, hero) { ANIME.sprite(v, e, J, act, f, st, flip, y, hero); }
+function animeSkillFx(h, pd) { ANIME.skill(h, pd); }

@@ -42,7 +42,14 @@ const SHEETS = {
   indexLeft: SHEET_INDEX_FILES.length, indexReady: false, indexFiles: [],
   loaded: [], failed: [], requests: 0,
   gen: 0,            // bumped when the index is registered (cached hero layer wants depend on which sheets exist)
+  proto: false,      // ?anim=proto: the anime-animation prototype sheets (assets/sprites-proto/) were asked for
 };
+/* Anime prototype (design/anime-anim-contract.md): with the URL query ?anim=proto, assets/sprites-proto/index_proto.json is
+   registered before every shipped index, so its sheets win over shipped sheets with the same ids (first registration
+   wins); each of its entries loads from that folder (entry.base). A missing proto index is skipped like any other. */
+const SHEET_PROTO_BASE = 'assets/sprites-proto/';
+SHEETS.proto = typeof location !== 'undefined' && /[?&]anim=proto(?:&|$)/.test(location.search || '');
+const sheetBase = rec => (rec.entry && rec.entry.base) || SHEET_BASE;
 const HAIR_GREY = 0.72;            // neutral grey the hair sheets are painted in (tinted by the palette ramp: hairRamp() in gfx-render.js)
 const LAYER_ORDER = ['body', 'mob', 'npc', 'pet', 'hair', 'headgear', 'shield', 'weapon'];
 const WTYPE_VARIANT = { dagger: 'dagger', sword: 'sword', rod: 'rod', bow: 'bow', mace: 'mace',
@@ -90,17 +97,24 @@ const sheetKey = (body, layer, variant) => body + '|' + layer + '|' + (variant |
 // Index key of an entry: mounted sheets live under 'mount:<layer>' (never chosen for an on-foot layer).
 const entryKey = e => sheetKey(e.body, e.mounted ? 'mount:' + e.layer : e.layer, e.variant);
 // First registration of an id (and of a body|layer|variant key) wins: duplicates are ignored, never loaded twice.
-function registerIndex(file, j) {
+function registerIndex(file, j, base) {
   SHEETS.indexFiles.push(file);
   for (const s of (j && Array.isArray(j.sheets) ? j.sheets : [])) {
     const e = sheetEntry(s); if (!e || !e.body || SHEETS.entries[e.id]) continue;
+    if (base) e.base = (j && typeof j.base === 'string' && j.base) || base;
     SHEETS.entries[e.id] = e; const k = entryKey(e); if (!SHEETS.byKey[k]) SHEETS.byKey[k] = e.id;
   }
 }
 function loadIndexes() {
-  const got = new Array(SHEET_INDEX_FILES.length).fill(null);
+  const got = new Array(SHEET_INDEX_FILES.length).fill(null), pro = { j: null };
+  if (SHEETS.proto) SHEETS.indexLeft++;
   // register in list order once every file has answered (or failed), so the winner of a duplicate id is deterministic
-  const fin = () => { if (--SHEETS.indexLeft > 0) return; SHEET_INDEX_FILES.forEach((f, i) => { if (got[i]) registerIndex(f, got[i]); }); SHEETS.indexReady = true; SHEETS.gen++; prefetchSheets(); };
+  const fin = () => {
+    if (--SHEETS.indexLeft > 0) return;
+    if (pro.j) registerIndex(SHEET_PROTO_BASE + 'index_proto.json', pro.j, SHEET_PROTO_BASE);
+    SHEET_INDEX_FILES.forEach((f, i) => { if (got[i]) registerIndex(f, got[i]); }); SHEETS.indexReady = true; SHEETS.gen++; prefetchSheets();
+  };
+  if (SHEETS.proto) sheetXHR(SHEET_PROTO_BASE + 'index_proto.json', j => { pro.j = j; fin(); }, e => { if (typeof console !== 'undefined') console.info('[sheets] ?anim=proto: no proto index (' + (e && e.message || e) + ')'); fin(); });
   SHEET_INDEX_FILES.forEach((f, i) => sheetXHR(SHEET_BASE + f, j => { got[i] = j; fin(); }, fin));
 }
 // Top of the opaque pixels in the idle S frame -> visible height above the feet (px).
@@ -147,14 +161,14 @@ function loadSheet(id) {
     else { SHEETS.failed.push(id); if (rec.tex) { rec.tex.dispose(); rec.tex = null; } if (rec.pal) { rec.pal.tex.dispose(); rec.pal = null; } }
     rec.done = true;
   };
-  sheetXHR(SHEET_BASE + id + '.json', j => { rec.json = j; fin(); }, fin);
+  sheetXHR(sheetBase(rec) + id + '.json', j => { rec.json = j; fin(); }, fin);
   if (palOn()) sheetLoadPal(rec, fin); else sheetLoadRGBA(rec, fin);
   return rec;
 }
 // RGBA path (WebGL1, no workers, a sheet the palette path rejects): the PNG as an image texture.
 function sheetLoadRGBA(rec, fin) {
   try {
-    new THREE.TextureLoader().load(SHEET_BASE + rec.id + '.png', t => {
+    new THREE.TextureLoader().load(sheetBase(rec) + rec.id + '.png', t => {
       t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; if (typeof sprTexEnc === 'function') sprTexEnc(t);
       t.onUpdate = () => { rec.upd = true; };
       if (SHEETS.byId[rec.id] !== rec) { t.dispose(); return fin(new Error('released')); }
@@ -245,7 +259,7 @@ function sheetLoadPalSync(rec, fin) {
     } catch (e) { SHEET_PAL.fails++; sheetLoadRGBA(rec, fin); }
   };
   img.onerror = () => fin(new Error(rec.id + '.png failed to load'));
-  img.src = SHEET_BASE + rec.id + '.png';
+  img.src = sheetBase(rec) + rec.id + '.png';
 }
 function palWorker() {
   if (!SHEET_PAL.workers.length) {
@@ -271,7 +285,7 @@ function sheetLoadPal(rec, fin) {
   if (SHEET_SYNC) return sheetLoadPalSync(rec, fin);
   const fallback = why => { SHEET_PAL.fails++; if (typeof console !== 'undefined') console.warn('[sheets] ' + rec.id + ': indexed decode failed (' + why + '), loading RGBA'); sheetLoadRGBA(rec, fin); };
   try {
-    const x = new XMLHttpRequest(); x.open('GET', SHEET_BASE + rec.id + '.png', true); x.responseType = 'arraybuffer';
+    const x = new XMLHttpRequest(); x.open('GET', sheetBase(rec) + rec.id + '.png', true); x.responseType = 'arraybuffer';
     x.onload = () => {
       if (!((x.status === 200 || x.status === 0) && x.response && x.response.byteLength)) return fin(new Error(rec.id + '.png -> HTTP ' + x.status));
       if (!palOn()) return sheetLoadRGBA(rec, fin);
@@ -663,7 +677,68 @@ function sheetFrame(json, act, f, phase) {
 }
 // Pose helpers (no per-call closures): frame count / fps of an action, frames since an action started.
 const actN = (A, a) => (A[a] ? A[a].frames : 1), actFps = (A, a) => (A[a] && A[a].fps) || 8;
-function actHeld(v, A, a) { if (v.act !== a) { v.act = a; v.actT = time; } return Math.floor((time - v.actT) * actFps(A, a)); }
+function actHeld(v, A, a) { if (v.act !== a) { v.act = a; v.actT = time; } return hasDurs(A[a]) ? durF(A[a], time - v.actT, false) : Math.floor((time - v.actT) * actFps(A, a)); }
+
+/* ---------- Anime timing (design/anime-anim-contract.md) ----------
+   An action may carry `durs` (ms per frame), `hit` (impact frame; else the sheet's top-level hit map), `smear` (frames
+   drawn with after-images) and `fx` ({frame: 'impact' | 'speed' | 'flash'}). Every branch below that reads them is
+   taken only when the action has `durs`, so sheets without it play exactly as before (fps).
+   Attacks with durs + hit are time-warped so the impact frame shows on the game moment the damage lands (core.js /
+   action.js timers: the hero's light swing hits swing * 0.45 s after it starts, the heavy 0.2 s after release, a
+   click-mode attack 0.13 s, a monster's melee 0.32 s): frames 0..hit-1 are squeezed or stretched to fit, the impact
+   frame and the recovery after it play at their authored durations (v.clip keeps the recovery going after atkAnim
+   ends, until the hero moves or does something else). */
+// Cumulative frame start times (s) of an action with durs, cached on the action (null without durs).
+function durCum(a) {
+  if (a._cum !== undefined) return a._cum;
+  const d = a.durs, n = Math.max(1, a.frames | 0);
+  if (!Array.isArray(d) || !d.length) return (a._cum = null);
+  const c = new Float32Array(n + 1);
+  for (let i = 0; i < n; i++) { const ms = +d[Math.min(i, d.length - 1)]; c[i + 1] = c[i] + Math.max(0.008, (ms > 0 ? ms : 100) / 1000); }
+  return (a._cum = c);
+}
+const hasDurs = a => !!(a && a.durs && durCum(a));
+// Frame of an action with durs at t seconds into it (loop: wraps; else holds the last frame).
+function durF(a, t, loop) {
+  const c = durCum(a); if (!c) return 0;
+  const n = c.length - 1, T = c[n];
+  if (loop) t = ((t % T) + T) % T; else if (t >= T) return n - 1;
+  for (let i = 0; i < n; i++) if (t < c[i + 1]) return i;
+  return n - 1;
+}
+// Looping action frame at time t (seconds): durs when present, else the sheet's fps as before.
+// Length of an action in seconds (durs, else frames / fps).
+function actTotal(A, a) { const x = A[a]; if (!x) return 0; const c = durCum(x); return c ? c[c.length - 1] : actN(A, a) / actFps(A, a); }
+function actLoopF(A, a, t) { const x = A[a]; return hasDurs(x) ? durF(x, t, true) : Math.floor(t * actFps(A, a)); }
+function actHit(J, act) { const a = J.actions[act]; if (a && a.hit !== undefined) return a.hit | 0; const h = J.hit && J.hit[act]; return h === undefined ? -1 : h | 0; }
+// A skill's damage lands when it fires (execSkill): its `skill` clip starts 60 ms before the impact frame, so the
+// impact pose shows with the damage numbers (the windup is the cast before it). 0 without durs or hit.
+function skillLead(J) { const a = J.actions.skill, c = a && durCum(a), hit = actHit(J, 'skill'); return c && hit > 0 && hit < c.length - 1 ? Math.max(0, c[hit] - 0.06) : 0; }
+// Hit timing hint from action.js (animHitHint): when the attack that started at t0 lands, or -1.
+function animHitHint(h, delay, kind) { if (!h) return; const hs = HGFX.get(h) || (typeof heroState === 'function' ? heroState(h) : null); if (!hs) return; hs.hitAt = time; hs.hitDelay = delay; hs.hitKind = kind || ''; }
+function heroHitDelay(h, t0, heavy) {
+  const hs = HGFX.get(h);
+  if (hs && hs.hitAt !== undefined && Math.abs(hs.hitAt - t0) < 0.035) return hs.hitDelay;
+  return heavy ? 0.2 : 0.13;
+}
+// Start (or continue) the warped clip of an attack on vis v. e: seconds since the attack started; tHit: when its
+// damage lands (<= 0: no warp); s0: first frame (the heavy's release starts after its charge frames). Returns the frame.
+function clipStart(v, J, act, e, tHit, s0) {
+  const a = J.actions[act], c = durCum(a); if (!c) return 0;
+  const n = c.length - 1, hit = actHit(J, act), base = c[Math.min(s0, n - 1)];
+  const C = v.clip || (v.clip = { act: '', t0: 0, tHit: 0, Th: 0, s0: 0, base: 0, end: 0, J: null });
+  C.act = act; C.J = J; C.t0 = time - e; C.s0 = s0; C.base = base;
+  if (hit > s0 && hit < n && tHit > 0.01) { C.Th = c[hit] - base; C.tHit = tHit; } else { C.Th = 0; C.tHit = 0; }
+  C.end = C.t0 + (C.tHit > 0 ? C.tHit + (c[n] - base - C.Th) : c[n] - base);
+  return clipF(C, time);
+}
+function clipF(C, t) {
+  const e = t - C.t0, a = C.J.actions[C.act];
+  const u = C.tHit > 0 ? (e < C.tHit ? e * C.Th / C.tHit : C.Th + (e - C.tHit)) : e;
+  return durF(a, C.base + Math.max(0, u), false);
+}
+// The recovery of the last warped clip is still playing (only for the sheet it was started on).
+const clipLive = (v, J) => !!(v.clip && v.clip.J === J && time < v.clip.end && time >= v.clip.t0);
 const TINT_ONE = [1, 1, 1], TINT_DODGE = [0.85, 0.9, 1], TINT_CHARGE = [1.0, 0.85, 0.5], TINT_FROZEN = [0.55, 0.8, 1];
 
 /* ---------- Player pose -> action/frame ---------- */
@@ -681,19 +756,37 @@ function sheetPlayerPose(v, body, h) {
   if (h.atkAnim >= 0 || h.charge >= 0 || h.blocking) v.combatT = time;
   const pk = time - (h.pickupAt === undefined ? -99 : h.pickupAt);
 
+  // anime sheets (contract): a skill that just fired plays `skill` once (animSkillFired)
+  const sk = v.skillT !== undefined && sheetHas(body, 'skill') && time - v.skillT < actTotal(A, 'skill') - skillLead(body) ? time - v.skillT : -1;
+  if (!(h.atkAnim >= 0) && h.casting) v.clip = null;
   if (h.dead) { act = 'dead'; f = actHeld(v, A, 'dead'); }
-  else if (h.dodgeT > 0) { act = 'dodge'; f = Math.floor((1 - h.dodgeT / 0.34) * actN(A, 'dodge')); tint = TINT_DODGE; }
+  else if (h.dodgeT > 0) { act = 'dodge'; const p = 1 - h.dodgeT / 0.34; f = hasDurs(A.dodge) ? durF(A.dodge, p * actTotal(A, 'dodge'), false) : Math.floor(p * actN(A, 'dodge')); tint = TINT_DODGE; }
+  else if (h.dash && sheetHas(body, 'dash')) {
+    act = 'dash'; if (v.dashObj !== h.dash) { v.dashObj = h.dash; v.dashT0 = time; }
+    f = hasDurs(A.dash) ? clipStart(v, body, 'dash', time - v.dashT0, 0, 0) : actHeld(v, A, 'dash');   // durs: the recovery plays on after the move (v.clip)
+  }
   else if (h.charge >= 0) { act = 'heavy'; f = Math.min(1, Math.floor(h.charge / 0.8 * 2)); if (h.charge >= 0.8 && Math.floor(time * 12) % 2) tint = TINT_CHARGE; }
-  else if (v.heavySwing) { act = 'heavy'; const k = actN(A, 'heavy'), s0 = Math.min(2, k - 1); f = s0 + Math.floor(h.atkAnim * (k - s0)); }
+  else if (v.heavySwing) {
+    act = 'heavy'; const k = actN(A, 'heavy'), s0 = Math.min(2, k - 1);
+    f = hasDurs(A.heavy) ? clipStart(v, body, 'heavy', h.atkAnim / 3.2, heroHitDelay(h, time - h.atkAnim / 3.2, true), s0) : s0 + Math.floor(h.atkAnim * (k - s0));
+  }
   else if (h.blocking) { act = 'block'; f = actHeld(v, A, 'block'); }
-  else if (h.casting) { act = 'cast'; f = Math.floor(time * actFps(A, 'cast')) % actN(A, 'cast'); }
-  else if (h.atkAnim >= 0) { const c = h.combo > 0 ? h.combo : v.swings; act = c % 2 === 0 ? 'attack2' : 'attack1'; f = Math.floor(h.atkAnim * actN(A, act)); }
+  else if (h.casting) { act = 'cast'; f = actLoopF(A, 'cast', time) % actN(A, 'cast'); }
+  else if (sk >= 0) { act = 'skill'; f = hasDurs(A.skill) ? durF(A.skill, sk + skillLead(body), false) : Math.floor(sk * actFps(A, 'skill')); }
+  else if (h.atkAnim >= 0) {
+    const c = h.combo > 0 ? h.combo : v.swings;
+    if (sheetHas(body, 'attack3') && (h.combo > 0 ? c === 3 : c % 3 === 0)) act = 'attack3';
+    else act = sheetHas(body, 'attack3') && !(h.combo > 0) ? (c % 3 === 2 ? 'attack2' : 'attack1') : c % 2 === 0 ? 'attack2' : 'attack1';
+    const Aa = A[act];
+    f = hasDurs(Aa) ? clipStart(v, body, act, h.atkAnim / 3.2, heroWtype(h) === 'bow' ? 0 : heroHitDelay(h, time - h.atkAnim / 3.2, false), 0) : Math.floor(h.atkAnim * actN(A, act));
+  }
+  else if (!h.moving && !(h.hurtT > 0.12) && clipLive(v, body)) { act = v.clip.act; f = clipF(v.clip, time); }
   else if (h.hurtT > 0.12) { act = 'hurt'; f = actHeld(v, A, 'hurt'); }
   else if (pk >= 0 && pk < 0.3 && sheetHas(body, 'pickup')) { act = 'pickup'; f = Math.floor(pk / 0.3 * actN(A, 'pickup')); }
   else if (h.sitting) { act = 'sit'; f = 0; }
-  else if (h.moving) { act = 'walk'; f = Math.floor(h.walk * 1.26 * actN(A, 'walk') / 6 * (v.stride || 1)) % actN(A, 'walk'); }
-  else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = Math.floor(time * actFps(A, 'stance')) % actN(A, 'stance'); }
-  else { act = 'idle'; f = Math.floor(time * actFps(A, 'idle')) % actN(A, 'idle'); }
+  else if (h.moving) { act = 'walk'; f = hasDurs(A.walk) ? durF(A.walk, h.walk * 1.26 / 6 * (v.stride || 1) * actTotal(A, 'walk'), true) : Math.floor(h.walk * 1.26 * actN(A, 'walk') / 6 * (v.stride || 1)) % actN(A, 'walk'); }
+  else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = actLoopF(A, 'stance', time) % actN(A, 'stance'); }
+  else { act = 'idle'; f = actLoopF(A, 'idle', time) % actN(A, 'idle'); }
   const r = sheetFrame(body, act, f), ra = r ? r.act : 'idle', rf = r ? r.f : 0;
   if (v.act !== ra) { v.act = ra; v.actT = time; }
   const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = ra; o.f = rf; o.tint = tint; return o;
@@ -705,14 +798,15 @@ function activeTele(m) { if (typeof teles === 'undefined') return null; for (con
 function sheetMobPose(m, v, J) {
   const A = J.actions, ph = (m.id % 7) * 0.37;
   let act, f, tint, opacity, t;
-  if (m.dead) { act = 'dead'; f = Math.floor((m.deathT || 0) * actFps(A, 'dead')); }   // death: pixel dissolve (sprFrame), not a fade
+  if (m.dead) { act = 'dead'; f = hasDurs(A.dead) ? durF(A.dead, m.deathT || 0, false) : Math.floor((m.deathT || 0) * actFps(A, 'dead')); }   // death: pixel dissolve (sprFrame), not a fade
   else if (m.frozen > 0) { act = 'hurt'; f = 0; tint = TINT_FROZEN; }
-  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = actHeld(v, A, 'hurt'); }   // hit: white flash + squash (sprFrame)
-  else if (m.atkAnim >= 0) { act = 'attack'; f = Math.floor(m.atkAnim * actN(A, 'attack')); }
-  else if (m.leap) { act = 'walk'; f = Math.floor(time * actFps(A, 'walk') * 1.5); }
+  else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = actHeld(v, A, 'hurt'); if (v.clip) v.clip = null; }   // hit: white flash + squash (sprFrame)
+  else if (m.atkAnim >= 0) { act = 'attack'; f = hasDurs(A.attack) ? clipStart(v, J, 'attack', m.atkAnim / 3, m.d.ranged ? 0 : 0.32, 0) : Math.floor(m.atkAnim * actN(A, 'attack')); }
+  else if (m.leap) { act = sheetHas(J, 'dash') ? 'dash' : 'walk'; f = act === 'dash' ? actHeld(v, A, 'dash') : Math.floor(time * actFps(A, 'walk') * 1.5); }
   else if (m.d.boss && (t = activeTele(m))) { act = sheetHas(J, 'skill') ? 'skill' : 'attack'; f = Math.floor(clamp(t.t / t.dur, 0, 0.999) * actN(A, act)); }
-  else if (m.moving) { act = 'walk'; f = Math.floor(m.walk * 1.26 * actN(A, 'walk') / 6); }
-  else { act = 'idle'; f = Math.floor(time * actFps(A, 'idle') + ph); }
+  else if (!m.moving && clipLive(v, J)) { act = v.clip.act; f = clipF(v.clip, time); }
+  else if (m.moving) { act = 'walk'; f = hasDurs(A.walk) ? durF(A.walk, m.walk * 1.26 / 6 * actTotal(A, 'walk'), true) : Math.floor(m.walk * 1.26 * actN(A, 'walk') / 6); }
+  else { act = 'idle'; f = hasDurs(A.idle) ? durF(A.idle, time + ph * 0.2, true) : Math.floor(time * actFps(A, 'idle') + ph); }
   const r = sheetFrame(J, act, f, ph); if (!r) return null;
   if (v.act !== r.act) { v.act = r.act; v.actT = time; }
   const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = r.act; o.f = r.f; o.tint = tint; o.opacity = opacity; return o;
@@ -983,6 +1077,7 @@ function syncSheetHero(h) {
   const dg = v.diag || (v.diag = { ids: v.layers.map(L => L.id), layers: v.layers.map(L => L.layer), hb });
   dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.d = dd; dg.flip = dflip; dg.sector = v.sector; dg.rect = pl.rect;
   sprMotion(v, h, st, h.sheetH / PXU, pl.gh);
+  if (typeof animeSprite === 'function') animeSprite(v, h, body, pose.act, pose.f, st, dflip, pl.gh + pl.z, true);
   return true;
 }
 function syncSheetPlayer() { return syncSheetHero(P); }   // (the name tools/perf.js times as sync.player)
@@ -1042,6 +1137,7 @@ function syncSheetMob(m) {
   const hu = rec.visH * k / PXU;
   if (v.glow) { v.glow.position.set(m.x, gh + pz + hu / COSP * 0.5, m.y); const gs = hu * (ghost ? 1.6 : 2.2); v.glow.scale.set(gs, gs, 1); v.glow.material.opacity = ghost ? 0.14 : 0.55; v.glow.visible = !m.dead; }
   sprMotion(v, m, st, hu, gh);
+  if (typeof animeSprite === 'function') animeSprite(v, m, J, pose.act, pose.f, st, dflip, gh + pz, false);
   const dg = v.diag || (v.diag = { id: rec.id }); dg.act = pose.act; dg.f = pose.f; dg.dir = dname; dg.flip = dflip; dg.rect = rect;
   return true;
 }
@@ -1260,3 +1356,25 @@ if (typeof headH === 'function') {
   headH = function (e) { return e && e.sheetH > 0 ? e.sheetH / PXU / COSP : baseHeadH(e); };
 }
 loadIndexes();
+
+/* ---------- Anime prototype: skill moments ----------
+   execSkill (core.js) is a global function declaration called by name, so wrapping the global binding reaches every
+   caller (useSkill, cast completion, squad allies run in their own P context). A skill that really fired (its cooldown
+   was set) plays the sheet's optional `skill` action once and the cold "system" glow (animeSkillFx, gfx-render.js). */
+function animSkillFired(h, pd) {
+  const v = h && VIS.get(h); if (v) v.skillT = time;
+  if (typeof animeSkillFx === 'function') animeSkillFx(h, pd);
+}
+if (typeof execSkill === 'function' && !execSkill._anime) {
+  const execSkill0 = execSkill;
+  try {
+    // eslint-disable-next-line no-global-assign
+    execSkill = function (pd) {
+      const h = typeof P !== 'undefined' ? P : null, id = pd && pd.id, cd0 = h && h.cd && id ? h.cd[id] : undefined;
+      const r = execSkill0.apply(this, arguments);
+      try { if (h && !h.dead && id && h.cd && h.cd[id] !== cd0) animSkillFired(h, pd); } catch (e) { /* never break a skill */ }
+      return r;
+    };
+    execSkill._anime = true;
+  } catch (e) { /* execSkill not writable: the skill action stays unused */ }
+}

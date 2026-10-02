@@ -38,7 +38,8 @@ const POST = (() => {
   const LUMA = 'float luma(vec3 c){ return dot(c, vec3(0.2126, 0.7152, 0.0722)); }';
   // 4 bilinear taps = 16-texel box; the prefilter adds a soft-knee threshold + Karis average (no fireflies)
   const mPre = mat(`uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uExp, uThr, uKnee; varying vec2 vUv; ${LUMA}
-    vec3 thr(vec3 c){ c = min(c * uExp, vec3(60.0)); float br = max(c.r, max(c.g, c.b)); float soft = clamp(br - uThr + uKnee, 0.0, 2.0 * uKnee); soft = soft * soft / (4.0 * uKnee + 1e-4);
+    vec3 thr(vec3 c){ c = clamp(c * uExp, vec3(0.0), vec3(60.0));   // clamp also drops NaN / negative texels: one would be spread into a black block by the mip chain
+      float br = max(c.r, max(c.g, c.b)); float soft = clamp(br - uThr + uKnee, 0.0, 2.0 * uKnee); soft = soft * soft / (4.0 * uKnee + 1e-4);
       return c * max(soft, br - uThr) / max(br, 1e-4); }
     void main(){ vec2 o = uTexel;
       vec3 a = thr(texture2D(tSrc, vUv + vec2(-o.x, -o.y)).rgb), b = thr(texture2D(tSrc, vUv + vec2(o.x, -o.y)).rgb), c = thr(texture2D(tSrc, vUv + vec2(-o.x, o.y)).rgb), d = thr(texture2D(tSrc, vUv + o).rgb);
@@ -60,7 +61,7 @@ const POST = (() => {
     void main(){ vec3 s = texture2D(tSrc, vUv).rgb * 0.2270270270;
       s += (texture2D(tSrc, vUv + uDir * 1.3846153846).rgb + texture2D(tSrc, vUv - uDir * 1.3846153846).rgb) * 0.3162162162;
       s += (texture2D(tSrc, vUv + uDir * 3.2307692308).rgb + texture2D(tSrc, vUv - uDir * 3.2307692308).rgb) * 0.0702702703;
-      gl_FragColor = vec4(s, 1.0); }`,
+      gl_FragColor = vec4(clamp(s, vec3(0.0), vec3(65000.0)), 1.0); }`,
   { tSrc: tex(), uDir: v2() });
 
   /* ---------- shared noise (R,G: tileable fbm, B: white noise), heightmap fallback ---------- */
@@ -147,10 +148,11 @@ const POST = (() => {
     uMistC: { value: new THREE.Color() }, uMist: { value: new THREE.Vector4() }, uMistN: { value: new THREE.Vector4() },
     uFogC: { value: new THREE.Color() }, uMistL: { value: new THREE.Vector2(1, 0) }, uFogH: { value: new THREE.Vector3() }, uVolC: { value: new THREE.Color() }, uAOk: { value: 1 }, uVolE: { value: 0 },
     uHeat: { value: new THREE.Vector4() }, uScnSize: v2(),
+    uImp: { value: new THREE.Vector4() },   // anime impact frame (gfx-render.js ANIME): x = invert amount, yzw = flash tint (premultiplied)
   };
   const FS_COMP = `uniform sampler2D tScene, tBloom, tDofA, tDofB, tDepth, tAtmo, tNoise, tHgt; uniform vec2 uScnSize;
     uniform float uExp, uBloom, uFocus, uBand, uRamp, uTop, uBot, uVig, uGrain, uTime, uSat, uCon, uAOk, uVolE;
-    uniform vec3 uLift, uGamma, uGain, uShT, uHiT, uMistC, uFogC, uFogH, uVolC; uniform vec4 uMist, uMistN, uHeat, uHgt; uniform vec2 uMistL; uniform vec2 uAtTexel; varying vec2 vUv;
+    uniform vec3 uLift, uGamma, uGain, uShT, uHiT, uMistC, uFogC, uFogH, uVolC; uniform vec4 uMist, uMistN, uHeat, uHgt, uImp; uniform vec2 uMistL; uniform vec2 uAtTexel; varying vec2 vUv;
     ${WPOS}
     vec3 aces(vec3 c){
       const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
@@ -236,6 +238,7 @@ const POST = (() => {
       float v = smoothstep(0.28, 0.82, length(vUv - 0.5));
       c *= 1.0 - uVig * v;
       c += (hash(gl_FragCoord.xy + fract(uTime * 7.31) * vec2(113.1, 71.7)) - 0.5) * uGrain * (1.0 - l * 0.5);
+      c = mix(c, vec3(1.0) - c, uImp.x) + uImp.yzw * (1.0 - c);   // impact frame: (partial) inversion + a screen-blended flash
       gl_FragColor = vec4(c, 1.0);
     }`;
   const COMP = {}; let mComp = null;
@@ -341,6 +344,7 @@ const POST = (() => {
     U.uVig.value = R.vignette; U.uGrain.value = R.grain; U.uTime.value = t;
     U.uLift.value.fromArray(G.lift); U.uGamma.value.fromArray(G.gamma); U.uGain.value.fromArray(G.gain); U.uShT.value.fromArray(G.shadowTint); U.uHiT.value.fromArray(G.highTint);
     U.uSat.value = G.sat; U.uCon.value = G.contrast;
+    if (typeof ANIME !== 'undefined' && ANIME.imp) U.uImp.value.copy(ANIME.imp); else U.uImp.value.set(0, 0, 0, 0);
     if (mist) {
       const M = R.mist || { amt: 0 }, F = R.hfog || { amt: 0 };
       linL(M, M.col || R.haze, M.k || 1, U.uMistC.value); U.uMistL.value.set(M.amb === undefined ? 1 : M.amb, M.lit || 0); U.uMist.value.set(M.amt || 0, M.h || 0.8, M.max || 0.5, M.scatter || 0);

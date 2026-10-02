@@ -835,6 +835,7 @@ function handleAct(act, e) {
     case 'petegg': petToEgg(); break;
     case 'petrename': { const el = $('petname'); if (el) petRename(el.value); UI.petDraft = null; break; }
     case 'gfxq': if (typeof GFX !== 'undefined' && GFX.setQuality) { GFX.setQuality(b); log(`Graphics: ${b}.`, 'sys'); } break;
+    case 'gfxanime': if (typeof GFX !== 'undefined') { GFX.animeFx = GFX.animeFx === false; store('aom-animefx', GFX.animeFx ? '1' : '0'); log(`Anime combat effects ${GFX.animeFx ? 'on' : 'off'}.`, 'sys'); } break;
     case 'gfxauto': if (typeof GFX !== 'undefined') { GFX.auto = !GFX.auto; store('aom-gfx-auto', GFX.auto ? 'on' : 'off'); if (!GFX.auto && GFX.setLevel) GFX.setLevel(0); log(`Auto quality ${GFX.auto ? 'on' : 'off'}.`, 'sys'); } break;
     default: if (ACTS[a]) ACTS[a](b, c, e);   // round 8: actions registered by later sections
   }
@@ -1399,7 +1400,7 @@ let lastT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
-  if (HITSTOP > 0) { HITSTOP -= dt; dt *= 0.12; }
+  if (HITSTOP > 0) { HITSTOP -= dt; dt *= typeof hitstopScale === 'function' ? hitstopScale() : 0.12; }
   try {
     if (started) hover = pickAt(mouse.x, mouse.y);
     update(dt);
@@ -1796,6 +1797,7 @@ function gfxOptionsHTML() {
   const qs = ['low', 'medium', 'high', 'ultra'];
   return `<div class="sec">Graphics</div><div class="tabs">${qs.map(q => `<button class="btn ${GFX.quality === q ? 'on' : ''}" data-act="gfxq:${q}">${q[0].toUpperCase() + q.slice(1)}</button>`).join('')}</div>
     <div class="row" style="justify-content:space-between;gap:8px;margin-top:4px"><button class="btn ${GFX.auto ? 'on' : ''}" data-act="gfxauto">${GFX.auto ? '☑' : '☐'} Auto quality</button><span class="muted" id="gfxinfo" style="font-size:11.5px">${gfxInfoText()}</span></div>
+    <div class="row" style="margin-top:4px"><button class="btn ${typeof GFX !== 'undefined' && GFX.animeFx !== false ? 'on' : ''}" data-act="gfxanime">${typeof GFX !== 'undefined' && GFX.animeFx !== false ? '☑' : '☐'} Anime combat effects</button></div>
     <p class="muted" style="font-size:11px;margin:4px 0 0">Low is for phones and old laptops; Ultra wants a strong graphics card. Auto lowers the render scale and effects when frames run slow and raises them again when there is headroom. Both are remembered in this browser.</p>`;
 }
 (function () {

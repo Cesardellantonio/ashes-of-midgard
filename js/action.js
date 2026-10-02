@@ -8,6 +8,23 @@
    ========================================================= */
 const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, padPrev: [], lock: null };
 let HITSTOP = 0, SHAKE = 0;
+/* Anime timing hooks (design/anime-anim-contract.md):
+   - animHitHint (gfx-sheets.js) is told when each swing's damage lands, so sheets with per-frame `durs` show their
+     impact frame on that moment (damage numbers, hit flash and the hit-stop all start there).
+   - hitstopScale(): the game-time scale during a hit-stop (ui.js frame(), when it has the hook). With anime effects on
+     (GFX.animeFx) it is a near-freeze for the first ~60% of the stop, then eases back out; otherwise the old flat 0.12.
+   - animeStop(old, anime): the stop length of a landed melee arc, a touch longer with anime effects on. */
+const HSTOP = { peak: 0, last: 0 };
+const animeOn = () => typeof GFX !== 'undefined' && GFX.animeFx !== false;
+function hitstopScale() {
+  if (!animeOn()) return 0.12;
+  if (HITSTOP > HSTOP.last + 1e-4 || HSTOP.peak < HITSTOP) HSTOP.peak = HITSTOP;
+  HSTOP.last = HITSTOP;
+  const p = HSTOP.peak > 0 ? 1 - Math.max(0, HITSTOP) / HSTOP.peak : 1;
+  return p < 0.6 ? 0.025 : 0.025 + 0.55 * ((p - 0.6) / 0.4) * ((p - 0.6) / 0.4);
+}
+const animeStop = (old, anime) => animeOn() ? anime : old;
+const hitHint = (delay, kind) => { if (typeof animHitHint === 'function') animHitHint(P, delay, kind); };
 const isAction = () => CTRL.mode === 'action';
 const WINKEYS = {
   action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap', KeyP: 'pet' },
@@ -135,6 +152,7 @@ function actLight() {
   const mul = [1, 1.12, 1.6][step];
   if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, fin ? { knock: 1.5, from: { x: P.x, y: P.y } } : {}); attackProcs(t); }); Sfx.bow(); return; }
   stepMove(P.fx * 0.18, P.fy * 0.18);
+  hitHint(swing * 0.45, fin ? 'fin' : 'light');
   after(swing * 0.45, () => { if (!P.dead && meleeArc(S.range + (fin ? 0.5 : 0.25), fin ? 0.15 : 0.35, mul, { knock: fin ? 1.6 : 0.3, stun: fin ? 0.55 : 0.22, from: { x: P.x, y: P.y } }) && t && !t.dead) attackProcs(t); });
   Sfx.swing();
   if (fin) after(swing * 0.45, () => ring(P.x + P.fx * 0.9, P.y + P.fy * 0.9, 1.1, '#fff0b0'));
@@ -152,6 +170,7 @@ function actHeavyRelease() {
   P.atkAnim = 0; P.swingT = 0.5; const mul = 1.6 + c * 1.4;
   if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, { knock: 2, from: { x: P.x, y: P.y } }); burst(t.x, t.y, 30, '#fff0b0', 14, 3); }, { spd: 26 }); Sfx.bow(); return; }
   stepMove(P.fx * 0.4, P.fy * 0.4);
+  hitHint(0.2, 'heavy');
   after(0.2, () => {
     if (P.dead) return;
     const n = meleeArc(S.range + 0.6 + c * 0.7, -0.1, mul, { knock: 2 + c, stun: 0.8, heavy: true, from: { x: P.x, y: P.y } });
@@ -177,7 +196,7 @@ function meleeArc(range, cone, mul, o) {
     for (let k = 0; k < idx.length; k++) one(L[idx[k]]);
     for (let i = n0; i < L.length; i++) one(L[i]);
   }
-  if (hit) { HITSTOP = Math.max(HITSTOP, o.heavy ? 0.09 : 0.045); if (o.heavy) SHAKE = Math.max(SHAKE, 0.2); }
+  if (hit) { HITSTOP = Math.max(HITSTOP, o.heavy ? animeStop(0.09, 0.11) : o.knock > 1 ? animeStop(0.045, 0.07) : animeStop(0.045, 0.05)); if (o.heavy) SHAKE = Math.max(SHAKE, 0.2); }
   return hit;
 }
 function actDodge() {
