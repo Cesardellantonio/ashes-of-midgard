@@ -336,10 +336,20 @@ function sprFrame(v, e, o) {
   st.flash[0] = toLin(fc[0]); st.flash[1] = toLin(fc[1]); st.flash[2] = toLin(fc[2]); st.flash[3] = fl;
   const tq = time - (v.sqT === undefined ? -9 : v.sqT);
   if (tq >= 0 && tq < 0.4) { const a = 0.16 * Math.exp(-tq * 11) * Math.cos(tq * 30); st.sx = 1 + a; st.sy = 1 - a * 0.85; } else { st.sx = 1; st.sy = 1; }
+  if (e.jump && !e.dead && !v.jumpArt) jumpSquash(st, e.jump);
   // death: pixel dissolve into embers/ash (mobs are removed at deathT 0.8)
   if (e.dead && !hero && e.deathT !== undefined) { st.dis = clamp((e.deathT - 0.26) / 0.5, 0, 1); if (st.dis > 0.02) st.cast = false; st.a = 1; const ch = 1 - 0.6 * smoothstep(0, 0.5, st.dis); st.col[0] *= ch; st.col[1] *= ch * 0.92; st.col[2] *= ch * 0.88; }
   if (o.ghost) { st.a *= 0.66 + 0.1 * Math.sin(time * 2.3 + (e.id || 0)); st.fade = 0.85; st.zoff = 0.1 + Math.sin(time * 1.9 + (e.id || 0) * 0.7) * 0.07; st.col[0] *= 0.66; st.col[1] *= 0.84; st.col[2] *= 1.0; st.rim[0] *= 0.4; st.rim[1] *= 0.6; st.rim[2] *= 0.9; }
   return st;
+}
+// Procedural hop (a sheet without a `jump` action, or a procedural sprite): crouch squash, a stretch on the way up
+// that relaxes at the apex, a light stretch falling, a squash on touch-down (action.js JUMP phases).
+function jumpSquash(st, J) {
+  const C = typeof JUMP !== 'undefined' ? JUMP : { crouch: 0.07, air: 0.45, land: 0.1 }; let a = 0;
+  if (J.ph === 'crouch') a = 0.17 * Math.min(1, J.t / C.crouch);
+  else if (J.ph === 'air') { const p = J.t / C.air; a = p < 0.5 ? -0.13 * (1 - p * 2) : -0.05 * smoothstep(0.6, 1, p); }
+  else if (J.ph === 'land') a = 0.19 * (1 - Math.min(1, J.t / C.land));
+  st.sx *= 1 + a * 0.85; st.sy *= 1 - a;
 }
 function sprApply(mat, st, flip) {
   const u = mat.userData.u; mat.color.setRGB(st.col[0], st.col[1], st.col[2]); mat.opacity = st.a;
@@ -722,6 +732,10 @@ function sprMotion(v, e, st, hu, gh) {
     const hero = isHeroE(e);
     if (v.step !== undefined && step !== v.step) { PFX.dust(e.x, gh, e.y, hero ? (v.mounted ? 5 : 3) : 2, v.mounted ? 1.6 : (e.d && e.d.size) || 1); if (hero && VFX.step) VFX.step(e, gh, !!v.mounted); }   // mounted: the warg's gallop kicks up more; powder on snow (VFX)
     v.step = step;
+  }
+  if (e.jumpLandAt !== undefined && v.jumpLand !== e.jumpLandAt) {   // a jump touched down (action.js): dust ring + flipbook puff
+    v.jumpLand = e.jumpLandAt;
+    if (time - e.jumpLandAt < 0.25) { PFX.dust(e.x, gh, e.y, v.mounted ? 12 : 8, v.mounted ? 1.7 : 1.25); if (typeof VFX !== 'undefined' && VFX.flip) VFX.flip('impact_dust', e.x, e.y, gh, { sc: v.mounted ? 1.1 : 0.8, a: 0.8 }); }
   }
   if (isHeroE(e)) {
     if (e.dodgeT > 0 && !(v.dodging)) PFX.dust(e.x, gh, e.y, v.mounted ? 12 : 7, v.mounted ? 1.8 : 1.3);
@@ -3072,10 +3086,12 @@ const ANIME = (() => {
         const cue = a.fx[f], gh = groundH(e.x, e.y), hc = hero ? heroCol(e) : '#ff8a5a';
         if (cue === 'speed') speed(e.x, gh + headH(e) * 0.5, e.y, '#f4f6ff', 0.1, 34, 0.6);
         else if (cue === 'flash') flash(0.18, 0, '#ffffff', 0.06);
+        else if (cue === 'dust') PFX.dust(e.x, gh, e.y, hero ? 4 : 5, 0.9);
         else if (cue === 'impact') { punch(e.fx === undefined ? 1 : e.fx, e.fy || 0, 0.08 * q); speed(e.x + (e.fx || 0) * 0.8, gh + headH(e) * 0.5, e.y + (e.fy || 0) * 0.8, '#fff4ec', 0.08, 26, 0.55); }
       }
       if (a && Array.isArray(a.smear) && a.smear.indexOf(f) >= 0) ghostSnap(v, e, y, flip, st, hero ? heroCol(e) : '#ff9a6a', 0.6, 0.22 * (0.6 + 0.4 * q), 0.22);
     }
+    if (hero && e.jumpAt !== undefined && v.aJump !== e.jumpAt) { v.aJump = e.jumpAt; if (time - e.jumpAt < 0.1) ghostSnap(v, e, groundH(e.x, e.y), flip, st, SYS, 0.5, 0.22 * (0.6 + 0.4 * q), 0); }   // take-off echo left on the ground
     // dodge / dash / leap trails (game time, so they hold during a hit-stop)
     const dash = hero ? (e.dodgeT > 0 || !!e.dash) : !!e.leap;
     const big = hero && e.atkAnim >= 0 && e.atkAnim < 0.45 && (v.heavySwing || e.combo === 3);

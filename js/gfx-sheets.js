@@ -142,9 +142,15 @@ function measureSheet(rec) {
 function validateSheet(rec) {
   const j = rec.json; j._bad = {};
   if (!j.actions || !j.dirs || !j.dirs.length || !j.frameW || !j.frameH || !j.anchor) { rec.err = rec.id + ': JSON missing frameW/frameH/anchor/dirs/actions'; return false; }
+  const lin = j.layout === 'linear';
+  if (lin) j._cols = Math.max(1, (j.cols | 0) || Math.floor(rec.texW / j.frameW));
   for (const a in j.actions) {
-    const A = j.actions[a], r = sheetRect(j, a, j.dirs.length - 1, (A.frames | 0) - 1);
-    if (!r || r.x + r.w > rec.texW || r.y + r.h > rec.texH) j._bad[a] = true;
+    const A = j.actions[a];
+    // blocks: the last direction's last frame is the furthest; linear: every direction slot is checked
+    for (let d = lin ? 0 : j.dirs.length - 1; d < j.dirs.length; d++) {
+      const r = sheetRect(j, a, d, (A.frames | 0) - 1), r0 = lin ? sheetRect(j, a, d, 0) : null;
+      if (!r || r.x + r.w > rec.texW || r.y + r.h > rec.texH || (r0 && (r0.x < 0 || r0.y < 0))) { j._bad[a] = true; break; }
+    }
   }
   const bad = Object.keys(j._bad); if (bad.length && typeof console !== 'undefined') console.warn('[sheets] ' + rec.id + ': actions outside the PNG, ignored: ' + bad.join(', '));
   return true;
@@ -338,7 +344,7 @@ function palBuild(rec, d) {
 function sheetPageDefs(rec) {
   const j = rec.json, H = rec.texH, fh = j.frameH, one = [{ y0: 0, h: H, tex: rec.tex || null, gpu: false, used: 0, q: false }];
   // mob sheets only: the player's layers keep every page resident anyway (sheetWantAll keep), so paging them saves nothing
-  if (!rec.pal || rec.texW * H < PAGE_MIN || !pageOn() || ((rec.entry && rec.entry.layer) || j.layer) !== 'mob') return one;
+  if (!rec.pal || rec.texW * H < PAGE_MIN || !pageOn() || ((rec.entry && rec.entry.layer) || j.layer) !== 'mob' || j.layout === 'linear') return one;   // (linear sheets: one page)
   const nd = j.dirs.length; let base = 0;
   for (const a of ['idle', 'walk', 'talk']) {
     if (!sheetHas(j, a)) continue;
@@ -634,11 +640,21 @@ if (typeof GFX !== 'undefined' && GFX) {
 /* ---------- Frame math ---------- */
 function sheetHas(json, a) { return !!(json.actions && json.actions[a] && json.actions[a].frames > 0 && !(json._bad && json._bad[a])); }
 // Pixel rect of frame f of `action` in sheet direction index d (index into json.dirs). out: optional rect to fill.
+/* Layout 'linear' (packer output for sheets whose blocks layout would pass 4096 px): every frame at a fixed
+   frameW x frameH, packed row-major, cols = json.cols or floor(image width / frameW) (validateSheet caches it as
+   json._cols); each action has start: [i_S, i_SE, i_E, i_NE, i_N] (a frame index per direction slot of json.dirs) and
+   frames. Linear sheets are never paged (sheetPageDefs). Everything downstream works on the rects, so batches, hero
+   batches, palettes, x-ray, head anchors and after-images need nothing else. */
+function linCols(json) { return json._cols || Math.max(1, (json.cols | 0) || 1); }
 function sheetRect(json, action, d, f, out) {
   const a = json.actions[action]; if (!a) return null;
   const fw = json.frameW, fh = json.frameH, n = Math.max(1, a.frames | 0), nd = json.dirs.length;
   f = Math.max(0, Math.min(n - 1, f | 0)); d = Math.max(0, Math.min(nd - 1, d | 0));
   const r = out || { x: 0, y: 0, w: 0, h: 0 }; r.w = fw; r.h = fh;
+  if (json.layout === 'linear') {   // frames packed row-major; frame f of direction slot d is frame start[d] + f
+    const cols = linCols(json), st = a.start, i = (Array.isArray(st) ? (st[Math.min(d, st.length - 1)] | 0) : (st | 0) + d * n) + f;
+    r.x = (i % cols) * fw; r.y = Math.floor(i / cols) * fh; return r;
+  }
   if (json.layout === 'blocks' || json.layout === 'dir-blocks') {
     const bpr = json.layout === 'blocks' ? Math.max(1, json.blocksPerRow | 0 || nd) : nd, mf = json.maxFrames || n;
     const block = a.row * nd + d, bx = block % bpr, by = Math.floor(block / bpr);
@@ -721,6 +737,28 @@ function heroHitDelay(h, t0, heavy) {
   if (hs && hs.hitAt !== undefined && Math.abs(hs.hitAt - t0) < 0.035) return hs.hitDelay;
   return heavy ? 0.2 : 0.13;
 }
+/* Jump (action.js heroJump): the sheet's optional `jump` action. With `phase: { crouch: [..], air: [..], land: [..] }`
+   each phase plays its own frames over its own time (durs when they cover it, else spread evenly; the air frames are
+   spread over the airborne time, so a rise / apex / fall set reads at any jump length); without phases the whole
+   action is spread over crouch + air + land. Without a `jump` action the hero keeps its frame and sprFrame squashes and
+   stretches it (gfx-render.js jumpSquash), so every class jumps. */
+function jumpPhaseT(ph) { const J = typeof JUMP !== 'undefined' ? JUMP : null; return J ? (ph === 'crouch' ? J.crouch : ph === 'air' ? J.air : J.land) : 0.2; }
+function jumpFrame(J, jp) {
+  const a = J.actions.jump, n = Math.max(1, a.frames | 0), c = durCum(a), P_ = a.phase && a.phase[jp.ph];
+  if (Array.isArray(P_) && P_.length) {
+    const T = jumpPhaseT(jp.ph), k = clamp(jp.t / Math.max(0.01, T), 0, 0.999);
+    if (c && jp.ph !== 'air') {   // crouch / land: the authored holds, scaled to the phase time (every frame shows)
+      let sum = 0; for (let i = 0; i < P_.length; i++) { const f = Math.min(P_[i] | 0, n - 1); sum += c[f + 1] - c[f]; }
+      let acc = 0; const u = k * sum;
+      for (let i = 0; i < P_.length; i++) { const f = Math.min(P_[i] | 0, n - 1); acc += c[f + 1] - c[f]; if (u < acc) return f; }
+      return P_[P_.length - 1] | 0;
+    }
+    return P_[Math.min(P_.length - 1, Math.floor(k * P_.length))] | 0;
+  }
+  const tot = jumpPhaseT('crouch') + jumpPhaseT('air') + jumpPhaseT('land');
+  const u = (jp.ph === 'crouch' ? 0 : jp.ph === 'air' ? jumpPhaseT('crouch') : jumpPhaseT('crouch') + jumpPhaseT('air')) + jp.t;
+  return c ? durF(a, u / tot * c[n], false) : Math.min(n - 1, Math.floor(u / tot * n));
+}
 // Start (or continue) the warped clip of an attack on vis v. e: seconds since the attack started; tHit: when its
 // damage lands (<= 0: no warp); s0: first frame (the heavy's release starts after its charge frames). Returns the frame.
 function clipStart(v, J, act, e, tHit, s0) {
@@ -760,6 +798,7 @@ function sheetPlayerPose(v, body, h) {
   const sk = v.skillT !== undefined && sheetHas(body, 'skill') && time - v.skillT < actTotal(A, 'skill') - skillLead(body) ? time - v.skillT : -1;
   if (!(h.atkAnim >= 0) && h.casting) v.clip = null;
   if (h.dead) { act = 'dead'; f = actHeld(v, A, 'dead'); }
+  else if (h.jump && sheetHas(body, 'jump')) { act = 'jump'; f = jumpFrame(body, h.jump); }
   else if (h.dodgeT > 0) { act = 'dodge'; const p = 1 - h.dodgeT / 0.34; f = hasDurs(A.dodge) ? durF(A.dodge, p * actTotal(A, 'dodge'), false) : Math.floor(p * actN(A, 'dodge')); tint = TINT_DODGE; }
   else if (h.dash && sheetHas(body, 'dash')) {
     act = 'dash'; if (v.dashObj !== h.dash) { v.dashObj = h.dash; v.dashT0 = time; }
@@ -802,6 +841,7 @@ function sheetMobPose(m, v, J) {
   else if (m.frozen > 0) { act = 'hurt'; f = 0; tint = TINT_FROZEN; }
   else if (m.hitFlash > 0 || m.stun > 0) { act = 'hurt'; f = actHeld(v, A, 'hurt'); if (v.clip) v.clip = null; }   // hit: white flash + squash (sprFrame)
   else if (m.atkAnim >= 0) { act = 'attack'; f = hasDurs(A.attack) ? clipStart(v, J, 'attack', m.atkAnim / 3, m.d.ranged ? 0 : 0.32, 0) : Math.floor(m.atkAnim * actN(A, 'attack')); }
+  else if (m.leap && !m.leap.flat && sheetHas(J, 'jump')) { act = 'jump'; const L = m.leap, k = clamp(L.t / Math.max(0.01, L.dur), 0, 0.999), ph = J.actions.jump.phase, air = ph && Array.isArray(ph.air) && ph.air.length ? ph.air : null; f = air ? air[Math.floor(k * air.length)] | 0 : Math.floor(k * actN(A, 'jump')); }
   else if (m.leap) { act = sheetHas(J, 'dash') ? 'dash' : 'walk'; f = act === 'dash' ? actHeld(v, A, 'dash') : Math.floor(time * actFps(A, 'walk') * 1.5); }
   else if (m.d.boss && (t = activeTele(m))) { act = sheetHas(J, 'skill') ? 'skill' : 'attack'; f = Math.floor(clamp(t.t / t.dur, 0, 0.999) * actN(A, act)); }
   else if (!m.moving && clipLive(v, J)) { act = v.clip.act; f = clipF(v.clip, time); }
@@ -1069,7 +1109,7 @@ function syncSheetHero(h) {
   v.xrayOn = h === lead ? undefined : !h.dead && heroOccluded(h);
   v.sector = facingSector(h.fx === undefined ? 1 : h.fx, h.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body, h);
-  const so = v.so || (v.so = { tint: undefined }); so.tint = pose.tint;
+  const so = v.so || (v.so = { tint: undefined }); so.tint = pose.tint; v.jumpArt = pose.act === 'jump';
   const st = sprFrame(v, h, so);
   const pl = hb ? heroHBFrame(v, h, pose.act, dd, pose.f, dflip, st) : placeSheetVis(v, h, pose.act, dd, pose.f, dflip, st, h.hair);
   placeBlob(v, h.x, pl.gh, h.y, v.mounted ? 0.85 : 0.45, pl.z, true);
@@ -1155,7 +1195,7 @@ function syncSheetNPC(n) {
   // escorted NPCs (n.moving, n.walk, n.fx/fy) play `walk` when the sheet has it (contract v3), else idle
   const walk = !talk && n.moving && sheetHas(J, 'walk');
   const want = talk && sheetHas(J, 'talk') ? 'talk' : walk ? 'walk' : 'idle', A = J.actions[want] || {};
-  const fr = walk ? Math.floor((n.walk || time * 6) * 1.26 * (A.frames || 6) / 6) : Math.floor(time * (A.fps || 6) + n.x);
+  const fr = walk ? (hasDurs(A) ? durF(A, (n.walk || time * 6) * 1.26 / 6 * actTotal(J.actions, 'walk'), true) : Math.floor((n.walk || time * 6) * 1.26 * (A.frames || 6) / 6)) : (hasDurs(A) ? durF(A, time + n.x * 0.37, true) : Math.floor(time * (A.fps || 6) + n.x));   // durs-timed NPC sheets (round 13)
   const r = sheetFrame(J, want, fr); if (!r) { n.sheetH = 0; disposeVis(v); VIS.delete(n); return false; }
   const ract = r.act, rf = r.f;
   const dir = sectorToDir(J, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name;

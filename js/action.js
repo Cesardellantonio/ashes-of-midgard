@@ -3,7 +3,8 @@
    Action controls: play with the keyboard (or a gamepad)
    instead of clicking. WASD moves relative to the camera,
    J light-attack combo, K charged heavy, L block (tap early
-   to parry), Space dodge roll with invulnerability frames.
+   to parry), Space dodge roll with invulnerability frames,
+   Shift jump (classic mode: Space; gamepad: RT).
    Click-to-move keeps working alongside it.
    ========================================================= */
 const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, padPrev: [], lock: null };
@@ -32,7 +33,7 @@ const WINKEYS = {
 };
 // Comma is not an action key: ui.js opens the World Map on ',' in both modes (and on W in classic mode).
 const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet' };
-const ACTION_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN', 'KeyR', 'KeyP']);   // round 6: R rides / dismounts, P opens the Pet window
+const ACTION_KEYS = new Set(['ShiftLeft', 'ShiftRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN', 'KeyR', 'KeyP']);   // round 6: R rides / dismounts, P opens the Pet window
 
 function setCtrlMode(m) {
   CTRL.mode = m; store('aom-ctrl', m); CTRL.keys.clear(); if (P) P.blocking = false;
@@ -69,8 +70,16 @@ addEventListener('keydown', e => {
     case 'KeyF': actInteract(); break;
     case 'Tab': actLockCycle(); break;
     case 'KeyR': toggleMount(); break;
+    case 'ShiftLeft': case 'ShiftRight': if (!(typeof mouse !== 'undefined' && mouse.down)) heroJump(P); break;   // (Shift held for a camera drag does not jump)
   }
 }, true);
+// Classic mode: Space jumps (ui.js leaves Space alone outside dialogs; action mode handles its own keys above).
+addEventListener('keydown', e => {
+  if (e.code !== 'Space' || isAction() || !started || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON')) return;
+  if (!$('dialog').hidden || !$('death').hidden) return;
+  e.preventDefault(); heroJump(P);
+});
 addEventListener('keyup', e => {
   CTRL.keys.delete(e.code);
   if (!started || !P) return;
@@ -105,7 +114,7 @@ function pollPad(dt) {
   const rsx = dz(gp.axes[2] || 0); if (rsx) { cam.yawT -= rsx * dt * 2.2; cam.yaw = cam.yawT; }
   const b = i => !!(gp.buttons[i] && gp.buttons[i].pressed), prev = CTRL.padPrev, down = i => b(i) && !prev[i], up = i => !b(i) && prev[i];
   if (started && $('dialog').hidden) {
-    if (down(2)) actLight(); if (down(3)) actHeavyStart(); if (up(3)) actHeavyRelease();
+    if (down(2)) actLight(); if (down(3)) actHeavyStart(); if (up(3)) actHeavyRelease(); if (down(7)) heroJump(P);   // RT jumps
     // cycle 8: with companions the right bumper takes control of the next hero (squadCycle); the left one still blocks
     const rbSwap = typeof PARTY !== 'undefined' && PARTY && PARTY.members.length > 1 && typeof squadCycle === 'function';
     if (down(1)) actDodge(); if (down(4) || (down(5) && !rbSwap)) actBlock(true); if ((up(4) || up(5)) && !b(4) && !(b(5) && !rbSwap)) actBlock(false);
@@ -141,7 +150,7 @@ function actLockCycle() {
 }
 
 /* ---------- Moves ---------- */
-function canAct() { return P && !P.dead && !P.casting && !(P.dodgeT > 0); }
+function canAct() { return P && !P.dead && !P.casting && !(P.dodgeT > 0) && !P.jump; }
 function actLight() {
   if (!canAct() || P.charge >= 0) return;
   if (P.swingT > 0) { if (P.swingT < 0.3) P.queued = 'light'; return; }
@@ -200,7 +209,7 @@ function meleeArc(range, cone, mul, o) {
   return hit;
 }
 function actDodge() {
-  if (!P || P.dead || P.dodgeT > 0) return;
+  if (!P || P.dead || P.dodgeT > 0 || P.jump) return;
   if (P.stamina < 22) { floatText(P, 'Tired', 'miss'); return; }
   if (P.casting) cancelCast();
   P.stamina -= 22; P.stamT = 0.7;
@@ -257,6 +266,7 @@ function actionUpdate(dt) {
   if (P.comboT > 0) { P.comboT -= dt; if (P.comboT <= 0) P.combo = 0; }
   if (CTRL.lock && (CTRL.lock.dead || dist(CTRL.lock, P) > 14)) CTRL.lock = null;
   let busy = false;
+  if (P.jump) { jumpMove(dt); P.moving = false; return true; }   // airborne / landing: momentum + air control, no attacks or paths
   if (P.dodgeT > 0) {
     P.dodgeT -= dt; const k = Math.max(0, P.dodgeT / 0.34); stepMove(P.fx * (4 + 7 * k) * dt, P.fy * (4 + 7 * k) * dt);
     if (Math.random() < 0.5) parts.push({ x: P.x + rand(-0.2, 0.2), y: P.y + rand(-0.2, 0.2), z: 2, vx: -P.fx * 0.5, vy: -P.fy * 0.5, vz: rand(10, 30), life: 0.35, max: 0.35, col: '#d8d0c0', size: 2.5 });
@@ -275,6 +285,80 @@ function actionUpdate(dt) {
   } else if (busy || P.blocking) P.moving = false;
   if (P.blocking) busy = true;
   return busy;
+}
+
+/* ---------- Jumping (cosmetic this round; climbing / height layers plug in later) ----------
+   heroJump(h) starts a jump: a short crouch (JUMP.crouch s), an airborne arc of JUMP.air s peaking JUMP.peak sprite px
+   high (h.z, h.vz; the renderer draws the sprite at h.z and shrinks its contact shadow), then a landing recovery
+   (JUMP.land s). h.jump = { ph: 'crouch' | 'air' | 'land', t, vx, vy, x0, y0, map, onLand }. Horizontal motion keeps
+   the take-off momentum plus a little air control and goes through stepMove, so collision is exactly the walking one.
+   Hooks for later traversal: JUMP.canLand(x, y, z, h) (default: walkable ground; a refusal puts the hero back where
+   it left the ground), JUMP.onLand(h) and h.jump.onLand(h) callbacks, JUMP.peak / JUMP.air per jump. Monsters hit an
+   airborne hero as usual; warps wait for the landing (postMove is held while airborne); saves never store z (SAVE_KEYS).
+   The renderer reads h.jumpAt (lift-off) and h.jumpLandAt (touch-down) for take-off after-images and landing dust. */
+const JUMP = { crouch: 0.07, air: 0.45, peak: 0.9 * (typeof PXU !== 'undefined' ? PXU : 36), land: 0.1, airCtl: 0.3,
+  canLand: (x, y, z, h) => !blocked(x, y), onLand: null };
+function heroJump(h, o) {
+  if (!h || h.dead || h.jump || !started || h.dodgeT > 0 || h.casting || h.dash || h.charge >= 0 || h.blocking) return false;
+  if (typeof TRAVEL !== 'undefined' && TRAVEL.lock) return false;
+  let vx = 0, vy = 0;
+  if (h === P) {
+    const v = moveInput(), spd = (typeof S !== 'undefined' ? S.move : 4) * (typeof surfMul === 'function' ? surfMul(h) : 1);
+    if (v) { vx = v[0] * spd; vy = v[1] * spd; h.fx = v[0]; h.fy = v[1]; }
+    else if (h.moving) { const n = hyp(h.fx || 0, h.fy || 0) || 1; vx = (h.fx || 0) / n * spd; vy = (h.fy || 0) / n * spd; }
+  }
+  h.sitting = false; h.z = 0; h.vz = 0;
+  h.jump = { ph: 'crouch', t: 0, vx, vy, x0: h.x, y0: h.y, map: typeof map !== 'undefined' ? map : null, onLand: o && o.onLand || null };
+  return true;
+}
+// Controlled hero, airborne: momentum + air control (through the walking collision); still while crouching / landing.
+function jumpMove(dt) {
+  const J = P.jump; if (J.ph !== 'air') return;
+  const v = moveInput(), spd = S.move * JUMP.airCtl;
+  let dx = J.vx * dt, dy = J.vy * dt;
+  if (v) { dx += v[0] * spd * dt; dy += v[1] * spd * dt; P.fx = v[0]; P.fy = v[1]; }
+  stepMove(dx, dy);
+}
+function jumpLand(h, J) {
+  h.z = 0; h.vz = 0;
+  if (!JUMP.canLand(h.x, h.y, 0, h)) { h.x = J.x0; h.y = J.y0; }
+  J.ph = 'land'; J.t = 0; h.jumpLandAt = time;
+  try { if (J.onLand) J.onLand(h); if (JUMP.onLand) JUMP.onLand(h); } catch (e) { console.error(e); }
+}
+function jumpTick(h, dt) {
+  const J = h.jump; if (!J) return;
+  if (typeof map !== 'undefined' && J.map !== map) { h.jump = null; h.z = 0; h.vz = 0; return; }   // the map changed under the jump
+  J.t += dt;
+  if (J.ph === 'crouch') { if (J.t >= JUMP.crouch) { J.ph = 'air'; J.t -= JUMP.crouch; h.jumpAt = time; } else return; }
+  if (J.ph === 'air') {
+    const T = JUMP.air, v0 = 4 * JUMP.peak / T, g = 2 * v0 / T, t = Math.min(J.t, T);
+    h.z = Math.max(0, v0 * t - g * t * t / 2); h.vz = v0 - g * t;
+    if (J.t >= T) jumpLand(h, J);
+    return;
+  }
+  if (J.ph === 'land' && J.t >= JUMP.land) h.jump = null;
+}
+// Every hero's jump advances each tick, whatever it is doing (dead, swapped out of control, behind a dash).
+const _JH = [null];
+function jumpTickAll(dt) {
+  if (typeof P === 'undefined' || !P) return;
+  const L = typeof PARTY !== 'undefined' && PARTY && PARTY.members && PARTY.members.length > 1 ? PARTY.members : (_JH[0] = P, _JH);
+  for (let i = 0; i < L.length; i++) if (L[i] && L[i].jump) jumpTick(L[i], dt);
+  if (P.jump && L.indexOf(P) < 0) jumpTick(P, dt);
+}
+if (typeof update === 'function' && !update._jump) {
+  const update0 = update;
+  try { update = function (dt) { const r = update0.apply(this, arguments); jumpTickAll(dt); return r; }; update._jump = true; } catch (e) { /* not writable */ }
+}
+// No skills in the air (attacks are refused by canAct; a click-mode target waits for the landing).
+if (typeof useSkill === 'function' && !useSkill._jump) {
+  const useSkill0 = useSkill;
+  try { useSkill = function () { if (P && P.jump && P.jump.ph !== 'land') return; return useSkill0.apply(this, arguments); }; useSkill._jump = true; } catch (e) { /* not writable */ }
+}
+// Warps (and zeny pick-up) wait for the landing: postMove (core.js) is held while the controlled hero is off the ground.
+if (typeof postMove === 'function' && !postMove._jump) {
+  const postMove0 = postMove;
+  try { postMove = function () { if (P && P.jump && P.jump.ph !== 'land') return; return postMove0.apply(this, arguments); }; postMove._jump = true; } catch (e) { /* not writable */ }
 }
 
 /* ---------- Hooks into the renderer's tables (files owned by the graphics / performance teams) ----------
