@@ -180,9 +180,45 @@ const SPR_OUT = `
   gl_FragColor = vec4( outgoingLight, diffuseColor.a * sprFade );
 }
 `;
+/* Glitch fix (C3): pixel snap. Sheets are drawn NEAREST at a non-integer scale (~1.6 screen px per sprite px), so a
+   sprite whose feet land at a different sub-pixel offset every frame re-quantises its texel columns (some 1 px, some
+   2 px wide, and which ones changes): characters walking across the screen shimmer. Every sprite vertex shader moves
+   the whole quad so its anchor (the feet: the plane's origin, or the hero batch's iPos) sits on a whole pixel of the
+   render target; all layers, the hat and the x-ray of one character share the anchor, so they stay aligned. The sun
+   casters and the after-image ghosts are not snapped. uSnapRes = the 3D target in px (syncEntities); 0 turns it off
+   (window.AOM_SPR_SNAP = false: A/B captures). */
+const SNAPU = { uSnapRes: { value: new THREE.Vector2(0, 0) } };
+const SNAP_MESH = 'projectionMatrix * modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)', SNAP_INST = 'projectionMatrix * modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)', SNAP_HB = 'projectionMatrix * modelViewMatrix * vec4(iPos.xyz, 1.0)';
+// pull: GLSL float, NDC depth to move toward the camera (the layer pull below), or '' for none.
+function sprSnapVert(sh, anchor, pull) {
+  sh.uniforms.uSnapRes = SNAPU.uSnapRes;
+  sh.vertexShader = 'uniform vec2 uSnapRes;\n' + (pull === 'uPull' || pull === 'uPull + XRAY_PULL' ? 'uniform float uPull;\n' : '') + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+  if (uSnapRes.x > 0.0) { vec4 sA = ${anchor}; if (sA.w > 0.0) { vec2 sP = (sA.xy / sA.w * 0.5 + 0.5) * uSnapRes; gl_Position.xy += (floor(sP + 0.5) - sP) / uSnapRes * 2.0 * gl_Position.w; } }
+  ${pull ? `gl_Position.z -= (${pull.replace('XRAY_PULL', XRAY_PULL.toExponential())}) * gl_Position.w;` : ''}`);
+}
+/* Glitch fix (C3): self z-fight of a character's layers. Body, hair, hat, shield and weapon are separate quads in ONE
+   plane, layered by draw order with LessEqual; the x-ray silhouette (GreaterDepth) is drawn over them. Their depths
+   only agree to rounding: each material is its own GPU program (the compiler may fuse the vertex maths differently)
+   and a hat has its own 4 vertices (head anchor + roll). So rows of a later layer failed against the body (horizontal
+   stripes on hats, shields, weapons) and the x-ray passed against the character's own pixels (blue stripes, a shield
+   gone translucent), in a pattern that changed with every walk frame and sub-pixel step: the constant flicker while
+   walking. Each layer is now pulled toward the camera by a tiny NDC step in draw order (LAYER_PULL, <= 2e-5) and the
+   x-ray by XRAY_PULL more, so it only shows behind real occluders (another character is >= ~1e-4 away). Layered
+   meshes: the uPull uniform; hero batch: iRim.w. window.AOM_LAYER_PULL = false: no pull (A/B captures). */
+const LAYER_PULL = { hair: 5e-6, headgear: 1e-5, shield: 1.5e-5, weapon: 2e-5 }, XRAY_PULL = 4e-5;
+const layerPull = layer => (typeof window !== 'undefined' && window.AOM_LAYER_PULL === false) ? 0 : (LAYER_PULL[layer] || 0);
+const xrayPull = () => (typeof window !== 'undefined' && window.AOM_LAYER_PULL === false) ? -XRAY_PULL : 0;   // (added to XRAY_PULL in the shader)
+const _snapV = new THREE.Vector2();
+function sprSnapFrame() {
+  if (typeof window !== 'undefined' && window.AOM_SPR_SNAP === false) { SNAPU.uSnapRes.value.set(0, 0); return; }
+  renderer.getDrawingBufferSize(_snapV); const k = typeof POST !== 'undefined' && POST.on ? POST.scale || 1 : 1;
+  SNAPU.uSnapRes.value.set(Math.max(1, Math.round(_snapV.x * k)), Math.max(1, Math.round(_snapV.y * k)));
+}
+// The layered x-ray silhouette: palette lookup (as PAL_OBC) + the same snap as its colour layer.
+function XRAY_OBC(sh) { sh.uniforms.uPull = this.userData.pullU; palInject(sh, this, true); sprSnapVert(sh, SNAP_MESH, 'uPull + XRAY_PULL'); }
 // Shared function object: the program cache key is its source, so all sprites share one program.
 function SPR_OBC(sh) {
-  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this);
+  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this); sprSnapVert(sh, SNAP_MESH, 'uPull');
   sh.fragmentShader = SPR_HEAD + sh.fragmentShader
     .replace('#include <map_fragment>', SPR_MAP)
     .replace('#include <alphatest_fragment>', SPR_TEST)
@@ -190,7 +226,7 @@ function SPR_OBC(sh) {
 }
 function sprUniforms() {
   return { uFlash: { value: new THREE.Vector4(1, 1, 1, 0) }, uRim: { value: new THREE.Vector3() }, uRimDir: { value: new THREE.Vector2() },
-    uFrameV: { value: new THREE.Vector2(0, 1) }, uDissolve: { value: 0 }, uFade: { value: 0 }, uTexSize: { value: new THREE.Vector2(64, 64) }, uTexOff: { value: new THREE.Vector2(0, 0) } };
+    uFrameV: { value: new THREE.Vector2(0, 1) }, uPull: { value: 0 }, uDissolve: { value: 0 }, uFade: { value: 0 }, uTexSize: { value: new THREE.Vector2(64, 64) }, uTexOff: { value: new THREE.Vector2(0, 0) } };
 }
 function spriteMat(tex, o = {}) { return new THREE.MeshBasicMaterial(Object.assign({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide }, o)); }
 // Lit, rim-lit, flashable, dissolvable sprite material. hair: true adds the palette ramp. rec: sheet record (indexed
@@ -205,6 +241,8 @@ function HAIRCLIP_OBC(sh) {
   sh.uniforms.uClip = this.userData.clipU; palInject(sh, this, true);
   sh.fragmentShader = 'uniform vec3 uClip;\n' + sh.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\nif ( dot(vec3(vUv, 1.0), uClip) < 0.0 ) discard;');
 }
+// The hair x-ray: the clip + the colour layer's pixel snap (glitch fix, see SNAPU).
+function HAIRXRAY_OBC(sh) { sh.uniforms.uPull = this.userData.pullU; HAIRCLIP_OBC.call(this, sh); sprSnapVert(sh, SNAP_MESH, 'uPull + XRAY_PULL'); }
 function hairClipPatch(mat, clipU) { mat.userData.clipU = clipU; mat.userData.obc = true; mat.onBeforeCompile = HAIRCLIP_OBC; mat.needsUpdate = true; return mat; }
 
 /* ---------- Hair palette ramp ----------
@@ -459,7 +497,7 @@ float sprHash(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 
 `;
 const IUV_VERTEX = 'vUv = ( uvTransform * vec3( mix( iUV.xy, iUV.zw, uv ), 1 ) ).xy;';   // iUV = (u0, v0, u1, v1)
 function SPR_OBC_I(sh) {
-  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this);
+  Object.assign(sh.uniforms, this.userData.u); palInject(sh, this); sprSnapVert(sh, SNAP_INST, '');
   sh.vertexShader = SPR_VI + sh.vertexShader.replace('#include <uv_vertex>', IUV_VERTEX + ' vICol = iCol; vIFlash = iFlash; vIRim = iRim; vIMisc = iMisc; vIFrameV = iUV.yw;');
   sh.fragmentShader = SPR_HEAD_I + sh.fragmentShader
     .replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity ) * vICol;')
@@ -591,13 +629,13 @@ function hbVert(sh, cast) {
 }
 function hbFrag(sh, body) { sh.fragmentShader = sh.fragmentShader.replace('#include <map_pars_fragment>', '#include <map_pars_fragment>\n' + HB_FHEAD) .replace('#include <map_fragment>', body); }
 function HB_OBC_C(sh) {   // colour
-  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false); hbFrag(sh, HB_MAP);
+  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false); sprSnapVert(sh, SNAP_HB, 'iRim.w'); hbFrag(sh, HB_MAP);
   sh.fragmentShader = sh.fragmentShader.replace('vec4 diffuseColor = vec4( diffuse, opacity );', 'vec4 diffuseColor = vec4( diffuse, opacity ) * vICol;')
     .replace('#include <alphatest_fragment>', 'if ( sprA < 0.5 ) discard;\n' + HB_CLIP)
     .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );', HB_OUT);
 }
 function HB_OBC_X(sh) {   // x-ray silhouette (flag 32)
-  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false);
+  Object.assign(sh.uniforms, this.userData.U); hbVert(sh, false); sprSnapVert(sh, SNAP_HB, 'iRim.w + XRAY_PULL');
   hbFrag(sh, 'hbSetup(vUv); vec4 texelColor = hbTex(vUv); float sprA = texelColor.a; texelColor = mapTexelToLinear(texelColor); diffuseColor *= texelColor;');
   sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', 'if ( sprA < 0.5 || (hbC & 32) == 0 ) discard;\n' + HB_CLIP);
 }
@@ -673,7 +711,7 @@ function hbInst(B, v, L, st) {
   const uv = L.uv; a = A.iUV; a[o] = uv[0]; a[o + 1] = uv[1]; a[o + 2] = uv[2]; a[o + 3] = uv[3];
   a = A.iCol; a[o] = st.col[0]; a[o + 1] = st.col[1]; a[o + 2] = st.col[2]; a[o + 3] = st.a;
   a = A.iFlash; a[o] = st.flash[0]; a[o + 1] = st.flash[1]; a[o + 2] = st.flash[2]; a[o + 3] = st.flash[3];
-  a = A.iRim; a[o] = st.rim[0]; a[o + 1] = st.rim[1]; a[o + 2] = st.rim[2]; a[o + 3] = 0;
+  a = A.iRim; a[o] = st.rim[0]; a[o + 1] = st.rim[1]; a[o + 2] = st.rim[2]; a[o + 3] = layerPull(L.layer);   // (w: the layer pull, see LAYER_PULL)
   const hair = L.layer === 'hair', xr = v.xrayOn && !v.hbDead, cast = st.cast && st.a > 0.3;
   const pg = sheetPages(rec)[L.pg];
   a = A.iMisc; a[o] = st.rdx * sgn / rec.texW; a[o + 1] = st.rdy / pg.h; a[o + 2] = 0; a[o + 3] = L.hbS + (hair ? 16 : 0) + (xr ? 32 : 0) + (cast ? 64 : 0);
@@ -925,7 +963,7 @@ function syncEntities() {
   SPRF.dt = clamp(time - SPRF.t, 0, 0.25); SPRF.t = time;
   SPRF.shadows = shadowsOn(); SPRF.cyaw = casterYaw(); SPRF.rx = Math.cos(cam.yaw); SPRF.ry = -Math.sin(cam.yaw);
   SPRF.cy = Math.cos(cam.yaw); SPRF.sy = Math.sin(cam.yaw); SPRF.yaw = cam.yaw; CASTU.uCastCS.value.set(Math.cos(SPRF.cyaw), Math.sin(SPRF.cyaw));
-  SHADOWMAT.opacity = SPRF.shadows ? 0.42 : 0.6;
+  SHADOWMAT.opacity = SPRF.shadows ? 0.42 : 0.6; sprSnapFrame();
   ibReset();
   const sh = typeof syncSheetMob === 'function';
   for (const m of mobs) if (!(sh && syncSheetMob(m))) syncSprite(m, framesForMob(m), mobPose(m));

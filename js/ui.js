@@ -248,6 +248,7 @@ function renderHUD() {
     if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.setProperty('--p', pct); }
     if (h.nosp !== nosp) { h.nosp = nosp; h.el.classList.toggle('nosp', nosp); }
   }
+  hbTick();   // controls round: the action bar, ring auto-fill, pad menus, the jump toast
   // Boss bar
   if (bossShown) { const k = Math.max(0, bossShown.hp / bossShown.maxhp); bossLag += (k - bossLag) * 0.03; if (bossLag < k) bossLag = k; setW('bossfill', k * 100); setW('bosslag', bossLag * 100); }
   // Target frame: the locked (Tab) or attacked monster, unless the boss bar already shows it
@@ -293,13 +294,13 @@ function useHot(i) {
 }
 function bindHot(i, ref) { for (let j = 0; j < 9; j++) if (P.hot[j] && P.hot[j].k === ref.k && P.hot[j].id === ref.id) P.hot[j] = null; P.hot[i] = ref; log(`Bound ${ref.k === 'skill' ? SKILLS[ref.id].name : ITEMS[ref.id].name} to key ${i + 1}.`, 'sys'); UI.dirty = true; }
 const TIPS = [
-  { t: () => isAction() ? 'Move with <b>W A S D</b>. <b>J</b> attacks, <b>K</b> heavy, <b>L</b> blocks, <b>Space</b> dodges, <b>F</b> talks. Press <b>H</b> for all controls.' : 'Click the ground to walk. Hold the button to keep walking.', done: () => P.flags.tips.moved },
+  { t: () => isAction() ? `Move with <b>${['up', 'left', 'down', 'right'].map(hk).join(' ')}</b>. <b>${hk('light')}</b> attacks, <b>${hk('jump')}</b> jumps, <b>${hk('dodge')}</b> dodges, hold <b>${hk('block')}</b> to block, <b>${hk('interact')}</b> talks. <b>Esc</b> opens the menu.` : 'Click the ground to walk. Hold the button to keep walking.', done: () => P.flags.tips.moved },
   { t: () => 'Speak with <b>Sigrun</b>, the Ember Maiden, beside the Waystone. ' + (isAction() ? 'Walk up and press <b>F</b>.' : 'Click her to talk.'), done: () => P.flags.talked.sigrun },
   { t: () => `You have <b>${P.statPts}</b> status points. Press <b>${winKey('status')}</b> to spend them.`, show: () => P.statPts > 0 && P.lvl <= 3, done: () => P.statPts === 0 || UI.open.status },
   { t: () => 'Leave by the <b>east gate</b> for the Ashen Fields. Click a monster to attack it.', show: () => P.map === 'emberhold' && P.lvl < 3, done: () => P.map !== 'emberhold' },
-  { t: () => `You have a skill point. Press <b>${winKey('skills')}</b> and click <b>+</b>. Hover a skill and press <b>1–9</b> to bind it.`, show: () => P.skillPts > 0 && P.jlvl <= 4, done: () => P.skillPts === 0 || UI.open.skills },
+  { t: () => `You have a skill point. Press <b>${winKey('skills') || 'Alt+S'}</b> and click <b>+</b>. ${isAction() ? 'Drag a skill onto the bar, or right-click it to put it on a slot.' : 'Hover a skill and press <b>1–9</b> to bind it.'}`, show: () => P.skillPts > 0 && P.jlvl <= 4, done: () => P.skillPts === 0 || UI.open.skills },
   { t: () => 'Job Lv 10 and Basic Skill 9: return to Emberhold and speak with <b>Vidar</b> to choose your path.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic >= 9, done: () => P.cls !== 'novice' },
-  { t: () => 'Job Lv 10 reached. Spend all 9 points on <b>Basic Skill</b> (press S), then see Vidar.', show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic < 9, done: () => P.skills.basic >= 9 },
+  { t: () => `Job Lv 10 reached. Spend all 9 points on <b>Basic Skill</b> (press ${winKey('skills') || 'Alt+S'}), then see Vidar.`, show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic < 9, done: () => P.skills.basic >= 9 },
   { t: () => `Two Waystones kindled. Any Waystone can send you to the other; press <b>${winKey('worldmap')}</b> for the World Map.`, show: () => Object.keys(P.kindled).length >= 2, done: () => !!P.flags.tips.worldmap || P.lvl >= 20 },
 ];
 function currentTip() { if (!started || P.dead) return null; for (const t of TIPS) { if (t.done()) continue; if (t.show && !t.show()) continue; return t.t(); } return null; }
@@ -328,6 +329,9 @@ const WIN = {
   // UI round 8: the Deep Roots (status on a floor, records at the camp) and the Gauntlet (live run, bests)
   deep: { title: 'The Deep Roots', w: 440, pos: () => [vw() - 660, 64] },
   gauntlet: { title: 'The Gauntlet', w: 340, pos: () => [vw() - 560, 64] },
+  // Controls round (C2): slots and a pad-friendly menu; key rebinding
+  loadout: { title: 'Loadout', w: 480, pos: () => [vw() / 2 - 240, 56] },
+  keys: { title: 'Controls', w: 540, pos: () => [vw() / 2 - 270, 50] },
 };
 // Window positions are remembered per window (localStorage 'aom-winpos', UI px). Phones ignore them: windows open centred.
 let WINPOS = {};
@@ -406,7 +410,7 @@ const RENDER = {
     const cells = []; for (const it of shown) cells.push(invCell(it, 'inv:' + it.uid, 'item:' + it.uid, true));
     for (let i = tab === 'all' ? shown.length : 0; i < BAG_SLOTS && (tab === 'all' || i < BAG_SLOTS - P.inv.length); i++) cells.push('<div class="cell empty"></div>');
     const mail = P.mail && P.mail.length ? `<div class="banner-x" style="margin:0 0 6px">You have ${P.mail.length} item${P.mail.length > 1 ? 's' : ''} in your mailbox. Claim ${P.mail.length > 1 ? 'them' : 'it'} at a storage keeper or any Waystone.</div>` : '';
-    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:7px"><span class="muted" style="font-size:11.5px">Bag <b style="color:var(--ink)">${P.inv.length}</b>/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11px;line-height:1.4">Click to use or equip. Right-click to drop. Hover a potion and press 1–9 to put it on the hotbar. Hover gear to compare it with what you wear.</p>`;
+    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:7px"><span class="muted" style="font-size:11.5px">Bag <b style="color:var(--ink)">${P.inv.length}</b>/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11px;line-height:1.4">Click to use or equip. ${isAction() ? 'Drag a potion onto the item ring, or right-click it to put it on a slot.' : 'Right-click a potion to put it on the hotbar (or hover it and press 1–9).'} Right-click other items to drop them. Hover gear to compare it with what you wear.</p>`;
   },
   // RO's equipment window: slots down both sides of the character.
   equip() {
@@ -440,7 +444,7 @@ const RENDER = {
     // Round 6: rebirth hints
     if (CLASSES[P.cls].tier === 2 && !P.flags.reborn && REBORN_OF[P.cls]) hint = `<p class="muted" style="margin:8px 0 0;font-size:11.5px">Beyond this path: at Base Lv 60 and Job Lv 50, Vidar knows how the Tree can spin you again, as a ${CLASSES[REBORN_OF[P.cls]].name}.</p>`;
     if (P.cls === 'high_novice') { const mem = (P.flags.reborn && P.flags.reborn.skills) || {}, to = P.flags.reborn && REBORN_OF[P.flags.reborn.from]; hint = `<p class="muted" style="margin:8px 0 0;font-size:11.5px">${Object.keys(mem).length} remembered skills sleep until your path wakes them. At Job Lv 10 and Basic Skill 9, Vidar sets you on the path of the ${to ? CLASSES[to].name : 'reborn'}.</p>`; }
-    return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}/${cap}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}${hint}<p class="muted" style="margin:8px 0 0;font-size:11.5px">Hover a learned skill and press 1–9 to bind it. Click its icon to use it. ${isAction() ? 'With the keyboard, enemy skills take the enemy in front of you (Tab locks one); ground skills land in front of you.' : 'Enemy skills target what is under the cursor, then your current target. Ground skills land at the cursor.'}</p>`;
+    return `<div class="row" style="justify-content:space-between;margin-bottom:4px"><span class="muted">${CLASSES[P.cls].name} · Job Lv ${P.jlvl}/${cap}</span><span>Skill points <b style="color:${P.skillPts ? 'var(--ember)' : 'inherit'}">${P.skillPts}</b></span></div>${rows}${hint}<p class="muted" style="margin:8px 0 0;font-size:11.5px">${isAction() ? `Drag a learned skill onto the bar (${['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ')}), or right-click it: Put on slot. Alt+L opens the Loadout.` : 'Drag a learned skill onto the hotbar, right-click it, or hover it and press 1–9.'} Click its icon to use it. ${isAction() ? 'With the keyboard, enemy skills take the enemy in front of you (Tab locks one); ground skills land in front of you.' : 'Enemy skills target what is under the cursor, then your current target. Ground skills land at the cursor.'}</p>`;
   },
   journal() {
     const tab = UI.jTab === 'chronicle' || UI.jTab === 'ach' ? UI.jTab : 'quests';
@@ -451,13 +455,12 @@ const RENDER = {
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
     const act = isAction();
-    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div>` + gfxOptionsHTML();
+    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn" data-kb="!ov">Show the controls card</button><button class="btn" data-win="keys">Rebind keys</button><button class="btn" data-win="loadout">Loadout</button></div>` + gfxOptionsHTML();
     const keys = act
-      ? `${k('Move', 'W A S D or arrow keys')}${k('Attack (3-hit combo)', 'J, tap repeatedly')}${k('Heavy attack', 'Hold K, release (charge for more)')}${k('Block / parry', 'Hold L; block right before a hit to parry')}${k('Dodge roll', 'Space (invulnerable while rolling)')}
-    ${k('Jump', 'Shift (gamepad RT)')}${k('Talk, read, open, pick up, enter a door', 'F')}${k('Lock onto an enemy', 'Tab')}${k('Ride / dismount a warg', 'R (Ash Knight, Rune Jarl)')}${k('Rotate camera', 'Q / E, or right-drag')}${k('Skills and potions', '1–9')}${k('Windows', 'C Status · I Items · G Equip · V Skills · N Journal · P Pet · H Help · , World Map')}${k('Gamepad', 'Stick move · X attack · Y heavy · B dodge · LB/RB block · A talk')}`
+      ? hbHelpAction(k)
       : `${k('Walk', 'Click the ground, or hold to keep walking')}
     ${k('Jump', 'Space')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, read, open, pick up', 'Click an NPC, a sign, a chest or an item on the ground')}${k('Enter a door or cave', 'Click it, or walk onto it')}${k('Hotbar', 'Keys 1–9')}${k('Ride / dismount a warg', 'R')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · P Pet · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
-    return `${mode}<div class="sec">Controls</div>${keys}${k('Bind a skill or potion', 'Hover it in Skills or Items, press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map')}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
+    return `${mode}<div class="sec">Controls</div>${keys}${k('Put a skill or potion on a slot', act ? 'Drag it onto the bar, right-click it, or use the Loadout (Alt+L)' : 'Drag it onto the hotbar, right-click it, or hover it and press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', hbAltList())}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
   },
@@ -528,6 +531,483 @@ const RENDER = {
     return `${svg}<p class="muted" style="margin:6px 0 0;font-size:11.5px;line-height:1.4">✦ kindled Waystone · ◇ Waystone not yet kindled · <span class="wmleg">${placeIcon('interior')}</span> rooms and <span class="wmleg">${placeIcon('cave')}</span> caves found · dashed red: sealed road. ${at ? 'You stand by a Waystone: pick a kindled one to travel there.' : 'Travel between kindled Waystones from any Waystone.'}</p><div class="sec">Kindled Waystones</div>${list || '<div class="muted">No other Waystones kindled yet.</div>'}${wmPlacesHTML()}`;
   },
 };
+
+/* =========================================================
+   Controls round (design/controls-contract.md, C2): the console-style action bar (skill bar U I O P with a page 2,
+   the quick-item ring Q / E, key hints), easy slot assignment (drag and drop, right-click or long-press "Put on
+   slot", the Loadout window you drive with keys or a pad), key rebinding (the Controls window), the first-run
+   controls overlay and the one-time jump toast. The keymap and the slot data belong to C1 (js/controls.js:
+   KEYMAP, keyFor, padFor, keyBinds, setKey, resetKeys, ctlEnsure, set/useSkillSlot, set/useItemSlot, quickItem,
+   skillPage, autoFillSlots); every call is guarded, so the UI still runs without it.
+   ========================================================= */
+// Fallback names, default keys and pad buttons (the contract's table); the UI names actions from here.
+const HB_DEF = {
+  up: ['Move forward', 'KeyW', 'L-stick'], down: ['Move back', 'KeyS', 'L-stick'], left: ['Move left', 'KeyA', 'L-stick'], right: ['Move right', 'KeyD', 'L-stick'],
+  jump: ['Jump', 'Space', 'A'], block: ['Block / guard (hold)', 'ShiftLeft', 'LT'], light: ['Attack (combo)', 'KeyJ', 'X'], heavy: ['Heavy attack (hold)', 'KeyK', 'Y'],
+  dodge: ['Dodge roll', 'KeyL', 'B'], lock: ['Lock / cycle target', 'Tab', 'RS'], skill1: ['Skill slot 1', 'KeyU', 'RB+X'], skill2: ['Skill slot 2', 'KeyI', 'RB+Y'],
+  skill3: ['Skill slot 3', 'KeyO', 'RB+B'], skill4: ['Skill slot 4', 'KeyP', 'RB+A'], page2: ['Skills 5–8 (hold)', 'Semicolon', 'LB'], quick: ['Quick item', 'KeyQ', 'D-pad ↓'],
+  cycle: ['Next quick item', 'KeyE', 'D-pad ← →'], interact: ['Talk, open, pick up', 'KeyF', 'D-pad ↑'], ride: ['Ride / dismount', 'KeyR', ''], menu: ['Menu / close', 'Escape', 'Start'],
+};
+const HB_CODE = { Space: 'Space', ShiftLeft: 'Shift', ShiftRight: 'R-Shift', ControlLeft: 'Ctrl', ControlRight: 'R-Ctrl', Semicolon: ';', Comma: ',', Period: '.', Slash: '/', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Enter: 'Enter', Tab: 'Tab', Backspace: 'Bksp', CapsLock: 'Caps', Delete: 'Del' };
+const hbCodeLabel = c => !c ? '' : HB_CODE[c] || (c.startsWith('Key') ? c.slice(3) : c.startsWith('Digit') ? c.slice(5) : c.replace(/^Numpad/, 'Num '));
+const hbKM = () => (typeof KEYMAP === 'object' && KEYMAP ? KEYMAP : null);
+function hbBinds() {
+  if (typeof keyBinds === 'function') { try { const b = keyBinds(); if (b) return b; } catch (e) { /* controls.js mid-edit */ } }
+  const K = hbKM(), o = {}; for (const id in HB_DEF) o[id] = (K && K[id] && K[id].code) || HB_DEF[id][1]; return o;
+}
+const hbBound = code => { const b = hbBinds(); for (const id in b) if (b[id] === code) return id; return null; };
+// The key label of an action ('Space', 'U', ';+U' for skill5-8) and its pad button.
+function hk(id) {
+  if (typeof keyFor === 'function') { try { const v = keyFor(id); if (v) return String(v); } catch (e) { /* fall back */ } }
+  const m = /^skill([5-8])$/.exec(id); if (m) return hk('page2') + '+' + hk('skill' + (m[1] - 4));
+  return hbCodeLabel(hbBinds()[id] || (HB_DEF[id] || [])[1]);
+}
+function hpad(id) { if (typeof padFor === 'function') { try { const v = padFor(id); if (v) return String(v); } catch (e) { /* fall back */ } } return (HB_DEF[id] || [])[2] || ''; }
+const hbName = id => (HB_DEF[id] || [])[0] || (hbKM() && hbKM()[id] && hbKM()[id].label) || id;
+const kc = (t, cls) => `<kbd class="kc${cls ? ' ' + cls : ''}">${esc(t)}</kbd>`;
+const hbAct = () => typeof isAction === 'function' && isAction();
+const hbPadOn = () => typeof CTRL !== 'undefined' && !!CTRL.pad;
+const hbOnboardOK = () => !!(UI.human || window.AOM_ONBOARD);   // only after a real click on the title screen: test runs that call startGame skip the card and toast
+// Slot data (C1 creates it lazily; ctlEnsure fills in the arrays)
+function hbP() { if (P && typeof ctlEnsure === 'function' && (UI.ctlP !== P || !Array.isArray(P.skillSlots))) { try { ctlEnsure(P); UI.ctlP = P; } catch (e) { /* keep going */ } } return P; }
+const hbSS = () => { hbP(); return Array.isArray(P.skillSlots) ? P.skillSlots : []; };
+const hbIS = () => { hbP(); return Array.isArray(P.itemSlots) ? P.itemSlots : []; };
+const hbSel = () => clamp(P.itemSel | 0, 0, 3);
+function hbPage() { try { if (typeof skillPage === 'function') return skillPage() ? 1 : 0; } catch (e) { /* fall back */ } return typeof CTRL !== 'undefined' && CTRL.page2 ? 1 : 0; }
+const hbSkillOK = id => !!(SKILLS[id] && P.skills[id] && !SKILLS[id].passive);
+const hbItemOK = id => !!(ITEMS[id] && ITEMS[id].type === 'use');
+function hbRefOK(ref) { if (!ref) return false; const [k, id] = ref.split(':'); return k === 'skill' ? hbSkillOK(id) : k === 'item' ? hbItemOK(id) : false; }
+const hbRefName = ref => { const [k, id] = ref.split(':'); return k === 'skill' ? SKILLS[id].name : ITEMS[id].name; };
+function hbIcon(ref) { if (!ref) return ''; const [k, id] = ref.split(':'); return k === 'skill' ? skillTile(id) : `<img src="${itemIconURL(id)}" data-ico="${id}" alt="" draggable="false">`; }
+// Slot keys: 's:0'..'s:7' skill slots (4-7 = page 2), 'r:0'..'r:3' the item ring, 'h:0'..'h:8' the classic hotbar.
+function hbSlotRef(key) {
+  const [k, s] = key.split(':'), i = +s;
+  if (k === 'h') { const r = P.hot[i]; return r ? r.k + ':' + r.id : null; }
+  const id = k === 's' ? hbSS()[i] : k === 'r' ? hbIS()[i] : null; return id ? (k === 's' ? 'skill:' : 'item:') + id : null;
+}
+function hbSlotName(key) { const [k, s] = key.split(':'), i = +s; return k === 's' ? hk('skill' + (i + 1)) : k === 'r' ? 'item ring ' + (i + 1) : 'hotbar key ' + (i + 1); }
+function hbSetArr(f, n, i, id) {   // used only while controls.js has no setters
+  const a = Array.isArray(P[f]) ? P[f] : (P[f] = new Array(n).fill(null)), j = id ? a.indexOf(id) : -1;
+  if (j >= 0 && j !== i) a[j] = a[i] || null; a[i] = id || null; try { dispatchEvent(new Event('controlsChanged')); } catch (e) { /* old browsers */ } return true;
+}
+// Put a ref ('skill:id' / 'item:id', or null to clear) on a slot. Skills go on the skill bar, consumables on the ring.
+function hbPut(key, ref, quiet) {
+  const [k, s] = key.split(':'), i = +s, [rk, id] = ref ? ref.split(':') : [null, null]; hbP();
+  const no = m => { if (!quiet) log(m, 'warn'); return false; };
+  if (ref && !hbRefOK(ref)) return no(rk === 'skill' ? (SKILLS[id] && SKILLS[id].passive ? 'Passive skills work on their own.' : 'Learn the skill first.') : 'Only consumables fit on a slot.');
+  if (ref && k === 's' && rk !== 'skill') return no(`Potions and other items go on the item ring (${hk('quick')}).`);
+  if (ref && k === 'r' && rk !== 'item') return no(`Skills go on the skill bar (${['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ')}).`);
+  let ok = false;
+  if (k === 'h') { if (ref) bindHot(i, { k: rk, id }); else P.hot[i] = null; ok = true; }
+  else if (k === 's') ok = typeof setSkillSlot === 'function' ? setSkillSlot(i, id || null) !== false : hbSetArr('skillSlots', 8, i, id);
+  else if (k === 'r') ok = typeof setItemSlot === 'function' ? setItemSlot(i, id || null) !== false : hbSetArr('itemSlots', 4, i, id);
+  if (!ok) return no('That does not fit there.');
+  if (k !== 'h' && !quiet) log(ref ? `${hbRefName(ref)} → ${hbSlotName(key)}.` : `Slot ${hbSlotName(key)} cleared.`, 'sys');
+  UI.dirty = true; UI.abSig = ''; return true;
+}
+function hbDropItem(uid) {
+  const it = findItem(uid); if (!it || !P.inv.includes(it) || ITEMS[it.id].type === 'key') return;
+  P.inv.splice(P.inv.indexOf(it), 1); drops.push({ kind: 'drop', item: it, x: P.x + rand(-0.4, 0.4), y: P.y + rand(-0.4, 0.4), t: 0, id: uidc++ });
+  log(`You drop ${itemName(it)}.`, 'sys'); UI.dirty = true;
+}
+
+/* ---------- The action bar (action mode; classic keeps the 1-9 hotbar) ---------- */
+function renderABar() {
+  const el = $('abar'); if (!el || !P) return;
+  if (!hbAct()) { if (UI.abSig) { UI.abSig = ''; el.innerHTML = ''; UI.abEl = []; } return; }
+  const ss = hbSS(), is = hbIS(), pg = hbPage(), sel = hbSel(), pad = hbPadOn();
+  let qi = null; if (typeof quickItem === 'function') { try { const q = quickItem(); qi = q && typeof q === 'object' ? q.id : q || null; } catch (e) { qi = null; } }
+  const capOf = id => pad ? hpad(id) : hk(id), keys = ['skill1', 'skill2', 'skill3', 'skill4', 'page2', 'quick', 'cycle', 'jump', 'block', 'dodge'].map(capOf).join(' ');
+  const sig = ss.map(id => id ? id + (P.skills[id] ? '' : '!') : '').join(',') + '|' + is.join(',') + '|' + sel + pg + pad + '|' + qi + '|' + keys + '|' + (ART.icoIdx ? 1 : 0) + (SKART.idx ? 1 : 0);
+  if (sig === UI.abSig && UI.abEl && UI.abEl.length) return; UI.abSig = sig; UI.abBinds = hbBinds();
+  const skill = j => {
+    const i = pg * 4 + j, id = ss[i], ok = !!(id && SKILLS[id] && P.skills[id]), cap = pad ? hpad('skill' + (j + 1)).replace(/^RB\+/, '') : hk('skill' + (j + 1));
+    return `<button class="hs ab-s${ok ? '' : ' empty'}" data-slot="s:${i}"${ok ? ` data-tip="skill:${id}"` : ''} aria-label="${ok ? esc(SKILLS[id].name) : 'Empty skill slot'} (${esc(cap)})">${ok ? skillTile(id) : ''}${kc(cap)}<span class="cd"></span></button>`;
+  };
+  const ring = (j, big, cyc) => {   // cyc: the next slot carries the cycle key
+    const id = is[j] && ITEMS[is[j]] ? is[j] : null, au = big && !id && qi && ITEMS[qi] ? qi : null, show = id || au;
+    return `<button class="ab-r ${big ? 'big' : 'sm'}${show ? '' : ' empty'}${au ? ' auto' : ''}" data-slot="r:${j}"${show ? ` data-tip="hotitem:${show}" data-id="${show}"` : ''} aria-label="${show ? esc(ITEMS[show].name) : 'Empty item slot'}">${show ? `<img src="${itemIconURL(show)}" data-ico="${show}" alt="" draggable="false"><span class="n">${countItem(show)}</span>` : big ? '<span class="pl">+</span>' : ''}${big ? kc(capOf('quick')) : cyc ? kc(cyc, 'sm') : ''}${au ? '<span class="au">auto</span>' : ''}</button>`;
+  };
+  const hint = (id, t) => `<span>${kc(capOf(id))}${t}</span>`;
+  el.innerHTML = `<div class="ab-hints">${hint('jump', 'Jump')}${hint('block', 'Block')}${hint('dodge', 'Dodge')}</div>`
+    + `<div class="ab-row"><div class="ab-box ab-ring" title="Quick item: ${esc(capOf('quick'))} uses it, ${esc(capOf('cycle'))} picks the next">${ring((sel + 3) % 4)}${ring(sel, true)}${ring((sel + 1) % 4, false, capOf('cycle'))}<div class="ab-dots">${[0, 1, 2, 3].map(j => `<i class="${j === sel ? 'on' : is[j] ? 'f' : ''}"></i>`).join('')}</div></div>`
+    + `<div class="ab-box ab-skills${pg ? ' pg2' : ''}"><div class="ab-pg" title="Hold ${esc(capOf('page2'))} for skills 5–8"><i class="${pg ? '' : 'on'}">1</i><i class="${pg ? 'on' : ''}">2</i>${kc(capOf('page2'), 'sm')}</div>${[0, 1, 2, 3].map(skill).join('')}${pad ? '<span class="ab-rb">RB</span>' : ''}</div></div>`;
+  UI.abEl = [...el.querySelectorAll('[data-slot]')].map(b => ({ el: b, key: b.dataset.slot, id: b.dataset.id || null, cd: b.querySelector('.cd'), n: b.querySelector('.n'), pct: 0, nosp: false, cnt: -1, dn: false }));
+}
+// Per frame: cooldown sweeps, SP-cost dimming, item counts and a pressed look while a slot's key is held.
+function patchABar() {
+  const ss = hbSS(), pg = hbPage(), B = UI.abBinds || {}, K = typeof CTRL !== 'undefined' && CTRL.keys;
+  for (const h of UI.abEl) {
+    const [k, s] = h.key.split(':'), i = +s; let pct = 0, nosp = false, dn = false;
+    if (k === 's') {
+      const id = ss[i], sk = id && SKILLS[id], lv = id && P.skills[id];
+      if (sk && lv) { const c = P.cd[id] || 0; if (c > 0) pct = Math.min(100, Math.round(c / (sk.cd || 0.3) * 100)); if (P.sp < sk.sp(lv) || (sk.need && sk.need(lv))) nosp = true; }
+      dn = !!(K && K.has && K.has(B['skill' + (i - pg * 4 + 1)]));
+    } else if (h.id) { const n = countItem(h.id); if (h.n && h.cnt !== n) { h.cnt = n; h.n.textContent = n; } nosp = n === 0; dn = h.el.classList.contains('big') && !!(K && K.has && K.has(B.quick)); }
+    if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.setProperty('--p', pct); }
+    if (h.nosp !== nosp) { h.nosp = nosp; h.el.classList.toggle('nosp', nosp); }
+    if (h.dn !== dn) { h.dn = dn; h.el.classList.toggle('down', dn); }
+  }
+}
+function hbSlotClick(key) {
+  const [k, s] = key.split(':'), i = +s; if (!started) return;
+  if (k === 's') { if (typeof useSkillSlot === 'function') useSkillSlot(i); else { const id = hbSS()[i]; if (id) useSkill(id); } return; }
+  if (k === 'r') {
+    if (i === hbSel()) { if (typeof useQuickItem === 'function') useQuickItem(); else { const id = hbIS()[i], it = id && P.inv.find(x => x.id === id); if (it) useItem(it); } }
+    else { P.itemSel = i; try { dispatchEvent(new Event('controlsChanged')); } catch (e) { /* old browsers */ } UI.abSig = ''; }
+  }
+}
+// Consumables you pick up land in an empty ring slot (once per kind; the bag at load does not count).
+function hbRingAuto() {
+  const t = performance.now(); if (t - (UI.ringT || 0) < 500) return; UI.ringT = t;
+  const W = UI.ringSeen || (UI.ringSeen = new WeakMap()), ids = new Set();
+  for (const it of P.inv) if (hbItemOK(it.id) && ITEMS[it.id].effect !== 'egg') ids.add(it.id);
+  const seen = W.get(P); if (!seen) { W.set(P, ids); return; }
+  for (const id of ids) {
+    if (seen.has(id)) continue; seen.add(id); const is = hbIS(); if (is.includes(id)) continue;
+    const j = [0, 1, 2, 3].find(x => !is[x]); if (j === undefined) continue;
+    if (hbPut('r:' + j, 'item:' + id, true)) log(`${ITEMS[id].name} is on the item ring (${hk('quick')} uses, ${hk('cycle')} cycles).`, 'sys');
+  }
+}
+
+/* ---------- Spatial navigation (Loadout, Controls, the slot menu): arrows / WASD / d-pad ---------- */
+function hbNavEls(root) { return root ? [...root.querySelectorAll('[data-nav]')].filter(e => e.offsetParent !== null && !e.disabled) : []; }
+function hbNav(root, cur, dx, dy) {
+  const els = hbNavEls(root); if (!els.length) return null;
+  const c = els.find(e => e.dataset.nav === cur); if (!c) return els[0].dataset.nav;
+  const r = c.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2; let best = null, bs = Infinity;
+  for (const e of els) {
+    if (e === c) continue; const q = e.getBoundingClientRect(), ex = q.left + q.width / 2, ey = q.top + q.height / 2;
+    const along = dx ? (ex - cx) * dx : (ey - cy) * dy, across = dx ? Math.abs(ey - cy) : Math.abs(ex - cx); if (along <= 4) continue;
+    const sc = along + across * 2.5; if (sc < bs) { bs = sc; best = e; }
+  }
+  if (!best && dx) best = els[els.indexOf(c) + dx] || null;   // the end of a row wraps in reading order
+  return best ? best.dataset.nav : cur;
+}
+function hbPaint(root, key, still) {   // still: a re-render, so the scroll stays where the player left it
+  if (!root) return; root.querySelectorAll('.foc').forEach(e => e.classList.remove('foc'));
+  const e = key && hbNavEls(root).find(x => x.dataset.nav === key); if (e) { e.classList.add('foc'); if (!still && e.scrollIntoView) e.scrollIntoView({ block: 'nearest' }); }
+}
+function hbDir(e) {
+  const D = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] };
+  if (D[e.code]) return D[e.code]; const b = hbBinds();
+  return e.code === b.up ? [0, -1] : e.code === b.down ? [0, 1] : e.code === b.left ? [-1, 0] : e.code === b.right ? [1, 0] : null;
+}
+const hbOK = e => e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
+function hbTopWin() { let top = null, tz = -1; for (const id in UI.open) if (UI.open[id]) { const el = $('w-' + id), z = el ? +el.style.zIndex : 0; if (z > tz) { tz = z; top = id; } } return top; }
+const hbSkillCode = code => { const b = hbBinds(); for (let j = 0; j < 4; j++) if (b['skill' + (j + 1)] === code) return j; return -1; };
+
+/* ---------- "Put on slot" menu (right-click, long-press, pad X, Enter in the Loadout) ---------- */
+function hbMenu(ref, x, y, src) {
+  if (!hbRefOK(ref)) { if (ref && ref.startsWith('skill:')) log(SKILLS[ref.slice(6)] && SKILLS[ref.slice(6)].passive ? 'Passive skills work on their own.' : 'Learn the skill first.', 'warn'); return; }
+  const m = $('slotmenu'); if (!m) return; hideTip();
+  const [rk] = ref.split(':'), act = hbAct(), uid = src && src.matches && src.matches('.cell[data-act^="inv:"]') ? +src.dataset.act.split(':')[1] : null;
+  const btn = (key, cap) => { const occ = hbSlotRef(key); return `<button class="sm-s${occ === ref ? ' cur' : occ ? '' : ' empty'}" data-sm="${key}" data-nav="${key}" title="${esc(occ ? hbRefName(occ) : 'Empty')}">${occ ? hbIcon(occ) : ''}${kc(cap)}</button>`; };
+  const row = (t, b) => `<div class="sm-r"><span>${t}</span><div class="sm-b">${b.join('')}</div></div>`, n = a => [...Array(a).keys()];
+  let rows = '';
+  if (act && rk === 'skill') rows = row('Skill bar', n(4).map(i => btn('s:' + i, hk('skill' + (i + 1))))) + row(`Page 2 · hold ${kc(hk('page2'))}`, n(4).map(i => btn('s:' + (i + 4), hk('skill' + (i + 1)))));
+  else if (act) rows = row(`Item ring · ${kc(hk('quick'))} uses · ${kc(hk('cycle'))} cycles`, n(4).map(i => btn('r:' + i, String(i + 1))));
+  else rows = row('Hotbar', n(9).map(i => btn('h:' + i, String(i + 1))));
+  m.innerHTML = `<div class="sm-h">${hbIcon(ref)}<span>Put <b>${esc(hbRefName(ref))}</b> on…</span></div>${rows}<div class="sm-f">${uid != null ? `<button class="btn" data-sm="drop:${uid}" data-nav="drop">Drop</button>` : ''}<button class="btn" data-sm="x" data-nav="x">Cancel</button></div><div class="sm-k">${act ? `${kc('↑↓←→')} choose · ${kc('Enter')} put · ${kc(rk === 'skill' ? ['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ') : 'Esc')} ${rk === 'skill' ? 'put directly' : 'cancel'}` : 'Or hover it and press 1–9'}</div>`;
+  m.hidden = false;
+  const w = m.offsetWidth, h = m.offsetHeight; let lx = x / UIZ + 8, ly = y / UIZ + 8;
+  if (lx + w > vw() - 6) lx = x / UIZ - w - 8; if (ly + h > vh() - 6) ly = y / UIZ - h - 8;
+  m.style.left = Math.round(clamp(lx, 6, Math.max(6, vw() - w - 6))) + 'px'; m.style.top = Math.round(clamp(ly, 6, Math.max(6, vh() - h - 6))) + 'px';
+  const keys = hbNavEls(m).map(e => e.dataset.nav), empty = keys.find(k => /^[srh]:/.test(k) && !hbSlotRef(k));
+  UI.sm = { ref, uid }; UI.smFoc = empty || keys[0]; hbPaint(m, UI.smFoc);
+}
+function hbMenuClose() { const m = $('slotmenu'); if (m) { m.hidden = true; m.innerHTML = ''; } UI.sm = null; }
+function hbMenuPick(key) {
+  const S_ = UI.sm; if (!S_ || !key) return; hbMenuClose();
+  if (key === 'x') return;
+  if (key.startsWith('drop:')) { hbDropItem(+key.slice(5)); return; }
+  hbPut(key, S_.ref); if (UI.open.loadout) { UI.loFoc = UI.loFoc || key; UI.dirty = true; }
+}
+function hbMenuKey(e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return false;
+  const m = $('slotmenu'), d = hbDir(e);
+  if (d) { UI.smFoc = hbNav(m, UI.smFoc, d[0], d[1]); hbPaint(m, UI.smFoc); return true; }
+  if (hbOK(e)) { if (!e.repeat) hbMenuPick(UI.smFoc); return true; }
+  if (e.code === 'Escape' || e.code === 'Backspace') { hbMenuClose(); return true; }
+  const j = hbSkillCode(e.code); if (j >= 0 && hbAct()) { hbMenuPick(UI.sm.ref.startsWith('skill:') ? 's:' + j : 'r:' + j); return true; }
+  if (/^Digit[1-9]$/.test(e.code) && !hbAct()) { hbMenuPick('h:' + (+e.code.slice(5) - 1)); return true; }
+  return true;   // the menu is modal: other keys do nothing while it is open
+}
+
+/* ---------- Loadout window: the slots, learned skills and consumables, a pad / key driven pause menu ---------- */
+function hbLoEntries() {
+  const sk = [], seen = new Set();
+  for (const c of classChain(P.cls).reverse()) for (const id of CLASSES[c].skills.concat(c === 'novice' ? ['first_aid'] : [])) if (!seen.has(id) && hbSkillOK(id)) { seen.add(id); sk.push(id); }
+  for (const id in P.skills) if (!seen.has(id) && hbSkillOK(id)) { seen.add(id); sk.push(id); }
+  const it = [...new Set(P.inv.filter(i => hbItemOK(i.id)).map(i => i.id))];
+  return { sk, it };
+}
+RENDER.loadout = function () {
+  const act = hbAct(), ss = hbSS(), is = hbIS(), arm = UI.loArm, { sk, it } = hbLoEntries(), hj = id => P.hot.findIndex(r => r && r.id === id);
+  const slotted = new Set(act ? ss.filter(Boolean).concat(is.filter(Boolean)) : P.hot.filter(Boolean).map(r => r.id));
+  const where = id => { if (!act) { const h = hj(id); return h >= 0 ? `key ${h + 1}` : ''; } const i = ss.indexOf(id), j = is.indexOf(id); return i >= 0 ? `on ${hk('skill' + (i + 1))}` : j >= 0 ? `ring ${j + 1}` : ''; };
+  const slot = key => { const ref = hbSlotRef(key), [k, s] = key.split(':'), i = +s, cap = k === 's' ? hk('skill' + (i % 4 + 1)) : String(i + 1);   // ring and hotbar slots show their number
+    const gone = ref && ref.startsWith('skill:') && !P.skills[ref.slice(6)];   // slotted, then forgotten (a rebirth)
+    return `<button class="lo-s${ref ? '' : ' empty'}${gone ? ' gone' : ''}${arm === key ? ' arm' : ''}${k === 's' && i >= 4 ? ' p2' : ''}" data-nav="${key}" data-slot="${key}"${ref ? ` data-tip="${ref.startsWith('skill:') ? 'skill:' + ref.slice(6) : 'hotitem:' + ref.slice(5)}"` : ''} aria-label="Slot ${esc(hbSlotName(key))}: ${ref ? esc(hbRefName(ref)) + (gone ? ' (not learned)' : '') : 'empty'}"${gone ? ' title="Not learned any more: put another skill here"' : ''}>${ref ? hbIcon(ref) : ''}${kc(cap)}</button>`; };
+  const off = kind => arm && arm[0] !== 'h' && (arm[0] === 's') !== (kind === 'skill') ? ' off' : '';
+  const ent = (kind, id) => { const ref = kind + ':' + id, w = where(id), t = kind === 'skill' ? SKILLS[id] : ITEMS[id], lv = kind === 'skill' ? P.skills[id] : 0;
+    return `<button class="lo-e${slotted.has(id) ? ' on' : ''}${off(kind)}" data-nav="e:${ref}" data-bind="${ref}" data-tip="${kind === 'skill' ? 'skill:' + id : 'hotitem:' + id}">${kind === 'skill' ? skillTile(id) : `<img src="${itemIconURL(id)}" data-ico="${id}" alt="" draggable="false">`}<span><b>${esc(t.name)}</b><small>${kind === 'skill' ? `Lv ${lv} · ${t.sp(lv)} SP` : '×' + countItem(id)}${w ? ` · <em>${esc(w)}</em>` : ''}</small></span></button>`; };
+  const pg2 = hk('page2'), banner = arm ? `<div class="lo-arm">Choose ${arm[0] === 's' ? 'a skill' : arm[0] === 'h' ? 'a skill or an item' : 'an item'} for <b>${esc(hbSlotName(arm))}</b> · ${kc('Esc')} cancel</div>` : '';
+  const nav = [['status', 'Status'], ['inv', 'Items'], ['equip', 'Equip'], ['skills', 'Skills'], ['journal', 'Quests'], ['worldmap', 'Map'], ['keys', 'Controls'], ['help', 'Help']];
+  const slots = act
+    ? `<div class="sec">Skill bar <span class="muted" style="font-weight:400">· hold ${kc(pg2)} for page 2</span></div><div class="lo-slots">${[0, 1, 2, 3].map(i => slot('s:' + i)).join('')}<span class="lo-sep">${kc(pg2)}</span>${[4, 5, 6, 7].map(i => slot('s:' + i)).join('')}</div>`
+      + `<div class="sec">Item ring <span class="muted" style="font-weight:400">· ${kc(hk('quick'))} uses · ${kc(hk('cycle'))} cycles</span></div><div class="lo-slots">${[0, 1, 2, 3].map(i => slot('r:' + i)).join('')}<button class="btn lo-auto" data-nav="b:auto" title="Best healing and SP potions on the ring, learned skills on empty skill slots">Auto-fill</button></div>`
+    : `<div class="sec">Hotbar <span class="muted" style="font-weight:400">· keys 1–9 · Action controls add the skill bar and the item ring</span></div><div class="lo-slots">${[...Array(9).keys()].map(i => slot('h:' + i)).join('')}</div>`;
+  const keysTip = act ? `${kc(['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' '))} put the selected skill there` : `${kc('1')}–${kc('9')} put the selected entry on that key`;
+  return banner + slots
+    + `<div class="sec">Skills <span class="muted" style="font-weight:400">· ${sk.length} usable</span></div><div class="lo-list">${sk.map(id => ent('skill', id)).join('') || '<div class="muted">No active skills learned yet.</div>'}</div>`
+    + `<div class="sec">Consumables</div><div class="lo-list">${it.map(id => ent('item', id)).join('') || '<div class="muted">No potions or food in your bag.</div>'}</div>`
+    + `<div class="sec">Menu</div><div class="lo-nav">${nav.map(([w, l]) => `<button class="btn" data-nav="b:win:${w}">${l}</button>`).join('')}</div>`
+    + `<p class="muted lo-help">${kc('↑↓←→')} or ${kc('WASD')} move · ${kc('Enter')} choose · ${keysTip} · ${kc('Del')} clear a slot · ${kc('Esc')} close. Pad: d-pad, ${kc('A')} choose, ${kc('X')} put on…, ${kc('Y')} clear, ${kc('B')} back. Mouse: drag onto a slot, or right-click.</p>`;
+};
+AFTER.loadout = bd => { const keys = hbNavEls(bd).map(e => e.dataset.nav); if (!keys.includes(UI.loFoc)) UI.loFoc = keys[0] || null; hbPaint(bd, UI.loFoc, true); };
+function hbLoAct(key, how) {
+  if (!key) return; const [t, a, b] = key.split(':'), bd = $('w-loadout') && $('w-loadout').querySelector('.bd');
+  if (t === 's' || t === 'r' || t === 'h') {
+    if (how === 'clear') { hbPut(key, null); return; }
+    if (UI.loArm === key) UI.loArm = null;
+    else { UI.loArm = key; const f = bd && bd.querySelector(t === 'h' ? '[data-nav^="e:"]' : `[data-nav^="e:${t === 's' ? 'skill' : 'item'}:"]`); if (f && how !== 'click') UI.loFoc = f.dataset.nav; }
+    UI.dirty = true; return;
+  }
+  if (t === 'e') {
+    const ref = a + ':' + b, A = UI.loArm;
+    if (A && how !== 'menu' && (A[0] === 'h' || (A[0] === 's') === (a === 'skill'))) { UI.loArm = null; if (hbPut(A, ref)) UI.loFoc = A; UI.dirty = true; return; }
+    const el = bd && hbNavEls(bd).find(e => e.dataset.nav === key), r = el ? el.getBoundingClientRect() : { right: W / 2, top: H / 2 };
+    hbMenu(ref, r.right - 20, r.top + 10, el); return;
+  }
+  if (t === 'b') { if (a === 'auto') { if (typeof autoFillSlots === 'function') { autoFillSlots(); log('Loadout filled: learned skills on empty skill slots, your best potions on the ring.', 'sys'); } else log('Auto-fill is not available yet.', 'warn'); UI.dirty = true; UI.abSig = ''; } else if (a === 'win' && WIN[b]) openWin(b); }
+}
+function hbLoKey(e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return false;
+  const bd = $('w-loadout').querySelector('.bd'), d = hbDir(e), f = UI.loFoc || '';
+  if (d) { UI.loFoc = hbNav(bd, UI.loFoc, d[0], d[1]); hbPaint(bd, UI.loFoc); return true; }
+  if (hbOK(e)) { if (!e.repeat) hbLoAct(UI.loFoc); return true; }
+  if (e.code === 'Escape' && UI.loArm) { UI.loArm = null; UI.dirty = true; return true; }
+  if (e.code === 'Delete' || e.code === 'Backspace') { if (/^[srh]:/.test(f)) hbLoAct(f, 'clear'); return true; }
+  if (e.code === 'KeyX' && f.startsWith('e:')) { hbLoAct(f, 'menu'); return true; }
+  if (!hbAct()) { if (/^Digit[1-9]$/.test(e.code) && f.startsWith('e:')) { hbPut('h:' + (+e.code.slice(5) - 1), f.slice(2)); return true; } return false; }
+  const j = hbSkillCode(e.code);
+  if (j >= 0) { if (f.startsWith('e:skill:')) hbPut('s:' + (j + (UI.loPg2 ? 4 : 0)), f.slice(2)); else if (f.startsWith('e:item:')) hbPut('r:' + j, f.slice(2)); return true; }
+  if (e.code === hbBinds().page2) { UI.loPg2 = true; return true; }
+  return false;
+}
+
+/* ---------- Controls window: rebind every action, reset, the gamepad layout ---------- */
+const HB_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'jump']], ['Fight', ['light', 'heavy', 'dodge', 'block', 'lock']], ['Skills and items', ['skill1', 'skill2', 'skill3', 'skill4', 'page2', 'quick', 'cycle']], ['World', ['interact', 'ride']]];
+function hbPadSVG() {
+  const t = (x, y, s, a, c) => `<text x="${x}" y="${y}" text-anchor="${a || 'middle'}" font-size="10.5" font-weight="700" fill="${c || '#2a3550'}">${esc(s)}</text>`;
+  const btn = (x, y, l, col) => `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="#1a2236"/><text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="800" fill="#fff">${l}</text>`;
+  return `<svg class="kb-pad" viewBox="0 0 420 200" role="img" aria-label="Gamepad layout">`
+    + `<path d="M120 52 Q210 38 300 52 Q350 58 368 110 Q384 168 352 176 Q330 182 306 150 L282 124 Q210 116 138 124 L114 150 Q90 182 68 176 Q36 168 52 110 Q70 58 120 52Z" fill="#e8ecf4" stroke="#6d7894" stroke-width="2"/>`
+    + `<rect x="96" y="34" width="46" height="12" rx="5" fill="#c9d0df" stroke="#6d7894"/><rect x="278" y="34" width="46" height="12" rx="5" fill="#c9d0df" stroke="#6d7894"/>`
+    + `${t(119, 43.5, 'LB')}${t(301, 43.5, 'RB')}${t(119, 22, 'LT Block · LB Skills 5–8')}${t(301, 22, 'RB + X Y B A: skills 1–4')}`
+    + `<circle cx="122" cy="90" r="17" fill="#c9d0df" stroke="#6d7894"/><circle cx="122" cy="90" r="9" fill="#9aa6c0"/>${t(58, 76, 'Move', 'middle')}`
+    + `<path d="M162 128h12v-12h12v12h12v12h-12v12h-12v-12h-12z" fill="#4a5470"/>${t(180, 112, '↑ Use')}${t(180, 170, '↓ Potion')}${t(140, 146, '←', 'end')}${t(220, 146, '→ Cycle', 'start')}`
+    + `<circle cx="258" cy="134" r="13" fill="#c9d0df" stroke="#6d7894"/>${t(258, 168, 'RS Lock')}`
+    + `${btn(298, 72, 'Y', '#c8a020')}${btn(280, 90, 'X', '#3a6ae0')}${btn(316, 90, 'B', '#c43a2a')}${btn(298, 108, 'A', '#2a9a3a')}`
+    + `${t(298, 58, 'Heavy')}${t(266, 94, 'Attack', 'end')}${t(330, 94, 'Dodge', 'start')}${t(298, 128, 'Jump (RT too)')}`
+    + `<rect x="190" y="70" width="14" height="8" rx="3" fill="#6d7894"/><rect x="216" y="70" width="14" height="8" rx="3" fill="#6d7894"/>${t(197, 64, 'Back', 'end')}${t(223, 64, 'Start', 'start')}${t(210, 92, 'Items · Menu')}`
+    + `</svg>`;
+}
+RENDER.keys = function () {
+  const can = typeof setKey === 'function', cap = UI.kbCap, ids = hbIds(), used = new Set();
+  const row = id => { used.add(id); const on = cap === id, fl = UI.kbFlash === id;
+    return `<button class="kb-row${on ? ' cap' : ''}${fl ? ' fl' : ''}" data-kb="${id}" data-nav="k:${id}" ${can ? '' : 'disabled'}><span>${esc(hbName(id))}</span>${on ? '<em>Press a key…</em>' : kc(hk(id))}<small>${esc(hpad(id))}</small></button>`; };
+  let groups = HB_GROUPS.map(([g, l]) => `<div class="kb-g"><div class="sec">${g}</div>${l.filter(id => ids.includes(id)).map(row).join('')}</div>`).join('');
+  const rest = ids.filter(id => !used.has(id) && id !== 'menu'); if (rest.length) groups += `<div class="kb-g"><div class="sec">Other</div>${rest.map(row).join('')}</div>`;
+  return `<p class="muted" style="margin:0 0 4px;line-height:1.4">${can ? `Pick an action, then press its new key (${kc('Esc')} cancels). A key another action uses swaps over. ${kc('Esc')} always opens the menu, and ${kc('1')}–${kc('9')} still work for the classic hotbar.` : 'Key rebinding arrives with the new controls file.'}</p>`
+    + `<div class="kb-cols">${groups}</div><div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-kb="!reset" data-nav="b:reset" ${can && typeof resetKeys === 'function' ? '' : 'disabled'}>Reset to defaults</button><button class="btn" data-kb="!ov" data-nav="b:ov">Show the controls card</button></div>`
+    + `<div class="sec">Gamepad</div>${hbPadSVG()}`;
+};
+AFTER.keys = bd => { const keys = hbNavEls(bd).map(e => e.dataset.nav); if (!keys.includes(UI.kbFoc)) UI.kbFoc = keys[0] || null; hbPaint(bd, UI.kbFoc, true); };
+function hbIds() { const K = hbKM(); return K ? Object.keys(K) : Object.keys(HB_DEF); }
+function hbKbAct(id) {
+  if (id === '!reset') { if (typeof resetKeys === 'function') { resetKeys(); log('Keys reset to the defaults.', 'sys'); } UI.kbCap = null; UI.dirty = true; UI.abSig = ''; return; }
+  if (id === '!ov') { hbOverlay(true); return; }
+  if (typeof setKey !== 'function') return;
+  UI.kbCap = UI.kbCap === id ? null : id; UI.kbFlash = null; UI.kbFoc = 'k:' + id; UI.dirty = true;
+}
+function hbCapture(e) {
+  const id = UI.kbCap; if (e.repeat) return;
+  if (e.code === 'Escape') { UI.kbCap = null; UI.dirty = true; return; }
+  if (!e.code || /^(Alt|Meta|Control|OS)/.test(e.code)) { log('Alt, Ctrl and Cmd are kept for menus. Pick another key.', 'warn'); return; }
+  const was = hk(id); let r; try { r = setKey(id, e.code); } catch (err) { r = { ok: false, why: String(err && err.message || err) }; }
+  UI.kbCap = null; UI.dirty = true; UI.abSig = '';
+  if (r && r.ok === false) { log(r.why || 'That key cannot be used.', 'warn'); return; }
+  UI.kbFlash = (r && r.swapped) || null;
+  log(`${hbName(id)}: ${hk(id)}${r && r.swapped ? ` · ${hbName(r.swapped)} moved to ${hk(r.swapped)}` : was === hk(id) ? ' (unchanged)' : ''}.`, 'sys');
+}
+function hbKbKey(e) {
+  if (e.altKey || e.ctrlKey || e.metaKey) return false;
+  const bd = $('w-keys').querySelector('.bd'), d = hbDir(e);
+  if (d) { UI.kbFoc = hbNav(bd, UI.kbFoc, d[0], d[1]); hbPaint(bd, UI.kbFoc); return true; }
+  if (hbOK(e)) { if (!e.repeat) { const f = UI.kbFoc || ''; if (f.startsWith('k:')) hbKbAct(f.slice(2)); else if (f === 'b:reset') hbKbAct('!reset'); else if (f === 'b:ov') hbKbAct('!ov'); } return true; }
+  return false;
+}
+
+/* ---------- First-run controls card and the jump toast ---------- */
+function hbOverlayHTML() {
+  const key = (id, label, cls) => `<div class="ck ${cls || ''}"><b>${esc(hk(id))}</b><span>${label}</span></div>`;
+  const left = `<div class="ckrow" style="--o:.35">${key('quick', 'Potion', 'c-it')}${key('up', 'Forward', 'c-mv')}${key('cycle', 'Next item', 'c-it')}${key('ride', 'Ride', 'c-sy')}</div>`
+    + `<div class="ckrow" style="--o:.6">${key('left', 'Left', 'c-mv')}${key('down', 'Back', 'c-mv')}${key('right', 'Right', 'c-mv')}${key('interact', 'Talk · Open', 'c-sy')}</div>`
+    + `<div class="ckrow">${key('block', 'Block (hold)', 'c-fi w2')}</div><div class="ckrow" style="--o:1.2">${key('jump', 'Jump', 'c-mv w5')}</div>`;
+  const right = `<div class="ckrow">${key('skill1', 'Skill 1', 'c-sk')}${key('skill2', 'Skill 2', 'c-sk')}${key('skill3', 'Skill 3', 'c-sk')}${key('skill4', 'Skill 4', 'c-sk')}</div>`
+    + `<div class="ckrow" style="--o:.25">${key('light', 'Attack', 'c-fi')}${key('heavy', 'Heavy', 'c-fi')}${key('dodge', 'Dodge', 'c-fi')}${key('page2', 'Skills 5–8', 'c-sk')}</div>`
+    + `<div class="ckrow" style="--o:.25">${key('lock', 'Lock target', 'c-sy w2')}</div>`;
+  return `<div class="cov-card" role="dialog" aria-label="Controls"><div class="cov-h">Controls</div><div class="cov-sub">Left hand moves, right hand fights. No mouse needed.</div>`
+    + `<div class="cov-kb"><div class="cov-hand"><div class="cov-t">Left hand</div>${left}</div><div class="cov-hand"><div class="cov-t">Right hand</div>${right}</div></div>`
+    + `<div class="cov-leg"><span class="c-mv">Move</span><span class="c-fi">Fight</span><span class="c-sk">Skills</span><span class="c-it">Items</span><span class="c-sy">World</span></div>`
+    + `<div class="cov-pad"><b>Gamepad</b> Stick move · ${kc('A')} or ${kc('RT')} jump · ${kc('X')} attack · ${kc('Y')} heavy · ${kc('B')} dodge · ${kc('LT')} block · ${kc('RB')} + ${kc('X')}${kc('Y')}${kc('B')}${kc('A')} skills · d-pad ${kc('↓')} potion</div>`
+    + `<div class="cov-pad">${kc('Esc')} menu and Loadout · ${kc('Alt+L')} Loadout · ${kc('Alt+K')} keys · ${kc('1')}–${kc('9')} classic hotbar. Drag skills and potions onto the bar, or right-click them.</div>`
+    + `<div class="cov-f"><button class="btn big" data-cov="ok">Got it ${kc('Enter')}</button><button class="btn" data-cov="keys">Change keys</button><span class="muted">Open this again from Help.</span></div></div>`;
+}
+function hbOverlay(show) {
+  const el = $('ctlov'); if (!el) return;
+  if (!show) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; store('aom-ctlseen', '1'); UI.covT = performance.now(); } return; }
+  hideTip(); hbMenuClose(); el.innerHTML = hbOverlayHTML(); el.hidden = false;
+}
+function hbToast(html, ms) {
+  const el = $('ctltoast'); if (!el) return; el.innerHTML = html; el.hidden = false; el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
+  clearTimeout(UI.toastT); UI.toastT = setTimeout(() => { el.hidden = true; }, ms || 4200);
+}
+function hbOnStart() {
+  UI.startT = performance.now(); UI.abSig = ''; UI.loArm = null; hbMenuClose();
+  if (hbAct() && !store('aom-ctlseen') && hbOnboardOK()) hbOverlay(true);
+}
+function hbOnboardTick() {
+  if (!P.flags || !P.flags.tips || P.flags.tips.jump || !hbOnboardOK()) return;
+  const t = performance.now(), ov = $('ctlov');
+  if ((ov && !ov.hidden) || !$('dialog').hidden || P.dead || (typeof CINE !== 'undefined' && CINE.active)) return;
+  if (!(P.flags.tips.moved || t - (UI.startT || t) > 8000) || t - (UI.covT || 0) < 1500 || t - (UI.startT || t) < 2500) return;
+  P.flags.tips.jump = true; hbToast(`${kc(hbAct() ? hk('jump') : 'Space')}<span>Jump</span><small>hop up ledges and over low walls</small>`);
+}
+
+/* ---------- Input glue: keys (C1 calls uiKeyCapture first), the pad, clicks, drag and drop ---------- */
+// Returns true when the UI wants this key (the overlay, the slot menu, a key capture, a focused Loadout or Controls window).
+function uiKeyCapture(e) {
+  if (!e || e.__ui !== undefined) return !!(e && e.__ui);
+  let r = false; try { r = hbKey(e); } catch (err) { console.error(err); }
+  try { e.__ui = r; } catch (err) { /* frozen event */ }
+  if (r && e.preventDefault) e.preventDefault(); return r;
+}
+function hbKey(e) {
+  if (e.type === 'keyup') { if (e.code === hbBinds().page2) UI.loPg2 = false; return false; }   // releases always reach the game
+  if (!started || (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'))) return false;
+  if (UI.kbCap) { hbCapture(e); return true; }
+  const ov = $('ctlov'); if (ov && !ov.hidden) { if (!/^(Shift|Control|Alt|Meta|OS)/.test(e.code) && !e.repeat) hbOverlay(false); return true; }
+  if (UI.sm) return hbMenuKey(e);
+  if (!$('dialog').hidden) return false;
+  const top = hbTopWin();
+  if (top === 'loadout') return hbLoKey(e);
+  if (top === 'keys') return hbKbKey(e);
+  return false;
+}
+// The game ignores the pad while these are up (C1's pad dispatch asks first).
+function uiPadCapture() { if (!started) return false; const ov = $('ctlov'); if ((ov && !ov.hidden) || UI.sm || UI.kbCap) return true; const t = hbTopWin(); return t === 'loadout' || t === 'keys'; }
+function hbPadUI() {
+  if (!navigator.getGamepads || !(hbPadOn() || (typeof PAD_SEEN !== 'undefined' && PAD_SEEN))) return;
+  let gp = null; const l = navigator.getGamepads(); for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } if (!gp) return;
+  const now = gp.buttons.map(b => !!(b && b.pressed)), ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+  const st = Math.abs(ax) > 0.6 ? (ax > 0 ? 15 : 14) : Math.abs(ay) > 0.6 ? (ay > 0 ? 13 : 12) : -1; if (st >= 0) now[st] = true;
+  const prev = UI.padPrev || []; UI.padPrev = now; if (!uiPadCapture()) return;
+  const CODES = { 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight', 0: 'Enter', 1: 'Escape', 2: 'KeyX', 3: 'Delete' };
+  for (const b in CODES) {
+    if (!now[b] || prev[b]) continue;
+    const code = CODES[b], ev = { type: 'keydown', code, key: code, repeat: false, target: document.body, preventDefault() {} };
+    const ov = $('ctlov');
+    if (ov && !ov.hidden) { hbOverlay(false); return; }
+    if (hbKey(ev)) continue;
+    if (code === 'Escape') { if (UI.sm) hbMenuClose(); else { const t = hbTopWin(); if (t) closeWin(t); } }
+  }
+}
+function hbTick() {
+  if (!P) return;
+  renderABar(); if (UI.abEl && UI.abEl.length) patchABar();
+  hbRingAuto(); hbPadUI(); hbOnboardTick();
+}
+addEventListener('keydown', e => { if (uiKeyCapture(e)) e.stopImmediatePropagation(); }, true);   // runs after action.js's listener
+addEventListener('controlsChanged', () => { UI.abSig = ''; UI.hotSig = null; UI.dirty = true; });
+
+// Drag and drop: mouse drags a skill or a consumable (from Skills, Items, the Loadout or a slot) onto a slot; dropping a
+// slot's content outside any window clears that slot. Touch: a long press opens the "Put on slot" menu instead.
+const DRG = { src: null, ref: null, from: null, x: 0, y: 0, on: false, pid: -1, type: '', lp: 0, eat: 0, lpT: -1e9, over: null };
+function hbRefOf(src) {
+  if (src.dataset.bind) return hbRefOK(src.dataset.bind) ? src.dataset.bind : null;
+  if (src.dataset.slot) return hbSlotRef(src.dataset.slot);
+  if (src.dataset.hot !== undefined) { const r = P.hot[+src.dataset.hot]; return r && hbRefOK(r.k + ':' + r.id) ? r.k + ':' + r.id : null; }
+  return null;
+}
+function hbDropKey(x, y) {
+  const el = document.elementFromPoint(x, y), t = el && el.closest && el.closest('[data-slot],[data-hot]'); if (!t || t.closest('#slotmenu')) return null;
+  return t.dataset.slot || 'h:' + t.dataset.hot;
+}
+function hbDragEnd() {
+  clearTimeout(DRG.lp); DRG.src = null; DRG.on = false; const g = $('dragghost'); if (g) g.hidden = true;
+  const gm = $('game'); gm.classList.remove('drag-skill', 'drag-item'); if (DRG.over) { DRG.over.classList.remove('dropon'); DRG.over = null; }
+}
+$('game').addEventListener('pointerdown', e => {
+  if (UI.sm && !e.target.closest('#slotmenu')) hbMenuClose();
+  if (e.button !== 0 || !started) return;
+  const src = e.target.closest('[data-bind],[data-slot],[data-hot]'); if (!src || src.closest('#slotmenu')) return;
+  const ref = hbRefOf(src); if (!ref) return;
+  Object.assign(DRG, { src, ref, from: src.dataset.slot || (src.dataset.hot !== undefined ? 'h:' + src.dataset.hot : null), x: e.clientX, y: e.clientY, on: false, pid: e.pointerId, type: e.pointerType });
+  clearTimeout(DRG.lp);
+  if (e.pointerType !== 'mouse') DRG.lp = setTimeout(() => { if (DRG.src === src && !DRG.on) { const s = src; hbDragEnd(); DRG.eat = 1; DRG.lpT = performance.now(); hbMenu(ref, DRG.x, DRG.y, s); } }, 520);
+}, true);
+addEventListener('pointermove', e => {
+  if (!DRG.src || e.pointerId !== DRG.pid) return;
+  if (!DRG.on) {
+    if (hyp(e.clientX - DRG.x, e.clientY - DRG.y) < (DRG.type === 'mouse' ? 6 : 12)) return;
+    if (DRG.type !== 'mouse') { hbDragEnd(); return; }   // touch moves scroll the window
+    DRG.on = true; hideTip(); const g = $('dragghost'); g.innerHTML = hbIcon(DRG.ref); g.hidden = false;
+    $('game').classList.add(DRG.ref.startsWith('skill:') ? 'drag-skill' : 'drag-item');
+  }
+  const g = $('dragghost'); g.style.left = e.clientX + 'px'; g.style.top = e.clientY + 'px';
+  const k = hbDropKey(e.clientX, e.clientY), t = k && document.elementFromPoint(e.clientX, e.clientY).closest('[data-slot],[data-hot]');
+  if (DRG.over !== t) { if (DRG.over) DRG.over.classList.remove('dropon'); DRG.over = t || null; if (t) t.classList.add('dropon'); }
+});
+addEventListener('pointerup', e => {
+  if (!DRG.src || e.pointerId !== DRG.pid) return;
+  if (DRG.on) {
+    const k = hbDropKey(e.clientX, e.clientY), ref = DRG.ref, from = DRG.from, overWin = document.elementFromPoint(e.clientX, e.clientY);
+    DRG.eat = 1; setTimeout(() => { DRG.eat = 0; }, 0);   // the browser's click follows in this same task
+    if (k && k !== from) {
+      if (from && from[0] === 'h' && k[0] === 'h') { const a = +from.slice(2), b = +k.slice(2), t = P.hot[a]; P.hot[a] = P.hot[b]; P.hot[b] = t; UI.dirty = true; }
+      else hbPut(k, ref);
+    } else if (!k && from && !(overWin && overWin.closest && overWin.closest('.win'))) hbPut(from, null);
+  }
+  hbDragEnd();
+}, true);
+addEventListener('pointercancel', () => { if (DRG.src) hbDragEnd(); });
+// Clicks on the new parts (capture phase, ahead of the game's click handler).
+$('game').addEventListener('click', e => {
+  if (DRG.eat) { DRG.eat = 0; e.stopPropagation(); e.preventDefault(); return; }   // the click a drop (or a long press) makes
+  const sm = e.target.closest('[data-sm]'); if (sm) { e.stopPropagation(); Sfx.click(); hbMenuPick(sm.dataset.sm); return; }
+  const cv = e.target.closest('[data-cov]'); if (cv) { e.stopPropagation(); Sfx.click(); hbOverlay(false); if (cv.dataset.cov === 'keys') openWin('keys'); return; }
+  const lo = e.target.closest('#w-loadout [data-nav]'); if (lo) { e.stopPropagation(); Sfx.click(); UI.loFoc = lo.dataset.nav; hbLoAct(lo.dataset.nav, 'click'); hbPaint($('w-loadout').querySelector('.bd'), UI.loFoc); return; }
+  const kb = e.target.closest('[data-kb]'); if (kb) { e.stopPropagation(); Sfx.click(); hbKbAct(kb.dataset.kb); return; }
+  const sl = e.target.closest('#abar [data-slot]'); if (sl) { e.stopPropagation(); Sfx.unlock(); hbSlotClick(sl.dataset.slot); return; }
+}, true);
+// Help window: the action-mode controls list, from the live keymap.
+function hbHelpAction(k) {
+  const K = id => esc(hk(id)), Q = id => esc(hpad(id));
+  const wk = typeof WINKEYS !== 'undefined' && WINKEYS.action ? Object.entries(WINKEYS.action).filter(([, w]) => WIN[w]).map(([c, w]) => `${esc(hbCodeLabel(c))} ${esc(WIN[w].title)}`).join(' · ') : '';
+  return k('Move', `${K('up')} ${K('left')} ${K('down')} ${K('right')} or the arrow keys`) + k('Jump', K('jump')) + k('Attack (3-hit combo)', `${K('light')}, tap repeatedly`)
+    + k('Heavy attack', `Hold ${K('heavy')}, release (charge for more)`) + k('Dodge roll', `${K('dodge')} (invulnerable while rolling)`) + k('Block / parry', `Hold ${K('block')}; block right before a hit to parry`)
+    + k('Skills', `${['skill1', 'skill2', 'skill3', 'skill4'].map(K).join(' ')} · hold ${K('page2')} for skills 5–8`) + k('Quick item', `${K('quick')} uses it · ${K('cycle')} picks the next`)
+    + k('Talk, read, open, pick up, enter a door', K('interact')) + k('Lock onto an enemy', K('lock')) + k('Ride / dismount a warg', `${K('ride')} (Ash Knight, Rune Jarl)`)
+    + k('Rotate camera', '[ / ], or right-drag') + k('Classic hotbar', '1–9') + k('Menu and Loadout', 'Esc, or Alt+L') + (wk ? k('Windows', wk) : '')
+    + k('Gamepad', `Stick move · ${Q('jump')} jump · ${Q('light')} attack · ${Q('heavy')} heavy · ${Q('dodge')} dodge · ${Q('block')} block · ${Q('skill1')}… skills · ${Q('page2')} page 2 · ${Q('quick')} potion · ${Q('interact')} talk · Start menu`);
+}
+function hbAltList() {
+  if (typeof ALTWIN === 'undefined') return 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map';
+  const seen = new Set(); return Object.entries(ALTWIN).filter(([, w]) => WIN[w] && !seen.has(w) && seen.add(w)).map(([c, w]) => `Alt+${esc(hbCodeLabel(c))} ${esc(w === 'keys' ? 'Keys' : WIN[w].title)}`).join(' · ');
+}
 // Kindled waystones in story order; the travel buttons show the level range.
 function travelList() { return MAP_ORDER.filter(k => MAPDEFS[k] && P.kindled[k]).concat(Object.keys(P.kindled).filter(k => MAPDEFS[k] && !MAP_ORDER.includes(k))); }
 function travelButton(k, off) { const d = MAPDEFS[k]; return `<button class="btn" style="width:100%;text-align:left;margin-top:4px" data-act="travel:${k}" ${off ? 'disabled' : ''}>${esc(d.name)} <span class="muted">· ${d.lv ? `Base Lv ${d.lv[0]} – ${d.lv[1]}` : esc(d.sub)}</span></button>`; }
@@ -1263,7 +1743,10 @@ game.addEventListener('click', e => {
 game.addEventListener('contextmenu', e => {
   if (typeof sqContext === 'function' && sqContext(e)) return;   // round 9: right-click a party frame opens Tactics
   const h = e.target.closest('[data-hot]'); if (h) { e.preventDefault(); P.hot[+h.dataset.hot] = null; UI.dirty = true; return; }
-  const c = e.target.closest('.cell[data-act]'); if (c) { e.preventDefault(); const it = findItem(+c.dataset.act.split(':')[1]); if (it && P.inv.includes(it) && ITEMS[it.id].type !== 'key') { P.inv.splice(P.inv.indexOf(it), 1); drops.push({ kind: 'drop', item: it, x: P.x + rand(-0.4, 0.4), y: P.y + rand(-0.4, 0.4), t: 0, id: uidc++ }); log(`You drop ${itemName(it)}.`, 'sys'); UI.dirty = true; } return; }
+  // Controls round: right-click a slot clears it; a learned skill or a consumable opens "Put on slot"
+  const sl = e.target.closest('[data-slot]'); if (sl && !sl.closest('#slotmenu')) { e.preventDefault(); if (hbSlotRef(sl.dataset.slot)) hbPut(sl.dataset.slot, null); return; }
+  const bd = e.target.closest('[data-bind]'); if (bd && bd.dataset.bind && (hbRefOK(bd.dataset.bind) || bd.dataset.bind.startsWith('skill:'))) { e.preventDefault(); if (performance.now() - DRG.lpT < 900) return; hbMenu(bd.dataset.bind, e.clientX, e.clientY, bd); return; }
+  const c = e.target.closest('.cell[data-act]'); if (c) { e.preventDefault(); hbDropItem(+c.dataset.act.split(':')[1]); return; }
   if (e.target.closest('.win')) e.preventDefault();
 });
 game.addEventListener('pointerover', e => {
@@ -1275,7 +1758,7 @@ game.addEventListener('pointermove', e => { const el = $('tooltip'); if (!el.hid
 
 addEventListener('keydown', e => {
   if (e.target.id === 'sqin' && typeof sqInputKey === 'function') { sqInputKey(e); return; }   // round 9: squad chat input (action.js ignores INPUT targets)
-  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && !$('title').hidden) $('bNew').click(); if (e.key === 'Enter' && e.target.id === 'petname') { handleAct('petrename'); e.target.blur(); } return; }
+  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && !$('title').hidden) { if (e.isTrusted) UI.human = true; $('bNew').click(); } if (e.key === 'Enter' && e.target.id === 'petname') { handleAct('petrename'); e.target.blur(); } return; }
   if (e.key === 'Alt') { mouse.alt = true; e.preventDefault(); return; }
   if (!started) return;
   if (e.key === 'Enter' && $('dialog').hidden && !e.repeat && typeof sqFocusChat === 'function' && sqFocusChat()) { e.preventDefault(); return; }   // round 9
@@ -1287,16 +1770,18 @@ addEventListener('keydown', e => {
     else useHot(i);
     return;
   }
-  if (k === 'escape') { if (!$('dialog').hidden) { closeDialog(); return; } let top = null, tz = -1; for (const id in UI.open) if (UI.open[id]) { const z = +$('w-' + id).style.zIndex; if (z > tz) { tz = z; top = id; } } if (top) closeWin(top); return; }
+  if (k === 'escape') { if (!$('dialog').hidden) { closeDialog(); return; } let top = null, tz = -1; for (const id in UI.open) if (UI.open[id]) { const z = +$('w-' + id).style.zIndex; if (z > tz) { tz = z; top = id; } } if (top) closeWin(top); else if (isAction()) openWin('loadout'); return; }   // controls round: Esc (pad Start) with nothing open is the menu
   if (e.ctrlKey || e.metaKey) return;
-  const map_ = { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help', p: 'pet' };
+  // Controls round: in action mode a bare letter opens a window only through action.js's WINKEYS (not when bound to an action)
+  if (isAction()) { if (hbBound(e.code)) return; const aw = typeof WINKEYS !== 'undefined' && WINKEYS.action && WINKEYS.action[e.code]; if (aw && WIN[aw]) { toggleWin(aw); return; } }
+  const map_ = isAction() ? {} : { a: 'status', i: 'inv', e: 'equip', s: 'skills', j: 'journal', h: 'help', p: 'pet' };
   if (map_[k]) { toggleWin(map_[k]); return; }
   if (k === 't' && typeof sqMulti === 'function' && sqMulti()) { toggleWin('tactics'); return; }   // round 9: squad tactics
   if (k === 'r') { toggleMount(); return; }   // round 6: ride / dismount (action mode: js/action.js)
   if (k === ',' || (k === 'w' && !isAction())) { toggleWin('worldmap'); return; }
   if (k === 'x') { if ((P.skills.basic || 0) < 3) { log('You need Basic Skill 3 to sit.', 'warn'); return; } if (P.target || P.casting) return; P.sitting = !P.sitting; P.path = null; log(P.sitting ? 'You sit and catch your breath.' : 'You stand.', 'sys'); return; }
   if (k === 'z') { let best = null, bd = 3.5; for (const d of drops) { const dd = dist(d, P); if (dd < bd) { bd = dd; best = d; } } if (best) { P.target = null; P.goal = { kind: 'drop', ref: best }; P.path = null; } return; }
-  if (k === '[' || k === 'q') { cam.yawT += Math.PI / 8; return; }
+  if (k === '[' || (k === 'q' && !isAction())) { cam.yawT += Math.PI / 8; return; }
   if (k === ']') { cam.yawT -= Math.PI / 8; return; }
   if (k === 'm') { Sfx.on = !Sfx.on; store('aom-sound', Sfx.on ? 'on' : 'off'); log(`Sound ${Sfx.on ? 'on' : 'off'}.`, 'sys'); return; }
 });
@@ -1351,7 +1836,8 @@ function startGame(fresh) {
   questRefresh({ silent: !fresh, noReward: questMigrate }); questMigrate = false;
   achTick(0, true); // achievements already earned in an older save are granted quietly
   log(fresh ? 'You wake in the Ash with nothing but a knife and a shirt.' : `Welcome back, ${P.name}.`, 'sys');
-  log(`Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
+  log(isAction() ? `Press Esc for the menu and Loadout, ${winKey('help') || 'Alt+H'} for all controls. Press ${winKey('status') || 'Alt+A'} to spend status points.` : `Press H for controls. Press ${winKey('status')} to spend status points.`, 'sys'); refreshKeyHints();
+  hbOnStart();   // controls round: first-run controls card
 }
 const OPT_ON = 'border-color:#3a6ae0;box-shadow:0 0 0 1px #3a6ae0;background:linear-gradient(#e8f0ff,#c4d4f4);color:#1a3a8a';
 function showTitle() {
@@ -1376,8 +1862,8 @@ function showTitle() {
     if (b.dataset.g === 'gender') gender = b.dataset.v; else hairStyle = b.dataset.v;
     $('title').querySelectorAll(`.t-opt[data-g="${b.dataset.g}"]`).forEach(x => { const on = x === b; x.setAttribute('aria-pressed', on); x.style.cssText = on ? OPT_ON : ''; });
   });
-  if (save) $('bCont').onclick = () => { Sfx.unlock(); applySave(save); startGame(false); };
-  $('bNew').onclick = () => {
+  if (save) $('bCont').onclick = e => { if (e && e.isTrusted) UI.human = true; Sfx.unlock(); applySave(save); startGame(false); };
+  $('bNew').onclick = e => { if (e && e.isTrusted) UI.human = true;   // controls round: a person (not a test) started, so the controls card may show
     Sfx.unlock();
     if (save && !armed) { armed = true; $('bNew').textContent = 'Rise, and erase the saved character'; $('bNew').classList.add('warn'); return; }
     const name = ($('nm').value || 'Unkindled').trim().slice(0, 16) || 'Unkindled';

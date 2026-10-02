@@ -4198,7 +4198,10 @@ function kindFrame(A, cave) {
 /* Squad mode: when the player swaps heroes (P changes to another member of the same PARTY, same map), the camera eases
    from where it is to the new hero over CAMSW.dur s (smoothstep, tracking the hero while it moves) instead of the
    follow's snap-ish catch-up, then the usual exponential follow takes over. A party of one never swaps. */
-const CAMSW = { p: null, map: null, t: -1, dur: 0.3, x0: 0, y0: 0, h0: 0 };
+const CAMSW = { p: null, map: null, t: -1, dur: 0.3, x0: 0, y0: 0, h0: 0, f: { p: null, map: null, x: 0, y: 0, h: 0 } };   // f: the followed hero's position last frame (updateCamera)
+// One axis of the camera follow over a frame of dt s: the target went from t0 to t1 at constant speed; c is the camera.
+// Lag e' = v - L e  ->  e(dt) = v / L + (e0 - v / L) a, with a = exp(-L dt).
+function camFollow(c, t0, t1, a, L, dt) { const vl = (t1 - t0) / (dt * L); return t1 - (vl + (t0 - c - vl) * a); }
 function updateCamera(dt) {
   const P = ctrlHero();
   if (P) {
@@ -4213,10 +4216,18 @@ function updateCamera(dt) {
       CAMSW.t += dt; const k = smoothstep(0, CAMSW.dur, CAMSW.t);
       cam.tx = CAMSW.x0 + (P.x - CAMSW.x0) * k; cam.ty = CAMSW.y0 + (P.y - CAMSW.y0) * k; cam.th = CAMSW.h0 + (groundH(P.x, P.y) - CAMSW.h0) * k;
       if (CAMSW.t >= CAMSW.dur) CAMSW.t = -1;
+    } else if (started && CAMSW.f.p === P && window.AOM_CAM_STEP !== true && CAMSW.f.map === map && dt > 1e-5 && Math.abs(P.x - CAMSW.f.x) + Math.abs(P.y - CAMSW.f.y) < 3) {
+      // Glitch fix (C3): the exact solution of the exponential follow for a target that moved linearly during the
+      // frame. The old discrete step (cam += (P - cam) * k) left a lag of v / 7.6 - v * dt / 2, so every uneven frame
+      // (a 120 Hz display dropping frames, a GC pause) moved the walking hero by ~1-2 px on screen and re-quantised
+      // its pixels: the constant shimmer while walking. Here the lag is v / L whatever dt is (same feel at 60 fps).
+      const a = Math.pow(0.0005, dt), L = 7.6009, gh = groundH(P.x, P.y), F = CAMSW.f;
+      cam.tx = camFollow(cam.tx, F.x, P.x, a, L, dt); cam.ty = camFollow(cam.ty, F.y, P.y, a, L, dt); cam.th = camFollow(cam.th, F.h, gh, a, L, dt);
     } else {
       const k = started ? 1 - Math.pow(0.0005, dt) : 0.02;
       cam.tx += (P.x - cam.tx) * k; cam.ty += (P.y - cam.ty) * k; cam.th += (groundH(P.x, P.y) - cam.th) * k;
     }
+    const F = CAMSW.f; F.p = P; F.map = map; F.x = P.x; F.y = P.y; F.h = groundH(P.x, P.y);
   }
   if (!started) cam.yawT += dt * 0.04;
   cam.yaw += (cam.yawT - cam.yaw) * (1 - Math.pow(0.002, dt));

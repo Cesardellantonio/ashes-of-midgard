@@ -1,13 +1,14 @@
 'use strict';
 /* =========================================================
-   Action controls: play with the keyboard (or a gamepad)
-   instead of clicking. WASD moves relative to the camera,
-   J light-attack combo, K charged heavy, L block (tap early
-   to parry), Space dodge roll with invulnerability frames,
-   Shift jump (classic mode: Space; gamepad: RT).
-   Click-to-move keeps working alongside it.
+   Action controls: play with the keyboard (or a gamepad) like a console game instead of clicking. The keys come
+   from KEYMAP / keyBinds() (js/controls.js, rebindable): WASD moves relative to the camera, Space jumps, Shift held
+   blocks (tap early to parry), J light-attack combo, K charged heavy, L dodge roll with invulnerability frames,
+   U I O P cast skill slots 1-4 (hold ';' for 5-8), Q drinks the quick item, E cycles it, F interacts, Tab locks a
+   target, R rides. Presses that come while the hero is still busy (a swing's recovery, a roll, a jump, a cast, a
+   cooldown about to end) are buffered and fire the moment it can act (CTRL.buf, BUF).
+   Classic (mouse) mode: Space jumps, the rest is click-to-move. Click-to-move keeps working alongside action mode.
    ========================================================= */
-const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, padPrev: [], lock: null };
+const CTRL = { mode: store('aom-ctrl') || 'action', keys: new Set(), pad: null, padPrev: [], lock: null, page2: false, padLB: false, buf: null, rbUsed: false, moveAt: -1, movePrev: false, castAt: -1, castPd: null };
 let HITSTOP = 0, SHAKE = 0;
 /* Anime timing hooks (design/anime-anim-contract.md):
    - animHitHint (gfx-sheets.js) is told when each swing's damage lands, so sheets with per-frame `durs` show their
@@ -27,18 +28,31 @@ function hitstopScale() {
 const animeStop = (old, anime) => animeOn() ? anime : old;
 const hitHint = (delay, kind) => { if (typeof animHitHint === 'function') animHitHint(P, delay, kind); };
 const isAction = () => CTRL.mode === 'action';
+// Window hotkeys. Action mode: only letters the keymap does not use (I, O, P, U, E, Q are skills / items now; open
+// those windows with Alt+letter or the menu). A key rebound onto one of these letters wins over the window.
 const WINKEYS = {
-  action: { KeyC: 'status', KeyI: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap', KeyP: 'pet' },
+  action: { KeyC: 'status', KeyB: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap' },
   classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help', KeyW: 'worldmap', KeyP: 'pet' },
 };
 // Comma is not an action key: ui.js opens the World Map on ',' in both modes (and on W in classic mode).
-const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet' };
-const ACTION_KEYS = new Set(['ShiftLeft', 'ShiftRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyJ', 'KeyK', 'KeyL', 'Space', 'KeyQ', 'KeyE', 'KeyF', 'Tab', 'KeyC', 'KeyG', 'KeyV', 'KeyN', 'KeyR', 'KeyP']);   // round 6: R rides / dismounts, P opens the Pet window
+const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet', KeyL: 'loadout', KeyK: 'keys' };
+const ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+// Every key action mode takes for itself (kept up to date by ctlKeysRebuilt when keys are rebound).
+const ACTION_KEYS = new Set();
+function ctlKeysRebuilt() {
+  ACTION_KEYS.clear();
+  for (const id in KEYMAP) { const c = keyCode(id); if (c && id !== 'menu') ACTION_KEYS.add(c); }
+  if (ACTION_KEYS.has('ShiftLeft')) ACTION_KEYS.add('ShiftRight');
+  for (const c in ARROWS) ACTION_KEYS.add(c);
+  for (const c in WINKEYS.action) if (c !== 'KeyH' && c !== 'Comma') ACTION_KEYS.add(c);
+}
+ctlKeysRebuilt();
 
 function setCtrlMode(m) {
-  CTRL.mode = m; store('aom-ctrl', m); CTRL.keys.clear(); if (P) P.blocking = false;
+  CTRL.mode = m; store('aom-ctrl', m); CTRL.keys.clear(); CTRL.buf = null; CTRL.page2 = false; if (P) P.blocking = false;
   refreshKeyHints();
-  log(m === 'action' ? 'Action controls: WASD move · J attack · K heavy (hold) · L block · Space dodge · F talk · R ride.' : 'Classic controls: click to move and attack.', 'sys');
+  const k = keyFor;
+  log(m === 'action' ? `Action controls: ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('light')} attack · ${k('heavy')} heavy (hold) · ${k('dodge')} dodge · ${k('block')} block · ${k('jump')} jump · ${k('skill1')} ${k('skill2')} ${k('skill3')} ${k('skill4')} skills · ${k('quick')} potion · ${k('interact')} talk.` : 'Classic controls: click to move and attack. Space jumps.', 'sys');
   UI.dirty = true;
 }
 function refreshKeyHints() {
@@ -48,30 +62,108 @@ function refreshKeyHints() {
 const keyLabel = code => code === 'Comma' ? ',' : code.replace('Key', '');
 const winKey = id => { const map = WINKEYS[CTRL.mode]; for (const k in map) if (map[k] === id) return keyLabel(k); return ''; };
 
+/* ---------- Input buffer ----------
+   ctlPress(kind, arg): kind 'light' | 'heavy' | 'dodge' | 'jump' | 'skill' (arg: the slot index). When the hero is busy
+   for at most BUF.max more seconds, the press waits in CTRL.buf and fires as soon as it is free (BUF.grace after that
+   it expires); a later press replaces it. ctlBusy says for how long a kind of press would still be refused. */
+const BUF = { max: 0.6, grace: 0.12 };
+function jumpLeft() {
+  const J = P.jump; if (!J) return 0;
+  if (J.ph === 'crouch') return JUMP.crouch - J.t + JUMP.air + JUMP.land;
+  return J.ph === 'air' ? JUMP.air - J.t + JUMP.land : Math.max(0.001, JUMP.land - J.t);
+}
+function ctlBusy(kind, arg) {
+  if (!P || P.dead) return 0;
+  let l = 0; const m = v => { if (v > l) l = v; };
+  if (P.dodgeT > 0) m(P.dodgeT);
+  if (P.dash) m(0.15);
+  if (kind === 'jump') { if (P.casting) m(P.castT); return l; }
+  if (P.jump) m(kind === 'skill' && P.jump.ph === 'land' ? 0 : jumpLeft());
+  if (kind === 'dodge') return l;
+  if (P.casting) m(P.castT);
+  if (P.swingT > 0) m(kind === 'light' ? P.swingT - 0.29 : P.swingT);   // a light press under 0.3 s queues the next hit itself
+  if (kind === 'skill') { const id = P.skillSlots && P.skillSlots[arg]; if (id && P.cd) m(P.cd[id] || 0); }
+  return l;
+}
+function ctlPress(kind, arg) {
+  if (!P || !started) return false;
+  const left = ctlBusy(kind, arg);
+  if (left > 0) { CTRL.buf = left <= BUF.max ? { kind, arg, until: time + left + BUF.grace, release: false } : null; return false; }
+  CTRL.buf = null; return ctlFire(kind, arg);
+}
+function ctlFire(kind, arg, b) {
+  switch (kind) {
+    case 'light': actLight(); return true;
+    case 'heavy': actHeavyStart(); if (b && b.release) actHeavyRelease(); return true;
+    case 'dodge': actDodge(); return true;
+    case 'jump': return heroJump(P);
+    case 'skill': return ctlCastSlot(arg);
+  }
+  return false;
+}
+function ctlBufTick() {
+  const b = CTRL.buf; if (!b) return;
+  if (P.dead || time > b.until) { CTRL.buf = null; return; }
+  if (ctlBusy(b.kind, b.arg) <= 0) { CTRL.buf = null; ctlFire(b.kind, b.arg, b); }
+}
+// Casts the skill on slot i (0-7) the way the hotbar does (useSkill: the lock or soft target, ground skills on the
+// lock or ahead). A keyboard cast in reach starts at once, even mid-stride; one a few steps away closes in first.
+function ctlCastSlot(i) {
+  const id = P.skillSlots && P.skillSlots[i];
+  if (!id) { floatText(P, 'Empty slot', 'miss'); return false; }
+  const pd0 = P.pending; useSkill(id);
+  const pd = P.pending; if (!pd || pd === pd0) return false;
+  pd.kbAt = time;
+  const sk = SKILLS[pd.id], tp = pd.target || pd.pos;
+  if (!tp || sk.tgt === 'dir' || dist(P, tp) <= skillRange(sk, pd.lv) + 0.3) {
+    P.pending = null; P.path = null; beginCast(pd);
+    if (P.casting === pd) { CTRL.castAt = time; CTRL.castPd = pd; }
+  }
+  return true;
+}
+// Start: what Esc does (ui.js closes the top window or dialog); with nothing open, the Status window.
+function ctlMenu() {
+  const anyOpen = () => typeof UI !== 'undefined' && UI.open && Object.keys(UI.open).some(k => UI.open[k]);
+  const was = anyOpen() || !$('dialog').hidden;
+  dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+  if (!was && !anyOpen()) toggleWin('status');
+}
+function ctlSetPage2(on) { if (CTRL.page2 === on) return; CTRL.page2 = on; controlsChanged('page'); }
+
 /* ---------- Input ---------- */
+function ctlDo(act, code) {
+  switch (act) {
+    case 'jump': if (!(typeof mouse !== 'undefined' && mouse.down)) ctlPress('jump'); break;   // (not in the middle of a camera drag)
+    case 'block': actBlock(true); break;
+    case 'light': ctlPress('light'); break;
+    case 'heavy': ctlPress('heavy'); break;
+    case 'dodge': ctlPress('dodge'); break;
+    case 'skill1': case 'skill2': case 'skill3': case 'skill4': ctlPress('skill', (+act[5] - 1) + (CTRL.page2 ? 4 : 0)); break;
+    case 'page2': ctlSetPage2(true); break;
+    case 'quick': useQuickItem(); break;
+    case 'cycle': cycleQuickItem(1); break;
+    case 'interact': actInteract(); break;
+    case 'lock': actLockCycle(); break;
+    case 'ride': toggleMount(); break;
+    case 'menu': ctlMenu(); break;
+  }
+}
 addEventListener('keydown', e => {
+  if (typeof uiKeyCapture === 'function' && uiKeyCapture(e)) return;   // the UI is reading keys (rebinding, Loadout, overlay)
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (e.altKey && ALTWIN[e.code]) { e.preventDefault(); e.stopImmediatePropagation(); if (started) toggleWin(ALTWIN[e.code]); return; }
   if (!started || !isAction() || e.ctrlKey || e.metaKey || e.altKey) return;
   if (!$('dialog').hidden || !$('death').hidden) return;
-  if (!ACTION_KEYS.has(e.code)) return;
+  const act = keyAction(e.code), win = act ? null : WINKEYS.action[e.code];
+  if (!act && !win && !ARROWS[e.code]) return;
+  if (act === 'menu' && e.code === 'Escape') return;   // ui.js handles Esc itself
   e.preventDefault(); e.stopImmediatePropagation();
   if (e.repeat) return;
-  CTRL.keys.add(e.code); Sfx.unlock();
+  CTRL.keys.add(ctlNorm(e.code)); Sfx.unlock();
+  if (act === 'page2') { ctlSetPage2(true); return; }
   if (typeof TRAVEL !== 'undefined' && TRAVEL.lock) return;   // mapfix F3: behind the travel fade, held moves count, actions wait
-  const win = WINKEYS.action[e.code]; if (win) { toggleWin(win); return; }
-  switch (e.code) {
-    case 'KeyJ': actLight(); break;
-    case 'KeyK': actHeavyStart(); break;
-    case 'KeyL': actBlock(true); break;
-    case 'Space': actDodge(); break;
-    case 'KeyQ': cam.yawT += Math.PI / 8; break;
-    case 'KeyE': cam.yawT -= Math.PI / 8; break;
-    case 'KeyF': actInteract(); break;
-    case 'Tab': actLockCycle(); break;
-    case 'KeyR': toggleMount(); break;
-    case 'ShiftLeft': case 'ShiftRight': if (!(typeof mouse !== 'undefined' && mouse.down)) heroJump(P); break;   // (Shift held for a camera drag does not jump)
-  }
+  if (win) { toggleWin(win); return; }
+  if (act) ctlDo(act, e.code);
 }, true);
 // Classic mode: Space jumps (ui.js leaves Space alone outside dialogs; action mode handles its own keys above).
 addEventListener('keydown', e => {
@@ -81,17 +173,24 @@ addEventListener('keydown', e => {
   e.preventDefault(); heroJump(P);
 });
 addEventListener('keyup', e => {
-  CTRL.keys.delete(e.code);
+  if (typeof uiKeyCapture === 'function' && uiKeyCapture(e)) return;
+  CTRL.keys.delete(ctlNorm(e.code));
+  const act = keyAction(e.code);
+  if (act === 'page2') ctlSetPage2(CTRL.padLB);
   if (!started || !P) return;
-  if (e.code === 'KeyK') actHeavyRelease();
-  if (e.code === 'KeyL') actBlock(false);
+  if (act === 'heavy') { if (CTRL.buf && CTRL.buf.kind === 'heavy') CTRL.buf.release = true; else actHeavyRelease(); }
+  if (act === 'block') actBlock(false);
 }, true);
-addEventListener('blur', () => { CTRL.keys.clear(); if (P) { P.blocking = false; if (P.charge >= 0) actHeavyRelease(); } });
+addEventListener('blur', () => { CTRL.keys.clear(); CTRL.buf = null; CTRL.page2 = false; if (P) { P.blocking = false; if (P.charge >= 0) actHeavyRelease(); } });
 
 const MOVEV = [0, 0];
 function moveInput() {
   const k = CTRL.keys; let ix = 0, iy = 0;
-  if (isAction()) { ix = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0); iy = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0); }
+  if (isAction()) {
+    const B = CTL.binds;
+    ix = (k.has(B.right) || k.has('ArrowRight') ? 1 : 0) - (k.has(B.left) || k.has('ArrowLeft') ? 1 : 0);
+    iy = (k.has(B.up) || k.has('ArrowUp') ? 1 : 0) - (k.has(B.down) || k.has('ArrowDown') ? 1 : 0);
+  }
   if (CTRL.pad) { ix += CTRL.pad.x; iy -= CTRL.pad.y; }
   if (hyp(ix, iy) < 0.25) return null;
   const rx = Math.cos(cam.yaw), ry = -Math.sin(cam.yaw), fx = -Math.sin(cam.yaw), fy = -Math.cos(cam.yaw);
@@ -101,29 +200,42 @@ function moveInput() {
 function freeAt(x, y) { const r = 0.26; return !blocked(x - r, y - r) && !blocked(x + r, y - r) && !blocked(x - r, y + r) && !blocked(x + r, y + r); }
 function stepMove(dx, dy) { if (freeAt(P.x + dx, P.y)) P.x += dx; if (freeAt(P.x, P.y + dy)) P.y += dy; }
 
-/* ---------- Gamepad (Xbox layout) ---------- */
-// Gamepads are only polled once one has connected (no getGamepads() call or array copy per tick before that).
+/* ---------- Gamepad (the browser's "standard" mapping: Xbox / PlayStation / Switch Pro pads in Chrome, Firefox, Edge) ----------
+   Buttons: 0 A (cross) jump · 1 B (circle) dodge · 2 X (square) light · 3 Y (triangle) heavy (hold) · 4 LB / 5 RB
+   held + X / Y / B / A cast skill slots 5-8 / 1-4 · 6 LT block (hold) · 7 RT jump too · 8 Back: Items · 9 Start: menu ·
+   11 right-stick click: lock · d-pad 12 up interact, 13 down quick item, 14 / 15 left / right cycle it. With
+   companions, RB tapped on its own takes control of the next hero. Pads without the standard mapping are read with
+   the same indices (most report it). Polling starts at the first 'gamepadconnected'. */
 let PAD_SEEN = false;
 addEventListener('gamepadconnected', () => { PAD_SEEN = true; });
+const PAD_FACE = [2, 3, 1, 0];   // X Y B A -> skill slots 1-4 (the U I O P order)
 function pollPad(dt) {
   let gp = null;
-  if (PAD_SEEN && navigator.getGamepads) { const l = navigator.getGamepads(); for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } }
-  if (!gp) { CTRL.pad = null; return; }
+  if (PAD_SEEN && navigator.getGamepads) { const l = navigator.getGamepads() || []; for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } }
+  if (!gp) { CTRL.pad = null; if (CTRL.padLB) { CTRL.padLB = false; ctlSetPage2(CTRL.keys.has(keyCode('page2'))); } return; }
   const dz = v => Math.abs(v) < 0.2 ? 0 : v;
   CTRL.pad = { x: dz(gp.axes[0] || 0), y: dz(gp.axes[1] || 0) };
   const rsx = dz(gp.axes[2] || 0); if (rsx) { cam.yawT -= rsx * dt * 2.2; cam.yaw = cam.yawT; }
-  const b = i => !!(gp.buttons[i] && gp.buttons[i].pressed), prev = CTRL.padPrev, down = i => b(i) && !prev[i], up = i => !b(i) && prev[i];
-  if (started && $('dialog').hidden) {
-    if (down(2)) actLight(); if (down(3)) actHeavyStart(); if (up(3)) actHeavyRelease(); if (down(7)) heroJump(P);   // RT jumps
-    // cycle 8: with companions the right bumper takes control of the next hero (squadCycle); the left one still blocks
-    const rbSwap = typeof PARTY !== 'undefined' && PARTY && PARTY.members.length > 1 && typeof squadCycle === 'function';
-    if (down(1)) actDodge(); if (down(4) || (down(5) && !rbSwap)) actBlock(true); if ((up(4) || up(5)) && !b(4) && !(b(5) && !rbSwap)) actBlock(false);
-    if (rbSwap && down(5)) squadCycle(1);
-    if (down(0)) actInteract(); if (down(12)) useHot(0); if (down(15)) useHot(1); if (down(13)) useHot(2); if (down(14)) useHot(3);
-    if (down(9)) toggleWin('status'); if (down(8)) toggleWin('inv');
+  const prev = CTRL.padPrev, b = i => { const B = gp.buttons[i]; return !!B && (B.pressed || B.value > 0.5); }, down = i => b(i) && !prev[i], up = i => !b(i) && prev[i];
+  const lb = b(4), rb = b(5);
+  if (CTRL.padLB !== (lb && !rb)) { CTRL.padLB = lb && !rb; ctlSetPage2(CTRL.padLB || CTRL.keys.has(keyCode('page2'))); }
+  const capture = typeof uiPadCapture === 'function' && uiPadCapture();   // the UI is reading the pad (Loadout)
+  if (capture) { if (down(9)) ctlMenu(); }   // game actions wait; Start still works as Esc (closes the Loadout and so on)
+  else if (started && $('dialog').hidden) {
+    if (down(5)) CTRL.rbUsed = false;
+    if (rb || lb) { for (let k = 0; k < 4; k++) if (down(PAD_FACE[k])) { ctlPress('skill', k + (rb ? 0 : 4)); CTRL.rbUsed = true; } }
+    else { if (down(0) || down(7)) ctlPress('jump'); if (down(2)) ctlPress('light'); if (down(3)) ctlPress('heavy'); if (down(1)) ctlPress('dodge'); }
+    if (down(7) && (rb || lb)) ctlPress('jump');
+    if (up(3)) { if (CTRL.buf && CTRL.buf.kind === 'heavy') CTRL.buf.release = true; else actHeavyRelease(); }
+    if (down(6)) actBlock(true); if (up(6)) actBlock(false);
+    if (up(5) && !CTRL.rbUsed && typeof PARTY !== 'undefined' && PARTY && PARTY.members.length > 1 && typeof squadCycle === 'function') squadCycle(1);
+    if (down(12)) actInteract(); if (down(13)) useQuickItem(); if (down(14)) cycleQuickItem(-1); if (down(15)) cycleQuickItem(1);
+    if (down(11)) actLockCycle();
+    if (down(9)) ctlMenu(); if (down(8)) toggleWin('inv');
   } else if (!$('dialog').hidden && down(0)) { const btn = $('dopts').querySelector('button'); if (btn) btn.click(); }
-  const pp = CTRL.padPrev; pp.length = gp.buttons.length; for (let i = 0; i < gp.buttons.length; i++) pp[i] = gp.buttons[i].pressed;
+  const pp = CTRL.padPrev; pp.length = gp.buttons.length; for (let i = 0; i < gp.buttons.length; i++) pp[i] = b(i);
 }
+
 
 /* ---------- Targeting ---------- */
 function softTarget(range, cone) {
@@ -265,6 +377,8 @@ function actionUpdate(dt) {
   if (P.blocking) { P.stamina = Math.max(0, P.stamina - 3 * dt); if (P.stamina <= 0) P.blocking = false; }
   if (P.comboT > 0) { P.comboT -= dt; if (P.comboT <= 0) P.combo = 0; }
   if (CTRL.lock && (CTRL.lock.dead || dist(CTRL.lock, P) > 14)) CTRL.lock = null;
+  const mv = !!moveInput(); if (mv && !CTRL.movePrev) CTRL.moveAt = time; CTRL.movePrev = mv;   // when the stick / keys were last pushed
+  if (CTRL.buf) ctlBufTick();
   let busy = false;
   if (P.jump) { jumpMove(dt); P.moving = false; return true; }   // airborne / landing: momentum + air control, no attacks or paths
   if (P.dodgeT > 0) {
@@ -275,13 +389,18 @@ function actionUpdate(dt) {
   if (P.swingT > 0) { P.swingT -= dt; busy = true; if (P.swingT <= 0) { P.swingT = 0; if (P.queued) { P.queued = null; actLight(); } } }
   if (P.charge >= 0) { P.charge += dt; busy = true; if (P.charge > 0.8 && Math.random() < 0.5) parts.push({ x: P.x + rand(-0.4, 0.4), y: P.y + rand(-0.4, 0.4), z: rand(10, 50), vx: 0, vy: 0, vz: 40, life: 0.4, max: 0.4, col: '#ffd060', size: 2.5, float: true }); }
   const v = moveInput();
+  // A skill cast from the keyboard while a direction was already held roots you (pushing a direction afresh, or a
+  // dodge, cancels it); one closing in on its target walks there first. Then heroAct (core.js) runs this tick.
+  if (v && ((P.casting && P.casting === CTRL.castPd && CTRL.moveAt <= CTRL.castAt) || (P.pending && P.pending.kbAt !== undefined && time - P.pending.kbAt < 1.2))) {
+    P.moving = false; return busy || P.blocking;
+  }
   if (v && P.casting) cancelCast();
   if (v && !(P.swingT > 0) && P.charge < 0) {
     P.path = null; P.target = null; P.goal = null; P.pending = null; P.sitting = false; P.flags.tips.moved = true;
     const spd = S.move * (P.blocking ? 0.4 : 1) * surfMul(P);
     if (!P.blocking) { P.fx = v[0]; P.fy = v[1]; }
-    stepMove(v[0] * spd * dt, v[1] * spd * dt);
-    P.moving = true; P.walk += dt * spd * 3.4; busy = true;
+    const x0 = P.x, y0 = P.y; stepMove(v[0] * spd * dt, v[1] * spd * dt); const md = Math.hypot(P.x - x0, P.y - y0);   // stride from real movement (no running on the spot against walls)
+    P.moving = md > 1e-4; P.walk += md * 3.4; busy = true;
   } else if (busy || P.blocking) P.moving = false;
   if (P.blocking) busy = true;
   return busy;

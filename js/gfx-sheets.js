@@ -826,6 +826,17 @@ function sheetPlayerPose(v, body, h) {
   else if (h.moving) { act = 'walk'; f = hasDurs(A.walk) ? durF(A.walk, h.walk * 1.26 / 6 * (v.stride || 1) * actTotal(A, 'walk'), true) : Math.floor(h.walk * 1.26 * actN(A, 'walk') / 6 * (v.stride || 1)) % actN(A, 'walk'); }
   else if (sheetHas(body, 'stance') && time - (v.combatT || -99) < 2) { act = 'stance'; f = actLoopF(A, 'stance', time) % actN(A, 'stance'); }
   else { act = 'idle'; f = actLoopF(A, 'idle', time) % actN(A, 'idle'); }
+  // Glitch fix (C3): a dodge, jump or dash that ends while a move key is held left the hero unmoving for one update
+  // (action.js clears h.moving as the move ends), so one frame of idle / stance flashed between it and the run. Keep
+  // the last frame of the move for up to 70 ms instead; a hero that really stops shows idle that much later.
+  if (act === 'idle' || act === 'stance') {
+    const o = v.pose;
+    if (o && (o.act === 'dodge' || o.act === 'jump' || o.act === 'dash') && time - (v.moveEndT === undefined ? -9 : v.moveEndT) < 0.07 && !h.dead) { act = o.act; f = o.f; }
+  } else if (act === 'dodge' || act === 'jump' || act === 'dash') v.moveEndT = time;
+  // No skipped frames in timed one-shot actions: a 25-45 ms smear frame (squeezed further by the attack time warp) could
+  // fall between two render frames at 60 Hz or on a slow frame. Advance at most one frame per render frame; the clock
+  // catches up on the next held frame (the impact lands at most a frame late).
+  { const o = v.pose, a = A[act]; if (o && o.act === act && a && !a.loop && hasDurs(a) && f > o.f + 1) f = o.f + 1; }
   const r = sheetFrame(body, act, f), ra = r ? r.act : 'idle', rf = r ? r.f : 0;
   if (v.act !== ra) { v.act = ra; v.actT = time; }
   const o = v.pose || (v.pose = { act: 'idle', f: 0, tint: undefined, opacity: undefined }); o.act = ra; o.f = rf; o.tint = tint; return o;
@@ -881,6 +892,7 @@ function makeSheetVis(recs, o = {}) {
     const geo = hat ? new THREE.PlaneGeometry(1, 1) : sheetPlane(rec.json);
     if (hat) geo.attributes.position.setUsage(THREE.DynamicDrawUsage);
     const mat = fxSpriteMat(tex, hair, rec); const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+    mat.userData.u.uPull.value = layerPull(layer);   // glitch fix: layers do not z-fight each other (gfx-render.js LAYER_PULL)
     const L = Object.assign(base, { geo, uv0: geo.attributes.uv.array.slice(), mat, mesh });
     // hair: clip line uniform shared by the colour, x-ray and caster materials (hideHair 'top')
     if (hair) L.clipU = mat.userData.u.uClip;
@@ -889,7 +901,9 @@ function makeSheetVis(recs, o = {}) {
       const xm = sprPalMat(spriteMat(tex, { color: 0x4a70d0, opacity: 0.5, depthWrite: false, depthFunc: THREE.GreaterDepth,
         // stencil: each covered pixel is tinted once even where layers overlap
         stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc, stencilZPass: THREE.ReplaceStencilOp }), rec);
-      if (hair) hairClipPatch(xm, L.clipU);
+      xm.onBeforeCompile = XRAY_OBC; xm.userData.obc = true; xm.userData.pullU = { value: layerPull(layer) + xrayPull() };   // (glitch fix: snapped like its colour layer, gfx-render.js sprSnapVert)
+      if (hair) { hairClipPatch(xm, L.clipU); xm.onBeforeCompile = HAIRXRAY_OBC; }
+
       L.xray = new THREE.Mesh(geo, xm); L.xray.renderOrder = 5; scene.add(L.xray); v.meshes.push(L.xray);
     }
     layerPage(L, 0);
@@ -1085,7 +1099,7 @@ function heroOccluded(h) {
 // squash and the attack alternation do not pop.
 function heroVisCarry(v, v0) {
   if (!v0 || !v0.sheet) return;
-  v.sector = v0.sector; v.lt = v0.lt; v.sqT = v0.sqT; v.lastHF = v0.lastHF; v.swings = v0.swings; v.lastAtk = v0.lastAtk; v.combatT = v0.combatT; v.heavyArm = v0.heavyArm; v.heavySwing = v0.heavySwing; v.step = v0.step;
+  v.sector = v0.sector; v.lt = v0.lt; v.sqT = v0.sqT; v.lastHF = v0.lastHF; v.swings = v0.swings; v.lastAtk = v0.lastAtk; v.combatT = v0.combatT; v.heavyArm = v0.heavyArm; v.heavySwing = v0.heavySwing; v.step = v0.step; v.xrT = v0.xrT; v.moveEndT = v0.moveEndT;
 }
 // Hero batch eligibility (gfx-render.js HB): every layer indexed (palette) and on one page.
 function hbRecsOK(recs) {
@@ -1106,7 +1120,8 @@ function syncSheetHero(h) {
   for (let i = 0; i < recs.length; i++) if (!recs[i].keep) sheetWantAll(recs[i], true);   // heroes fight any time: every page resident (idle-time uploads)
   const body = v.layers[0].rec.json, mnt = !!(recs[0].entry && recs[0].entry.mounted);
   if (v !== v0) { v.mounted = mnt; v.stride = mnt ? 0.72 : 1; if (v0 && v0.sheet) v.sector = v0.sector; mountSwap(v, mnt, h, hs); }
-  v.xrayOn = h === lead ? undefined : !h.dead && heroOccluded(h);
+  // (glitch fix: held 0.6 s once seen, so an ally walking past the edge of a house or a tree does not blink its x-ray)
+  if (h === lead) v.xrayOn = undefined; else { if (!h.dead && heroOccluded(h)) v.xrT = time; v.xrayOn = !h.dead && time - (v.xrT === undefined ? -9 : v.xrT) < 0.6; }
   v.sector = facingSector(h.fx === undefined ? 1 : h.fx, h.fy || 0, cam.yaw, v.sector);
   const dir = sectorToDir(body, v.sector), dd = dir.d, dflip = dir.flip, dname = dir.name, pose = sheetPlayerPose(v, body, h);
   const so = v.so || (v.so = { tint: undefined }); so.tint = pose.tint; v.jumpArt = pose.act === 'jump';
