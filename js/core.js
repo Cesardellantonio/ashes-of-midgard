@@ -108,6 +108,28 @@ function heroStats(h) { if (!h || h === P) return S; if (!h._S) withHero(h, NOOP
 function asOwner(h, fn, a) { if (PARTY && h && h !== P && PARTY.members.indexOf(h) >= 0) return withHero(h, fn, a); return fn(a); }
 // Hero-centric chatter ("Blessing wears off.", "Not enough SP.") is only for the hero the player controls.
 function hlog(msg, cls) { if (!HCTX.quiet) log(msg, cls); }
+/* Onboarding (design/onboarding.md, O1): tutEvent(name, data) sends window 'aom-tut' (detail { name, data }) for the
+   tutorial (js/data/tutorial.js) and the onboarding UI. Only the hero the player controls fires them (tutMine), and
+   only on real actions (no per-frame spam: 'moved' fires every TUTE.step tiles walked; camera ones are throttled).
+   Names: moved, cameraTurned, zoomed, jumped, attacked, comboHit3, heavy, dodged ({ avoided }), blocked, parried,
+   lockOn, skillUsed, itemUsed, levelUp ({ lvl } | { jlvl, job: true }), jobChange, recruited, swapped, tactics,
+   chatOpened, doorEntered, rested, bookRead, chestOpened, bossKilled. */
+const TUTE = { last: {}, step: 4, mv: 0, lx: 0, ly: 0, lm: null, lp: null };
+const tutMine = () => !HCTX.depth;
+function tutEvent(name, data) {
+  try { if (typeof window !== 'undefined' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('aom-tut', { detail: { name, data: data || {} } })); }
+  catch (e) { console.error(e); }
+}
+// The same, at most once per `gap` seconds of game time (camera input arrives every frame while a stick is held).
+function tutEventGap(name, gap, data) { const t = TUTE.last[name]; if (t !== undefined && time - t < gap && time >= t) return; TUTE.last[name] = time; tutEvent(name, data); }
+// 'moved': every TUTE.step tiles the controlled hero really walks (warps and teleports do not count).
+function tutMoveTick() {
+  const E = TUTE; if (!P || P.dead || !map) return;
+  if (E.lm !== map || E.lp !== P) { E.lm = map; E.lp = P; E.lx = P.x; E.ly = P.y; return; }
+  const d = hyp(P.x - E.lx, P.y - E.ly); E.lx = P.x; E.ly = P.y;
+  if (d > 2) return;
+  E.mv += d; if (E.mv >= E.step) { E.mv = 0; tutEvent('moved', { map: map.id, x: P.x, y: P.y }); }
+}
 
 /* =========================================================
    Map generation
@@ -618,8 +640,8 @@ function useItem(it) {
   else if (t.sp) { if (P.sp >= S.maxsp) { log('Your SP is already full.', 'sys'); return; } const a = randi(t.sp[0], t.sp[1]); P.sp = Math.min(S.maxsp, P.sp + a); floatText(P, '+' + a, 'sp'); burst(P.x, P.y, 26, '#6a9aff', 8, 1.2); }
   else if (t.effect === 'full') { P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffc070'); }
   else if (t.effect === 'fly') { if (map.d.safe) { log('The Waystone’s pull is too strong here.', 'sys'); return; } const s = randomSpot(4); if (!s) return; P.x = s.x; P.y = s.y; stopAll(); snapCam(); Sfx.warp(); burst(P.x, P.y, 20, '#e8e0c8', 16, 2); if (partyN() > 1 && typeof squadArrive === 'function') squadArrive(); }   // cycle 8: the party flies with you
-  else if (t.effect === 'return') { takeItem(it.id); Sfx.warp(); gotoMap(P.lastWay.map, P.lastWay.x, P.lastWay.y); return; }
-  Sfx.drink(); takeItem(it.id);
+  else if (t.effect === 'return') { takeItem(it.id); Sfx.warp(); if (tutMine()) tutEvent('itemUsed', { id: it.id }); gotoMap(P.lastWay.map, P.lastWay.x, P.lastWay.y); return; }
+  Sfx.drink(); takeItem(it.id); if (tutMine()) tutEvent('itemUsed', { id: it.id });
 }
 
 /* =========================================================
@@ -653,6 +675,7 @@ function spawnAll() {
   if (map.d.boss && map.bossPos && bossAlive(map.d.boss)) mobs.push(makeMob(map.d.boss, map.bossPos.x, map.bossPos.y));
   if (map.d.elites) for (const e of map.d.elites) if (eliteAlive(e)) { const m = makeVariant(e.key, e.x, e.y); m.caveElite = e.key; mobs.push(m); }   // cycle 9: cave mini-bosses
   if (map.d.deep) deepPopulate();   // round 7: the Deep's floors are filled by their runtime
+  for (const p of map.dummies || []) mobs.push(dummyMake(p));   // onboarding: the training yard's dummies (layout: m.dummies)
 }
 // Cycle 9: a map's elite (a cave's mini-boss, MAPDEFS[id].elites = [{ key, x, y, respawn }]) comes back `respawn` seconds
 // of play after it fell (P.flags.elites[key] = playTime of the kill); without `respawn` it stays dead.
@@ -797,7 +820,7 @@ function finishHit(m, dmg, crit, o) {
   if (m.mark > 0 && dmg > 0) dmg *= 1 + (m.markAmp || 0) / 100;
   if (m.lex && dmg > 0) { dmg *= 2; m.lex = false; floatText(m, 'Lex!', 'info'); }
   dmg = dmg <= 0 ? 0 : Math.max(1, Math.round(dmg));
-  m.hp -= dmg; m.hitFlash = 0.22; fxs.push({ k: 'spark', x: m.x, y: m.y, h: chestH(m), t: 0, dur: 0.2, crit });
+  m.hp -= dmg; m.hitFlash = 0.22; m.calmT = 0; fxs.push({ k: 'spark', x: m.x, y: m.y, h: chestH(m), t: 0, dur: 0.2, crit });
   if (PARTY && PARTY.members.length > 1 && P) threatAdd(m, P, dmg);   // cycle 8: the hero in context dealt it
   floatText(m, dmg, crit ? 'crit' : 'dmg');
   if (S.leech && dmg > 0) healP(dmg * S.leech / 100, true);
@@ -807,6 +830,7 @@ function finishHit(m, dmg, crit, o) {
   if (m.hp <= 0) killMob(m);
 }
 function knock(m, from, n) {
+  if (m.d.dummy) return;   // a training dummy is staked down
   const dx = m.x - from.x, dy = m.y - from.y, d = hyp(dx, dy) || 1, ux = dx / d, uy = dy / d;
   for (let i = 0; i < n * 4; i++) { const nx = m.x + ux * 0.25, ny = m.y + uy * 0.25; if (blocked(nx, ny)) break; m.x = nx; m.y = ny; }
   m.path = null;
@@ -815,13 +839,13 @@ function knock(m, from, n) {
 function mobStrike(m, mul = 1, o = NOOPT, h) {
   if (h && h !== P) return withHero(h, mobStrike, m, mul, o);
   if (P.dead) return;
-  if (P.iframes > 0) { floatText(P, 'Dodge', 'miss'); return; }
+  if (P.iframes > 0) { floatText(P, 'Dodge', 'miss'); if (tutMine()) tutEvent('dodged', { avoided: true, mob: m.type }); return; }
   let guard = 1;
   if (P.blocking && !P.dodgeT && !o.unblockable) {   // round 7: unblockable blasts ignore the guard (dodge them)
     const dx = m.x - P.x, dy = m.y - P.y, d = hyp(dx, dy) || 1;
     if ((dx * P.fx + dy * P.fy) / d > -0.2) {
-      if (time - P.blockStart < 0.2) { floatText(P, 'Parry!', 'crit'); Sfx.crit(); m.stun = o.parry ? Math.max(m.stun || 0, o.parry) : m.d.boss ? 0.7 : 1.4; if (o.parry) parryStagger(m, o.parry); m.atkAnim = -1; fxs.push({ k: 'spark', x: P.x, y: P.y, h: chestH(P), t: 0, dur: 0.3, crit: true }); P.stamina = Math.min(100, P.stamina + 15); return; }
-      P.stamina -= 12 * mul; if (P.stamina > 0) { guard = o.magic ? 0.5 : 0.25; floatText(P, 'Block', 'info'); Sfx.equip(); } else { P.stamina = 0; P.blocking = false; floatText(P, 'Guard Break', 'miss'); }
+      if (time - P.blockStart < 0.2) { floatText(P, 'Parry!', 'crit'); Sfx.crit(); m.stun = o.parry ? Math.max(m.stun || 0, o.parry) : m.d.boss ? 0.7 : 1.4; if (o.parry) parryStagger(m, o.parry); m.atkAnim = -1; fxs.push({ k: 'spark', x: P.x, y: P.y, h: chestH(P), t: 0, dur: 0.3, crit: true }); P.stamina = Math.min(100, P.stamina + 15); if (tutMine()) tutEvent('parried', { mob: m.type }); return; }
+      P.stamina -= 12 * mul; if (P.stamina > 0) { guard = o.magic ? 0.5 : 0.25; floatText(P, 'Block', 'info'); Sfx.equip(); if (tutMine()) tutEvent('blocked', { mob: m.type }); } else { P.stamina = 0; P.blocking = false; floatText(P, 'Guard Break', 'miss'); }
     }
   }
   const bs = P.buffs.bladestop;   // round 6: Berserkr's Blade Stop catches one melee blow
@@ -876,7 +900,7 @@ function healP(a, quiet) {
   if (!quiet || P.hp - before > 0) floatText(P, '+' + (quiet ? Math.round(P.hp - before) : a), 'heal', quiet);
 }
 function playerAttack(t) {
-  P.atkAnim = 0;
+  P.atkAnim = 0; if (tutMine()) tutEvent('attacked', { classic: true });
   if (S.wtype === 'bow') { shot(P, t, 'arrow', () => { physHit(t, 1); attackProcs(t); }); Sfx.bow(); }
   else { after(0.13, () => { if (!t.dead) { physHit(t, 1); attackProcs(t); } }); Sfx.swing(); }
 }
@@ -917,6 +941,7 @@ function bolts(t, n, el, mul, o) {
 function shot(from, to, kind, onHit, o = {}) { projs.push({ x: from.x, y: from.y, zu: o.zu !== undefined ? o.zu : chestH(from), to, kind, onHit, spd: o.spd || (kind === 'arrow' ? 17 : 12), t: 0, vx: 0, vy: 0, vz: 0, h: P }); }   // cycle 8: h = the hero whose context onHit runs in
 function killMob(m) {
   m.dead = true; m.deathT = 0; m.hp = 0; m.path = null;
+  if (m.d.dummy) { dummyDown(m); return; }
   const d = m.d;
   let b = mobExp(d), j = Math.round(b * 0.75);
   const share = PARTY && PARTY.members.length > 1 && typeof squadExp === 'function';   // cycle 8: shared EXP (per-hero level penalty there)
@@ -934,6 +959,7 @@ function killMob(m) {
   burst(m.x, m.y, d.h * 0.5, d.col || (d.look && d.look.body) || '#888', 14, 2.2);
   const K = P.flags.kills = P.flags.kills || {}; K[m.type] = (K[m.type] || 0) + 1; if (m.variant && m.variant !== m.type) K[m.variant] = (K[m.variant] || 0) + 1;
   if (m.caveElite) (P.flags.elites = P.flags.elites || {})[m.caveElite] = P.playTime;   // cycle 9
+  if ((d.boss || d.elite) && !m.summoned) tutEvent('bossKilled', { type: m.type, variant: m.variant || null, elite: !d.boss });
   if (d.boss) bossDefeated(m);
   else if (d.elite) { if (bossShown === m) { $('bossbar').hidden = true; bossShown = null; } banner(d.name, 'has fallen', 'band'); Sfx.victory(); }
   else if (!m.summoned && !m.variant && !m.deep && !m.rush) { const type = m.type, mid = map.id, rg = m.rgn; after(rand(10, 18), () => { if (map.id === mid) spawnMobRandom(type, rg); }); }
@@ -948,14 +974,14 @@ function gainExp(b, j) {
     P.exp += b; let up = false;
     while (P.lvl < cap && P.exp >= expNeed(P.lvl)) { P.exp -= expNeed(P.lvl); P.lvl++; P.statPts += Math.floor(P.lvl / 5) + 3; up = true; }
     if (P.lvl >= cap) P.exp = 0;
-    if (up) { calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffd76a', true); floatText(P, 'Level Up!', 'lvl'); log(HCTX.quiet ? `${P.name} reaches base level ${P.lvl}.` : `Base level ${P.lvl}. You feel the Ash give way.`, 'lvl'); Sfx.level(); squadEmit('level_up', { hero: P }); }
+    if (up) { calcStats(); P.hp = S.maxhp; P.sp = S.maxsp; pillar(P, '#ffd76a', true); floatText(P, 'Level Up!', 'lvl'); log(HCTX.quiet ? `${P.name} reaches base level ${P.lvl}.` : `Base level ${P.lvl}. You feel the Ash give way.`, 'lvl'); Sfx.level(); squadEmit('level_up', { hero: P }); if (tutMine()) tutEvent('levelUp', { lvl: P.lvl }); }
   }
   const jcap = CLASSES[P.cls].maxJob;
   if (P.jlvl < jcap) {
     P.jexp += j; let up = false;
     while (P.jlvl < jcap && P.jexp >= jexpNeed(P.jlvl)) { P.jexp -= jexpNeed(P.jlvl); P.jlvl++; P.skillPts++; up = true; }
     if (P.jlvl >= jcap) P.jexp = 0;
-    if (up) { const h = P; pillar(P, '#7fe0d4', true); after(0.35, () => floatText(h, 'Job Level Up!', 'job')); hlog(`Job level ${P.jlvl}. You have a skill point to spend.`, 'lvl'); Sfx.level(); }
+    if (up) { const h = P; pillar(P, '#7fe0d4', true); after(0.35, () => floatText(h, 'Job Level Up!', 'job')); hlog(`Job level ${P.jlvl}. You have a skill point to spend.`, 'lvl'); Sfx.level(); if (tutMine()) tutEvent('levelUp', { jlvl: P.jlvl, job: true }); }
   }
   UI.dirty = true;
 }
@@ -975,12 +1001,15 @@ function pickup(d) {
 }
 // Cycle 8: events for the squad chat and UI (js/squad.js squadDispatch rate-limits them and calls squadEvent /
 // SQUAD_CHAT.event). Only a party with companions has anyone to talk: solo play emits nothing.
-function squadEmit(type, data) { if (PARTY && PARTY.members.length > 1 && typeof squadDispatch === 'function') squadDispatch(type, data); }
+function squadEmit(type, data) {
+  if (type === 'recruit') tutEvent('recruited', { hero: data && data.hero && data.hero.persona }); else if (type === 'swap') tutEvent('swapped', { to: data && data.to && data.to.name });   // onboarding
+  if (PARTY && PARTY.members.length > 1 && typeof squadDispatch === 'function') squadDispatch(type, data);
+}
 // Heal another hero (in that hero's context: its Max HP, its float text).
 function healHero(h, a, quiet) { if (h && !h.dead) withHero(h, healP, a, quiet); }
 // extra: special buff fields read by the engine, e.g. { endow, guard, share, shield, hits, absorb, regen, song,
 // castCut, cdCut, wtype, aura: { r, col, bubble }, every, onTick, count }. Buffs are runtime only (not saved).
-function addBuff(id, name, icon, t, bonus, extra) { P.buffs[id] = Object.assign({ name, icon, t, max: t, bonus: bonus || {} }, extra || {}); calcStats(); renderBuffs(); }
+function addBuff(id, name, icon, t, bonus, extra) { P.buffs[id] = Object.assign({ name, icon, t, max: t, bonus: bonus || {} }, extra || {}); calcStats(); renderBuffs(); if (id === 'rested' && tutMine()) tutEvent('rested', { at: 'bed' }); }
 function songStart(id, name, icon, t, bonus, extra) {
   // Round 6: Harmonize lets two songs play at once (the oldest other song ends).
   const others = Object.keys(P.buffs).filter(k => P.buffs[k].song && k !== id), keep = P.buffs.harmonize ? 1 : 0;
@@ -1083,6 +1112,45 @@ function jobChange(cls) {
   pillar(P, '#f0d070', true); burst(P.x, P.y, 40, '#ffe8a0', 40, 3); banner(C.name, C.tier === 3 ? 'The path remembers you' : C.tier >= 2 ? 'A second path' : 'A path chosen', 'band gold'); Sfx.victory();
   log(`You are now ${/^[AEIOU]/.test(C.name) ? 'an' : 'a'} ${C.name}.${got.length ? ` Vidar gave you: ${got.join(', ')}.` : ''} New skills are in the Skills window (${typeof winKey === 'function' ? winKey('skills') : 'S'}).`, 'lvl');
   compSync(); UI.dirty = true; renderHotbar(); saveGame();
+  tutEvent('jobChange', { cls });
+}
+
+/* Onboarding: training dummies (MOBS[key].dummy, js/data/tutorial.js; placed by a layout's m.dummies = [{ x, y, key? }]).
+   A dummy is staked to its spot: it never walks, chases or gets knocked back. When the hero comes within d.sight it
+   turns to face them and every d.aspd seconds winds up a slow swing: a ground telegraph of radius d.reach for
+   d.windup seconds, then one blow (a physical hit for d.atk) on whoever still stands in it. Roll through it (i-frames),
+   step out, block it, or raise the guard just before it lands to parry (a parry stuns it, pausing the next swing).
+   It gives no EXP, drops nothing, heals back to full when left alone for 4 s, and stands up again 3 s after it falls. */
+function dummyMake(p) {
+  const key = p.key && MOBS[p.key] ? p.key : 'training_dummy', D = MOBS[key];
+  const m = D.variant ? makeVariant(key, p.x, p.y) : makeMob(key, p.x, p.y);
+  m.fx = p.fx !== undefined ? p.fx : 0; m.fy = p.fy !== undefined ? p.fy : 1; m.atkCD = 1.5; m.dummyAt = { x: p.x, y: p.y, key };
+  return m;
+}
+function dummyTick(m, dt) {
+  const d = m.d; m.moving = false; m.path = null; m.x = m.hx; m.y = m.hy;
+  m.atkCD -= dt; m.calmT = (m.calmT || 0) + dt;
+  if (m.hp < m.maxhp && m.calmT > 4) m.hp = Math.min(m.maxhp, m.hp + m.maxhp * 0.5 * dt);
+  const tg = PARTY && PARTY.members.length > 1 ? mobTarget(m) : P;
+  if (!tg || tg.dead || dist(m, tg) > (d.sight || 3)) { if (m.atkCD < 1) m.atkCD = 1; return; }
+  face(m, tg);
+  if (m.atkCD > 0 || m.windup > time) return;
+  m.atkCD = d.aspd || 3.2; const wind = d.windup || 1.1, r = d.reach || 1.9;
+  m.windup = time + wind + 0.2; floatText(m, '!', 'shout');
+  const a = { mul: 1, hit: { magic: false } };
+  telegraph(m.x, m.y, r, wind, () => {
+    m.windup = 0; if (m.dead) return;
+    ring(m.x, m.y, r, '#ffd070'); burst(m.x, m.y, 4, '#d8c8a0', 14, 2.5); Sfx.swing();
+    if (P && !P.dead && (P.iframes > 0 || P.dodgeT > 0) && hyp(P.x - m.x, P.y - m.y) <= r + 2.5) tutEvent('dodged', { avoided: true, mob: m.type, dummy: true });   // rolled out of (or through) the swing
+  }, m, a);
+  after(Math.max(0, wind - 0.32), () => { if (!m.dead) m.atkAnim = 0; });
+}
+function dummyDown(m) {
+  burst(m.x, m.y, m.d.h * 0.5, '#d8c890', 18, 2.4); Sfx.kill(); floatText(m, 'Down!', 'info');
+  if (P.target === m) P.target = null;
+  questEvent('kill', m);
+  const at = m.dummyAt, mid = map && map.id;
+  if (at) after(3, () => { if (map && map.id === mid) mobs.push(dummyMake(at)); });
 }
 
 /* Boss handling */
@@ -1372,6 +1440,7 @@ function execSkill(pd) {
   P.sp -= spc; P.cd[pd.id] = (sk.cd || 0.3) * (1 - (S.cdCut || 0) / 100);
   floatText(P, sk.name + '!!', 'skill');
   sk.use(pd.lv, pd.target, pd.pos);
+  if (tutMine()) tutEvent('skillUsed', { id: pd.id });
   const fs = P.buffs.foresight; if (fs && sk.cast && pd.id !== 'foresight' && --fs.count <= 0) { delete P.buffs.foresight; calcStats(); renderBuffs(); }   // round 6: Foresight
   if (pd.target && pd.target.kind === 'mob' && sk.range === 'weapon') P.target = pd.target;
 }
@@ -1496,7 +1565,7 @@ function postMove() {
         let bx = wp.x + 0.5 + dx / d * 1.1, by = wp.y + 0.5 + dy / d * 1.1;
         if (blocked(bx, by)) { const o = nearestOpen(wp.x + 0.5, wp.y + 1.5, 2); if (o && !(o.x === wp.x && o.y === wp.y)) { bx = o.x + 0.5; by = o.y + 0.5; } }
         if (!blocked(bx, by)) { P.x = bx; P.y = by; } P.path = null; P.dash = null;
-      } else if (wp.tx === null || wp.tx === undefined) { Sfx.warp(); travelRun(() => { const dm = genMap(wp.to); gotoMapNow(wp.to, dm.entry.x + 0.5, dm.entry.y + 0.5, false, { face: wp.face || 'edge' }); }); }   // round 7: the Deep's next floor
+      } else if (wp.door && tutEvent('doorEntered', { to: wp.to, door: wp.door }), wp.tx === null || wp.tx === undefined) { Sfx.warp(); travelRun(() => { const dm = genMap(wp.to); gotoMapNow(wp.to, dm.entry.x + 0.5, dm.entry.y + 0.5, false, { face: wp.face || 'edge' }); }); }   // round 7: the Deep's next floor
       else { Sfx.warp(); travelRun(() => gotoMapNow(wp.to, wp.tx, wp.ty, false, { face: wp.face || 'edge' })); }
       break;
     }
@@ -1538,6 +1607,7 @@ function updateMob(m, dt) {
   if (m.snare > 0) m.snare -= dt; if (m.slow > 0) m.slow -= dt; if (m.dispel > 0) m.dispel -= dt; if (m.mark > 0) m.mark -= dt;
   if (m.frozen > 0) { m.frozen -= dt; m.moving = false; return; }
   if (m.stun > 0) { m.stun -= dt; m.moving = false; m.atkCD = Math.max(m.atkCD, 0.3); return; }
+  if (m.d.dummy) { dummyTick(m, dt); return; }   // onboarding: a training dummy (js/data/tutorial.js)
   if (m.gnaw) { gnawTick(m, dt); return; }   // round 7: Níðhöggr feeding on the root (immune until its brood falls)
   if (m.leap) {
     const L = m.leap; L.t += dt; const k = Math.min(1, L.t / L.dur);
@@ -1604,7 +1674,7 @@ function update(dt) {
   if (TRAVEL.phase) travelTick(dt);   // mapfix F3
   if (PARTY && PARTY.members.indexOf(P) < 0) PARTY = null;   // cycle 8: a new game (or a test) replaced the hero
   for (let i = timers.length - 1; i >= 0; i--) { const t = timers[i]; t.t -= dt; if (t.t <= 0) { rmAt(timers, i); if (PARTY && t.h !== P) asOwner(t.h, t.fn); else t.fn(); } }
-  if (started) { ambientTick(dt); updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); }
+  if (started) { ambientTick(dt); updatePlayer(dt); if (PARTY && PARTY.members.length > 1 && typeof squadUpdate === 'function') squadUpdate(dt); updateZones(dt); questTick(dt); compUpdate(dt); if (RUSH && RUSH.on) rushTick(dt); tutMoveTick(); if (typeof TUTORIAL !== 'undefined' && TUTORIAL) TUTORIAL.tick(dt); }
   if (typeof CINE !== 'undefined' && CINE.active) { if (P) P.iframes = Math.max(P.iframes || 0, 0.3); } // scenes freeze the monsters and shield you
   else if (!AILOD.on || !P) for (const m of mobs) updateMob(m, dt);
   else {   // perf round 5: AI level of detail (AILOD)
@@ -1834,7 +1904,7 @@ function useObj(o) {
     if (!P.kindled[map.id]) { P.kindled[map.id] = true; banner('Waystone Kindled', map.d.name, 'band gold'); Sfx.level(); }
     openWin('way');
   } else if (o.kind === 'board') questBoard(o);
-  else if (OBJ_TALK[o.kind]) OBJ_TALK[o.kind](o);
+  else if (OBJ_TALK[o.kind]) { OBJ_TALK[o.kind](o); if (o.kind === 'ibook' || o.kind === 'lore') tutEvent('bookRead', { kind: o.kind, key: o.key || o.lore }); else if (o.kind === 'ichest') tutEvent('chestOpened', { id: o.key, kind: 'ichest' }); }
   else if (o.kind === 'anvil') log(o.text || 'The anvil is still warm. Brokkr never lets it go cold.', 'sys');
 }
 /* =========================================================
@@ -1958,7 +2028,7 @@ function chestOpen(o) {
   if (L.lore) P.flags.lore[L.lore] = true;
   burst(o.x, o.y, 12, '#ffd070', 16, 2); Sfx.rare();
   log(`You open the ${o.name || 'chest'}: ${got.join(', ') || 'dust and cobwebs'}.`, 'item');
-  UI.dirty = true; saveGame();
+  UI.dirty = true; saveGame(); tutEvent('chestOpened', { id: o.id, kind: 'chest', map: map && map.id });
   return got;
 }
 function rest() {
@@ -1968,7 +2038,7 @@ function rest() {
   const lost = drops.filter(d => d.lost);
   mobs = []; spawnAll(); drops = drops.filter(d => d.lost || d.item);
   pillar(P, '#ffb060', true); Sfx.heal();
-  log('You rest at the Waystone. Your wounds close. Somewhere out in the Ash, the dead get up again.', 'sys');
+  log('You rest at the Waystone. Your wounds close. Somewhere out in the Ash, the dead get up again.', 'sys'); tutEvent('rested', { at: 'way' });
   $('bossbar').hidden = true; bossShown = null;
   saveGame(); closeWin('way');
 }

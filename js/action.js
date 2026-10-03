@@ -292,6 +292,7 @@ const camSign = () => CAMSET.invert ? -1 : 1;
 // Any hand on the camera: auto-follow waits CAM.pause s.
 function camManual(direct) {
   CAMX.manualAt = CAMX.t;
+  if (typeof tutEventGap === 'function') tutEventGap('cameraTurned', 1, { direct: !!direct });   // onboarding (throttled: drags and sticks call this every frame)
   if (direct) { CAMX.mode = 'idle'; CAMX.v = 0; CAMX.tapping = false; }   // the mouse drag sets the yaw itself
 }
 // Q (dir 1, look left) / E (dir -1). Pressed: turns while held. Released: a tap steps 45°, a hold glides to a stop.
@@ -328,11 +329,11 @@ function camZoomTo(d) {
   if (CAMX.zd === null) { CAMX.zv = 0; CAMX.pv = 0; }
   CAMX.zd = clamp(d, 22, 72); CAMX.pd = camPitchFor(CAMX.zd);
 }
-const camZoomBy = f => camZoomTo((CAMX.zd !== null ? CAMX.zd : cam.dist) * f);
+const camZoomBy = f => { if (typeof tutEventGap === 'function') tutEventGap('zoomed', 0.5); return camZoomTo((CAMX.zd !== null ? CAMX.zd : cam.dist) * f); };
 // Z: near -> mid -> far -> near, from the preset nearest the current distance. Returns the new preset's name.
 function camZoomCycle() {
   const n = CAM_ZOOMS[(CAM_ZOOMS.indexOf(camZoomName(CAMX.zd !== null ? CAMX.zd : cam.dist)) + 1) % CAM_ZOOMS.length];
-  camZoomTo(camZoomDist(n)); return n;
+  camZoomTo(camZoomDist(n)); if (typeof tutEvent === 'function') tutEvent('zoomed', { zoom: n }); return n;
 }
 function camToggleFollow() {
   setCamSetting('follow', !CAMSET.follow);
@@ -425,7 +426,7 @@ function actLockCycle() {
   const list = mobs.filter(m => !m.dead && dist(m, P) < 12).sort((a, b) => dist(a, P) - dist(b, P));
   if (!list.length) { CTRL.lock = null; return; }
   const i = list.indexOf(CTRL.lock); CTRL.lock = i === list.length - 1 ? null : list[i + 1] || list[0];
-  if (CTRL.lock) { face(P, CTRL.lock); floatText(CTRL.lock, 'Locked', 'info'); }
+  if (CTRL.lock) { face(P, CTRL.lock); floatText(CTRL.lock, 'Locked', 'info'); if (typeof tutEvent === 'function') tutEvent('lockOn', { mob: CTRL.lock.type }); }
 }
 
 /* ---------- Moves ---------- */
@@ -438,10 +439,12 @@ function actLight() {
   const t = softTarget(S.wtype === 'bow' ? S.range + 1 : S.range + 1.4, 0.3); if (t) face(P, t);
   P.swingT = swing; P.atkAnim = 0; P.sitting = false; P.path = null; P.target = null; P.goal = null;
   const mul = [1, 1.12, 1.6][step];
-  if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, fin ? { knock: 1.5, from: { x: P.x, y: P.y } } : {}); attackProcs(t); }); Sfx.bow(); return; }
+  if (typeof tutEvent === 'function') tutEvent('attacked', { combo: step + 1 });
+  const fin3 = () => { if (fin && typeof tutEvent === 'function') tutEvent('comboHit3', {}); };   // onboarding: the finisher landed
+  if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, fin ? { knock: 1.5, from: { x: P.x, y: P.y } } : {}); attackProcs(t); fin3(); }); Sfx.bow(); return; }
   stepMove(P.fx * 0.18, P.fy * 0.18);
   hitHint(swing * 0.45, fin ? 'fin' : 'light');
-  after(swing * 0.45, () => { if (!P.dead && meleeArc(S.range + (fin ? 0.5 : 0.25), fin ? 0.15 : 0.35, mul, { knock: fin ? 1.6 : 0.3, stun: fin ? 0.55 : 0.22, from: { x: P.x, y: P.y } }) && t && !t.dead) attackProcs(t); });
+  after(swing * 0.45, () => { if (P.dead) return; const n = meleeArc(S.range + (fin ? 0.5 : 0.25), fin ? 0.15 : 0.35, mul, { knock: fin ? 1.6 : 0.3, stun: fin ? 0.55 : 0.22, from: { x: P.x, y: P.y } }); if (n) fin3(); if (n && t && !t.dead) attackProcs(t); });
   Sfx.swing();
   if (fin) after(swing * 0.45, () => ring(P.x + P.fx * 0.9, P.y + P.fy * 0.9, 1.1, '#fff0b0'));
 }
@@ -456,6 +459,7 @@ function actHeavyRelease() {
   P.stamina -= 15 + c * 10; P.stamT = 0.8;
   const t = softTarget(S.wtype === 'bow' ? S.range + 1 : S.range + 2, 0.25); if (t) face(P, t);
   P.atkAnim = 0; P.swingT = 0.5; const mul = 1.6 + c * 1.4;
+  if (typeof tutEvent === 'function') tutEvent('heavy', { charge: c });
   if (S.wtype === 'bow') { if (t) shot(P, t, 'arrow', () => { physHit(t, mul, { knock: 2, from: { x: P.x, y: P.y } }); burst(t.x, t.y, 30, '#fff0b0', 14, 3); }, { spd: 26 }); Sfx.bow(); return; }
   stepMove(P.fx * 0.4, P.fy * 0.4);
   hitHint(0.2, 'heavy');
@@ -496,6 +500,7 @@ function actDodge() {
   P.dodgeT = 0.34; P.iframes = 0.3; P.swingT = 0; P.queued = null; P.charge = -1; P.blocking = false; P.sitting = false;
   P.path = null; P.target = null; P.goal = null; P.pending = null;
   Sfx.swing();
+  if (typeof tutEvent === 'function') tutEvent('dodged', { avoided: false });
 }
 function actBlock(on) {
   if (!P) return;
@@ -595,6 +600,7 @@ function heroJump(h, o) {
   }
   h.sitting = false; h.z = 0; h.vz = 0;
   h.jump = { ph: 'crouch', t: 0, vx, vy, x0: h.x, y0: h.y, map: typeof map !== 'undefined' ? map : null, onLand: o && o.onLand || null };
+  if (h === P && typeof tutEvent === 'function' && (typeof HCTX === 'undefined' || !HCTX.depth)) tutEvent('jumped', { x: h.x, y: h.y });
   return true;
 }
 // Controlled hero, airborne: momentum + air control (through the walking collision); still while crouching / landing.

@@ -303,7 +303,8 @@ const TIPS = [
   { t: () => `Job Lv 10 reached. Spend all 9 points on <b>Basic Skill</b> (press ${winKey('skills') || 'Alt+S'}), then see Vidar.`, show: () => P.cls === 'novice' && P.jlvl >= 10 && P.skills.basic < 9, done: () => P.skills.basic >= 9 },
   { t: () => `Two Waystones kindled. Any Waystone can send you to the other; press <b>${winKey('worldmap')}</b> for the World Map.`, show: () => Object.keys(P.kindled).length >= 2, done: () => !!P.flags.tips.worldmap || P.lvl >= 20 },
 ];
-function currentTip() { if (!started || P.dead) return null; for (const t of TIPS) { if (t.done()) continue; if (t.show && !t.show()) continue; return t.t(); } return null; }
+function currentTip() { if (!started || P.dead) return null; if (typeof TUTUI !== 'undefined' && TUTUI.quiet()) return null;   // onboarding: the goal and prompts speak
+  for (const t of TIPS) { if (t.done()) continue; if (t.show && !t.show()) continue; return t.t(); } return null; }
 
 /* =========================================================
    UI: windows
@@ -455,7 +456,7 @@ const RENDER = {
   help() {
     const k = (a, b) => `<div class="drow" style="height:auto;padding:3px 0"><span>${a}</span><span style="text-align:right">${b}</span></div>`;
     const act = isAction();
-    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn" data-kb="!ov">Show the controls card</button><button class="btn" data-win="keys">Rebind keys</button><button class="btn" data-win="loadout">Loadout</button></div>` + gfxOptionsHTML();
+    const mode = `<div class="sec">Control style</div><div class="tabs"><button class="btn ${act ? 'on' : ''}" data-act="ctrl:action">Action (keyboard)</button><button class="btn ${act ? '' : 'on'}" data-act="ctrl:classic">Classic (mouse)</button></div><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn" data-kb="!ov">Show the controls card</button><button class="btn" data-win="keys">Rebind keys</button><button class="btn" data-win="loadout">Loadout</button></div>` + (typeof TUTUI !== 'undefined' ? TUTUI.helpHTML() : '') + gfxOptionsHTML();
     const keys = act
       ? hbHelpAction(k)
       : `${k('Walk', 'Click the ground, or hold to keep walking')}
@@ -523,7 +524,7 @@ const RENDER = {
       const way = hasWay ? `<text x="${x + 64}" y="${y + 16}" text-anchor="end" font-size="12" fill="${lit ? '#ffb050' : '#7a7068'}">${lit ? '✦' : '◇'}</text>` : '';
       return `<g ${can ? `data-act="travel:${k}" style="cursor:pointer"` : ''} data-tip="wm:${k}"><rect x="${x - 70}" y="${y - 22}" width="140" height="44" rx="6" fill="${here ? '#4a3a1c' : seen ? '#221c18' : '#15120f'}" stroke="${here ? '#ffd070' : can ? '#ffb050' : seen ? '#8a7a5a' : '#4a4038'}" stroke-width="${here || can ? 2 : 1}"/>`
         + `<text x="${x}" y="${y - 3}" text-anchor="middle" font-size="13" font-weight="700" fill="${seen ? '#f4e8d0' : '#9a9088'}">${esc(d.name)}</text>`
-        + `<text x="${x}" y="${y + 13}" text-anchor="middle" font-size="11" fill="${warn ? '#ff8a6a' : seen ? '#c8b898' : '#7a7068'}">${seen ? lv : lv + ' · unexplored'}</text>${way}${seen ? wmBadge(k, x, y) : ''}${here ? `<circle cx="${x - 58}" cy="${y - 8}" r="4" fill="#ffd070"/>` : ''}</g>`;
+        + `<text x="${x}" y="${y + 13}" text-anchor="middle" font-size="11" fill="${warn ? '#ff8a6a' : seen ? '#c8b898' : '#7a7068'}">${seen ? lv : lv + ' · unexplored'}</text>${way}${seen ? wmBadge(k, x, y) : ''}${here ? `<circle cx="${x - 58}" cy="${y - 8}" r="4" fill="#ffd070"/>` : ''}${typeof TUTUI !== 'undefined' ? TUTUI.wmMark(k, x, y) : ''}</g>`;
     }).join('');
     const svg = `<svg viewBox="0 0 640 400" style="width:100%;height:auto;display:block;background:radial-gradient(ellipse at 40% 55%,#2a241c,#0e0c0a);border:1px solid #4a4038;border-radius:6px;font-family:inherit">${lines}${nodes}</svg>`;
     const kindled = travelList().filter(k => k !== map.id);
@@ -869,7 +870,7 @@ AFTER.keys = bd => { const keys = hbNavEls(bd).map(e => e.dataset.nav); if (!key
 function hbIds() { const K = hbKM(); return K ? Object.keys(K) : Object.keys(HB_DEF); }
 function hbKbAct(id) {
   if (id === '!reset') { if (typeof resetKeys === 'function') { resetKeys(); log('Keys reset to the defaults.', 'sys'); } UI.kbCap = null; UI.dirty = true; UI.abSig = ''; return; }
-  if (id === '!ov') { hbOverlay(true); return; }
+  if (id === '!ov') { UI.covFull = true; hbOverlay(true); return; }
   if (id.startsWith('!cam:')) { hbCamAct(id.slice(5)); return; }
   if (typeof setKey !== 'function') return;
   UI.kbCap = UI.kbCap === id ? null : id; UI.kbFlash = null; UI.kbFoc = 'k:' + id; UI.dirty = true;
@@ -898,6 +899,7 @@ function hbKbKey(e) {
 
 /* ---------- First-run controls card and the jump toast ---------- */
 function hbOverlayHTML() {
+  if (typeof TUTUI !== 'undefined' && TUTUI.on() && !UI.covFull) return TUTUI.cardHTML();   // onboarding: compact while the tutorial runs
   const key = (id, label, cls) => `<div class="ck ${cls || ''}"><b>${esc(hk(id))}</b><span>${label}</span></div>`;
   const left = `<div class="ckrow" style="--o:.1">${key('item1', 'Item 1', 'c-it')}${key('item2', 'Item 2', 'c-it')}${key('item3', 'Item 3', 'c-it')}${key('item4', 'Item 4', 'c-it')}</div>`
     + `<div class="ckrow" style="--o:.35">${key('camLeft', 'Turn ⟲', 'c-cm')}${key('up', 'Forward', 'c-mv')}${key('camRight', 'Turn ⟳', 'c-cm')}${key('ride', 'Ride', 'c-sy')}</div>`
@@ -915,7 +917,7 @@ function hbOverlayHTML() {
 }
 function hbOverlay(show) {
   const el = $('ctlov'); if (!el) return;
-  if (!show) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; store('aom-ctlseen', '1'); UI.covT = performance.now(); } return; }
+  if (!show) { if (!el.hidden) { el.hidden = true; el.innerHTML = ''; store('aom-ctlseen', '1'); UI.covT = performance.now(); } UI.covFull = false; return; }
   hideTip(); hbMenuClose(); el.innerHTML = hbOverlayHTML(); el.hidden = false;
 }
 function hbToast(html, ms) {
@@ -927,7 +929,7 @@ function hbOnStart() {
   if (hbAct() && !store('aom-ctlseen') && hbOnboardOK()) hbOverlay(true);
 }
 function hbOnboardTick() {
-  if (!P.flags || !P.flags.tips || P.flags.tips.jump || !hbOnboardOK()) return;
+  if (!P.flags || !P.flags.tips || P.flags.tips.jump || !hbOnboardOK() || (typeof TUTUI !== 'undefined' && TUTUI.on())) return;
   const t = performance.now(), ov = $('ctlov');
   if ((ov && !ov.hidden) || !$('dialog').hidden || P.dead || (typeof CINE !== 'undefined' && CINE.active)) return;
   if (!(P.flags.tips.moved || t - (UI.startT || t) > 8000) || t - (UI.covT || 0) < 1500 || t - (UI.startT || t) < 2500) return;
@@ -947,6 +949,7 @@ function hbKey(e) {
   if (!started || (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'))) return false;
   if (UI.kbCap) { hbCapture(e); return true; }
   const ov = $('ctlov'); if (ov && !ov.hidden) { if (!/^(Shift|Control|Alt|Meta|OS)/.test(e.code) && !e.repeat) hbOverlay(false); return true; }
+  if (typeof TUTUI !== 'undefined' && TUTUI.open()) return TUTUI.modKey(e);   // onboarding: skip / What's next cards
   if (UI.sm) return hbMenuKey(e);
   if (!$('dialog').hidden) return false;
   const top = hbTopWin();
@@ -955,13 +958,14 @@ function hbKey(e) {
   return false;
 }
 // The game ignores the pad while these are up (C1's pad dispatch asks first).
-function uiPadCapture() { if (!started) return false; const ov = $('ctlov'); if ((ov && !ov.hidden) || UI.sm || UI.kbCap) return true; const t = hbTopWin(); return t === 'loadout' || t === 'keys'; }
+function uiPadCapture() { if (!started) return false; const ov = $('ctlov'); if ((ov && !ov.hidden) || UI.sm || UI.kbCap || (typeof TUTUI !== 'undefined' && TUTUI.open())) return true; const t = hbTopWin(); return t === 'loadout' || t === 'keys'; }
 function hbPadUI() {
   if (!navigator.getGamepads || !(hbPadOn() || (typeof PAD_SEEN !== 'undefined' && PAD_SEEN))) return;
   let gp = null; const l = navigator.getGamepads(); for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } if (!gp) return;
   const now = gp.buttons.map(b => !!(b && b.pressed)), ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
   const st = Math.abs(ax) > 0.6 ? (ax > 0 ? 15 : 14) : Math.abs(ay) > 0.6 ? (ay > 0 ? 13 : 12) : -1; if (st >= 0) now[st] = true;
-  const prev = UI.padPrev || []; UI.padPrev = now; if (!uiPadCapture()) return;
+  const prev = UI.padPrev || []; UI.padPrev = now; if (typeof TUTUI !== 'undefined' && now.some(Boolean)) TUTUI.padSeen();   // onboarding: pad glyphs
+  if (!uiPadCapture()) return;
   const CODES = { 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight', 0: 'Enter', 1: 'Escape', 2: 'KeyX', 3: 'Delete' };
   for (const b in CODES) {
     if (!now[b] || prev[b]) continue;
@@ -1035,7 +1039,7 @@ addEventListener('pointercancel', () => { if (DRG.src) hbDragEnd(); });
 $('game').addEventListener('click', e => {
   if (DRG.eat) { DRG.eat = 0; e.stopPropagation(); e.preventDefault(); return; }   // the click a drop (or a long press) makes
   const sm = e.target.closest('[data-sm]'); if (sm) { e.stopPropagation(); Sfx.click(); hbMenuPick(sm.dataset.sm); return; }
-  const cv = e.target.closest('[data-cov]'); if (cv) { e.stopPropagation(); Sfx.click(); hbOverlay(false); if (cv.dataset.cov === 'keys') openWin('keys'); return; }
+  const cv = e.target.closest('[data-cov]'); if (cv) { e.stopPropagation(); Sfx.click(); if (cv.dataset.cov === 'full') { UI.covFull = true; hbOverlay(true); return; } hbOverlay(false); if (cv.dataset.cov === 'keys') openWin('keys'); return; }
   const lo = e.target.closest('#w-loadout [data-nav]'); if (lo) { e.stopPropagation(); Sfx.click(); UI.loFoc = lo.dataset.nav; hbLoAct(lo.dataset.nav, 'click'); hbPaint($('w-loadout').querySelector('.bd'), UI.loFoc); return; }
   const kb = e.target.closest('[data-kb]'); if (kb) { e.stopPropagation(); Sfx.click(); hbKbAct(kb.dataset.kb); return; }
   const sl = e.target.closest('#abar [data-slot]'); if (sl) { e.stopPropagation(); Sfx.unlock(); hbSlotClick(sl.dataset.slot); return; }
@@ -1151,7 +1155,7 @@ Object.assign(RENDER, {
   },
 });
 function journalQuests() {
-  const QA = P.quests.active, kinds = [['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties'], ['weekly', 'Weekly hunt']];
+  const QA = P.quests.active, kinds = [['tutorial', 'Getting Started'], ['main', 'Story'], ['side', 'Side quests'], ['daily', 'Daily bounties'], ['weekly', 'Weekly hunt']];
   const objRows = id => questObjectives(id).map(o => `<div class="obj ${o.done ? 'done' : o.open ? 'now' : ''}"><span class="m">${o.done ? '✓' : o.open ? '▸' : '·'}</span><span>${esc(o.text)}${o.counted ? ` <b class="qn">${o.cur}/${o.max}</b>` : ''}${o.live ? ` <i class="muted">${esc(o.live)}</i>` : ''}</span></div>`).join('');
   let h = '';
   for (const [k, label] of kinds) {
@@ -1165,7 +1169,7 @@ function journalQuests() {
       h += objRows(id);
       if (ready && ti) h += `<div class="qready">Ready · return to ${esc(questGiverName(ti))}</div>`;
       const rw = questRewardText(q); if (rw) h += `<div class="qr">Reward: ${esc(rw)}</div>`;
-      h += `<div class="row" style="margin-top:4px"><button class="btn" data-act="qtrack:${id}">${tr ? 'Tracking' : 'Track'}</button>${q.kind !== 'main' ? `<button class="btn ${arm ? 'warn' : ''}" data-act="qabandon:${id}">${arm ? 'Confirm abandon' : 'Abandon'}</button>` : ''}</div></div>`;
+      h += `<div class="row" style="margin-top:4px"><button class="btn" data-act="qtrack:${id}">${tr ? 'Tracking' : 'Track'}</button>${q.kind !== 'main' && q.kind !== 'tutorial' ? `<button class="btn ${arm ? 'warn' : ''}" data-act="qabandon:${id}">${arm ? 'Confirm abandon' : 'Abandon'}</button>` : ''}</div></div>`;
     }
   }
   if (!h) h = '<p class="muted">No quests in progress.</p>';
@@ -1574,7 +1578,14 @@ let trackT = 0;
 function renderTracker(force) {
   if (!force && time - trackT < 0.2) return; trackT = time;
   const el = $('qtrack'), id = P.quests && P.quests.track;
-  if (!id || !P.quests.active[id]) { el.hidden = true; return; }
+  // Onboarding: during the tutorial its goal is the tracker's top entry (with or without a tracked quest).
+  const tg = typeof TUTUI !== 'undefined' ? TUTUI.trackHTML() : '';
+  if (!id || !P.quests.active[id]) {
+    if (!tg) { el.hidden = true; return; }
+    const h0 = `<div class="rtb"><span>Getting Started</span></div><div class="rbd">${tg}</div>`;
+    if (cache.qtrack !== h0) { cache.qtrack = h0; el.innerHTML = h0; }
+    el.classList.remove('open'); el.classList.toggle('clamp', phoneUI() && !UI.trackOpen); el.hidden = false; return;
+  }
   const q = QUESTS[id], ready = questReady(id), ti = questTurnIn(q);
   // Round 8: on phones the tracker is clamped (one line per objective, the finished ones folded away, at most two
   // shown) until it is tapped; tapped, it shows everything and a link to the quest log.
@@ -1583,7 +1594,7 @@ function renderTracker(force) {
   if (!open) { const left = obs.filter(o => !o.done); more = obs.length - Math.min(2, left.length); obs = left.slice(0, 2); }
   const rows = obs.map(o => `<div class="o ${o.done ? 'done' : o.open ? '' : 'lock'}"><span class="m">${o.done ? '✓' : '▸'}</span><span>${esc(o.text)}${o.live ? ` <i style="color:#b0402a">${esc(o.live)}</i>` : ''}</span><b>${o.counted ? `${o.cur}/${o.max}` : ''}</b></div>`).join('');
   const foot = !phone ? '' : open ? '<button class="btn qlog" data-win="journal">Quest log</button>' : more > 0 ? `<div class="qmore">+${more} more · tap</div>` : '';
-  const html = `<div class="rtb"><span>Quest</span></div><div class="rbd"><div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}${foot}</div>`;
+  const html = `<div class="rtb"><span>${q.kind === 'tutorial' ? 'Getting Started' : 'Quest'}</span></div><div class="rbd">${tg}<div class="qt">${esc(q.name)}</div>${rows}${ready && ti ? `<div class="rd">Return to ${esc(questGiverName(ti))}</div>` : ''}${foot}</div>`;
   if (cache.qtrack !== html) { cache.qtrack = html; el.innerHTML = html; }
   el.classList.toggle('open', phone && open); el.classList.toggle('clamp', !open);
   el.hidden = false;
@@ -2188,6 +2199,7 @@ function miniMarkers() {
     const e = 1.4, x = clamp(q.x, MM.x0 + e, MM.x0 + MM.V - e), y = clamp(q.y, MM.y0 + e, MM.y0 + MM.V - e), an = Math.atan2(q.y - y, q.x - x);
     g.save(); g.translate(x * S, y * S); g.rotate(an); g.fillStyle = c; g.strokeStyle = C.edge; g.beginPath(); g.moveTo(5 * u, 0); g.lineTo(-3 * u, -4 * u); g.lineTo(-3 * u, 4 * u); g.closePath(); g.fill(); g.stroke(); g.restore();
   }
+  if (typeof TUTUI !== 'undefined') TUTUI.mini(g, S, u, inV);   // onboarding: the goal's waypoint
   // squad mode: the other heroes
   if (typeof gfxHeroes === 'function') { const Hs = gfxHeroes(); if (Hs.length > 1) for (const h of Hs) if (h && h !== P && (!h.map || h.map === m.id)) dot(h.x, h.y, h.dead ? C.down : C.ally, 3.2); }
 }
@@ -2212,6 +2224,7 @@ const PLACE_PATH = { interior: '<path d="M1.5 7.2L7 2.2L12.5 7.2V12.5H1.5Z" fill
 const placeIcon = k => `<svg viewBox="0 0 14 14" aria-hidden="true">${PLACE_PATH[k === 'cave' ? 'cave' : 'interior']}</svg>`;
 function worldUIFrame(dt) {
   miniFrame(dt);
+  if (typeof TUTUI !== 'undefined') TUTUI.frame(dt);   // onboarding: goal arrow, prompts, tips
   DP.t += dt; if (DP.t >= 0.1) { DP.t = 0; doorTick(); regionTick(); lmTick(); objTick(); }   // UI round 11: landmarks, object prompt
   const el = $('doorp'); if (el && DP.wp) promptAt(el, DP, DP.wp.x + 0.5, DP.wp.y + 0.5, 2.1);
   const oe = $('objp'); if (oe && OP.o) promptAt(oe, OP, OP.o.x, OP.o.y, OBJ_H[OP.o.kind] || 1.8, true);
@@ -3141,3 +3154,442 @@ function tacPotRow(who, pot, res) {
     for (const h of L) { const p = tacPotions(h); if (!p || p.reserve == null) continue; const o = { reserve: clamp(p.reserve + dlt, 0, 99) }; if (p.potions != null) o.potions = p.potions; try { squadOrder(h.id, o); } catch (e) { console.error(e); } }
   };
 }
+
+/* =========================================================
+   Onboarding round (design/onboarding.md, O2): the tutorial's UI. The tutorial (O1: js/data/tutorial.js, core.js)
+   drives it through five globals; every call is safe in any order (before the game starts, without a hero, repeated,
+   or with null):
+   - tutGoal({ text, map, x, y } | null): one goal line at the top (it pulses when it changes); an arrow at the screen
+     edge toward the target while it is off-screen (a bobbing pin over it when it is on-screen); a waypoint on the
+     minimap and, when the goal is on another map, on the World Map. A goal on another map points at the exit that
+     leads there. During the tutorial (P.flags.tut active) the quest tracker shows the goal as its top entry.
+   - tutPrompt({ id, text, keys: [actionId, ...], until: eventName | [eventName, ...] } | null): a context prompt with
+     key glyphs (keyFor; padFor while a pad is in use). At most two show: a third pushes out the oldest, the same id
+     replaces itself, { id } alone removes that one and null removes all. It ticks and fades when the window event
+     'aom-tut' (detail { name, data }) names its `until`.
+   - tutTip(id, text | { title, text, icon }): a once-per-id tip card (P.flags.tips['t_' + id]). It is off while
+     Options "Show tips" is off (localStorage 'aom-tips' = '0') and waits in a queue during fights, dialogs and scenes.
+   - tutSkipOffer(onSkip | null): the discreet "I know how to play" button; it asks in-game before calling onSkip.
+   - tutWhatsNext(): the closing card (side quests, the Loadout, the World Map, the Codex, Options).
+   Text may carry {actionId} tokens ('Press {interact} to open it'): they become key glyphs. An id that is not an
+   action ('F1', 'Enter', 'T') shows as written.
+   Hooks elsewhere in this file: worldUIFrame (TUTUI.frame), renderTracker, miniMarkers, the World Map, Help (Show
+   tips), currentTip and the jump toast (quiet during the tutorial), the first-run key card (compact during the
+   tutorial), hbKey / uiPadCapture / hbPadUI (the skip and What's next cards take Enter / Esc and the pad's A / B).
+   ========================================================= */
+const TUTUI = (function () {
+  const T = { p: null, goal: null, gsig: '', rkey: '', route: null, prompts: [], psig: '', tipQ: [], tip: null, tipT: 0, skip: null, ask: false, next: false,
+    inp: 'kb', t: 0, lt: 0, calm: 0, atf: '', amode: '', alab: '', ptop: 0 };
+  const CODEX = 'https://claude.ai/artifact/BSg1hbeEavbNXHb6FmZGmv';
+  const $t = id => document.getElementById(id);
+  const tutState = () => P && P.flags && P.flags.tut;
+  const on = () => { const t = tutState(); return !!t && typeof t === 'object' && !t.done && !t.skipped; };
+  const tipsOn = () => store('aom-tips') !== '0';
+  const now = () => performance.now();
+  const own = () => { if (P) T.p = P; };
+  // A new or loaded hero drops the last one's goal, prompts and tips (the tutorial sets them again for its own hero).
+  function heroCheck() { if (T.p && P && T.p !== P) { T.p = P; T.goal = null; T.gsig = ''; T.route = null; T.rkey = ''; T.prompts = []; T.tipQ = []; tipHide(); T.skip = null; T.ask = T.next = false; render(); } }
+
+  /* ---------- Glyphs ---------- */
+  const known = id => !!((hbKM() && hbKM()[id]) || HB_DEF[id] || /^skill[5-8]$/.test(id));
+  const padNow = () => T.inp === 'pad' && hbPadOn();
+  const PADC = { A: 'pa', B: 'pb', X: 'px', Y: 'py' };
+  const PADW = { up: '↑', down: '↓', left: '←', right: '→' };
+  function padGlyph(s) {
+    return String(s).split('+').map(p => {
+      p = p.trim().replace(/^D-pad\s*(.*)$/i, (m, d) => '✚' + (PADW[d] || d.replace(/left\/right/i, '←→').replace(/\s+/g, '')));
+      return `<kbd class="tk pad ${PADC[p] || 'pw'}">${esc(p)}</kbd>`;
+    }).join('<i class="tk-plus">+</i>');
+  }
+  function keyGlyph(s) { s = String(s); const parts = s.length > 2 && /.\+./.test(s) ? s.split('+') : [s]; return parts.map(p => `<kbd class="tk${p.length > 2 ? ' w' : ''}">${esc(p)}</kbd>`).join('<i class="tk-plus">+</i>'); }
+  // One glyph group per key. On a pad the four move keys are one stick: an action that shows the same button as the
+  // one before it (and is not the same action, so J J J stays three) is folded into it.
+  function glyphs(keys) {
+    const pad = padNow(), out = []; let lastG = null, lastId = null;
+    for (let id of Array.isArray(keys) ? keys : keys ? [keys] : []) {
+      id = String(id || ''); if (!id) continue;
+      let g, isPad = false;
+      if (id[0] === '!' || !known(id)) g = id.replace(/^!/, '');
+      else if (pad) { g = hpad(/^item[1-4]$/.test(id) ? 'quick' : id); isPad = !!g; if (!g) g = hk(id); }
+      else g = hk(id);
+      if (pad && g === lastG && id !== lastId) continue;
+      lastG = g; lastId = id;
+      out.push(!g ? '<kbd class="tk off">unbound</kbd>' : isPad ? padGlyph(g) : keyGlyph(g));
+    }
+    return out.join('');
+  }
+  const rich = s => esc(String(s == null ? '' : s)).replace(/\{([!A-Za-z0-9_`+\- ]{1,16})\}/g, (m, id) => `<span class="tk-in">${glyphs([id.trim()])}</span>`);
+
+  /* ---------- Goal ---------- */
+  function goal(g) {
+    own();
+    if (!g || (typeof g !== 'object') || (!g.text && g.x == null)) { T.goal = null; T.gsig = ''; T.route = null; T.rkey = ''; render(); return; }
+    const x = +g.x, y = +g.y, ok = isFinite(x) && isFinite(y) && g.x != null && g.y != null;
+    const n = { text: String(g.text || ''), map: g.map || (map && map.id) || (P && P.map) || null, x: ok ? x : null, y: ok ? y : null };
+    const sig = n.text + '|' + n.map + '|' + n.x + '|' + n.y, changed = n.text !== (T.goal && T.goal.text);
+    T.goal = n; if (sig === T.gsig) return; T.gsig = sig; T.rkey = '';
+    render(changed);
+  }
+  // The exit to take on this map toward a goal on another one: a warp straight there, else the first warp of the
+  // shortest route (breadth-first over generated maps, at most 6 hops, skipping the Deep Roots floors).
+  function route() {
+    const g = T.goal; if (!g || !map) return null;
+    const key = map.id + '>' + g.map; if (key === T.rkey) return T.route; T.rkey = key; T.route = null;
+    if (!g.map || g.map === map.id || !MAPDEFS[g.map]) return null;
+    const direct = map.warps.find(w => w.to === g.map); if (direct) return (T.route = direct);
+    const prev = { [map.id]: null }, firstOf = {}; let q = [map.id];
+    for (let depth = 0; depth < 6 && q.length; depth++) {
+      const nq = [];
+      for (const k of q) {
+        let ws; try { ws = k === map.id ? map.warps : genMap(k).warps; } catch (e) { continue; }
+        for (const w of ws) {
+          const t = w.to; if (!MAPDEFS[t] || MAPDEFS[t].deep || t in prev) continue;
+          prev[t] = k; firstOf[t] = k === map.id ? w : firstOf[k];
+          if (t === g.map) return (T.route = firstOf[t]);
+          nq.push(t);
+        }
+      }
+      q = nq;
+    }
+    return null;
+  }
+  // The point the arrow and the minimap show on this map: the goal itself, or the exit toward it.
+  function target() {
+    const g = T.goal; if (!g || !map || !P) return null;
+    if (g.map === map.id) return g.x == null ? null : { x: g.x, y: g.y, exit: false };
+    const w = route(); return w ? { x: w.x + 0.5, y: w.y + 0.5, exit: true, to: g.map } : null;
+  }
+  function goalHTML(withMap) {
+    const g = T.goal; if (!g) return '';
+    const other = withMap && g.map && map && g.map !== map.id && MAPDEFS[g.map] ? `<small class="tg-m">${esc(MAPDEFS[g.map].name || g.map)}</small>` : '';
+    return `<i class="tg-i" aria-hidden="true"></i><span class="tg-t">${rich(g.text)}</span>${other}`;
+  }
+  // The tracker's top entry during the tutorial.
+  function trackHTML() {
+    if (!on() || !T.goal || !T.goal.text) return '';
+    return `<div class="qgoal"><span class="m">◆</span><span>${rich(T.goal.text)}</span></div>`;
+  }
+
+  /* ---------- Prompts ---------- */
+  function prompt(o) {
+    own();
+    if (!o) { for (const p of T.prompts) leave(p, true); return; }
+    if (typeof o !== 'object') return;
+    const id = String(o.id || o.text || 'p');
+    const old = T.prompts.find(p => p.id === id && !p.out);
+    if (!o.text && !(o.keys && o.keys.length)) { if (old) leave(old, true); return; }
+    const p = { id, text: String(o.text || ''), keys: Array.isArray(o.keys) ? o.keys.slice(0, 8) : o.keys ? [o.keys] : [], until: o.until || null, ok: false, out: false, el: null, sig: '' };
+    if (old) { p.el = old.el; T.prompts[T.prompts.indexOf(old)] = p; }
+    else {
+      T.prompts.push(p);
+      const live = T.prompts.filter(q => !q.out);
+      while (live.length > 2) leave(live.shift(), true);
+    }
+    renderPrompts();
+  }
+  function done(p) { if (p.ok || p.out) return; p.ok = true; renderPrompts(); setTimeout(() => leave(p), 1000); }
+  function leave(p, fast) {
+    if (p.out) return; p.out = true; renderPrompts();
+    setTimeout(() => { const i = T.prompts.indexOf(p); if (i >= 0) T.prompts.splice(i, 1); if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el); }, fast ? 260 : 480);
+  }
+  const untilHas = (u, n) => Array.isArray(u) ? u.includes(n) : u === n;
+  function onEvent(e) {
+    const d = (e && e.detail) || {}, n = d.name; if (!n) return;
+    for (const p of T.prompts.slice()) if (!p.ok && !p.out && p.until && untilHas(p.until, n)) done(p);
+  }
+  function renderPrompts() {
+    const box = $t('tutp'); if (!box) return;
+    for (const p of T.prompts) {
+      if (!p.el) { p.el = document.createElement('div'); p.el.className = 'tp'; box.appendChild(p.el); }
+      const sig = p.text + '|' + p.keys.join(',') + '|' + padNow() + '|' + p.ok;
+      if (sig !== p.sig) { p.sig = sig; p.el.innerHTML = `${p.keys.length ? `<span class="tp-k">${glyphs(p.keys)}</span>` : ''}<span class="tp-t">${rich(p.text)}</span><span class="tp-ok" aria-hidden="true">✓</span>`; }
+      p.el.classList.toggle('ok', p.ok); p.el.classList.toggle('out', p.out);
+    }
+    for (const c of [...box.children]) if (!T.prompts.some(p => p.el === c)) box.removeChild(c);
+  }
+
+  /* ---------- Tips ---------- */
+  const SV = {
+    door: '<path d="M4 21V5.5A3.5 3.5 0 0 1 7.5 2h9A3.5 3.5 0 0 1 20 5.5V21Z" fill="currentColor"/><path d="M7.5 21V7h9v14Z" fill="rgba(0,0,0,.45)"/><circle cx="14.2" cy="14" r="1.1" fill="currentColor"/>',
+    chest: '<path d="M3 10h18v10H3Z" fill="currentColor"/><path d="M3 10a9 5 0 0 1 18 0Z" fill="currentColor" opacity=".8"/><path d="M3 11.5h18" stroke="rgba(0,0,0,.5)" stroke-width="1.6"/><rect x="10.5" y="10" width="3" height="4.5" rx=".8" fill="rgba(0,0,0,.55)"/>',
+    sign: '<path d="M11 9h2v13h-2Z" fill="currentColor"/><path d="M3 3h15l3 3.5-3 3.5H3Z" fill="currentColor"/><path d="M6 6.5h9" stroke="rgba(0,0,0,.45)" stroke-width="1.4"/>',
+    heart: '<path d="M12 21C5 16 2 12.5 2 8.6 2 5.8 4.2 3.6 7 3.6c2 0 3.8 1.1 5 3 1.2-1.9 3-3 5-3 2.8 0 5 2.2 5 5 0 3.9-3 7.4-10 12.4Z" fill="currentColor"/>',
+    star: '<path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2l-6.1 3.4 1.4-6.8L2.2 9.1l6.9-.8Z" fill="currentColor"/>',
+    skill: '<path d="M13 2L4 14h7l-1 8 9-12h-7Z" fill="currentColor"/>',
+    slots: '<rect x="2" y="5" width="6" height="6" rx="1.4" fill="currentColor"/><rect x="9" y="5" width="6" height="6" rx="1.4" fill="currentColor"/><rect x="16" y="5" width="6" height="6" rx="1.4" fill="currentColor"/><rect x="5.5" y="13" width="6" height="6" rx="1.4" fill="currentColor" opacity=".7"/><rect x="12.5" y="13" width="6" height="6" rx="1.4" fill="currentColor" opacity=".7"/>',
+    map: '<path d="M2 5l6-2 8 3 6-2v15l-6 2-8-3-6 2Z" fill="currentColor"/><path d="M8 3v15M16 6v15" stroke="rgba(0,0,0,.4)" stroke-width="1.4"/>',
+    quest: '<path d="M10 3h4l-.6 12h-2.8Z" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/>',
+    book: '<path d="M3 4.5c3-1.3 6-1.3 9 .6v15c-3-1.9-6-1.9-9-.6Z" fill="currentColor"/><path d="M21 4.5c-3-1.3-6-1.3-9 .6v15c3-1.9 6-1.9 9-.6Z" fill="currentColor" opacity=".75"/>',
+    gear: '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.5 5-.1-3 2-1.6-2-3.4-2.4.9-2.4-1.5L15.2 2h-4l-.4 2.5-2.6 1.4-2.3-.9-2 3.4 2 1.6v3l-2 1.6 2 3.4 2.4-.9 2.5 1.5.4 2.4h4l.4-2.5 2.4-1.4 2.4.9 2-3.4Z" fill="currentColor" fill-rule="evenodd"/>',
+    team: '<circle cx="8" cy="7.5" r="3.2" fill="currentColor"/><circle cx="16.5" cy="8.5" r="2.7" fill="currentColor" opacity=".75"/><path d="M2 20c0-4 2.7-6.5 6-6.5s6 2.5 6 6.5Z" fill="currentColor"/><path d="M13 20c.2-3 1.6-5 3.5-5 2.4 0 4.5 2 4.5 5Z" fill="currentColor" opacity=".75"/>',
+    info: '<circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M11 10.5h2V18h-2Z" fill="rgba(0,0,0,.6)"/><circle cx="12" cy="7" r="1.4" fill="rgba(0,0,0,.6)"/>',
+  };
+  const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${SV[k] || SV.info}</svg>`;
+  // id -> [icon, title] (the first match wins); a text "Title: line" with a short title also names the card.
+  const TIPK = [
+    [/door|room|tavern|inn|enter/, 'door', 'Doors'], [/cave|den|dark|torch/, 'door', 'Caves'], [/chest|loot|pick/, 'chest', 'Chests'],
+    [/sign|lore|book|read/, 'book', 'Signs and books'], [/low.?hp|hp|potion|heal/, 'heart', 'Low HP'], [/stat|level|lvl/, 'star', 'Stat points'],
+    [/skill/, 'skill', 'Skill points'], [/loadout|slot/, 'slots', 'Loadout'], [/world|map|waystone|travel/, 'map', 'World Map'],
+    [/quest|board|bounty/, 'quest', 'Quests'], [/squad|compan|recruit|swap|tactic|party/, 'team', 'Companions'], [/rest|bed|save/, 'star', 'Resting'],
+    [/option|setting/, 'gear', 'Options'],
+  ];
+  function tip(id, text) {
+    own(); if (id == null) return false;
+    id = String(id); const key = 't_' + id;
+    if (!P || !P.flags) { return false; }
+    const F = P.flags.tips || (P.flags.tips = {});
+    if (F[key] || !tipsOn()) return false;
+    if ((T.tip && T.tip.id === id) || T.tipQ.some(t => t.id === id)) return false;
+    let o = text && typeof text === 'object' ? text : { text };
+    let title = o.title ? String(o.title) : '', line = String(o.text == null ? '' : o.text), icon = o.icon && SV[o.icon] ? o.icon : '';
+    const m = !title && /^([^:.!?]{2,26}):\s+(.+)$/.exec(line); if (m) { title = m[1]; line = m[2]; }
+    const k = TIPK.find(r => r[0].test(id.toLowerCase()));
+    if (!icon) icon = k ? k[1] : 'info'; if (!title) title = k ? k[2] : 'Tip';
+    T.tipQ.push({ id, key, title, line, icon });
+    if (T.tipQ.length > 6) T.tipQ.shift();
+    tipTick(true);
+    return true;
+  }
+  function fighting() {
+    if (!P) return false;
+    if (P.lastHitT != null && time - P.lastHitT < 5 && time >= P.lastHitT) return true;
+    if (P.hp != null && typeof S !== 'undefined' && S && S.maxhp && P.hp < S.maxhp * 0.35 && P.lastHitT != null && time - P.lastHitT < 8) return true;
+    for (const m of mobs) if (!m.dead && m.state === 'chase' && (m.target === P || !m.target) && Math.abs(m.x - P.x) < 12 && Math.abs(m.y - P.y) < 12) return true;
+    const bb = $t('bossbar'); return !!(bb && !bb.hidden);
+  }
+  const blocked = () => !started || !P || P.dead || !$('dialog').hidden || (typeof CINE !== 'undefined' && CINE.active) || ($t('ctlov') && !$t('ctlov').hidden) || T.ask || T.next;
+  function tipTick(force) {
+    if (!T.tipQ.length || T.tip) return;
+    if (!tipsOn()) { T.tipQ = []; return; }
+    if (blocked() || fighting()) { T.calm = now(); return; }
+    if (!force && now() - T.calm < 1500) return;
+    const t = T.tipQ.shift(); if (!P.flags.tips) P.flags.tips = {}; P.flags.tips[t.key] = 1;
+    T.tip = t; T.tipT = now();
+    const el = $t('tuttip'); if (!el) return;
+    el.innerHTML = `<div class="tc-i ${t.icon}">${svgI(t.icon)}</div><div class="tc-b"><div class="tc-h">${esc(t.title)}</div><div class="tc-l">${rich(t.line)}</div></div><button class="tc-x" type="button" data-act="tutx" aria-label="Close tip">×</button>`;
+    el.hidden = false; el.classList.remove('go', 'out'); void el.offsetWidth; el.classList.add('go');
+    layout();
+  }
+  function tipHide() {
+    const el = $t('tuttip'); T.tip = null; if (!el || el.hidden) return;
+    el.classList.add('out'); clearTimeout(T.tipHT); T.tipHT = setTimeout(() => { if (!T.tip) { el.hidden = true; el.classList.remove('out', 'go'); } }, 320);
+  }
+  const TIP_MS = 9000;
+
+  /* ---------- Skip offer, What's next (cards in #tutmod) ---------- */
+  function skipOffer(fn) { own(); T.skip = typeof fn === 'function' ? fn : null; if (!T.skip && T.ask) closeMod(); render(); }
+  function openMod(kind) {
+    const el = $t('tutmod'); if (!el) return;
+    if (typeof hideTip === 'function') hideTip(); if (typeof hbMenuClose === 'function') hbMenuClose();
+    T.ask = kind === 'ask'; T.next = kind === 'next';
+    el.innerHTML = kind === 'ask' ? askHTML() : nextHTML(); el.hidden = false;
+    const b = el.querySelector('.btn.big'); if (b && b.focus) try { b.focus({ preventScroll: true }); } catch (e) { /* old browsers */ }
+  }
+  function closeMod() { const el = $t('tutmod'); T.ask = T.next = false; if (el) { el.hidden = true; el.innerHTML = ''; } }
+  const askHTML = () => `<div class="tm-card tm-ask" role="dialog" aria-label="Skip the tutorial"><div class="tm-h">Skip the tutorial?</div><p>You keep its rewards and go on from there. Every lesson is still in <b>Help</b>, and the controls card opens from there too.</p>`
+    + `<div class="tm-f"><button class="btn big" data-act="tutyes">Skip tutorial ${kc('Enter')}</button><button class="btn" data-act="tutno">Keep the tutorial ${kc('Esc')}</button></div></div>`;
+  function nextHTML() {
+    const wk = id => { let k = ''; try { k = typeof winKey === 'function' ? winKey(id) : ''; } catch (e) { k = ''; } if (!k && id === 'loadout') k = 'Alt+L'; return k ? kc(k, 'sm') : ''; };
+    const row = (icon, h, line, btn) => `<div class="tm-r"><div class="tc-i ${icon}">${svgI(icon)}</div><div class="tm-rb"><b>${h}</b><span>${line}</span></div>${btn}</div>`;
+    const go = (win, label) => `<button class="btn" data-act="tutgo:${win}">${label} ${wk(win)}</button>`;
+    return `<div class="tm-card tm-next" role="dialog" aria-label="What's next"><div class="tm-h">What's next</div><p class="tm-sub">The first steps are behind you. The main quest goes on from here. When you want more:</p>`
+      + row('quest', 'Side quests', 'Look for <b class="q">!</b> over heads and check the bounty boards.', go('journal', 'Quests'))
+      + row('slots', 'Loadout', 'Put your skills and potions on the keys you like.', go('loadout', 'Loadout'))
+      + row('map', 'World Map', 'Every realm, its level range and the Waystones you can travel to.', go('worldmap', 'World Map'))
+      + row('book', 'Midgard Codex', 'Monsters, drops, maps and quests, all in one wiki.', `<a class="btn" href="${CODEX}" target="_blank" rel="noopener">Open ↗</a>`)
+      + row('gear', 'Options', 'Controls, camera, graphics and tips live in Help.', go('help', 'Options'))
+      + `<div class="tm-f"><button class="btn big" data-act="tutok">Onward ${kc('Enter')}</button></div></div>`;
+  }
+  function whatsNext() { own(); openMod('next'); }
+  function modKey(e) {
+    if (!T.ask && !T.next) return false;
+    if (e.repeat) return true;
+    if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Enter') { if (T.ask) skipYes(); else closeMod(); }
+    else if (e.code === 'Escape' || e.key === 'Escape') closeMod();
+    return true;
+  }
+  function skipYes() {
+    const fn = T.skip; closeMod(); T.skip = null; render();
+    for (const p of T.prompts.slice()) leave(p, true);
+    if (fn) { try { fn(); } catch (err) { console.error(err); } }
+  }
+  ACTS.tutx = () => tipHide();
+  ACTS.tutskip = () => { if (T.skip) openMod('ask'); };
+  ACTS.tutyes = () => skipYes();
+  ACTS.tutno = () => closeMod();
+  ACTS.tutok = () => closeMod();
+  ACTS.tutgo = b => { closeMod(); if (b && WIN[b]) openWin(b); };
+  ACTS.tuttips = () => { const v = !tipsOn(); store('aom-tips', v ? null : '0'); if (!v) { T.tipQ = []; tipHide(); } log(`Tips ${v ? 'on' : 'off'}.`, 'sys'); };
+
+  /* ---------- Rendering, layout and the per-frame arrow ---------- */
+  function render(pulse) {
+    heroCheckSoft();
+    const w = $t('tutgoal'); if (!w) return;
+    const b = w.querySelector('.tg-b'), s = w.querySelector('.tg-skip');
+    const html = goalHTML(true);
+    if (b) { if (b.innerHTML !== html) b.innerHTML = html; b.hidden = !T.goal; if (pulse && T.goal) { b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); } }
+    if (s) s.hidden = !T.skip;
+    w.hidden = !T.goal && !T.skip;
+    if (typeof cache !== 'undefined') cache.qtrack = null;
+    if (typeof renderTracker === 'function' && started && P && P.quests) try { renderTracker(true); } catch (e) { console.error(e); }
+    if (typeof MM !== 'undefined') MM.t = 1;   // the minimap waypoint on the next frame
+    if (UI.open && UI.open.worldmap) UI.dirty = true;
+    layout();
+  }
+  function heroCheckSoft() { if (!T.p && P) T.p = P; }
+  const vis = e => e && !e.hidden && e.offsetParent !== null && getComputedStyle(e).display !== 'none';
+  // Positions (10 times a second): the goal sits top centre between the side panels (under the target frame and boss
+  // bar when they show) or, when the panels leave no room (phones), under the left panel; prompts stack above
+  // whatever HUD block covers the centre column; the tip card goes under the right column (and the goal).
+  function layout() {
+    const hud = $t('hud'); if (!hud || hud.hidden) return;
+    const z = (typeof UIZ !== 'undefined' && UIZ) || 1, hr = hud.getBoundingClientRect(), cx = hr.left + hr.width / 2;
+    const tl = $t('tl'), tr = $t('tr'), w = $t('tutgoal');
+    const lR = tl ? tl.getBoundingClientRect() : null, info = $t('info'), iR = info ? info.getBoundingClientRect() : lR, rR = tr ? tr.getBoundingClientRect() : null;
+    const lw = iR ? iR.right - hr.left : 0, rw = rR && rR.width ? hr.right - rR.left : 0, free = hr.width - 2 * Math.max(lw, rw) - 24 * z;
+    if (w && !w.hidden) {
+      let top = 10, side = free < 300 * z;
+      if (side) top = ((lR ? lR.bottom : iR ? iR.bottom : 0) - hr.top) / z + 8;
+      else for (const id of ['bossbar', 'tframe']) { const e = $t(id); if (vis(e)) { const r = e.getBoundingClientRect(); if (r.height) top = Math.max(top, (r.bottom - hr.top) / z + 6); } }
+      w.classList.toggle('side', side);
+      w.style.top = Math.round(top) + 'px';
+      w.style.maxWidth = side ? Math.max(160, Math.round((hr.width - rw) / z - 24)) + 'px' : Math.round(Math.max(260, free / z)) + 'px';
+    }
+    const box = $t('tutp');
+    if (box) {
+      let minTop = hr.bottom;
+      for (const id of ['dock', 'chatbox', 'tip', 'ctltoast']) {
+        const e = $t(id); if (!vis(e)) continue; const r = e.getBoundingClientRect(); if (!r.height) continue;
+        if (r.right > cx - 150 * z && r.left < cx + 150 * z) minTop = Math.min(minTop, r.top);
+      }
+      box.style.bottom = Math.round((hr.bottom - minTop) / z + 10) + 'px';
+      T.ptop = box.getBoundingClientRect().top;
+    }
+    const tt = $t('tuttip');
+    if (tt && !tt.hidden) {
+      let top = rR ? (rR.bottom - hr.top) / z + 10 : 200;
+      if (w && !w.hidden && w.classList.contains('side')) top = Math.max(top, (w.getBoundingClientRect().bottom - hr.top) / z + 8);
+      tt.style.top = Math.round(top) + 'px';
+    }
+  }
+  function frame(dt) {
+    heroCheck();
+    T.t += dt; if (T.t >= 0.1) {
+      T.t = 0;
+      if (T.tip && now() - T.tipT > TIP_MS) tipHide();
+      tipTick();
+      if (T.skip && tutState() && !on()) { T.skip = null; render(); }
+      if (T.ask && !T.skip) closeMod();
+      const sig = String(padNow());
+      if (sig !== T.psig) { T.psig = sig; regly(); }
+      const box = $t('tutp'); if (box) box.classList.toggle('busy', !$('dialog').hidden);   // a dialog hides the prompts
+      layout();
+    }
+    arrow();
+  }
+  // The arrow: off-screen, at the screen edge on the ray from the hero toward the target; on-screen, a pin over it.
+  function arrow() {
+    const el = $t('tutarrow'); if (!el) return;
+    const hide = () => { if (!el.hidden) { el.hidden = true; T.atf = ''; } };
+    const hud = $t('hud');
+    if (!started || !P || P.dead || !map || !hud || hud.hidden || blocked() || typeof pj !== 'function') return hide();
+    const t = target(); if (!t) return hide();
+    const d = hyp(t.x - P.x, t.y - P.y); if (d < 1.6) return hide();
+    const gh = groundH(t.x, t.y), a = pj(t.x, t.y, gh + 1.9), fg = groundH(P.x, P.y), h = pj(P.x, P.y, fg + 1);
+    const sc = clamp(PPU / 34, 0.7, 1.5);
+    const gw = $t('tutgoal'), gR = gw && !gw.hidden ? gw.getBoundingClientRect() : null;
+    // The arrow's field: the screen inset by its size, under the goal line, and above the bottom HUD blocks (the dock,
+    // the chat, the prompts) where it would run into them.
+    const L = 34, R = W - 34, Tp = Math.max(48, gR ? gR.bottom + 26 : 0), lows = [];
+    for (const id of ['dock', 'chatbox', 'tutp']) { const e = $t(id); if (!vis(e)) continue; const r = e.getBoundingClientRect(); if (r.height > 2) lows.push(r); }
+    const hitLow = (px, py) => lows.find(r => px > r.left - 30 && px < r.right + 30 && py > r.top - 30);
+    let B = H - 40, x, y, mode, ang = 0;
+    if (a[2] < 1 && a[0] > L && a[0] < R && a[1] > Tp && a[1] < B && !hitLow(a[0], a[1])) { mode = 'pin'; x = a[0]; y = a[1]; }
+    else {
+      mode = 'edge';
+      let dx, dy;
+      if (a[2] < 1) { dx = a[0] - h[0]; dy = a[1] - h[1]; }
+      else { const k = Math.min(d, 3), q = pj(P.x + (t.x - P.x) / d * k, P.y + (t.y - P.y) / d * k, groundH(P.x + (t.x - P.x) / d * k, P.y + (t.y - P.y) / d * k) + 1); dx = q[0] - h[0]; dy = q[1] - h[1]; }
+      if (Math.abs(dx) + Math.abs(dy) < 1e-4) { dx = 0; dy = -1; }
+      for (let n = 0; n < 4; n++) {
+        const ox = clamp(h[0], L + 1, R - 1), oy = clamp(h[1], Tp + 1, B - 1);
+        const tx = dx > 0 ? (R - ox) / dx : dx < 0 ? (L - ox) / dx : Infinity, ty = dy > 0 ? (B - oy) / dy : dy < 0 ? (Tp - oy) / dy : Infinity, k = Math.max(0, Math.min(tx, ty));
+        x = ox + dx * k; y = oy + dy * k;
+        const r = hitLow(x, y); if (!r || r.top - 30 >= B || r.top - 30 <= Tp + 40) break; B = r.top - 30;
+      }
+      ang = Math.atan2(dy, dx);
+      // keep clear of the top corner panels (Basic Info, the minimap column)
+      for (const id of ['info', 'tr']) {
+        const e = $t(id); if (!vis(e)) continue; const r = e.getBoundingClientRect();
+        if (x > r.left - 24 && x < r.right + 24 && y > r.top - 24 && y < r.bottom + 24) {
+          const bx = id === 'tr' ? r.left - 26 : r.right + 26, by = r.bottom + 26;
+          if (Math.abs(bx - x) < Math.abs(by - y)) x = bx; else y = Math.min(by, B);
+        }
+      }
+    }
+    const lab = d >= 6 ? `${Math.round(d)} m` : '';
+    if (mode !== T.amode) { T.amode = mode; el.className = 'tut-arrow ' + mode; }
+    if (lab !== T.alab) { T.alab = lab; const l = el.querySelector('.ta-l'); if (l) { l.textContent = lab; l.hidden = !lab; } }
+    const tf = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+    if (tf !== T.atf) { T.atf = tf; el.style.transform = tf; }
+    const r = el.querySelector('.ta-r'); if (r) { const rf = mode === 'edge' ? `rotate(${ang.toFixed(2)}rad)` : ''; if (r.style.transform !== rf) r.style.transform = rf; r.style.setProperty('--s', sc.toFixed(2)); }
+    if (el.hidden) el.hidden = false;
+  }
+  // The minimap waypoint: a gold star with a pulsing ring (clamped to the view's edge as an arrowhead in the local view).
+  function mini(g, S, u, inV) {
+    const t = target(); if (!t || typeof MM === 'undefined') return;
+    const pulse = (time * 1.6) % 1;
+    const draw = (x, y) => {
+      g.strokeStyle = `rgba(255,214,110,${(1 - pulse) * 0.9})`; g.lineWidth = 1.6 * u; g.beginPath(); g.arc(x, y, (5 + pulse * 9) * u, 0, 7); g.stroke();
+      g.save(); g.translate(x, y); g.beginPath();
+      for (let i = 0; i < 10; i++) { const r = (i % 2 ? 3.4 : 8.2) * u, an = -Math.PI / 2 + i * Math.PI / 5; g.lineTo(Math.cos(an) * r, Math.sin(an) * r); }
+      g.closePath(); g.lineJoin = 'round'; g.strokeStyle = 'rgba(20,10,2,.85)'; g.lineWidth = 3.2 * u; g.stroke(); g.fillStyle = '#ffd24a'; g.fill(); g.strokeStyle = '#fff4c0'; g.lineWidth = 0.9 * u; g.stroke(); g.restore();
+    };
+    if (inV(t.x, t.y) || MM.mode !== 'local') { draw(t.x * S, t.y * S); return; }
+    // off the local view: an arrowhead where the line from the hero leaves the view (inset clear of the frame's corners)
+    const e = 2.6, dx = t.x - P.x, dy = t.y - P.y, ox = clamp(P.x, MM.x0 + e, MM.x0 + MM.V - e), oy = clamp(P.y, MM.y0 + e, MM.y0 + MM.V - e);
+    const kx = dx > 0 ? (MM.x0 + MM.V - e - ox) / dx : dx < 0 ? (MM.x0 + e - ox) / dx : Infinity, ky = dy > 0 ? (MM.y0 + MM.V - e - oy) / dy : dy < 0 ? (MM.y0 + e - oy) / dy : Infinity, k = Math.max(0, Math.min(kx, ky, 1));
+    const x = ox + dx * k, y = oy + dy * k, an = Math.atan2(dy, dx);
+    g.save(); g.translate(x * S, y * S); g.rotate(an); g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(10 * u, 0); g.lineTo(-6 * u, -7.5 * u); g.lineTo(-2.5 * u, 0); g.lineTo(-6 * u, 7.5 * u); g.closePath();
+    g.strokeStyle = 'rgba(20,10,2,.85)'; g.lineWidth = 3.2 * u; g.stroke(); g.fillStyle = '#ffd24a'; g.fill(); g.strokeStyle = '#fff4c0'; g.lineWidth = 0.9 * u; g.stroke(); g.restore();
+  }
+  // The World Map: a gold flag on the goal's realm while the goal is on another map.
+  function wmMark(k, x, y) {
+    const g = T.goal; if (!g || !g.map || !map || g.map === map.id || typeof wmRoot !== 'function') return '';
+    let r; try { r = wmRoot(g.map); } catch (e) { return ''; }
+    if (r !== k || r === wmRoot(map.id)) return '';
+    return `<rect x="${x - 74}" y="${y - 26}" width="148" height="52" rx="8" fill="none" stroke="#ffd24a" stroke-width="2" stroke-dasharray="5 4"><animate attributeName="stroke-dashoffset" from="0" to="18" dur="1.2s" repeatCount="indefinite"/></rect>`
+      + `<g transform="translate(${x + 56},${y - 34})"><path d="M0 0v22" stroke="#2a1606" stroke-width="2.4"/><path d="M1 1h13l-3 4.5 3 4.5H1Z" fill="#ffd24a" stroke="#2a1606" stroke-width="1.2"/></g>`
+      + `<text x="${x}" y="${y + 38}" text-anchor="middle" font-size="11" font-weight="800" fill="#ffd24a">Goal</text>`;
+  }
+  // The first-run key card, compact while the tutorial runs (it teaches the rest key by key).
+  function cardHTML() {
+    const key = (id, label, cls) => `<div class="ck ${cls || ''}"><b>${esc(hk(id))}</b><span>${label}</span></div>`;
+    return `<div class="cov-card cov-mini" role="dialog" aria-label="Controls"><div class="cov-h">Controls</div><div class="cov-sub">Just the basics: the tutorial shows each new key when you need it.</div>`
+      + `<div class="cov-kb"><div class="cov-hand"><div class="cov-t">Move</div><div class="ckrow" style="--o:.35">${key('camLeft', 'Turn ⟲', 'c-cm')}${key('up', 'Forward', 'c-mv')}${key('camRight', 'Turn ⟳', 'c-cm')}</div>`
+      + `<div class="ckrow" style="--o:.35">${key('left', 'Left', 'c-mv')}${key('down', 'Back', 'c-mv')}${key('right', 'Right', 'c-mv')}</div></div>`
+      + `<div class="cov-hand"><div class="cov-t">Act</div><div class="ckrow">${key('interact', 'Talk · Open', 'c-sy')}${key('light', 'Attack', 'c-fi')}${key('jump', 'Jump', 'c-mv w2')}</div></div></div>`
+      + `<div class="cov-pad"><b>Gamepad</b> Left stick move · right stick camera · ${kc('A')} jump · ${kc('X')} attack · d-pad ${kc('↑')} talk</div>`
+      + `<div class="cov-f"><button class="btn big" data-cov="ok">Let's go ${kc('Enter')}</button><button class="btn" data-cov="full">All controls</button><span class="muted">Open it again from Help.</span></div></div>`;
+  }
+  const helpHTML = () => `<div class="sec">Tips</div><div class="row"><button class="btn ${tipsOn() ? 'on' : ''}" data-act="tuttips">${tipsOn() ? '☑' : '☐'} Show tips</button><span class="muted" style="font-size:11px;margin-left:8px">Short cards the first time something new comes up.</span></div>`;
+
+  // New glyphs after a rebind or a switch between keyboard and pad.
+  function regly() { for (const p of T.prompts) p.sig = ''; renderPrompts(); const b = $t('tutgoal'); if (b && T.goal && /\{/.test(T.goal.text)) render(); }
+  addEventListener('aom-tut', onEvent);
+  addEventListener('controlsChanged', e => { if (!e || e.kind === 'keys' || e.kind === 'load') regly(); });
+  addEventListener('keydown', () => { T.inp = 'kb'; }, true);
+  addEventListener('gamepadconnected', () => { T.inp = 'pad'; });
+  return {
+    T, on, goal, prompt, tip, skipOffer, whatsNext, frame, mini, wmMark, trackHTML, cardHTML, helpHTML, modKey, glyphs, layout,
+    padSeen() { T.inp = 'pad'; },
+    open: () => T.ask || T.next,
+    quiet: () => on() && !!(T.goal || T.prompts.some(p => !p.out)),
+  };
+})();
+function tutGoal(g) { try { TUTUI.goal(g); } catch (e) { console.error(e); } }
+function tutPrompt(o) { try { TUTUI.prompt(o); } catch (e) { console.error(e); } }
+function tutTip(id, text) { try { return TUTUI.tip(id, text); } catch (e) { console.error(e); return false; } }
+function tutSkipOffer(fn) { try { TUTUI.skipOffer(fn); } catch (e) { console.error(e); } }
+function tutWhatsNext() { try { TUTUI.whatsNext(); } catch (e) { console.error(e); } }

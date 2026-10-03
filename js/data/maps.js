@@ -1447,6 +1447,20 @@ growMap('emberhold', 56, 56, {
     for (const [x, y] of [[40.4, 15.3], [48.4, 15.3], [40.4, 21.6], [48.4, 21.6], [15.3, 40.4], [21.6, 40.4], [15.3, 49.4], [21.6, 49.4], [44.4, 10.4], [37.4, 27.4]]) L.decor('town_lamp_post', 'town_lamp_post', x, y, rng() * 6.28, 1, { light: [0xffb060, 1.1, 5.5], on: 'open' });
     for (let y = 36; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if ((x < 3 || y > h - 4) && L.at(x, y) === T.FLOOR && m.deco[y * w + x] !== 5 && rng() < 0.12) K.set(x, y, rng() < 0.7 ? T.TREE : T.ROCK);
     X.gate(54, 18); X.gate(18, 1);   // map fixes (M6.14): the gates stand clear
+    // Onboarding (design/onboarding.md): the Training Yard in the east orchard, a fenced square of trampled earth with
+    // three straw training dummies (m.dummies: spawnAll in js/core.js, MOBS.training_dummy in js/data/tutorial.js), and
+    // the fallen log by the Waystone the tutorial's first jump goes over. Appended last and drawn without rng, so the
+    // rest of the town comes out exactly as before.
+    for (let y = 36; y <= 42; y++) for (let x = 38; x <= 52; x++) { if (L.at(x, y) === T.TREE || L.at(x, y) === T.ROCK) K.set(x, y, 0); if (L.at(x, y) === T.FLOOR) m.deco[y * w + x] = 6; }
+    X.fence(37.5, 35.6, 52.5, 35.6); X.fence(37.5, 42.6, 42.5, 42.6); X.fence(47.5, 42.6, 52.5, 42.6);   // the south side is open onto the farm road
+    X.fence(37.4, 36.5, 37.4, 37.5); X.fence(37.4, 40.5, 37.4, 42.5); X.fence(52.6, 36.5, 52.6, 42.5);   // a gap in the west fence for the lane from the Gate Road
+    m.dummies = [{ x: 41.5, y: 38.5 }, { x: 45.5, y: 38.5 }, { x: 49.5, y: 38.5 }];
+    L.decor('rimeshore_drying_rack', 'town_crates', 39.5, 36.6, 0, 0.9, { on: 'open' }); L.decor('rimeshore_drying_rack', 'town_crates', 51.5, 36.6, 0, 0.9, { on: 'open' });
+    X.kit('haystack', 39.4, 41.4, 0.6, 0.8, { on: 'open' }, 0); X.kit('haystack', 51.2, 41.3, 2.2, 0.75, { on: 'open' }, 1);
+    for (const [x, y, k] of [[44.2, 36.3, 'town_barrel'], [46.6, 36.4, 'town_crates']]) L.decor(k, k, x, y, 0.3, 0.9, { on: 'open' });
+    X.sign(44, 43, 'The Training Yard', ['<b>The Training Yard.</b> Straw men, staked down. They swing slow and they swing true.', '<i>Burned into the post:</i> “Roll through the swing. Raise your shield as it lands. Hit back while it is still surprised.”']);
+    X.landmark('training_yard', 'The Training Yard', 45, 39, 6);
+    L.decor('mirewell_mossy_log', 'town_crates', 18.5, 20.6, 0, 0.9, { on: 'open' });   // the fallen log by the Waystone (cosmetic: you can walk over it, or jump it)
   } });
 /* Skaldhaven 48 x 40 -> 64 x 56: Netmakers' Row and the shipwright's yard south of the old wall, the south gate road
    to a new outer gate, a fourth pier, and the Skerry with its beacon out in the bay. */
