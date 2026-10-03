@@ -410,7 +410,7 @@ const RENDER = {
     const cells = []; for (const it of shown) cells.push(invCell(it, 'inv:' + it.uid, 'item:' + it.uid, true));
     for (let i = tab === 'all' ? shown.length : 0; i < BAG_SLOTS && (tab === 'all' || i < BAG_SLOTS - P.inv.length); i++) cells.push('<div class="cell empty"></div>');
     const mail = P.mail && P.mail.length ? `<div class="banner-x" style="margin:0 0 6px">You have ${P.mail.length} item${P.mail.length > 1 ? 's' : ''} in your mailbox. Claim ${P.mail.length > 1 ? 'them' : 'it'} at a storage keeper or any Waystone.</div>` : '';
-    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:7px"><span class="muted" style="font-size:11.5px">Bag <b style="color:var(--ink)">${P.inv.length}</b>/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11px;line-height:1.4">Click to use or equip. ${isAction() ? 'Drag a potion onto the item ring, or right-click it to put it on a slot.' : 'Right-click a potion to put it on the hotbar (or hover it and press 1–9).'} Right-click other items to drop them. Hover gear to compare it with what you wear.</p>`;
+    return head + mail + tabs + `<div class="grid">${cells.join('')}</div><div class="row" style="justify-content:space-between;margin-top:7px"><span class="muted" style="font-size:11.5px">Bag <b style="color:var(--ink)">${P.inv.length}</b>/${BAG_SLOTS} · stacks up to ${STACK_MAX}</span><span class="muted" style="font-size:11.5px">Zeny <b style="color:var(--gold)">${fmt(P.zeny)}</b></span></div><p class="muted" style="margin:6px 0 0;font-size:11px;line-height:1.4">Click to use or equip. ${isAction() ? 'Drag a potion onto an item slot, hover it and press 1–4, or right-click it.' : 'Right-click a potion to put it on the hotbar (or hover it and press 1–9).'} Right-click other items to drop them. Hover gear to compare it with what you wear.</p>`;
   },
   // RO's equipment window: slots down both sides of the character.
   equip() {
@@ -460,7 +460,7 @@ const RENDER = {
       ? hbHelpAction(k)
       : `${k('Walk', 'Click the ground, or hold to keep walking')}
     ${k('Jump', 'Space')}${k('Attack', 'Click a monster; you keep attacking')}${k('Talk, read, open, pick up', 'Click an NPC, a sign, a chest or an item on the ground')}${k('Enter a door or cave', 'Click it, or walk onto it')}${k('Hotbar', 'Keys 1–9')}${k('Ride / dismount a warg', 'R')}${k('Windows', 'A Status · I Items · E Equip · S Skills · J Journal · P Pet · W World Map')}${k('Rotate camera', 'Right-drag, Shift-drag, or Q / [ / ]')}`;
-    return `${mode}<div class="sec">Controls</div>${keys}${k('Put a skill or potion on a slot', act ? 'Drag it onto the bar, right-click it, or use the Loadout (Alt+L)' : 'Drag it onto the hotbar, right-click it, or hover it and press 1–9')}${k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', hbAltList())}${k('Zoom', 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
+    return `${mode}<div class="sec">Controls</div>${keys}${k('Put a skill or potion on a slot', act ? 'Drag it onto the bar, right-click it, hover it and press 1–4, or use the Loadout (Alt+L)' : 'Drag it onto the hotbar, right-click it, or hover it and press 1–9')}${act ? '' : k('Pick up nearest item', 'Z')}${k('Show all item names', 'Hold Alt')}${k('Sit and recover faster', 'X (needs Basic Skill 3)')}${k('Windows (always)', hbAltList())}${k('Zoom', act ? `Mouse wheel, or ${esc(hk('zoom') || 'Z')}` : 'Mouse wheel')}${k('Tilt camera', 'Ctrl + right-drag')}${k('Sound on or off', 'M')}${k('Close windows', 'Esc')}
       <div class="sec">The Ash</div><p class="lore">Rest at a Waystone to heal, set your return point and save. Resting also brings every slain monster back, except the Shardbearers.</p><p class="lore">When you die you drop all your zeny where you fell. Walk back and touch the red stain to take it back. Die again first and it is gone.</p><p class="lore">Monsters drop gear in four grades: <span class="r-common">common</span>, <span class="r-magic">magic</span>, <span class="r-rare">rare</span> and <span class="r-unique">unique</span>. Rare cards drop too; slot them into gear with free slots. Brokkr can refine gear up to +10. Past +4, a failed refine destroys the item.</p><p class="lore">Watch the ground during boss fights. A red circle means something is about to land there. Cones and rolling lines of circles are breath and waves: step sideways out of them. Purple hexes stay on the ground; do not stand in them.</p><p class="lore">Kindled Waystones are linked: from any Waystone you can travel to another, or open the World Map to see every realm and its level range. Mud slows you down; boardwalks and ice do not.</p>
       <div class="sec">Save</div><p class="muted" style="margin:0 0 8px">Progress is kept in this browser and saved at every Waystone and map change.</p><button class="btn warn" data-act="${UI.wipeArm ? 'wipe2' : 'wipe'}">${UI.wipeArm ? 'Confirm: erase this character' : 'Erase character and start over'}</button>`;
   },
@@ -534,7 +534,7 @@ const RENDER = {
 
 /* =========================================================
    Controls round (design/controls-contract.md, C2): the console-style action bar (skill bar U I O P with a page 2,
-   the quick-item ring Q / E, key hints), easy slot assignment (drag and drop, right-click or long-press "Put on
+   the item slots 1-4 since the camera round, key hints), easy slot assignment (drag and drop, right-click or long-press "Put on
    slot", the Loadout window you drive with keys or a pad), key rebinding (the Controls window), the first-run
    controls overlay and the one-time jump toast. The keymap and the slot data belong to C1 (js/controls.js:
    KEYMAP, keyFor, padFor, keyBinds, setKey, resetKeys, ctlEnsure, set/useSkillSlot, set/useItemSlot, quickItem,
@@ -545,9 +545,14 @@ const HB_DEF = {
   up: ['Move forward', 'KeyW', 'L-stick'], down: ['Move back', 'KeyS', 'L-stick'], left: ['Move left', 'KeyA', 'L-stick'], right: ['Move right', 'KeyD', 'L-stick'],
   jump: ['Jump', 'Space', 'A'], block: ['Block / guard (hold)', 'ShiftLeft', 'LT'], light: ['Attack (combo)', 'KeyJ', 'X'], heavy: ['Heavy attack (hold)', 'KeyK', 'Y'],
   dodge: ['Dodge roll', 'KeyL', 'B'], lock: ['Lock / cycle target', 'Tab', 'RS'], skill1: ['Skill slot 1', 'KeyU', 'RB+X'], skill2: ['Skill slot 2', 'KeyI', 'RB+Y'],
-  skill3: ['Skill slot 3', 'KeyO', 'RB+B'], skill4: ['Skill slot 4', 'KeyP', 'RB+A'], page2: ['Skills 5–8 (hold)', 'Semicolon', 'LB'], quick: ['Quick item', 'KeyQ', 'D-pad ↓'],
-  cycle: ['Next quick item', 'KeyE', 'D-pad ← →'], interact: ['Talk, open, pick up', 'KeyF', 'D-pad ↑'], ride: ['Ride / dismount', 'KeyR', ''], menu: ['Menu / close', 'Escape', 'Start'],
+  skill3: ['Skill slot 3', 'KeyO', 'RB+B'], skill4: ['Skill slot 4', 'KeyP', 'RB+A'], page2: ['Skills 5–8 (hold)', 'Semicolon', 'LB'],
+  item1: ['Item slot 1', 'Digit1', ''], item2: ['Item slot 2', 'Digit2', ''], item3: ['Item slot 3', 'Digit3', ''], item4: ['Item slot 4', 'Digit4', ''],
+  quick: ['Quick potion (best heal)', null, 'D-pad ↓'], cycle: ['Select next item slot', null, 'D-pad ← →'],
+  camLeft: ['Turn camera left', 'KeyQ', 'RS ←'], camRight: ['Turn camera right', 'KeyE', 'RS →'], zoom: ['Zoom near / mid / far', 'KeyZ', 'RS ↑↓'], camReset: ['Camera behind you', 'KeyC', 'R3'],
+  autocam: ['Auto camera on / off', null, 'L3'], interact: ['Talk, open, pick up', 'KeyF', 'D-pad ↑'], ride: ['Ride / dismount', 'KeyR', ''], menu: ['Menu / close', 'Escape', 'Start'],
 };
+const HB_ITEMS = ['item1', 'item2', 'item3', 'item4'];
+const hbItemKeys = () => HB_ITEMS.map(hk).filter(Boolean).join(' ') || '1 2 3 4';
 const HB_CODE = { Space: 'Space', ShiftLeft: 'Shift', ShiftRight: 'R-Shift', ControlLeft: 'Ctrl', ControlRight: 'R-Ctrl', Semicolon: ';', Comma: ',', Period: '.', Slash: '/', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\', Minus: '-', Equal: '=', Backquote: '`', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Enter: 'Enter', Tab: 'Tab', Backspace: 'Bksp', CapsLock: 'Caps', Delete: 'Del' };
 const hbCodeLabel = c => !c ? '' : HB_CODE[c] || (c.startsWith('Key') ? c.slice(3) : c.startsWith('Digit') ? c.slice(5) : c.replace(/^Numpad/, 'Num '));
 const hbKM = () => (typeof KEYMAP === 'object' && KEYMAP ? KEYMAP : null);
@@ -579,13 +584,13 @@ const hbItemOK = id => !!(ITEMS[id] && ITEMS[id].type === 'use');
 function hbRefOK(ref) { if (!ref) return false; const [k, id] = ref.split(':'); return k === 'skill' ? hbSkillOK(id) : k === 'item' ? hbItemOK(id) : false; }
 const hbRefName = ref => { const [k, id] = ref.split(':'); return k === 'skill' ? SKILLS[id].name : ITEMS[id].name; };
 function hbIcon(ref) { if (!ref) return ''; const [k, id] = ref.split(':'); return k === 'skill' ? skillTile(id) : `<img src="${itemIconURL(id)}" data-ico="${id}" alt="" draggable="false">`; }
-// Slot keys: 's:0'..'s:7' skill slots (4-7 = page 2), 'r:0'..'r:3' the item ring, 'h:0'..'h:8' the classic hotbar.
+// Slot keys: 's:0'..'s:7' skill slots (4-7 = page 2), 'r:0'..'r:3' the item slots, 'h:0'..'h:8' the classic hotbar.
 function hbSlotRef(key) {
   const [k, s] = key.split(':'), i = +s;
   if (k === 'h') { const r = P.hot[i]; return r ? r.k + ':' + r.id : null; }
   const id = k === 's' ? hbSS()[i] : k === 'r' ? hbIS()[i] : null; return id ? (k === 's' ? 'skill:' : 'item:') + id : null;
 }
-function hbSlotName(key) { const [k, s] = key.split(':'), i = +s; return k === 's' ? hk('skill' + (i + 1)) : k === 'r' ? 'item ring ' + (i + 1) : 'hotbar key ' + (i + 1); }
+function hbSlotName(key) { const [k, s] = key.split(':'), i = +s; return k === 's' ? hk('skill' + (i + 1)) : k === 'r' ? 'item slot ' + (i + 1) : 'hotbar key ' + (i + 1); }
 function hbSetArr(f, n, i, id) {   // used only while controls.js has no setters
   const a = Array.isArray(P[f]) ? P[f] : (P[f] = new Array(n).fill(null)), j = id ? a.indexOf(id) : -1;
   if (j >= 0 && j !== i) a[j] = a[i] || null; a[i] = id || null; try { dispatchEvent(new Event('controlsChanged')); } catch (e) { /* old browsers */ } return true;
@@ -595,7 +600,7 @@ function hbPut(key, ref, quiet) {
   const [k, s] = key.split(':'), i = +s, [rk, id] = ref ? ref.split(':') : [null, null]; hbP();
   const no = m => { if (!quiet) log(m, 'warn'); return false; };
   if (ref && !hbRefOK(ref)) return no(rk === 'skill' ? (SKILLS[id] && SKILLS[id].passive ? 'Passive skills work on their own.' : 'Learn the skill first.') : 'Only consumables fit on a slot.');
-  if (ref && k === 's' && rk !== 'skill') return no(`Potions and other items go on the item ring (${hk('quick')}).`);
+  if (ref && k === 's' && rk !== 'skill') return no(`Potions and other items go on the item slots (${hbItemKeys()}).`);
   if (ref && k === 'r' && rk !== 'item') return no(`Skills go on the skill bar (${['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ')}).`);
   let ok = false;
   if (k === 'h') { if (ref) bindHot(i, { k: rk, id }); else P.hot[i] = null; ok = true; }
@@ -611,26 +616,28 @@ function hbDropItem(uid) {
   log(`You drop ${itemName(it)}.`, 'sys'); UI.dirty = true;
 }
 
-/* ---------- The action bar (action mode; classic keeps the 1-9 hotbar) ---------- */
+/* ---------- The action bar (action mode; classic keeps the 1-9 hotbar) ----------
+   Camera round: four item slots (keys 1 2 3 4, used directly) instead of the Q / E ring. With a pad connected the
+   selected slot is ringed (d-pad down uses it, left / right select another). */
 function renderABar() {
   const el = $('abar'); if (!el || !P) return;
   if (!hbAct()) { if (UI.abSig) { UI.abSig = ''; el.innerHTML = ''; UI.abEl = []; } return; }
   const ss = hbSS(), is = hbIS(), pg = hbPage(), sel = hbSel(), pad = hbPadOn();
-  let qi = null; if (typeof quickItem === 'function') { try { const q = quickItem(); qi = q && typeof q === 'object' ? q.id : q || null; } catch (e) { qi = null; } }
-  const capOf = id => pad ? hpad(id) : hk(id), keys = ['skill1', 'skill2', 'skill3', 'skill4', 'page2', 'quick', 'cycle', 'jump', 'block', 'dodge'].map(capOf).join(' ');
-  const sig = ss.map(id => id ? id + (P.skills[id] ? '' : '!') : '').join(',') + '|' + is.join(',') + '|' + sel + pg + pad + '|' + qi + '|' + keys + '|' + (ART.icoIdx ? 1 : 0) + (SKART.idx ? 1 : 0);
+  const capOf = id => pad ? hpad(id) : hk(id), keys = ['skill1', 'skill2', 'skill3', 'skill4', 'page2', 'item1', 'item2', 'item3', 'item4', 'jump', 'block', 'dodge'].map(capOf).join(' ');
+  const sig = ss.map(id => id ? id + (P.skills[id] ? '' : '!') : '').join(',') + '|' + is.join(',') + '|' + sel + pg + pad + '|' + keys + '|' + (ART.icoIdx ? 1 : 0) + (SKART.idx ? 1 : 0);
   if (sig === UI.abSig && UI.abEl && UI.abEl.length) return; UI.abSig = sig; UI.abBinds = hbBinds();
   const skill = j => {
     const i = pg * 4 + j, id = ss[i], ok = !!(id && SKILLS[id] && P.skills[id]), cap = pad ? hpad('skill' + (j + 1)).replace(/^RB\+/, '') : hk('skill' + (j + 1));
     return `<button class="hs ab-s${ok ? '' : ' empty'}" data-slot="s:${i}"${ok ? ` data-tip="skill:${id}"` : ''} aria-label="${ok ? esc(SKILLS[id].name) : 'Empty skill slot'} (${esc(cap)})">${ok ? skillTile(id) : ''}${kc(cap)}<span class="cd"></span></button>`;
   };
-  const ring = (j, big, cyc) => {   // cyc: the next slot carries the cycle key
-    const id = is[j] && ITEMS[is[j]] ? is[j] : null, au = big && !id && qi && ITEMS[qi] ? qi : null, show = id || au;
-    return `<button class="ab-r ${big ? 'big' : 'sm'}${show ? '' : ' empty'}${au ? ' auto' : ''}" data-slot="r:${j}"${show ? ` data-tip="hotitem:${show}" data-id="${show}"` : ''} aria-label="${show ? esc(ITEMS[show].name) : 'Empty item slot'}">${show ? `<img src="${itemIconURL(show)}" data-ico="${show}" alt="" draggable="false"><span class="n">${countItem(show)}</span>` : big ? '<span class="pl">+</span>' : ''}${big ? kc(capOf('quick')) : cyc ? kc(cyc, 'sm') : ''}${au ? '<span class="au">auto</span>' : ''}</button>`;
+  const item = j => {
+    const id = is[j] && ITEMS[is[j]] ? is[j] : null, cap = hk('item' + (j + 1)) || String(j + 1);
+    return `<button class="ab-r it${id ? '' : ' empty'}${pad && j === sel ? ' sel' : ''}" data-slot="r:${j}"${id ? ` data-tip="hotitem:${id}" data-id="${id}"` : ''} aria-label="${id ? esc(ITEMS[id].name) : 'Empty item slot'} (${esc(cap)})">${id ? `<img src="${itemIconURL(id)}" data-ico="${id}" alt="" draggable="false"><span class="n">${countItem(id)}</span>` : '<span class="pl">+</span>'}${pad ? '' : kc(cap)}</button>`;
   };
   const hint = (id, t) => `<span>${kc(capOf(id))}${t}</span>`;
+  const itTitle = pad ? 'Items: d-pad down uses the ringed slot, left / right pick another' : `Items: keys ${hbItemKeys()} use them`;
   el.innerHTML = `<div class="ab-hints">${hint('jump', 'Jump')}${hint('block', 'Block')}${hint('dodge', 'Dodge')}</div>`
-    + `<div class="ab-row"><div class="ab-box ab-ring" title="Quick item: ${esc(capOf('quick'))} uses it, ${esc(capOf('cycle'))} picks the next">${ring((sel + 3) % 4)}${ring(sel, true)}${ring((sel + 1) % 4, false, capOf('cycle'))}<div class="ab-dots">${[0, 1, 2, 3].map(j => `<i class="${j === sel ? 'on' : is[j] ? 'f' : ''}"></i>`).join('')}</div></div>`
+    + `<div class="ab-row"><div class="ab-box ab-items" title="${esc(itTitle)}">${[0, 1, 2, 3].map(item).join('')}${pad ? `<span class="ab-dp">${kc('D-pad', 'sm')}</span>` : ''}</div>`
     + `<div class="ab-box ab-skills${pg ? ' pg2' : ''}"><div class="ab-pg" title="Hold ${esc(capOf('page2'))} for skills 5–8"><i class="${pg ? '' : 'on'}">1</i><i class="${pg ? 'on' : ''}">2</i>${kc(capOf('page2'), 'sm')}</div>${[0, 1, 2, 3].map(skill).join('')}${pad ? '<span class="ab-rb">RB</span>' : ''}</div></div>`;
   UI.abEl = [...el.querySelectorAll('[data-slot]')].map(b => ({ el: b, key: b.dataset.slot, id: b.dataset.id || null, cd: b.querySelector('.cd'), n: b.querySelector('.n'), pct: 0, nosp: false, cnt: -1, dn: false }));
 }
@@ -643,7 +650,7 @@ function patchABar() {
       const id = ss[i], sk = id && SKILLS[id], lv = id && P.skills[id];
       if (sk && lv) { const c = P.cd[id] || 0; if (c > 0) pct = Math.min(100, Math.round(c / (sk.cd || 0.3) * 100)); if (P.sp < sk.sp(lv) || (sk.need && sk.need(lv))) nosp = true; }
       dn = !!(K && K.has && K.has(B['skill' + (i - pg * 4 + 1)]));
-    } else if (h.id) { const n = countItem(h.id); if (h.n && h.cnt !== n) { h.cnt = n; h.n.textContent = n; } nosp = n === 0; dn = h.el.classList.contains('big') && !!(K && K.has && K.has(B.quick)); }
+    } else if (h.id) { const n = countItem(h.id); if (h.n && h.cnt !== n) { h.cnt = n; h.n.textContent = n; } nosp = n === 0; dn = !!(K && K.has && K.has(B['item' + (i + 1)])); }
     if (h.cd && h.pct !== pct) { h.pct = pct; h.cd.style.setProperty('--p', pct); }
     if (h.nosp !== nosp) { h.nosp = nosp; h.el.classList.toggle('nosp', nosp); }
     if (h.dn !== dn) { h.dn = dn; h.el.classList.toggle('down', dn); }
@@ -653,8 +660,8 @@ function hbSlotClick(key) {
   const [k, s] = key.split(':'), i = +s; if (!started) return;
   if (k === 's') { if (typeof useSkillSlot === 'function') useSkillSlot(i); else { const id = hbSS()[i]; if (id) useSkill(id); } return; }
   if (k === 'r') {
-    if (i === hbSel()) { if (typeof useQuickItem === 'function') useQuickItem(); else { const id = hbIS()[i], it = id && P.inv.find(x => x.id === id); if (it) useItem(it); } }
-    else { P.itemSel = i; try { dispatchEvent(new Event('controlsChanged')); } catch (e) { /* old browsers */ } UI.abSig = ''; }
+    if (typeof useItemSlot === 'function') { useItemSlot(i); return; }
+    const id = hbIS()[i], it = id && P.inv.find(x => x.id === id); if (it) useItem(it);
   }
 }
 // Consumables you pick up land in an empty ring slot (once per kind; the bag at load does not count).
@@ -666,7 +673,7 @@ function hbRingAuto() {
   for (const id of ids) {
     if (seen.has(id)) continue; seen.add(id); const is = hbIS(); if (is.includes(id)) continue;
     const j = [0, 1, 2, 3].find(x => !is[x]); if (j === undefined) continue;
-    if (hbPut('r:' + j, 'item:' + id, true)) log(`${ITEMS[id].name} is on the item ring (${hk('quick')} uses, ${hk('cycle')} cycles).`, 'sys');
+    if (hbPut('r:' + j, 'item:' + id, true)) log(`${ITEMS[id].name} is on item slot ${j + 1}${hk('item' + (j + 1)) ? ` (key ${hk('item' + (j + 1))})` : ''}.`, 'sys');
   }
 }
 
@@ -696,6 +703,7 @@ function hbDir(e) {
 const hbOK = e => e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
 function hbTopWin() { let top = null, tz = -1; for (const id in UI.open) if (UI.open[id]) { const el = $('w-' + id), z = el ? +el.style.zIndex : 0; if (z > tz) { tz = z; top = id; } } return top; }
 const hbSkillCode = code => { const b = hbBinds(); for (let j = 0; j < 4; j++) if (b['skill' + (j + 1)] === code) return j; return -1; };
+const hbItemCode = code => { const b = hbBinds(); for (let j = 0; j < 4; j++) if (b['item' + (j + 1)] === code) return j; return -1; };
 
 /* ---------- "Put on slot" menu (right-click, long-press, pad X, Enter in the Loadout) ---------- */
 function hbMenu(ref, x, y, src) {
@@ -706,9 +714,9 @@ function hbMenu(ref, x, y, src) {
   const row = (t, b) => `<div class="sm-r"><span>${t}</span><div class="sm-b">${b.join('')}</div></div>`, n = a => [...Array(a).keys()];
   let rows = '';
   if (act && rk === 'skill') rows = row('Skill bar', n(4).map(i => btn('s:' + i, hk('skill' + (i + 1))))) + row(`Page 2 · hold ${kc(hk('page2'))}`, n(4).map(i => btn('s:' + (i + 4), hk('skill' + (i + 1)))));
-  else if (act) rows = row(`Item ring · ${kc(hk('quick'))} uses · ${kc(hk('cycle'))} cycles`, n(4).map(i => btn('r:' + i, String(i + 1))));
+  else if (act) rows = row(`Item slots · keys ${kc(hbItemKeys())}`, n(4).map(i => btn('r:' + i, hk('item' + (i + 1)) || String(i + 1))));
   else rows = row('Hotbar', n(9).map(i => btn('h:' + i, String(i + 1))));
-  m.innerHTML = `<div class="sm-h">${hbIcon(ref)}<span>Put <b>${esc(hbRefName(ref))}</b> on…</span></div>${rows}<div class="sm-f">${uid != null ? `<button class="btn" data-sm="drop:${uid}" data-nav="drop">Drop</button>` : ''}<button class="btn" data-sm="x" data-nav="x">Cancel</button></div><div class="sm-k">${act ? `${kc('↑↓←→')} choose · ${kc('Enter')} put · ${kc(rk === 'skill' ? ['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ') : 'Esc')} ${rk === 'skill' ? 'put directly' : 'cancel'}` : 'Or hover it and press 1–9'}</div>`;
+  m.innerHTML = `<div class="sm-h">${hbIcon(ref)}<span>Put <b>${esc(hbRefName(ref))}</b> on…</span></div>${rows}<div class="sm-f">${uid != null ? `<button class="btn" data-sm="drop:${uid}" data-nav="drop">Drop</button>` : ''}<button class="btn" data-sm="x" data-nav="x">Cancel</button></div><div class="sm-k">${act ? `${kc('↑↓←→')} choose · ${kc('Enter')} put · ${kc(rk === 'skill' ? ['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' ') : hbItemKeys())} put directly` : 'Or hover it and press 1–9'}</div>`;
   m.hidden = false;
   const w = m.offsetWidth, h = m.offsetHeight; let lx = x / UIZ + 8, ly = y / UIZ + 8;
   if (lx + w > vw() - 6) lx = x / UIZ - w - 8; if (ly + h > vh() - 6) ly = y / UIZ - h - 8;
@@ -729,7 +737,8 @@ function hbMenuKey(e) {
   if (d) { UI.smFoc = hbNav(m, UI.smFoc, d[0], d[1]); hbPaint(m, UI.smFoc); return true; }
   if (hbOK(e)) { if (!e.repeat) hbMenuPick(UI.smFoc); return true; }
   if (e.code === 'Escape' || e.code === 'Backspace') { hbMenuClose(); return true; }
-  const j = hbSkillCode(e.code); if (j >= 0 && hbAct()) { hbMenuPick(UI.sm.ref.startsWith('skill:') ? 's:' + j : 'r:' + j); return true; }
+  const j = hbSkillCode(e.code); if (j >= 0 && hbAct() && UI.sm.ref.startsWith('skill:')) { hbMenuPick('s:' + j); return true; }
+  const ji = hbItemCode(e.code); if (ji >= 0 && hbAct() && UI.sm.ref.startsWith('item:')) { hbMenuPick('r:' + ji); return true; }
   if (/^Digit[1-9]$/.test(e.code) && !hbAct()) { hbMenuPick('h:' + (+e.code.slice(5) - 1)); return true; }
   return true;   // the menu is modal: other keys do nothing while it is open
 }
@@ -745,8 +754,8 @@ function hbLoEntries() {
 RENDER.loadout = function () {
   const act = hbAct(), ss = hbSS(), is = hbIS(), arm = UI.loArm, { sk, it } = hbLoEntries(), hj = id => P.hot.findIndex(r => r && r.id === id);
   const slotted = new Set(act ? ss.filter(Boolean).concat(is.filter(Boolean)) : P.hot.filter(Boolean).map(r => r.id));
-  const where = id => { if (!act) { const h = hj(id); return h >= 0 ? `key ${h + 1}` : ''; } const i = ss.indexOf(id), j = is.indexOf(id); return i >= 0 ? `on ${hk('skill' + (i + 1))}` : j >= 0 ? `ring ${j + 1}` : ''; };
-  const slot = key => { const ref = hbSlotRef(key), [k, s] = key.split(':'), i = +s, cap = k === 's' ? hk('skill' + (i % 4 + 1)) : String(i + 1);   // ring and hotbar slots show their number
+  const where = id => { if (!act) { const h = hj(id); return h >= 0 ? `key ${h + 1}` : ''; } const i = ss.indexOf(id), j = is.indexOf(id); return i >= 0 ? `on ${hk('skill' + (i + 1))}` : j >= 0 ? `item slot ${j + 1}` : ''; };
+  const slot = key => { const ref = hbSlotRef(key), [k, s] = key.split(':'), i = +s, cap = k === 's' ? hk('skill' + (i % 4 + 1)) : k === 'r' ? hk('item' + (i + 1)) || String(i + 1) : String(i + 1);   // item and hotbar slots show their key
     const gone = ref && ref.startsWith('skill:') && !P.skills[ref.slice(6)];   // slotted, then forgotten (a rebirth)
     return `<button class="lo-s${ref ? '' : ' empty'}${gone ? ' gone' : ''}${arm === key ? ' arm' : ''}${k === 's' && i >= 4 ? ' p2' : ''}" data-nav="${key}" data-slot="${key}"${ref ? ` data-tip="${ref.startsWith('skill:') ? 'skill:' + ref.slice(6) : 'hotitem:' + ref.slice(5)}"` : ''} aria-label="Slot ${esc(hbSlotName(key))}: ${ref ? esc(hbRefName(ref)) + (gone ? ' (not learned)' : '') : 'empty'}"${gone ? ' title="Not learned any more: put another skill here"' : ''}>${ref ? hbIcon(ref) : ''}${kc(cap)}</button>`; };
   const off = kind => arm && arm[0] !== 'h' && (arm[0] === 's') !== (kind === 'skill') ? ' off' : '';
@@ -756,9 +765,9 @@ RENDER.loadout = function () {
   const nav = [['status', 'Status'], ['inv', 'Items'], ['equip', 'Equip'], ['skills', 'Skills'], ['journal', 'Quests'], ['worldmap', 'Map'], ['keys', 'Controls'], ['help', 'Help']];
   const slots = act
     ? `<div class="sec">Skill bar <span class="muted" style="font-weight:400">· hold ${kc(pg2)} for page 2</span></div><div class="lo-slots">${[0, 1, 2, 3].map(i => slot('s:' + i)).join('')}<span class="lo-sep">${kc(pg2)}</span>${[4, 5, 6, 7].map(i => slot('s:' + i)).join('')}</div>`
-      + `<div class="sec">Item ring <span class="muted" style="font-weight:400">· ${kc(hk('quick'))} uses · ${kc(hk('cycle'))} cycles</span></div><div class="lo-slots">${[0, 1, 2, 3].map(i => slot('r:' + i)).join('')}<button class="btn lo-auto" data-nav="b:auto" title="Best healing and SP potions on the ring, learned skills on empty skill slots">Auto-fill</button></div>`
-    : `<div class="sec">Hotbar <span class="muted" style="font-weight:400">· keys 1–9 · Action controls add the skill bar and the item ring</span></div><div class="lo-slots">${[...Array(9).keys()].map(i => slot('h:' + i)).join('')}</div>`;
-  const keysTip = act ? `${kc(['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' '))} put the selected skill there` : `${kc('1')}–${kc('9')} put the selected entry on that key`;
+      + `<div class="sec">Item slots <span class="muted" style="font-weight:400">· keys ${kc(hbItemKeys())} use them · pad: d-pad</span></div><div class="lo-slots">${[0, 1, 2, 3].map(i => slot('r:' + i)).join('')}<button class="btn lo-auto" data-nav="b:auto" title="Best healing and SP potions on the item slots, learned skills on empty skill slots">Auto-fill</button></div>`
+    : `<div class="sec">Hotbar <span class="muted" style="font-weight:400">· keys 1–9 · Action controls add the skill bar and the item slots</span></div><div class="lo-slots">${[...Array(9).keys()].map(i => slot('h:' + i)).join('')}</div>`;
+  const keysTip = act ? `${kc(['skill1', 'skill2', 'skill3', 'skill4'].map(hk).join(' '))} put the selected skill there, ${kc(hbItemKeys())} the selected item` : `${kc('1')}–${kc('9')} put the selected entry on that key`;
   return banner + slots
     + `<div class="sec">Skills <span class="muted" style="font-weight:400">· ${sk.length} usable</span></div><div class="lo-list">${sk.map(id => ent('skill', id)).join('') || '<div class="muted">No active skills learned yet.</div>'}</div>`
     + `<div class="sec">Consumables</div><div class="lo-list">${it.map(id => ent('item', id)).join('') || '<div class="muted">No potions or food in your bag.</div>'}</div>`
@@ -780,7 +789,7 @@ function hbLoAct(key, how) {
     const el = bd && hbNavEls(bd).find(e => e.dataset.nav === key), r = el ? el.getBoundingClientRect() : { right: W / 2, top: H / 2 };
     hbMenu(ref, r.right - 20, r.top + 10, el); return;
   }
-  if (t === 'b') { if (a === 'auto') { if (typeof autoFillSlots === 'function') { autoFillSlots(); log('Loadout filled: learned skills on empty skill slots, your best potions on the ring.', 'sys'); } else log('Auto-fill is not available yet.', 'warn'); UI.dirty = true; UI.abSig = ''; } else if (a === 'win' && WIN[b]) openWin(b); }
+  if (t === 'b') { if (a === 'auto') { if (typeof autoFillSlots === 'function') { autoFillSlots(); log('Loadout filled: learned skills on empty skill slots, your best potions on the item slots.', 'sys'); } else log('Auto-fill is not available yet.', 'warn'); UI.dirty = true; UI.abSig = ''; } else if (a === 'win' && WIN[b]) openWin(b); }
 }
 function hbLoKey(e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return false;
@@ -792,43 +801,76 @@ function hbLoKey(e) {
   if (e.code === 'KeyX' && f.startsWith('e:')) { hbLoAct(f, 'menu'); return true; }
   if (!hbAct()) { if (/^Digit[1-9]$/.test(e.code) && f.startsWith('e:')) { hbPut('h:' + (+e.code.slice(5) - 1), f.slice(2)); return true; } return false; }
   const j = hbSkillCode(e.code);
-  if (j >= 0) { if (f.startsWith('e:skill:')) hbPut('s:' + (j + (UI.loPg2 ? 4 : 0)), f.slice(2)); else if (f.startsWith('e:item:')) hbPut('r:' + j, f.slice(2)); return true; }
+  if (j >= 0) { if (f.startsWith('e:skill:')) hbPut('s:' + (j + (UI.loPg2 ? 4 : 0)), f.slice(2)); return true; }
+  const ji = hbItemCode(e.code); if (ji >= 0) { if (f.startsWith('e:item:')) hbPut('r:' + ji, f.slice(2)); return true; }
   if (e.code === hbBinds().page2) { UI.loPg2 = true; return true; }
   return false;
 }
 
 /* ---------- Controls window: rebind every action, reset, the gamepad layout ---------- */
-const HB_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'jump']], ['Fight', ['light', 'heavy', 'dodge', 'block', 'lock']], ['Skills and items', ['skill1', 'skill2', 'skill3', 'skill4', 'page2', 'quick', 'cycle']], ['World', ['interact', 'ride']]];
+const HB_GROUPS = [['Move', ['up', 'down', 'left', 'right', 'jump']], ['Fight', ['light', 'heavy', 'dodge', 'block', 'lock']], ['Skills', ['skill1', 'skill2', 'skill3', 'skill4', 'page2']], ['Items', ['item1', 'item2', 'item3', 'item4', 'quick', 'cycle']], ['Camera', ['camLeft', 'camRight', 'zoom', 'camReset', 'autocam']], ['World', ['interact', 'ride']]];
 function hbPadSVG() {
   const t = (x, y, s, a, c) => `<text x="${x}" y="${y}" text-anchor="${a || 'middle'}" font-size="10.5" font-weight="700" fill="${c || '#2a3550'}">${esc(s)}</text>`;
   const btn = (x, y, l, col) => `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="#1a2236"/><text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="800" fill="#fff">${l}</text>`;
   return `<svg class="kb-pad" viewBox="0 0 420 200" role="img" aria-label="Gamepad layout">`
     + `<path d="M120 52 Q210 38 300 52 Q350 58 368 110 Q384 168 352 176 Q330 182 306 150 L282 124 Q210 116 138 124 L114 150 Q90 182 68 176 Q36 168 52 110 Q70 58 120 52Z" fill="#e8ecf4" stroke="#6d7894" stroke-width="2"/>`
     + `<rect x="96" y="34" width="46" height="12" rx="5" fill="#c9d0df" stroke="#6d7894"/><rect x="278" y="34" width="46" height="12" rx="5" fill="#c9d0df" stroke="#6d7894"/>`
-    + `${t(119, 43.5, 'LB')}${t(301, 43.5, 'RB')}${t(119, 22, 'LT Block · LB Skills 5–8')}${t(301, 22, 'RB + X Y B A: skills 1–4')}`
-    + `<circle cx="122" cy="90" r="17" fill="#c9d0df" stroke="#6d7894"/><circle cx="122" cy="90" r="9" fill="#9aa6c0"/>${t(58, 76, 'Move', 'middle')}`
-    + `<path d="M162 128h12v-12h12v12h12v12h-12v12h-12v-12h-12z" fill="#4a5470"/>${t(180, 112, '↑ Use')}${t(180, 170, '↓ Potion')}${t(140, 146, '←', 'end')}${t(220, 146, '→ Cycle', 'start')}`
-    + `<circle cx="258" cy="134" r="13" fill="#c9d0df" stroke="#6d7894"/>${t(258, 168, 'RS Lock')}`
+    + `${t(119, 43.5, 'LB')}${t(301, 43.5, 'RB')}${t(119, 10, 'LT Block · LB Skills 5–8')}${t(301, 10, 'RT Lock target')}${t(301, 23, 'RB + X Y B A: skills 1–4')}`
+    + `<circle cx="122" cy="90" r="17" fill="#c9d0df" stroke="#6d7894"/><circle cx="122" cy="90" r="9" fill="#9aa6c0"/>${t(66, 80, 'Move', 'middle')}${t(66, 93, 'L3 auto cam', 'middle')}`
+    + `<path d="M162 128h12v-12h12v12h12v12h-12v12h-12v-12h-12z" fill="#4a5470"/>${t(180, 112, '↑ Use')}${t(180, 170, '↓ Item')}${t(160, 146, '←', 'end')}${t(200, 146, '→ Select', 'start')}`
+    + `<circle cx="258" cy="134" r="13" fill="#c9d0df" stroke="#6d7894"/>${t(258, 168, 'RS Turn · zoom')}${t(258, 181, 'R3 Camera reset')}`
     + `${btn(298, 72, 'Y', '#c8a020')}${btn(280, 90, 'X', '#3a6ae0')}${btn(316, 90, 'B', '#c43a2a')}${btn(298, 108, 'A', '#2a9a3a')}`
-    + `${t(298, 58, 'Heavy')}${t(266, 94, 'Attack', 'end')}${t(330, 94, 'Dodge', 'start')}${t(298, 128, 'Jump (RT too)')}`
-    + `<rect x="190" y="70" width="14" height="8" rx="3" fill="#6d7894"/><rect x="216" y="70" width="14" height="8" rx="3" fill="#6d7894"/>${t(197, 64, 'Back', 'end')}${t(223, 64, 'Start', 'start')}${t(210, 92, 'Items · Menu')}`
+    + `${t(298, 58, 'Heavy')}${t(266, 94, 'Attack', 'end')}${t(330, 94, 'Dodge', 'start')}${t(298, 128, 'Jump')}`
+    + `<rect x="190" y="70" width="14" height="8" rx="3" fill="#6d7894"/><rect x="216" y="70" width="14" height="8" rx="3" fill="#6d7894"/>${t(197, 64, 'Back', 'end')}${t(223, 64, 'Start', 'start')}${t(210, 51, 'Items · Menu')}`
     + `</svg>`;
 }
 RENDER.keys = function () {
   const can = typeof setKey === 'function', cap = UI.kbCap, ids = hbIds(), used = new Set();
   const row = id => { used.add(id); const on = cap === id, fl = UI.kbFlash === id;
-    return `<button class="kb-row${on ? ' cap' : ''}${fl ? ' fl' : ''}" data-kb="${id}" data-nav="k:${id}" ${can ? '' : 'disabled'}><span>${esc(hbName(id))}</span>${on ? '<em>Press a key…</em>' : kc(hk(id))}<small>${esc(hpad(id))}</small></button>`; };
+    return `<button class="kb-row${on ? ' cap' : ''}${fl ? ' fl' : ''}" data-kb="${id}" data-nav="k:${id}" ${can ? '' : 'disabled'}><span>${esc(hbName(id))}</span>${on ? '<em>Press a key…</em>' : hk(id) ? kc(hk(id)) : '<i class="kb-none">none</i>'}<small>${esc(hpad(id))}</small></button>`; };
   let groups = HB_GROUPS.map(([g, l]) => `<div class="kb-g"><div class="sec">${g}</div>${l.filter(id => ids.includes(id)).map(row).join('')}</div>`).join('');
   const rest = ids.filter(id => !used.has(id) && id !== 'menu'); if (rest.length) groups += `<div class="kb-g"><div class="sec">Other</div>${rest.map(row).join('')}</div>`;
-  return `<p class="muted" style="margin:0 0 4px;line-height:1.4">${can ? `Pick an action, then press its new key (${kc('Esc')} cancels). A key another action uses swaps over. ${kc('Esc')} always opens the menu, and ${kc('1')}–${kc('9')} still work for the classic hotbar.` : 'Key rebinding arrives with the new controls file.'}</p>`
+  return `<p class="muted" style="margin:0 0 4px;line-height:1.4">${can ? `Pick an action, then press its new key (${kc('Esc')} cancels). A key another action uses swaps over. ${kc('Esc')} always opens the menu, and ${kc('5')}–${kc('9')} still work for the classic hotbar.` : 'Key rebinding arrives with the new controls file.'}</p>`
     + `<div class="kb-cols">${groups}</div><div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-kb="!reset" data-nav="b:reset" ${can && typeof resetKeys === 'function' ? '' : 'disabled'}>Reset to defaults</button><button class="btn" data-kb="!ov" data-nav="b:ov">Show the controls card</button></div>`
-    + `<div class="sec">Gamepad</div>${hbPadSVG()}`;
+    + hbCamHTML() + `<div class="sec">Gamepad</div>${hbPadSVG()}`;
 };
+/* ---------- Camera settings (CAMSET in js/controls.js, saved in localStorage 'aom-cam') ---------- */
+const hbCamOn = () => typeof CAMSET === 'object' && CAMSET && typeof setCamSetting === 'function';
+const hbStrName = v => v < 0.2 ? 'Light' : v < 0.4 ? 'Gentle' : v < 0.65 ? 'Medium' : v < 0.85 ? 'Strong' : 'Snappy';
+function hbCamHTML() {
+  if (!hbCamOn()) return '';
+  const C = CAMSET, tog = (k, on, label, sub) => `<button class="kb-row cam-row" data-kb="!cam:${k}" data-nav="c:${k}"><span>${label}${sub ? `<small class="cam-sub">${sub}</small>` : ''}</span><b class="cam-tog${on ? ' on' : ''}">${on ? 'On' : 'Off'}</b></button>`;
+  const rng = (k, label, min, max, step, val, txt) => `<label class="kb-row cam-row cam-rl" data-nav="c:${k}"><span>${label}</span><input type="range" class="cam-rng" data-cam="${k}" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${esc(label)}"><em data-camv="${k}">${txt}</em></label>`;
+  const zb = z => `<button class="btn${C.zoom === z ? ' on' : ''}" data-kb="!cam:zoom:${z}" data-nav="c:zoom:${z}">${z[0].toUpperCase() + z.slice(1)}</button>`;
+  return `<div class="sec">Camera</div><div class="cam-set">`
+    + tog('follow', C.follow, 'Auto-follow', 'Swings behind you as you walk; waits while you turn it yourself or lock a target')
+    + rng('strength', 'Follow strength', 0, 1, 0.05, C.strength, hbStrName(C.strength))
+    + rng('speed', `Turn speed (${esc(hk('camLeft') || 'Q')} / ${esc(hk('camRight') || 'E')}, stick)`, 45, 180, 5, C.speed, `${C.speed}°/s`)
+    + tog('invert', C.invert, 'Invert turn')
+    + `<div class="kb-row cam-row cam-z"><span>Default zoom <small class="cam-sub">${esc(hk('zoom') || 'Z')} cycles, ${esc(hk('camReset') || 'C')} returns here</small></span><span class="cam-zb">${CAM_ZOOMS.map(zb).join('')}</span></div>`
+    + `<div class="row" style="gap:6px;margin-top:4px"><button class="btn" data-kb="!cam:reset" data-nav="c:reset">Camera defaults</button><span class="muted" style="font-size:11px">Tap ${esc(hk('camLeft') || 'Q')} / ${esc(hk('camRight') || 'E')} to step 45°, hold to turn.</span></div></div>`;
+}
+function hbCamAct(a) {
+  if (!hbCamOn()) return;
+  const [k, v] = a.split(':');
+  if (k === 'follow' || k === 'invert') setCamSetting(k, !CAMSET[k]);
+  else if (k === 'zoom' && v) { setCamSetting('zoom', v); if (typeof camZoomTo === 'function' && started && typeof camZoomDist === 'function') camZoomTo(camZoomDist(v)); }
+  else if (k === 'reset' && typeof resetCamSettings === 'function') resetCamSettings();
+  UI.dirty = true;
+}
+function hbCamNudge(k, dir) {
+  if (!hbCamOn()) return;
+  const st = k === 'strength' ? 0.1 : 15; setCamSetting(k, Math.round((CAMSET[k] + dir * st) / (st / 2)) * (st / 2));
+}
+function hbCamLabel(k) { return k === 'strength' ? hbStrName(CAMSET.strength) : `${CAMSET.speed}°/s`; }
+addEventListener('input', e => { const r = e.target; if (!r || !r.classList || !r.classList.contains('cam-rng') || !hbCamOn()) return; setCamSetting(r.dataset.cam, +r.value, true); const em = r.parentNode && r.parentNode.querySelector('[data-camv]'); if (em) em.textContent = hbCamLabel(r.dataset.cam); });
+addEventListener('change', e => { const r = e.target; if (r && r.classList && r.classList.contains('cam-rng') && typeof controlsChanged === 'function') controlsChanged('cam'); });
 AFTER.keys = bd => { const keys = hbNavEls(bd).map(e => e.dataset.nav); if (!keys.includes(UI.kbFoc)) UI.kbFoc = keys[0] || null; hbPaint(bd, UI.kbFoc, true); };
 function hbIds() { const K = hbKM(); return K ? Object.keys(K) : Object.keys(HB_DEF); }
 function hbKbAct(id) {
   if (id === '!reset') { if (typeof resetKeys === 'function') { resetKeys(); log('Keys reset to the defaults.', 'sys'); } UI.kbCap = null; UI.dirty = true; UI.abSig = ''; return; }
   if (id === '!ov') { hbOverlay(true); return; }
+  if (id.startsWith('!cam:')) { hbCamAct(id.slice(5)); return; }
   if (typeof setKey !== 'function') return;
   UI.kbCap = UI.kbCap === id ? null : id; UI.kbFlash = null; UI.kbFoc = 'k:' + id; UI.dirty = true;
 }
@@ -845,25 +887,30 @@ function hbCapture(e) {
 function hbKbKey(e) {
   if (e.altKey || e.ctrlKey || e.metaKey) return false;
   const bd = $('w-keys').querySelector('.bd'), d = hbDir(e);
-  if (d) { UI.kbFoc = hbNav(bd, UI.kbFoc, d[0], d[1]); hbPaint(bd, UI.kbFoc); return true; }
-  if (hbOK(e)) { if (!e.repeat) { const f = UI.kbFoc || ''; if (f.startsWith('k:')) hbKbAct(f.slice(2)); else if (f === 'b:reset') hbKbAct('!reset'); else if (f === 'b:ov') hbKbAct('!ov'); } return true; }
+  if (d) {
+    const f = UI.kbFoc || '';
+    if (d[0] && (f === 'c:strength' || f === 'c:speed')) { hbCamNudge(f.slice(2), d[0]); UI.dirty = true; return true; }   // left / right adjust a slider
+    UI.kbFoc = hbNav(bd, UI.kbFoc, d[0], d[1]); hbPaint(bd, UI.kbFoc); return true;
+  }
+  if (hbOK(e)) { if (!e.repeat) { const f = UI.kbFoc || ''; if (f.startsWith('k:')) hbKbAct(f.slice(2)); else if (f === 'b:reset') hbKbAct('!reset'); else if (f === 'b:ov') hbKbAct('!ov'); else if (f.startsWith('c:') && f !== 'c:strength' && f !== 'c:speed') hbKbAct('!cam:' + f.slice(2)); } return true; }
   return false;
 }
 
 /* ---------- First-run controls card and the jump toast ---------- */
 function hbOverlayHTML() {
   const key = (id, label, cls) => `<div class="ck ${cls || ''}"><b>${esc(hk(id))}</b><span>${label}</span></div>`;
-  const left = `<div class="ckrow" style="--o:.35">${key('quick', 'Potion', 'c-it')}${key('up', 'Forward', 'c-mv')}${key('cycle', 'Next item', 'c-it')}${key('ride', 'Ride', 'c-sy')}</div>`
+  const left = `<div class="ckrow" style="--o:.1">${key('item1', 'Item 1', 'c-it')}${key('item2', 'Item 2', 'c-it')}${key('item3', 'Item 3', 'c-it')}${key('item4', 'Item 4', 'c-it')}</div>`
+    + `<div class="ckrow" style="--o:.35">${key('camLeft', 'Turn ⟲', 'c-cm')}${key('up', 'Forward', 'c-mv')}${key('camRight', 'Turn ⟳', 'c-cm')}${key('ride', 'Ride', 'c-sy')}</div>`
     + `<div class="ckrow" style="--o:.6">${key('left', 'Left', 'c-mv')}${key('down', 'Back', 'c-mv')}${key('right', 'Right', 'c-mv')}${key('interact', 'Talk · Open', 'c-sy')}</div>`
-    + `<div class="ckrow">${key('block', 'Block (hold)', 'c-fi w2')}</div><div class="ckrow" style="--o:1.2">${key('jump', 'Jump', 'c-mv w5')}</div>`;
+    + `<div class="ckrow">${key('block', 'Block (hold)', 'c-fi w2')}${key('zoom', 'Zoom', 'c-cm')}<div class="ck c-sy"><b>X</b><span>Sit</span></div>${key('camReset', 'Camera behind', 'c-cm')}</div><div class="ckrow" style="--o:1.2">${key('jump', 'Jump', 'c-mv w5')}</div>`;
   const right = `<div class="ckrow">${key('skill1', 'Skill 1', 'c-sk')}${key('skill2', 'Skill 2', 'c-sk')}${key('skill3', 'Skill 3', 'c-sk')}${key('skill4', 'Skill 4', 'c-sk')}</div>`
     + `<div class="ckrow" style="--o:.25">${key('light', 'Attack', 'c-fi')}${key('heavy', 'Heavy', 'c-fi')}${key('dodge', 'Dodge', 'c-fi')}${key('page2', 'Skills 5–8', 'c-sk')}</div>`
     + `<div class="ckrow" style="--o:.25">${key('lock', 'Lock target', 'c-sy w2')}</div>`;
-  return `<div class="cov-card" role="dialog" aria-label="Controls"><div class="cov-h">Controls</div><div class="cov-sub">Left hand moves, right hand fights. No mouse needed.</div>`
+  return `<div class="cov-card" role="dialog" aria-label="Controls"><div class="cov-h">Controls</div><div class="cov-sub">Left hand moves and steers the camera, right hand fights. No mouse needed. The camera swings behind you as you walk.</div>`
     + `<div class="cov-kb"><div class="cov-hand"><div class="cov-t">Left hand</div>${left}</div><div class="cov-hand"><div class="cov-t">Right hand</div>${right}</div></div>`
-    + `<div class="cov-leg"><span class="c-mv">Move</span><span class="c-fi">Fight</span><span class="c-sk">Skills</span><span class="c-it">Items</span><span class="c-sy">World</span></div>`
-    + `<div class="cov-pad"><b>Gamepad</b> Stick move · ${kc('A')} or ${kc('RT')} jump · ${kc('X')} attack · ${kc('Y')} heavy · ${kc('B')} dodge · ${kc('LT')} block · ${kc('RB')} + ${kc('X')}${kc('Y')}${kc('B')}${kc('A')} skills · d-pad ${kc('↓')} potion</div>`
-    + `<div class="cov-pad">${kc('Esc')} menu and Loadout · ${kc('Alt+L')} Loadout · ${kc('Alt+K')} keys · ${kc('1')}–${kc('9')} classic hotbar. Drag skills and potions onto the bar, or right-click them.</div>`
+    + `<div class="cov-leg"><span class="c-mv">Move</span><span class="c-cm">Camera</span><span class="c-fi">Fight</span><span class="c-sk">Skills</span><span class="c-it">Items</span><span class="c-sy">World</span></div>`
+    + `<div class="cov-pad"><b>Gamepad</b> Left stick move · right stick turn and zoom (${kc('R3')} reset, ${kc('L3')} auto camera) · ${kc('A')} jump · ${kc('X')} attack · ${kc('Y')} heavy · ${kc('B')} dodge · ${kc('LT')} block · ${kc('RT')} lock · ${kc('RB')} + ${kc('X')}${kc('Y')}${kc('B')}${kc('A')} skills · d-pad ${kc('↓')} item</div>`
+    + `<div class="cov-pad">Tap ${kc(hk('camLeft') || 'Q')} / ${kc(hk('camRight') || 'E')} to step the camera 45°, hold to turn · ${kc('Esc')} menu and Loadout · ${kc('Alt+C')} status · ${kc('Alt+K')} keys and camera settings · ${kc('5')}–${kc('9')} classic hotbar. Drag skills and potions onto the bar, or right-click them.</div>`
     + `<div class="cov-f"><button class="btn big" data-cov="ok">Got it ${kc('Enter')}</button><button class="btn" data-cov="keys">Change keys</button><span class="muted">Open this again from Help.</span></div></div>`;
 }
 function hbOverlay(show) {
@@ -999,10 +1046,12 @@ function hbHelpAction(k) {
   const wk = typeof WINKEYS !== 'undefined' && WINKEYS.action ? Object.entries(WINKEYS.action).filter(([, w]) => WIN[w]).map(([c, w]) => `${esc(hbCodeLabel(c))} ${esc(WIN[w].title)}`).join(' · ') : '';
   return k('Move', `${K('up')} ${K('left')} ${K('down')} ${K('right')} or the arrow keys`) + k('Jump', K('jump')) + k('Attack (3-hit combo)', `${K('light')}, tap repeatedly`)
     + k('Heavy attack', `Hold ${K('heavy')}, release (charge for more)`) + k('Dodge roll', `${K('dodge')} (invulnerable while rolling)`) + k('Block / parry', `Hold ${K('block')}; block right before a hit to parry`)
-    + k('Skills', `${['skill1', 'skill2', 'skill3', 'skill4'].map(K).join(' ')} · hold ${K('page2')} for skills 5–8`) + k('Quick item', `${K('quick')} uses it · ${K('cycle')} picks the next`)
+    + k('Skills', `${['skill1', 'skill2', 'skill3', 'skill4'].map(K).join(' ')} · hold ${K('page2')} for skills 5–8`) + k('Items', `${HB_ITEMS.map(K).join(' ')} use item slots 1–4`)
     + k('Talk, read, open, pick up, enter a door', K('interact')) + k('Lock onto an enemy', K('lock')) + k('Ride / dismount a warg', `${K('ride')} (Ash Knight, Rune Jarl)`)
-    + k('Rotate camera', '[ / ], or right-drag') + k('Classic hotbar', '1–9') + k('Menu and Loadout', 'Esc, or Alt+L') + (wk ? k('Windows', wk) : '')
-    + k('Gamepad', `Stick move · ${Q('jump')} jump · ${Q('light')} attack · ${Q('heavy')} heavy · ${Q('dodge')} dodge · ${Q('block')} block · ${Q('skill1')}… skills · ${Q('page2')} page 2 · ${Q('quick')} potion · ${Q('interact')} talk · Start menu`);
+    + k('Turn the camera', `Hold ${K('camLeft')} / ${K('camRight')} to turn, tap to step 45° · or right-drag`) + k('Zoom · camera behind you', `${K('zoom')} near / mid / far · ${K('camReset')}`)
+    + k('Auto camera', `${typeof CAMSET === 'object' && CAMSET && CAMSET.follow ? 'On' : 'Off'} · follows behind you · Alt+K`)
+    + k('Classic hotbar', '5–9') + k('Menu and Loadout', 'Esc, or Alt+L') + (wk ? k('Windows', wk + ' · Alt+C Status') : '')
+    + k('Gamepad', `Left stick move · right stick turn and zoom · ${Q('camReset')} reset · ${Q('autocam')} auto camera · ${Q('jump')} jump · ${Q('light')} attack · ${Q('heavy')} heavy · ${Q('dodge')} dodge · ${Q('block')} block · ${Q('lock')} lock · ${Q('skill1')}… skills · ${Q('page2')} page 2 · ${Q('quick')} item · ${Q('interact')} talk · Start menu`);
 }
 function hbAltList() {
   if (typeof ALTWIN === 'undefined') return 'Alt+A Status · Alt+E Items · Alt+Q Equip · Alt+S Skills · Alt+U Journal · Alt+W World Map';
@@ -1720,10 +1769,10 @@ cv.addEventListener('pointerdown', e => {
   mouse.hold = true; mouse.holdT = 0.25;
 });
 let aggroHover = null;
-addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.seen = e.pointerType !== 'touch' && e.target === cv; if (mouse.rot) { cam.yawT = mouse.rot.yaw - (e.clientX - mouse.rot.x) * 0.008; cam.yaw = cam.yawT; if (e.ctrlKey || e.altKey) cam.pitch = clamp(mouse.rot.pitch + (e.clientY - mouse.rot.y) * 0.004, 0.6, 1.25); } });
+addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.seen = e.pointerType !== 'touch' && e.target === cv; if (mouse.rot) { cam.yawT = mouse.rot.yaw - (e.clientX - mouse.rot.x) * 0.008; cam.yaw = cam.yawT; if (typeof camManual === 'function') camManual(true); if (e.ctrlKey || e.altKey) cam.pitch = clamp(mouse.rot.pitch + (e.clientY - mouse.rot.y) * 0.004, 0.6, 1.25); } });
 addEventListener('pointerup', () => { mouse.down = false; mouse.hold = false; mouse.rot = null; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 22, 72); }, { passive: false });
+cv.addEventListener('wheel', e => { e.preventDefault(); const f = e.deltaY > 0 ? 1.1 : 0.9; if (typeof camZoomBy === 'function' && started) camZoomBy(f); else cam.dist = clamp(cam.dist * f, 22, 72); }, { passive: false });   // camera round: eased, the pitch follows
 
 const game = $('game');
 $('bRespawn').onclick = () => { Sfx.click(); respawn(); };
@@ -1781,8 +1830,7 @@ addEventListener('keydown', e => {
   if (k === ',' || (k === 'w' && !isAction())) { toggleWin('worldmap'); return; }
   if (k === 'x') { if ((P.skills.basic || 0) < 3) { log('You need Basic Skill 3 to sit.', 'warn'); return; } if (P.target || P.casting) return; P.sitting = !P.sitting; P.path = null; log(P.sitting ? 'You sit and catch your breath.' : 'You stand.', 'sys'); return; }
   if (k === 'z') { let best = null, bd = 3.5; for (const d of drops) { const dd = dist(d, P); if (dd < bd) { bd = dd; best = d; } } if (best) { P.target = null; P.goal = { kind: 'drop', ref: best }; P.path = null; } return; }
-  if (k === '[' || (k === 'q' && !isAction())) { cam.yawT += Math.PI / 8; return; }
-  if (k === ']') { cam.yawT -= Math.PI / 8; return; }
+  if (k === '[' || k === ']' || (k === 'q' && !isAction())) { const dir = k === ']' ? -1 : 1; if (typeof camStep === 'function') camStep(dir, isAction() ? Math.PI / 4 : Math.PI / 8); else cam.yawT += dir * Math.PI / 8; return; }
   if (k === 'm') { Sfx.on = !Sfx.on; store('aom-sound', Sfx.on ? 'on' : 'off'); log(`Sound ${Sfx.on ? 'on' : 'off'}.`, 'sys'); return; }
 });
 addEventListener('keyup', e => { if (e.key === 'Alt') mouse.alt = false; });
@@ -1888,6 +1936,7 @@ let lastT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (typeof CAMX !== 'undefined') CAMX.rdt = dt;   // camera round: the camera turns on real time, not the hit-stop's
   if (HITSTOP > 0) { HITSTOP -= dt; dt *= typeof hitstopScale === 'function' ? hitstopScale() : 0.12; }
   try {
     if (started) hover = pickAt(mouse.x, mouse.y);
@@ -2043,8 +2092,65 @@ function miniFrame(dt) {
     if (pf !== MM.pf) { MM.pf = pf; E.p.style.transform = pf; }
     const rf = `rotate(${a.toFixed(2)}rad)`; if (rf !== MM.rf) { MM.rf = rf; E.arrow.style.transform = rf; }
   }
+  camHudFrame(E);
   MM.t += dt; if (MM.t >= 0.125) { MM.t = 0; miniMarkers(); }
 }
+/* ---------- Camera round: the camera's view on the minimap (a cone from the hero toward where the camera looks; the
+   map stays north-up) and the camera key hints under it (action mode). ---------- */
+const CAMHUD = { cone: null, rf: '', el: null, sig: '' };
+function camHudFrame(E) {
+  if (!CAMHUD.cone && E.p) {
+    const c = document.createElement('b'); c.className = 'mmcone';
+    c.innerHTML = '<svg viewBox="-50 -50 100 100" aria-hidden="true"><defs><radialGradient id="mmcg" cx="0" cy="0" r="50" gradientUnits="userSpaceOnUse"><stop offset=".08" stop-color="#fff6c8" stop-opacity=".75"/><stop offset="1" stop-color="#ffe9a0" stop-opacity="0"/></radialGradient></defs><path d="M0 0L44 -25A50.6 50.6 0 0 1 44 25Z" fill="url(#mmcg)"/></svg>';
+    E.p.insertBefore(c, E.p.firstChild); CAMHUD.cone = c;
+  }
+  if (CAMHUD.cone) { const y = cam.yaw, rf = `rotate(${Math.atan2(-Math.cos(y), -Math.sin(y)).toFixed(3)}rad)`; if (rf !== CAMHUD.rf) { CAMHUD.rf = rf; CAMHUD.cone.style.transform = rf; } }
+  if (!CAMHUD.el) {
+    const box = $('mapbox'), nm = $('mapname'); if (!box) return;
+    const d = document.createElement('div'); d.id = 'camh'; d.setAttribute('aria-label', 'Camera keys'); box.insertBefore(d, nm || null); CAMHUD.el = d;
+    d.addEventListener('click', e => { if (e.target.closest('[data-camauto]') && typeof camToggleFollow === 'function') { e.stopPropagation(); Sfx.click(); camToggleFollow(); } });
+  }
+  const act = hbAct(), pad = hbPadOn(), fol = typeof CAMSET === 'object' && CAMSET ? !!CAMSET.follow : false;
+  const sig = act ? [pad, fol, hk('camLeft'), hk('camRight'), hk('zoom'), hk('camReset')].join('|') : '';
+  if (sig === CAMHUD.sig) return; CAMHUD.sig = sig;
+  if (!act) { CAMHUD.el.innerHTML = ''; return; }
+  const cap = t => t ? kc(t, 'sm') : '';
+  const auto = `<button class="camh-auto${fol ? ' on' : ''}" type="button" data-camauto title="Auto camera: swings behind you as you walk${pad ? ' (L3)' : ''}">Auto</button>`;
+  CAMHUD.el.innerHTML = pad
+    ? `<span>${cap('RS')}turn · zoom</span><span>${cap('R3')}reset</span>${auto}`
+    : `<span>${cap(hk('camLeft'))}${cap(hk('camRight'))}turn</span><span>${cap(hk('zoom'))}zoom</span><span>${cap(hk('camReset'))}reset</span>${auto}`;
+}
+(function () {   // camera round styles (the markup's stylesheet is index.html's; these belong to the parts made here)
+  if (document.getElementById('cam-css')) return;
+  const st = document.createElement('style'); st.id = 'cam-css';
+  st.textContent = `.mmcone{position:absolute;left:-22%;top:-22%;width:44%;height:44%;display:block;pointer-events:none}
+.mmcone svg{width:100%;height:100%;display:block}
+.mm-interior .mmcone{filter:sepia(1) saturate(3) brightness(.55)}
+#camh{display:none;align-items:center;justify-content:center;gap:2px 7px;flex-wrap:wrap;padding:0 6px 5px;font:700 10px var(--ui);color:var(--gdim);line-height:16px}
+#hud.act #camh:not(:empty){display:flex}
+#camh span{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
+#camh .kc.sm{margin-right:1px}
+.camh-auto{font:800 9px var(--ui);letter-spacing:.04em;padding:0 6px;height:15px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.35);background:rgba(10,14,24,.5);color:#9aa4bc}
+.camh-auto.on{background:#3f8a5a;border-color:#7fd09a;color:#fff}
+.ab-items{gap:5px;position:relative}
+.ab-r.it{width:42px;height:42px;border-radius:9px}
+.ab-r.it img{width:30px;height:30px}
+.ab-r.it .n{display:block}
+.ab-r.it.sel{border:2px solid #ffd070;box-shadow:0 0 0 1px rgba(0,0,0,.45),0 0 9px rgba(255,208,112,.5)}
+.ab-dp{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%)}
+.ck.c-cm{border-top:3px solid #4ac8d8}.cov-leg .c-cm::before{background:#4ac8d8}
+.kb-none{font-style:normal;font-size:10px;color:var(--faint)}
+.cam-set{display:flex;flex-direction:column;gap:1px}
+.kb-row.cam-row{grid-template-columns:1fr auto auto;cursor:pointer}
+.kb-row .cam-sub{display:block;font-size:10px;font-weight:400;color:var(--faint);line-height:1.25;text-align:left}
+.cam-tog{font:800 10px var(--ui);min-width:34px;text-align:center;padding:1px 6px;border-radius:9px;background:#d4dae6;color:#4a5470}
+.cam-tog.on{background:#3f9a5e;color:#fff}
+.cam-rng{width:150px;margin:0;accent-color:#3a6ae0}
+.cam-rl em{font-style:normal;font:700 10.5px var(--ui);min-width:48px;text-align:right;color:#2a3550}
+.cam-zb{display:flex;gap:4px}.cam-zb .btn{padding:1px 8px;font-size:11px}
+.kb-row.cam-row.foc,.kb-row.cam-row:focus-within{background:#eef3fc;border-color:#b8c8ea}`;
+  document.head.appendChild(st);
+})();
 drawMinimap = function () { if (!map) return; if (MM.map !== map || MM.dirty) miniRebuild(); miniMarkers(); };   // tools/perf.js calls this
 // The marker layer, in map coordinates (the wrapper's transform scrolls it with the base). Sizes are in "old
 // minimap pixels" (the 300 px canvas of before), so markers keep their look at every zoom and HUD size.

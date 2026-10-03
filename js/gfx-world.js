@@ -4202,8 +4202,12 @@ const CAMSW = { p: null, map: null, t: -1, dur: 0.3, x0: 0, y0: 0, h0: 0, f: { p
 // One axis of the camera follow over a frame of dt s: the target went from t0 to t1 at constant speed; c is the camera.
 // Lag e' = v - L e  ->  e(dt) = v / L + (e0 - v / L) a, with a = exp(-L dt).
 function camFollow(c, t0, t1, a, L, dt) { const vl = (t1 - t0) / (dt * L); return t1 - (vl + (t0 - c - vl) * a); }
+// Camera round: camDrive (js/action.js) turns / zooms first (Q E Z C, the right stick, auto-follow), and the follow
+// point leans toward a locked target by CAMX.ox / oy (eased there; F keeps the leaned point, so the follow stays exact).
 function updateCamera(dt) {
+  if (typeof camDrive === 'function') { try { camDrive(dt); } catch (e) { console.error(e); } }
   const P = ctrlHero();
+  const ox = typeof CAMX !== 'undefined' ? CAMX.ox : 0, oy = typeof CAMX !== 'undefined' ? CAMX.oy : 0;
   if (P) {
     if (CAMSW.p !== P) {
       const prev = CAMSW.p, party = typeof PARTY !== 'undefined' && PARTY && PARTY.members;
@@ -4214,20 +4218,20 @@ function updateCamera(dt) {
     CAMSW.map = map;
     if (CAMSW.t >= 0) {
       CAMSW.t += dt; const k = smoothstep(0, CAMSW.dur, CAMSW.t);
-      cam.tx = CAMSW.x0 + (P.x - CAMSW.x0) * k; cam.ty = CAMSW.y0 + (P.y - CAMSW.y0) * k; cam.th = CAMSW.h0 + (groundH(P.x, P.y) - CAMSW.h0) * k;
+      cam.tx = CAMSW.x0 + (P.x + ox - CAMSW.x0) * k; cam.ty = CAMSW.y0 + (P.y + oy - CAMSW.y0) * k; cam.th = CAMSW.h0 + (groundH(P.x, P.y) - CAMSW.h0) * k;
       if (CAMSW.t >= CAMSW.dur) CAMSW.t = -1;
-    } else if (started && CAMSW.f.p === P && window.AOM_CAM_STEP !== true && CAMSW.f.map === map && dt > 1e-5 && Math.abs(P.x - CAMSW.f.x) + Math.abs(P.y - CAMSW.f.y) < 3) {
+    } else if (started && CAMSW.f.p === P && window.AOM_CAM_STEP !== true && CAMSW.f.map === map && dt > 1e-5 && Math.abs(P.x + ox - CAMSW.f.x) + Math.abs(P.y + oy - CAMSW.f.y) < 3) {
       // Glitch fix (C3): the exact solution of the exponential follow for a target that moved linearly during the
       // frame. The old discrete step (cam += (P - cam) * k) left a lag of v / 7.6 - v * dt / 2, so every uneven frame
       // (a 120 Hz display dropping frames, a GC pause) moved the walking hero by ~1-2 px on screen and re-quantised
       // its pixels: the constant shimmer while walking. Here the lag is v / L whatever dt is (same feel at 60 fps).
       const a = Math.pow(0.0005, dt), L = 7.6009, gh = groundH(P.x, P.y), F = CAMSW.f;
-      cam.tx = camFollow(cam.tx, F.x, P.x, a, L, dt); cam.ty = camFollow(cam.ty, F.y, P.y, a, L, dt); cam.th = camFollow(cam.th, F.h, gh, a, L, dt);
+      cam.tx = camFollow(cam.tx, F.x, P.x + ox, a, L, dt); cam.ty = camFollow(cam.ty, F.y, P.y + oy, a, L, dt); cam.th = camFollow(cam.th, F.h, gh, a, L, dt);
     } else {
       const k = started ? 1 - Math.pow(0.0005, dt) : 0.02;
-      cam.tx += (P.x - cam.tx) * k; cam.ty += (P.y - cam.ty) * k; cam.th += (groundH(P.x, P.y) - cam.th) * k;
+      cam.tx += (P.x + ox - cam.tx) * k; cam.ty += (P.y + oy - cam.ty) * k; cam.th += (groundH(P.x, P.y) - cam.th) * k;
     }
-    const F = CAMSW.f; F.p = P; F.map = map; F.x = P.x; F.y = P.y; F.h = groundH(P.x, P.y);
+    const F = CAMSW.f; F.p = P; F.map = map; F.x = P.x + ox; F.y = P.y + oy; F.h = groundH(P.x, P.y);
   }
   if (!started) cam.yawT += dt * 0.04;
   cam.yaw += (cam.yawT - cam.yaw) * (1 - Math.pow(0.002, dt));

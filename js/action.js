@@ -3,8 +3,8 @@
    Action controls: play with the keyboard (or a gamepad) like a console game instead of clicking. The keys come
    from KEYMAP / keyBinds() (js/controls.js, rebindable): WASD moves relative to the camera, Space jumps, Shift held
    blocks (tap early to parry), J light-attack combo, K charged heavy, L dodge roll with invulnerability frames,
-   U I O P cast skill slots 1-4 (hold ';' for 5-8), Q drinks the quick item, E cycles it, F interacts, Tab locks a
-   target, R rides. Presses that come while the hero is still busy (a swing's recovery, a roll, a jump, a cast, a
+   U I O P cast skill slots 1-4 (hold ';' for 5-8), 1 2 3 4 use the item slots, F interacts, Tab locks a target,
+   R rides; Q / E turn the camera (hold) or step it 45° (tap), Z zooms, C puts it behind you (see "Camera" below). Presses that come while the hero is still busy (a swing's recovery, a roll, a jump, a cast, a
    cooldown about to end) are buffered and fire the moment it can act (CTRL.buf, BUF).
    Classic (mouse) mode: Space jumps, the rest is click-to-move. Click-to-move keeps working alongside action mode.
    ========================================================= */
@@ -28,14 +28,14 @@ function hitstopScale() {
 const animeStop = (old, anime) => animeOn() ? anime : old;
 const hitHint = (delay, kind) => { if (typeof animHitHint === 'function') animHitHint(P, delay, kind); };
 const isAction = () => CTRL.mode === 'action';
-// Window hotkeys. Action mode: only letters the keymap does not use (I, O, P, U, E, Q are skills / items now; open
-// those windows with Alt+letter or the menu). A key rebound onto one of these letters wins over the window.
+// Window hotkeys. Action mode: only letters the keymap does not use (I, O, P, U are skills, Q E Z C the camera; open
+// those windows with Alt+letter, e.g. Alt+C Status, or the menu). A key rebound onto one of these letters wins over the window.
 const WINKEYS = {
-  action: { KeyC: 'status', KeyB: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap' },
+  action: { KeyB: 'inv', KeyG: 'equip', KeyV: 'skills', KeyN: 'journal', KeyH: 'help', Comma: 'worldmap' },
   classic: { KeyA: 'status', KeyI: 'inv', KeyE: 'equip', KeyS: 'skills', KeyJ: 'journal', KeyH: 'help', KeyW: 'worldmap', KeyP: 'pet' },
 };
 // Comma is not an action key: ui.js opens the World Map on ',' in both modes (and on W in classic mode).
-const ALTWIN = { KeyA: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet', KeyL: 'loadout', KeyK: 'keys' };
+const ALTWIN = { KeyA: 'status', KeyC: 'status', KeyE: 'inv', KeyQ: 'equip', KeyS: 'skills', KeyU: 'journal', KeyJ: 'journal', KeyH: 'help', KeyI: 'inv', KeyW: 'worldmap', KeyP: 'pet', KeyL: 'loadout', KeyK: 'keys' };
 const ARROWS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 // Every key action mode takes for itself (kept up to date by ctlKeysRebuilt when keys are rebound).
 const ACTION_KEYS = new Set();
@@ -52,7 +52,7 @@ function setCtrlMode(m) {
   CTRL.mode = m; store('aom-ctrl', m); CTRL.keys.clear(); CTRL.buf = null; CTRL.page2 = false; if (P) P.blocking = false;
   refreshKeyHints();
   const k = keyFor;
-  log(m === 'action' ? `Action controls: ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('light')} attack · ${k('heavy')} heavy (hold) · ${k('dodge')} dodge · ${k('block')} block · ${k('jump')} jump · ${k('skill1')} ${k('skill2')} ${k('skill3')} ${k('skill4')} skills · ${k('quick')} potion · ${k('interact')} talk.` : 'Classic controls: click to move and attack. Space jumps.', 'sys');
+  log(m === 'action' ? `Action controls: ${k('up')}${k('left')}${k('down')}${k('right')} move · ${k('light')} attack · ${k('heavy')} heavy (hold) · ${k('dodge')} dodge · ${k('block')} block · ${k('jump')} jump · ${k('skill1')} ${k('skill2')} ${k('skill3')} ${k('skill4')} skills · ${k('item1')}-${k('item4')} items · ${k('camLeft')} ${k('camRight')} turn the camera · ${k('zoom')} zoom · ${k('interact')} talk.` : 'Classic controls: click to move and attack. Space jumps.', 'sys');
   UI.dirty = true;
 }
 function refreshKeyHints() {
@@ -131,6 +131,12 @@ function ctlMenu() {
 function ctlSetPage2(on) { if (CTRL.page2 === on) return; CTRL.page2 = on; controlsChanged('page'); }
 
 /* ---------- Input ---------- */
+// Keys 1-4: use that item slot; with the pointer over a skill or an item (Skills, Items, the Loadout) they put it there.
+function ctlItemKey(i) {
+  const hb = typeof UI !== 'undefined' && UI && UI.hoverBind;
+  if (hb && hb.startsWith('item:') && typeof hbPut === 'function') { hbPut('r:' + i, hb); return; }
+  useItemSlot(i);
+}
 function ctlDo(act, code) {
   switch (act) {
     case 'jump': if (!(typeof mouse !== 'undefined' && mouse.down)) ctlPress('jump'); break;   // (not in the middle of a camera drag)
@@ -140,8 +146,14 @@ function ctlDo(act, code) {
     case 'dodge': ctlPress('dodge'); break;
     case 'skill1': case 'skill2': case 'skill3': case 'skill4': ctlPress('skill', (+act[5] - 1) + (CTRL.page2 ? 4 : 0)); break;
     case 'page2': ctlSetPage2(true); break;
+    case 'item1': case 'item2': case 'item3': case 'item4': ctlItemKey(+act[4] - 1); break;
     case 'quick': useQuickItem(); break;
     case 'cycle': cycleQuickItem(1); break;
+    case 'camLeft': camTurnKey(1, true); break;
+    case 'camRight': camTurnKey(-1, true); break;
+    case 'zoom': camZoomCycle(); break;
+    case 'camReset': camReset(); break;
+    case 'autocam': camToggleFollow(); break;
     case 'interact': actInteract(); break;
     case 'lock': actLockCycle(); break;
     case 'ride': toggleMount(); break;
@@ -177,11 +189,12 @@ addEventListener('keyup', e => {
   CTRL.keys.delete(ctlNorm(e.code));
   const act = keyAction(e.code);
   if (act === 'page2') ctlSetPage2(CTRL.padLB);
+  if (act === 'camLeft' || act === 'camRight') camTurnKey(act === 'camLeft' ? 1 : -1, false);
   if (!started || !P) return;
   if (act === 'heavy') { if (CTRL.buf && CTRL.buf.kind === 'heavy') CTRL.buf.release = true; else actHeavyRelease(); }
   if (act === 'block') actBlock(false);
 }, true);
-addEventListener('blur', () => { CTRL.keys.clear(); CTRL.buf = null; CTRL.page2 = false; if (P) { P.blocking = false; if (P.charge >= 0) actHeavyRelease(); } });
+addEventListener('blur', () => { CAMX.keys.length = 0; CTRL.keys.clear(); CTRL.buf = null; CTRL.page2 = false; if (P) { P.blocking = false; if (P.charge >= 0) actHeavyRelease(); } });
 
 const MOVEV = [0, 0];
 function moveInput() {
@@ -192,8 +205,14 @@ function moveInput() {
     iy = (k.has(B.up) || k.has('ArrowUp') ? 1 : 0) - (k.has(B.down) || k.has('ArrowDown') ? 1 : 0);
   }
   if (CTRL.pad) { ix += CTRL.pad.x; iy -= CTRL.pad.y; }
-  if (hyp(ix, iy) < 0.25) return null;
-  const rx = Math.cos(cam.yaw), ry = -Math.sin(cam.yaw), fx = -Math.sin(cam.yaw), fy = -Math.cos(cam.yaw);
+  if (hyp(ix, iy) < 0.25) { CAMX.inA = null; CAMX.autoAcc = 0; return null; }
+  // Input latch (camera round): what auto-follow turned since the input last changed is taken back out, so a held
+  // direction keeps its heading in the world while the camera swings behind it; turning the input lets it go smoothly.
+  const ia = Math.atan2(iy, ix);
+  if (CAMX.inA === null) CAMX.autoAcc = 0;
+  else if (ia !== CAMX.inA) CAMX.autoAcc *= Math.max(0, 1 - Math.abs(camWrap(ia - CAMX.inA)) / 0.35);
+  CAMX.inA = ia;
+  const yaw = cam.yaw - CAMX.autoAcc, rx = Math.cos(yaw), ry = -Math.sin(yaw), fx = -Math.sin(yaw), fy = -Math.cos(yaw);
   const x = rx * ix + fx * iy, y = ry * ix + fy * iy, n = hyp(x, y) || 1;
   MOVEV[0] = x / n; MOVEV[1] = y / n; return MOVEV;   // perf round 5: one reused array (callers read it at once)
 }
@@ -202,8 +221,9 @@ function stepMove(dx, dy) { if (freeAt(P.x + dx, P.y)) P.x += dx; if (freeAt(P.x
 
 /* ---------- Gamepad (the browser's "standard" mapping: Xbox / PlayStation / Switch Pro pads in Chrome, Firefox, Edge) ----------
    Buttons: 0 A (cross) jump · 1 B (circle) dodge · 2 X (square) light · 3 Y (triangle) heavy (hold) · 4 LB / 5 RB
-   held + X / Y / B / A cast skill slots 5-8 / 1-4 · 6 LT block (hold) · 7 RT jump too · 8 Back: Items · 9 Start: menu ·
-   11 right-stick click: lock · d-pad 12 up interact, 13 down quick item, 14 / 15 left / right cycle it. With
+   held + X / Y / B / A cast skill slots 5-8 / 1-4 · 6 LT block (hold) · 7 RT lock / cycle target · 8 Back: Items ·
+   9 Start: menu · 10 L3 (left-stick click): auto camera on / off · 11 R3: camera behind you · d-pad 12 up interact,
+   13 down the selected item, 14 / 15 left / right select another. Right stick: X turns the camera, Y zooms. With
    companions, RB tapped on its own takes control of the next hero. Pads without the standard mapping are read with
    the same indices (most report it). Polling starts at the first 'gamepadconnected'. */
 let PAD_SEEN = false;
@@ -212,30 +232,177 @@ const PAD_FACE = [2, 3, 1, 0];   // X Y B A -> skill slots 1-4 (the U I O P orde
 function pollPad(dt) {
   let gp = null;
   if (PAD_SEEN && navigator.getGamepads) { const l = navigator.getGamepads() || []; for (let i = 0; i < l.length; i++) if (l[i] && l[i].connected) { gp = l[i]; break; } }
-  if (!gp) { CTRL.pad = null; if (CTRL.padLB) { CTRL.padLB = false; ctlSetPage2(CTRL.keys.has(keyCode('page2'))); } return; }
+  if (!gp) { CTRL.pad = null; CAMX.stickX = CAMX.stickY = 0; if (CTRL.padLB) { CTRL.padLB = false; ctlSetPage2(CTRL.keys.has(keyCode('page2'))); } return; }
   const dz = v => Math.abs(v) < 0.2 ? 0 : v;
   CTRL.pad = { x: dz(gp.axes[0] || 0), y: dz(gp.axes[1] || 0) };
-  const rsx = dz(gp.axes[2] || 0); if (rsx) { cam.yawT -= rsx * dt * 2.2; cam.yaw = cam.yawT; }
   const prev = CTRL.padPrev, b = i => { const B = gp.buttons[i]; return !!B && (B.pressed || B.value > 0.5); }, down = i => b(i) && !prev[i], up = i => !b(i) && prev[i];
   const lb = b(4), rb = b(5);
   if (CTRL.padLB !== (lb && !rb)) { CTRL.padLB = lb && !rb; ctlSetPage2(CTRL.padLB || CTRL.keys.has(keyCode('page2'))); }
   const capture = typeof uiPadCapture === 'function' && uiPadCapture();   // the UI is reading the pad (Loadout)
+  // right stick: the camera (past the dead zone, rescaled and squared for fine control near the centre)
+  const rs = v => { v = dz(v || 0); if (!v) return 0; const a = (Math.abs(v) - 0.2) / 0.8; return Math.sign(v) * a * a; };
+  const live = !capture && started && $('dialog').hidden;
+  CAMX.stickX = live ? rs(gp.axes[2]) : 0; CAMX.stickY = live ? rs(gp.axes[3]) : 0;
   if (capture) { if (down(9)) ctlMenu(); }   // game actions wait; Start still works as Esc (closes the Loadout and so on)
   else if (started && $('dialog').hidden) {
     if (down(5)) CTRL.rbUsed = false;
     if (rb || lb) { for (let k = 0; k < 4; k++) if (down(PAD_FACE[k])) { ctlPress('skill', k + (rb ? 0 : 4)); CTRL.rbUsed = true; } }
-    else { if (down(0) || down(7)) ctlPress('jump'); if (down(2)) ctlPress('light'); if (down(3)) ctlPress('heavy'); if (down(1)) ctlPress('dodge'); }
-    if (down(7) && (rb || lb)) ctlPress('jump');
+    else { if (down(0)) ctlPress('jump'); if (down(2)) ctlPress('light'); if (down(3)) ctlPress('heavy'); if (down(1)) ctlPress('dodge'); }
+    if (down(7)) actLockCycle();
     if (up(3)) { if (CTRL.buf && CTRL.buf.kind === 'heavy') CTRL.buf.release = true; else actHeavyRelease(); }
     if (down(6)) actBlock(true); if (up(6)) actBlock(false);
     if (up(5) && !CTRL.rbUsed && typeof PARTY !== 'undefined' && PARTY && PARTY.members.length > 1 && typeof squadCycle === 'function') squadCycle(1);
     if (down(12)) actInteract(); if (down(13)) useQuickItem(); if (down(14)) cycleQuickItem(-1); if (down(15)) cycleQuickItem(1);
-    if (down(11)) actLockCycle();
+    if (down(11)) camReset(); if (down(10)) camToggleFollow();
     if (down(9)) ctlMenu(); if (down(8)) toggleWin('inv');
   } else if (!$('dialog').hidden && down(0)) { const btn = $('dopts').querySelector('button'); if (btn) btn.click(); }
   const pp = CTRL.padPrev; pp.length = gp.buttons.length; for (let i = 0; i < gp.buttons.length; i++) pp[i] = b(i);
 }
 
+
+/* ---------- Camera (camera round): Q / E turn, Z zoom, C reset, the right stick, auto-follow ----------
+   camDrive(dt) runs once per rendered frame from updateCamera (js/gfx-world.js), on the real frame time (CAMX.rdt, set by
+   ui.js frame() before a hit-stop slows the clock). The driver keeps its own yaw (CAMX.pos, speed CAMX.v) and adds each
+   change to both cam.yaw and cam.yawT, so writes from elsewhere (tests, the mouse drag, scenes) stay as they are; every
+   step is the exact solution for the frame's dt (no frame-rate dependence, no jitter on uneven frames).
+   - Turning: a held key or the stick eases the turn speed toward CAMSET.speed (v' = k (w - v)); letting go glides to
+     a stop (a critically damped spring to where the speed carries it). A tap under CAM.tap s steps 45° instead: the
+     same spring, to 45° past the yaw the press started from (quick taps queue up).
+   - Auto-follow (action mode, CAMSET.follow): while the hero walks under the player's input, the turn speed eases
+     toward a rate that swings the camera behind the movement: CAM.rate (degrees / s by the angle between the walk and
+     the camera's forward, scaled by CAMSET.strength): quickest a little off straight ahead, gentle on diagonals and
+     strafes, nothing inside the dead zone (CAM.rate[0]) or past CAM.rate[last] (walking toward the camera: never a
+     180° flip). Paused CAM.pause s after any manual camera input and off while a target is locked.
+   - Input latch (moveInput): keys and stick map through the camera yaw minus what auto-follow turned since the input
+     last changed (CAMX.autoAcc), so a held direction keeps its heading in the world while the camera swings behind it.
+   - Zoom: Z cycles near / mid / far, the stick's Y and the wheel zoom freely; distance and pitch spring together (the
+     pitch eases a little with zoom: lower near, steeper far). C: behind the hero's facing, at the default zoom.
+   - Lock-on: CAMX.ox / oy shift the follow point a little toward the locked target (updateCamera adds them), so the
+     view frames both. */
+const CAM = { tap: 0.18, acc: 5, spring: 9, pause: 2.5, follow: 2.6, zoomW: 8, stick: 1.4,
+  rate: [[10, 0], [26, 30], [45, 24], [90, 10], [112, 0]] };
+const CAMX = { t: 0, rdt: 0, pos: 0, v: 0, mode: 'idle', target: 0, tapping: false, keys: [], keyAt: {}, tapBase: {}, stickX: 0, stickY: 0,
+  manualAt: -1e9, autoAcc: 0, inA: null, auto: 0, ox: 0, oy: 0, otx: 0, oty: 0, zd: null, zv: 0, pd: 0, pv: 0, init: false };
+const camWrap = a => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+const camBase = () => (typeof W !== 'undefined' && W < 700 ? 34 : 40);
+const camZoomDist = z => camBase() * (z === 'near' ? 0.65 : z === 'far' ? 1.45 : 1);
+const camPitchFor = d => clamp(0.88 + (d / camBase() - 1) * 0.18, 0.78, 1.0);
+const camZoomName = d => { let n = 'mid', bd = 1e9; for (const z of CAM_ZOOMS) { const x = Math.abs(Math.log(d / camZoomDist(z))); if (x < bd) { bd = x; n = z; } } return n; };
+const camSign = () => CAMSET.invert ? -1 : 1;
+// Any hand on the camera: auto-follow waits CAM.pause s.
+function camManual(direct) {
+  CAMX.manualAt = CAMX.t;
+  if (direct) { CAMX.mode = 'idle'; CAMX.v = 0; CAMX.tapping = false; }   // the mouse drag sets the yaw itself
+}
+// Q (dir 1, look left) / E (dir -1). Pressed: turns while held. Released: a tap steps 45°, a hold glides to a stop.
+function camTurnKey(dir, on) {
+  const K = CAMX.keys, i = K.indexOf(dir);
+  if (on) {
+    if (i >= 0) return;
+    K.push(dir); CAMX.keyAt[dir] = CAMX.t;
+    CAMX.tapBase[dir] = CAMX.tapping && CAMX.mode === 'spring' ? CAMX.target : CAMX.pos;
+    camManual(); return;
+  }
+  if (i < 0) return;
+  K.splice(i, 1); camManual();
+  if (K.length) return;   // the other key is still held: it keeps turning
+  CAMX.mode = 'spring';
+  if (CAMX.t - CAMX.keyAt[dir] < CAM.tap) { CAMX.target = CAMX.tapBase[dir] + dir * camSign() * Math.PI / 4; CAMX.tapping = true; }
+  else { CAMX.target = CAMX.pos + CAMX.v / CAM.spring; CAMX.tapping = false; }
+}
+// A step of `step` rad (default 45°) with the tap's glide ([ / ] and classic Q).
+function camStep(dir, step) {
+  const base = CAMX.tapping && CAMX.mode === 'spring' ? CAMX.target : CAMX.pos;
+  CAMX.mode = 'spring'; CAMX.target = base + dir * (step || Math.PI / 4); CAMX.tapping = true; camManual();
+}
+// C / R3: behind the hero's facing, the default zoom.
+function camReset() {
+  if (!P || typeof cam === 'undefined') return false;
+  const fx = P.fx === undefined ? 0 : P.fx, fy = P.fx === undefined ? -1 : P.fy || 0;
+  const d = camWrap(Math.atan2(-fx, -fy) - cam.yawT);
+  CAMX.keys.length = 0; CAMX.mode = 'spring'; CAMX.target = CAMX.pos + d; CAMX.tapping = false; camManual();
+  camZoomTo(camZoomDist(CAMSET.zoom));
+  return true;
+}
+function camZoomTo(d) {
+  if (CAMX.zd === null) { CAMX.zv = 0; CAMX.pv = 0; }
+  CAMX.zd = clamp(d, 22, 72); CAMX.pd = camPitchFor(CAMX.zd);
+}
+const camZoomBy = f => camZoomTo((CAMX.zd !== null ? CAMX.zd : cam.dist) * f);
+// Z: near -> mid -> far -> near, from the preset nearest the current distance. Returns the new preset's name.
+function camZoomCycle() {
+  const n = CAM_ZOOMS[(CAM_ZOOMS.indexOf(camZoomName(CAMX.zd !== null ? CAMX.zd : cam.dist)) + 1) % CAM_ZOOMS.length];
+  camZoomTo(camZoomDist(n)); return n;
+}
+function camToggleFollow() {
+  setCamSetting('follow', !CAMSET.follow);
+  if (P && typeof floatText === 'function') floatText(P, CAMSET.follow ? 'Auto camera on' : 'Auto camera off', 'info');
+  return CAMSET.follow;
+}
+// The auto-follow turn rate (rad / s, + = toward a larger yaw) for this frame, or 0.
+function camAutoRate() {
+  if (!CAMSET.follow || !isAction() || !P || P.dead || CTRL.lock) return 0;
+  if (CAMX.t - CAMX.manualAt < CAM.pause) return 0;
+  if ((typeof CINE !== 'undefined' && (CINE.active || CINE.base !== null)) || (typeof TRAVEL !== 'undefined' && TRAVEL.lock) || !$('dialog').hidden) return 0;
+  if (typeof ctrlHero === 'function' && ctrlHero() !== P) return 0;
+  if (!(P.moving || (P.jump && P.jump.ph === 'air'))) return 0;
+  const v = moveInput(); if (!v) return 0;
+  const off = camWrap(Math.atan2(-v[0], -v[1]) - cam.yawT), ad = Math.abs(off) * 180 / Math.PI, R = CAM.rate;
+  if (ad <= R[0][0] || ad >= R[R.length - 1][0]) return 0;
+  let r = 0;
+  for (let i = 1; i < R.length; i++) if (ad <= R[i][0]) { const a = R[i - 1], b = R[i]; r = a[1] + (b[1] - a[1]) * (ad - a[0]) / (b[0] - a[0]); break; }
+  return Math.sign(off) * r * (0.3 + 1.4 * CAMSET.strength) * (P.blocking ? 0.4 : 1) * Math.PI / 180;
+}
+function camDrive(dt) {
+  if (CAMX.rdt > 0) { dt = CAMX.rdt; CAMX.rdt = 0; }
+  if (!(dt > 0) || typeof cam === 'undefined') return;
+  dt = Math.min(dt, 0.1); CAMX.t += dt;
+  if (typeof started === 'undefined' || !started || !P) { CAMX.v = 0; CAMX.mode = 'idle'; CAMX.keys.length = 0; return; }
+  if (!CAMX.init) { CAMX.init = true; if (CAMSET.zoom !== 'mid') { cam.dist = camZoomDist(CAMSET.zoom); cam.pitch = camPitchFor(cam.dist); } }
+  const spd = CAMSET.speed * Math.PI / 180, hold = CAMX.keys.length ? CAMX.keys[CAMX.keys.length - 1] : 0;
+  let w = null, k = CAM.acc, auto = false;
+  if (hold) w = hold * camSign() * spd;
+  if (CAMX.stickX) w = (w || 0) - CAMX.stickX * camSign() * spd * CAM.stick;
+  if (w !== null) { CAMX.mode = 'vel'; CAMX.tapping = false; camManual(); }
+  else if (CAMX.mode === 'vel') { CAMX.mode = 'spring'; CAMX.target = CAMX.pos + CAMX.v / CAM.spring; }
+  const p0 = CAMX.pos;
+  if (CAMX.mode === 'spring') {   // critically damped: e(t) = (e0 + (v0 + w e0) t) exp(-w t)
+    const Wn = CAM.spring, e0 = CAMX.pos - CAMX.target, v0 = CAMX.v, a = Math.exp(-Wn * dt), c = v0 + Wn * e0;
+    const e = (e0 + c * dt) * a; CAMX.v = (v0 - Wn * c * dt) * a; CAMX.pos = CAMX.target + e;
+    if (Math.abs(e) < 2e-4 && Math.abs(CAMX.v) < 2e-3) { CAMX.pos = CAMX.target; CAMX.v = 0; CAMX.mode = 'idle'; CAMX.tapping = false; }
+  } else {   // v eases toward w: v(t) = w + (v0 - w) exp(-k t)
+    if (w === null) { w = camAutoRate(); k = CAM.follow; auto = true; }
+    const a = Math.exp(-k * dt), v0 = CAMX.v;
+    CAMX.pos += w * dt + (v0 - w) * (1 - a) / k; CAMX.v = w + (v0 - w) * a;
+    if (auto && !w && Math.abs(CAMX.v) < 1e-4) CAMX.v = 0;
+  }
+  CAMX.auto = auto ? CAMX.v : 0;
+  const d = CAMX.pos - p0;
+  if (d) { cam.yaw += d; cam.yawT += d; if (auto && CAMX.inA !== null) CAMX.autoAcc += d; }
+  camZoomTick(dt); camLockTick(dt);
+}
+function camZoomTick(dt) {
+  if (CAMX.stickY) camZoomBy(Math.exp(CAMX.stickY * dt * 1.3));
+  if (CAMX.zd === null) return;
+  if (typeof CINE !== 'undefined' && (CINE.active || CINE.base !== null)) { CAMX.zd = null; return; }   // a scene owns the distance
+  const Wn = CAM.zoomW, a = Math.exp(-Wn * dt);
+  let e0 = cam.dist - CAMX.zd, c = CAMX.zv + Wn * e0;
+  cam.dist = CAMX.zd + (e0 + c * dt) * a; CAMX.zv = (CAMX.zv - Wn * c * dt) * a;
+  e0 = cam.pitch - CAMX.pd; c = CAMX.pv + Wn * e0;
+  cam.pitch = CAMX.pd + (e0 + c * dt) * a; CAMX.pv = (CAMX.pv - Wn * c * dt) * a;
+  if (Math.abs(cam.dist - CAMX.zd) < 0.01 && Math.abs(CAMX.zv) < 0.02 && Math.abs(cam.pitch - CAMX.pd) < 2e-4 && !CAMX.stickY) { cam.dist = CAMX.zd; cam.pitch = CAMX.pd; CAMX.zd = null; }
+}
+// Lock-on framing: the follow point leans toward the target (30% of the way, at most 2.2 tiles), the camFollow way.
+function camLockTick(dt) {
+  let tx = 0, ty = 0; const L = CTRL.lock;
+  if (L && !L.dead && isAction() && P && !P.dead && (!L.map || L.map === P.map)) { const dx = L.x - P.x, dy = L.y - P.y, d = hyp(dx, dy); if (d > 0.01 && d < 14) { const s = Math.min(d * 0.3, 2.2) / d; tx = dx * s; ty = dy * s; } }
+  if (!tx && !ty && !CAMX.ox && !CAMX.oy) { CAMX.otx = CAMX.oty = 0; return; }
+  const Lr = 3, a = Math.exp(-Lr * dt);
+  CAMX.ox = typeof camFollow === 'function' ? camFollow(CAMX.ox, CAMX.otx, tx, a, Lr, dt) : CAMX.ox + (tx - CAMX.ox) * (1 - a);
+  CAMX.oy = typeof camFollow === 'function' ? camFollow(CAMX.oy, CAMX.oty, ty, a, Lr, dt) : CAMX.oy + (ty - CAMX.oy) * (1 - a);
+  CAMX.otx = tx; CAMX.oty = ty;
+  if (!tx && !ty && Math.abs(CAMX.ox) + Math.abs(CAMX.oy) < 1e-3) CAMX.ox = CAMX.oy = 0;
+}
 
 /* ---------- Targeting ---------- */
 function softTarget(range, cone) {

@@ -1,34 +1,46 @@
 'use strict';
 /* =========================================================
-   Console-style controls (design/controls-contract.md, C1): the action-mode keymap and rebinding, the skill slots
-   (U I O P, page 2 with ';' held) and the quick-item ring (Q uses, E cycles), plus the save hooks for them.
-   - KEYMAP: the defaults, { id: { code, label, pad } }. keyBinds() is the effective { id: code } (defaults + the
-     per-device overrides in localStorage 'aom-keys'). keyFor(id) / padFor(id) are the labels the UI shows.
+   Console-style controls (design/controls-contract.md, C1; and the camera round): the action-mode
+   keymap and rebinding, the skill slots (U I O P, page 2 with ';' held), the four item slots (1 2 3 4 use them; the pad
+   uses the selected one and cycles), the camera keys (Q / E turn, Z zoom, C reset) and the camera settings, plus the
+   save hooks for the slots.
+   - KEYMAP: the defaults, { id: { code, label, pad[, alt] } }; code null = unbound by default (quick, cycle and autocam
+     stay rebindable). keyBinds() is the effective { id: code } (defaults + the per-device overrides in localStorage
+     'aom-keys'). keyFor(id) / padFor(id) are the labels the UI shows.
+   - Migration: an override always wins. A default key that one of the player's own bindings already uses goes to the
+     action's `alt` key when that is free (Q / E camera -> [ / ]), else stays unbound; nothing the player chose is moved.
    - setKey(id, code) rebinds (a key already used by another action swaps over), resetKeys() restores the defaults.
-   - P.skillSlots[8] (skill ids | null), P.itemSlots[4] (item ids | null), P.itemSel (the selected ring slot), saved
-     with the hero. ctlEnsure(h) creates them (old saves and new heroes: migrated from P.hot). P.hot and 1-9 still work.
-   - useSkillSlot(i), useQuickItem(), cycleQuickItem(dir), setSkillSlot(i, id), setItemSlot(i, id), autoFillSlots(),
-     quickItem(). Every change fires the window event 'controlsChanged'.
-   Input itself (keyboard, gamepad, the input buffer) is in js/action.js, which loads right after this file.
+   - P.skillSlots[8] (skill ids | null), P.itemSlots[4] (item ids | null), P.itemSel (the selected slot, for the pad),
+     saved with the hero. ctlEnsure(h) creates them (old saves and new heroes: migrated from P.hot). 5-9 still use P.hot.
+   - useSkillSlot(i), useItemSlot(i), useQuickItem(), cycleQuickItem(dir), setSkillSlot(i, id), setItemSlot(i, id),
+     autoFillSlots(), quickItem(). Every change fires the window event 'controlsChanged'.
+   - CAMSET: the camera settings (localStorage 'aom-cam'): follow (auto-follow in action mode), strength 0-1, speed
+     (turn, degrees / s), invert (Q / E and the stick), zoom ('near' | 'mid' | 'far', the default). setCamSetting(k, v).
+   Input itself (keyboard, gamepad, the input buffer, the camera driver) is in js/action.js, which loads right after.
    ========================================================= */
 const KEYMAP = Object.freeze({
   up: { code: 'KeyW', label: 'Move up', pad: 'LS' }, down: { code: 'KeyS', label: 'Move down', pad: 'LS' },
   left: { code: 'KeyA', label: 'Move left', pad: 'LS' }, right: { code: 'KeyD', label: 'Move right', pad: 'LS' },
   jump: { code: 'Space', label: 'Jump', pad: 'A' }, block: { code: 'ShiftLeft', label: 'Block (hold)', pad: 'LT' },
-  quick: { code: 'KeyQ', label: 'Quick item', pad: 'D-pad down' }, cycle: { code: 'KeyE', label: 'Cycle quick item', pad: 'D-pad left/right' },
+  item1: { code: 'Digit1', label: 'Item slot 1', pad: '' }, item2: { code: 'Digit2', label: 'Item slot 2', pad: '' },
+  item3: { code: 'Digit3', label: 'Item slot 3', pad: '' }, item4: { code: 'Digit4', label: 'Item slot 4', pad: '' },
+  camLeft: { code: 'KeyQ', label: 'Turn camera left', pad: 'RS ←', alt: 'BracketLeft' }, camRight: { code: 'KeyE', label: 'Turn camera right', pad: 'RS →', alt: 'BracketRight' },
+  zoom: { code: 'KeyZ', label: 'Zoom (near / mid / far)', pad: 'RS ↑↓', alt: 'Minus' }, camReset: { code: 'KeyC', label: 'Camera behind you', pad: 'R3', alt: 'Backslash' },
   interact: { code: 'KeyF', label: 'Interact', pad: 'D-pad up' },
   light: { code: 'KeyJ', label: 'Light attack', pad: 'X' }, heavy: { code: 'KeyK', label: 'Heavy attack (hold)', pad: 'Y' },
   dodge: { code: 'KeyL', label: 'Dodge roll', pad: 'B' },
   skill1: { code: 'KeyU', label: 'Skill 1', pad: 'RB+X' }, skill2: { code: 'KeyI', label: 'Skill 2', pad: 'RB+Y' },
   skill3: { code: 'KeyO', label: 'Skill 3', pad: 'RB+B' }, skill4: { code: 'KeyP', label: 'Skill 4', pad: 'RB+A' },
   page2: { code: 'Semicolon', label: 'Skills 5-8 (hold)', pad: 'LB' },
-  lock: { code: 'Tab', label: 'Lock / cycle target', pad: 'RS click' }, ride: { code: 'KeyR', label: 'Ride', pad: '' },
+  lock: { code: 'Tab', label: 'Lock / cycle target', pad: 'RT' }, ride: { code: 'KeyR', label: 'Ride', pad: '' },
   menu: { code: 'Escape', label: 'Menu', pad: 'Start' },
+  quick: { code: null, label: 'Quick potion', pad: 'D-pad down' }, cycle: { code: null, label: 'Select the next item slot', pad: 'D-pad left/right' },
+  autocam: { code: null, label: 'Auto camera on / off', pad: 'L3' },
 });
 for (const id in KEYMAP) Object.freeze(KEYMAP[id]);
 const SKILL_SLOTS = 8, ITEM_SLOTS = 4;
-// Keys an action cannot take: modifiers (they never reach the game as plain presses), the squad keys, the 1-9 hotbar.
-const KEY_RESERVED = /^(Alt|Meta|Control|OS)(Left|Right)?$|^(F1|F2|F3|F4|Backquote|Enter|NumpadEnter|Digit[1-9]|CapsLock|ContextMenu)$/;
+// Keys an action cannot take: modifiers (they never reach the game as plain presses), the squad keys, the 5-9 hotbar.
+const KEY_RESERVED = /^(Alt|Meta|Control|OS)(Left|Right)?$|^(F1|F2|F3|F4|Backquote|Enter|NumpadEnter|Digit[5-9]|CapsLock|ContextMenu)$/;
 const CTL = { ovr: {}, binds: {}, byCode: {} };
 
 /* ---------- Keymap and rebinding ---------- */
@@ -42,8 +54,16 @@ function ctlSaveKeys() { try { if (Object.keys(CTL.ovr).length) localStorage.set
 // The right-hand Shift / Ctrl count as the left one (Shift binds both).
 const ctlNorm = code => code === 'ShiftRight' ? 'ShiftLeft' : code === 'ControlRight' ? 'ControlLeft' : code;
 function ctlRebuild() {
-  CTL.binds = {}; CTL.byCode = {};
-  for (const id in KEYMAP) { const c = id in CTL.ovr ? CTL.ovr[id] : KEYMAP[id].code; CTL.binds[id] = c || null; if (c && !CTL.byCode[c]) CTL.byCode[c] = id; }
+  CTL.binds = {}; CTL.byCode = {}; CTL.moved = {};
+  // The player's own keys first; a default that collides with one of them moves to its alt key (if free) or unbinds.
+  const mine = new Set(), used = new Set();
+  for (const id in CTL.ovr) if (CTL.ovr[id]) mine.add(CTL.ovr[id]);
+  for (const id in KEYMAP) { const c = id in CTL.ovr ? CTL.ovr[id] : KEYMAP[id].code; if (c && (id in CTL.ovr || !mine.has(c))) used.add(c); }
+  for (const id in KEYMAP) {
+    let c = id in CTL.ovr ? CTL.ovr[id] : KEYMAP[id].code;
+    if (c && !(id in CTL.ovr) && mine.has(c)) { const a = KEYMAP[id].alt; c = a && !used.has(a) ? a : null; if (c) used.add(c); CTL.moved[id] = c; }
+    CTL.binds[id] = c || null; if (c && !CTL.byCode[c]) CTL.byCode[c] = id;
+  }
   if (typeof ctlKeysRebuilt === 'function') ctlKeysRebuilt();   // js/action.js refreshes ACTION_KEYS
 }
 const keyBinds = () => Object.assign({}, CTL.binds);
@@ -59,7 +79,7 @@ function setKey(id, code) {
   if (old === code) return { ok: true, swapped: null };
   let swapped = null;
   if (code) for (const o in CTL.binds) if (o !== id && CTL.binds[o] === code) { swapped = o; break; }
-  const put = (a, c) => { if (c === KEYMAP[a].code) delete CTL.ovr[a]; else CTL.ovr[a] = c; };
+  const put = (a, c) => { if (c === KEYMAP[a].code && !(a in CTL.moved)) delete CTL.ovr[a]; else CTL.ovr[a] = c; };
   put(id, code); if (swapped) put(swapped, old || null);
   ctlRebuild(); ctlSaveKeys(); controlsChanged('keys');
   return { ok: true, swapped };
@@ -82,7 +102,7 @@ function keyFor(id) {
   if (m) { const a = keyFor('page2'), b = keyFor('skill' + (m[1] - 4)); return a && b ? a + '+' + b : ''; }
   return codeLabel(CTL.binds[id]);
 }
-const PAD_EXTRA = { skill5: 'LB+X', skill6: 'LB+Y', skill7: 'LB+B', skill8: 'LB+A', cycle: 'D-pad ←/→' };
+const PAD_EXTRA = { skill5: 'LB+X', skill6: 'LB+Y', skill7: 'LB+B', skill8: 'LB+A', cycle: 'D-pad ←/→', quick: 'D-pad ↓', interact: 'D-pad ↑' };
 const padFor = id => PAD_EXTRA[id] || (KEYMAP[id] ? KEYMAP[id].pad : '');
 function controlsChanged(kind) {
   if (typeof UI !== 'undefined' && UI) UI.dirty = true;
@@ -190,6 +210,17 @@ function useQuickItem() {
   if (ctlCount(P, id) !== n) controlsChanged('items');
   return true;
 }
+// Item slot i (0-3), used directly (keys 1-4 in action mode, a click on the slot). An empty slot or an empty stack says so.
+function useItemSlot(i) {
+  const h = ctlEnsure(P); if (!h || h.dead || !(i >= 0 && i < ITEM_SLOTS) || (typeof started !== 'undefined' && !started)) return false;
+  const id = h.itemSlots[i | 0];
+  if (!id || !ITEMS[id]) { floatText(h, 'Empty slot', 'miss'); return false; }
+  const it = h.inv.find(x => x && x.id === id);
+  if (!it) { floatText(h, 'None left', 'miss'); log(`You have no ${ITEMS[id].name} left.`, 'warn'); return false; }
+  const n = ctlCount(h, id); useItem(it);
+  if (ctlCount(h, id) !== n) controlsChanged('items');
+  return true;
+}
 function cycleQuickItem(dir) {
   const h = ctlEnsure(P); if (!h) return false;
   dir = dir < 0 ? -1 : 1; let i = h.itemSel;
@@ -200,6 +231,35 @@ function cycleQuickItem(dir) {
   if (typeof floatText === 'function') floatText(h, id && ITEMS[id] ? `${ITEMS[id].name} ×${ctlCount(h, id)}` : 'Empty slot', 'info');
   controlsChanged('sel'); return true;
 }
+
+/* ---------- Camera settings (localStorage 'aom-cam', per device) ---------- */
+const CAM_DEF = Object.freeze({ follow: true, strength: 0.5, speed: 90, invert: false, zoom: 'mid' });
+const CAM_ZOOMS = ['near', 'mid', 'far'];
+const CAMSET = Object.assign({}, CAM_DEF);
+function camCheck(k, v) {
+  switch (k) {
+    case 'follow': case 'invert': return typeof v === 'boolean' ? v : undefined;
+    case 'strength': return typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(1, v)) : undefined;
+    case 'speed': return typeof v === 'number' && isFinite(v) ? Math.max(30, Math.min(240, v)) : undefined;
+    case 'zoom': return CAM_ZOOMS.includes(v) ? v : undefined;
+  }
+  return undefined;
+}
+function camLoadSettings() {
+  let o = null; try { o = JSON.parse(localStorage.getItem('aom-cam') || 'null'); } catch (e) { o = null; }
+  Object.assign(CAMSET, CAM_DEF);
+  if (o && typeof o === 'object') for (const k in CAM_DEF) { const v = camCheck(k, o[k]); if (v !== undefined) CAMSET[k] = v; }
+}
+function camSaveSettings() {
+  const o = {}; for (const k in CAM_DEF) if (CAMSET[k] !== CAM_DEF[k]) o[k] = CAMSET[k];
+  try { if (Object.keys(o).length) localStorage.setItem('aom-cam', JSON.stringify(o)); else localStorage.removeItem('aom-cam'); } catch (e) { /* private window: this session only */ }
+}
+// quiet: no 'controlsChanged' (a slider being dragged: the window must not re-render under the pointer).
+function setCamSetting(k, v, quiet) {
+  const c = camCheck(k, v); if (c === undefined) return false;
+  CAMSET[k] = c; camSaveSettings(); if (!quiet) controlsChanged('cam'); return true;
+}
+function resetCamSettings() { Object.assign(CAMSET, CAM_DEF); camSaveSettings(); controlsChanged('cam'); }
 
 /* ---------- Save hooks ----------
    applySave copies every saved key onto the new hero, so a save with slots restores them as they are. SAVE_KEYS
@@ -221,3 +281,4 @@ if (typeof calcStats === 'function' && !calcStats._ctl) {
 ctlHookSave();
 if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', ctlHookSave);
 ctlLoadKeys();
+camLoadSettings();
